@@ -11,6 +11,7 @@ import {
   ChevronDownIcon, ChevronUpIcon, LinkIcon, CheckIcon, SettingsIcon,
   TargetIcon,
   AwardIcon, MedalIcon, BadgeCheckIcon, UsersRoundIcon,
+  CheckCircleIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -332,8 +333,8 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
           </div>
 
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-zinc-500">
-            <span>📋 {auto.reportCount} reports submitted (+{auto.reportCount * PTS.report})</span>
-            <span>✅ {auto.taskCount} tasks completed (+{auto.taskCount * PTS.task})</span>
+            <span className="inline-flex items-center gap-1"><ClipboardListIcon size={11} /> {auto.reportCount} reports submitted (+{auto.reportCount * PTS.report})</span>
+            <span className="inline-flex items-center gap-1"><CheckCircleIcon size={11} /> {auto.taskCount} tasks completed (+{auto.taskCount * PTS.task})</span>
             {auto.inspReadyCount > 0 && <span className="inline-flex items-center gap-1 text-green-600"><BadgeCheckIcon size={11} /> {auto.inspReadyCount} inspection-ready flags (+{auto.inspReadyCount * PTS.inspReady})</span>}
             {auto.photoCount > 0 && <span className="inline-flex items-center gap-1"><CameraIcon size={11} /> {auto.photoCount} photo reports (+{auto.photoCount * PTS.photo})</span>}
             {auto.noBlockerCount > 0 && <span className="inline-flex items-center gap-1"><ZapIcon size={11} /> {auto.noBlockerCount} no-blocker days (+{auto.noBlockerCount * PTS.noBlocker})</span>}
