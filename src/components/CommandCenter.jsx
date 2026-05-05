@@ -1,41 +1,34 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { onSnapshot, doc } from 'firebase/firestore'
+import { db } from '../firebase'
 import { useData } from '../DataContext'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
-  AlertTriangleIcon, CheckCircleIcon, DollarSignIcon,
-  UsersIcon, MapPinIcon, ClockIcon, AlertCircleIcon,
-  BrainCircuitIcon, ActivityIcon, XCircleIcon,
-  CalendarIcon, ZapIcon, TrendingUpIcon,
+  PageHeader,
+  MetricTile,
+  DataPanel,
+  Pill,
+  AllClearState,
+  EmptyState,
+} from './shared'
+import {
+  AlertCircleIcon, CheckCircleIcon,
+  DollarSignIcon, ClockIcon,
+  ArrowRightIcon,
+  // Phase 3 QA — preferred lucide names
+  RadarIcon, UserRoundCogIcon, TriangleAlertIcon,
+  BadgeCheckIcon, NotebookPenIcon,
+  FilePenLineIcon, FolderOpenIcon, BarChart3Icon,
 } from 'lucide-react'
+import { classifyRisk } from '../agent/scoring'
 
 const O = '#F47920'
 
 const TODAY = new Date()
-const _yd = new Date(TODAY)
-_yd.setDate(_yd.getDate() - 1)
-const YESTERDAY_STR = _yd.toISOString().slice(0, 10)
-const CREW_LIST = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
-
-const jobLabel = (j) => j.name || j.client?.split(' ')[0] || j.id
-
-const PM_ZONES = {
-  'Blake Neblett':   'Zone 1',
-  'Brendan Embry':   'Zone 2',
-  'Jeb Brooks':      'Zone 3',
-  'Taylor Hensley':  'Zone 4',
-  'Tim King':        'Zone 5',
-  'Derek Powers':    'Zone 6',
-}
-
+// Per-job-type contract estimate, used as a fallback when `contractValue`
+// isn't set on the document. Numbers come from the existing app's pricing
+// model and are documented inline so finance can audit them.
 const TYPE_ESTIMATE = {
   'New Construction MEP':            28000,
   'Full MEP Renovation':             22000,
@@ -55,613 +48,778 @@ const TYPE_ESTIMATE = {
   'HVAC + Plumbing':                 14000,
 }
 
-const fmt$ = (n) => '$' + Number(n).toLocaleString()
-
-const cleanPhase = (phase) => {
-  if (!phase) return '—'
-  return phase
-    .replace(/-/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase())
+function jobContract(j) {
+  return Number(j.contractValue) || TYPE_ESTIMATE[j.type] || 18000
 }
 
-// ── Priority classification ────────────────────────────────────────────────────
+const isComplete = (j) => ['complete', 'completed'].includes(j.status)
 
-function classifyJob(job, allMaterials) {
-  const insp = job.insp || {}
-  const stale = daysSince(job.lastStatusChange || job.start)
-  const isActive = !['complete', 'completed'].includes(job.status)
-
-  if (!isActive) return null
-
-  // CRITICAL: failed inspection
-  const hasFailed = Object.values(insp).some(t =>
-    Object.values(t || {}).some(s => s === 'failed')
-  )
-  if (hasFailed) {
-    return {
-      tier: 'critical',
-      color: '#ef4444',
-      label: 'FAILED INSPECTION',
-      action: 'Schedule rework — contact PM + crew immediately',
-      priority: 1,
-    }
-  }
-
-  // STALLED: no update in 48h+
-  if (stale !== null && stale >= 2 && job.status !== 'pending') {
-    return {
-      tier: 'stalled',
-      color: stale >= 7 ? '#ef4444' : O,
-      label: stale >= 7 ? `STALLED ${stale}d` : `STALLED ${stale}d`,
-      action: `No update in ${stale} day${stale !== 1 ? 's' : ''} — get field status from PM`,
-      priority: stale >= 7 ? 2 : 3,
-    }
-  }
-
-  // DISPATCH RISK: crew assigned but any job material not delivered
-  const jobMats = (allMaterials || []).filter(m => m.job === job.id)
-  const hasMaterialIssue = jobMats.some(m =>
-    !['delivered', 'on_site'].includes(m.status)
-  )
-  if (hasMaterialIssue && jobMats.length > 0) {
-    return {
-      tier: 'dispatch-risk',
-      color: '#eab308',
-      label: 'DISPATCH RISK',
-      action: 'Confirm material delivery before dispatching crew',
-      priority: 4,
-    }
-  }
-
-  // MONEY AT RISK: near final phase, billing not prepared
-  if ((job.progress || 0) >= 67 && job.billingStatus === 'not-invoiced') {
-    return {
-      tier: 'billing',
-      color: O,
-      label: 'MONEY AT RISK',
-      action: 'Near final phase — prepare 30% billing now',
-      priority: 5,
-    }
-  }
-
-  // READY: all rough-in inspections passed, at least one final pending
-  const allRoughPassed = ['electrical', 'plumbing', 'hvac'].every(trade => {
-    const t = insp[trade]
-    if (!t) return true
-    const r = t.roughIn
-    return r === 'passed' || r === 'n/a'
-  })
-  const hasPendingNext = Object.values(insp).some(t =>
-    t?.final === 'pending' || t?.trim === 'pending'
-  )
-  if (allRoughPassed && hasPendingNext) {
-    return {
-      tier: 'ready',
-      color: '#22c55e',
-      label: 'READY — INSPECT',
-      action: 'All prerequisites met — call in inspection today',
-      priority: 6,
-    }
-  }
-
-  return null
+const daysSince = (date) => {
+  if (!date) return null
+  try {
+    const d = date?.toDate ? date.toDate() : new Date(date)
+    if (isNaN(d.getTime())) return null
+    return Math.floor((TODAY - d) / 86400000)
+  } catch { return null }
 }
 
-// ── Main Component ─────────────────────────────────────────────────────────────
+const jobLabel = (j) => j.name || j.client?.split(' ')[0] || j.id
+
+// Compact $ formatter — turns 1234567 into "$1.23M".
+function fmtCompact(n) {
+  const v = Number(n) || 0
+  if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`
+  if (Math.abs(v) >= 1_000)     return `$${(v / 1_000).toFixed(0)}K`
+  return `$${v.toLocaleString()}`
+}
+
+// invoiceDate is stored as MM/DD/YYYY in the seed; some Firestore writes
+// produce ISO strings. Normalize to YYYY-MM for month comparison.
+function invoiceMonth(dateStr) {
+  if (!dateStr) return null
+  const m = String(dateStr).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (m) return `${m[3]}-${String(m[1]).padStart(2, '0')}`
+  return String(dateStr).slice(0, 7)
+}
+
+const PM_ZONES = {
+  'Blake Neblett':   'Zone 1',
+  'Brendan Embry':   'Zone 2',
+  'Jeb Brooks':      'Zone 3',
+  'Taylor Hensley':  'Zone 4',
+  'Tim King':        'Zone 5',
+  'Derek Powers':    'Zone 6',
+}
+
+// ── QuickBooks live status ────────────────────────────────────────────────────
+
+function useQuickBooksStatus() {
+  const [state, setState] = useState({ connected: null, connectedAt: null, realmId: null })
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'qb_config', 'tokens'),
+      snap => {
+        const d = snap.data()
+        const ts = d?.connectedAt?.toDate?.()
+          || (d?.connectedAt ? new Date(d.connectedAt) : null)
+        setState({
+          connected: snap.exists() && !!d?.access_token,
+          connectedAt: ts && !isNaN(ts.getTime()) ? ts : null,
+          realmId: d?.realmId || null,
+        })
+      },
+      () => setState({ connected: false, connectedAt: null, realmId: null }),
+    )
+    return unsub
+  }, [])
+  return state
+}
+
+// ── Top-level component ──────────────────────────────────────────────────────
 
 export default function CommandCenter() {
-  const { jobs, dailyReports, materials } = useData()
+  const { jobs = [], extras = [] } = useData()
+  const qb = useQuickBooksStatus()
 
-  const activeJobs = useMemo(() =>
-    jobs.filter(j => !['complete', 'completed'].includes(j.status)),
-    [jobs]
-  )
+  // ── Derived data ────────────────────────────────────────────────────────────
 
-  // A. Priority jobs
-  const priorityJobs = useMemo(() =>
-    activeJobs
-      .map(j => ({ ...j, _class: classifyJob(j, materials), _stale: daysSince(j.lastStatusChange || j.start) }))
-      .filter(j => j._class !== null)
-      .sort((a, b) => (a._class.priority || 99) - (b._class.priority || 99)),
-    [activeJobs, materials]
-  )
+  const activeJobs = useMemo(() => jobs.filter(j => !isComplete(j)), [jobs])
 
-  // B. Stalled jobs (48h+ no update)
-  const stalledJobs = useMemo(() =>
-    activeJobs
-      .filter(j => j.status !== 'pending')
-      .map(j => ({ ...j, staleDays: daysSince(j.lastStatusChange || j.start) }))
-      .filter(j => j.staleDays !== null && j.staleDays >= 2)
-      .sort((a, b) => b.staleDays - a.staleDays),
-    [activeJobs]
-  )
+  // KPI: financial pipeline
+  const kpis = useMemo(() => {
+    const totalRevenue = jobs.reduce((s, j) => s + jobContract(j), 0)
 
-  // C. Billing ready queue
-  const billingQueue = useMemo(() =>
-    jobs
-      .filter(j => {
-        if (['paid'].includes(j.billingStatus)) return false
-        if (['complete', 'completed'].includes(j.status) && j.billingStatus === 'invoiced') return false
-        const insp = j.insp || {}
-        return Object.values(insp).some(t => t?.final === 'passed')
-      })
-      .map(j => {
-        const base = TYPE_ESTIMATE[j.type] || 18000
-        const est = j.billingStatus === 'invoiced' ? base * 0.3 : base * 0.3
-        return { ...j, _est: est }
-      }),
-    [jobs]
-  )
+    const openCommitments = jobs
+      .filter(j => !isComplete(j) && j.billingStatus !== 'paid')
+      .reduce((s, j) => s + jobContract(j), 0)
 
-  // D. No-next-action jobs
-  const classifiedIds = useMemo(() => new Set(priorityJobs.map(j => j.id)), [priorityJobs])
-  const noNextActionJobs = useMemo(() =>
-    activeJobs.filter(j =>
-      !classifiedIds.has(j.id) &&
-      !['pending', 'complete', 'completed'].includes(j.status)
-    ),
-    [activeJobs, classifiedIds]
-  )
+    const pendingCO = extras
+      .filter(e => ['pending', 'Sent to Builder', 'Draft'].includes(e.status))
+      .reduce((s, e) => s + Number(e.total ?? e.amount ?? 0), 0)
 
-  // E. Crew status
-  const submittedYesterday = useMemo(() =>
-    new Set((dailyReports || []).filter(r => r.date === YESTERDAY_STR).map(r => r.crewMember)),
-    [dailyReports]
-  )
+    const approvedCO = extras
+      .filter(e => e.status === 'Approved' || e.status === 'approved')
+      .reduce((s, e) => s + Number(e.total ?? e.amount ?? 0), 0)
 
-  const crewStatus = useMemo(() =>
-    CREW_LIST.map(name => {
-      const reports = (dailyReports || [])
-        .filter(r => r.crewMember === name)
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-      const last = reports[0]
-      return {
-        name,
-        reportedYesterday: submittedYesterday.has(name),
-        lastReportDate: last?.date || null,
-        lastReportDays: last?.date ? daysSince(last.date) : null,
-        currentJob: last?.jobId || last?.jobName || null,
-      }
-    }),
-    [dailyReports, submittedYesterday]
-  )
+    const thisMonth = TODAY.toISOString().slice(0, 7)
+    const invoicedThisMonthAmt = jobs
+      .filter(j => invoiceMonth(j.invoiceDate) === thisMonth)
+      .reduce((s, j) => s + jobContract(j) * 0.7, 0) // 70% milestone billing assumption
+    const invoicedThisMonthCount = jobs
+      .filter(j => invoiceMonth(j.invoiceDate) === thisMonth).length
 
-  // F. Zone overview
-  const zoneOverview = useMemo(() => {
-    const zones = {}
-    activeJobs.forEach(j => {
-      const zone = PM_ZONES[j.pm] || 'Unassigned'
-      if (!zones[zone]) zones[zone] = { zone, pm: j.pm || '—', jobs: [] }
-      zones[zone].jobs.push(j)
+    return {
+      totalRevenue,
+      openCommitments,
+      pendingCO,
+      approvedCO,
+      invoicedThisMonthAmt,
+      invoicedThisMonthCount,
+    }
+  }, [jobs, extras])
+
+  // Needs Action — 4 categories like the mockup
+  const needsAction = useMemo(() => {
+    const atRisk = activeJobs.filter(j => {
+      if (j.status === 'at-risk' || j.status === 'blocked' || j.status === 'needs-action') return true
+      const stale = daysSince(j.lastStatusChange || j.start)
+      return stale !== null && stale >= 7
     })
-    return Object.values(zones).sort((a, b) => a.zone.localeCompare(b.zone))
-  }, [activeJobs])
 
-  // G. Inspection pipeline
-  const inspPipeline = useMemo(() => {
+    const awaitingInspection = activeJobs.filter(j => {
+      const insp = j.insp || {}
+      return Object.values(insp).some(t =>
+        Object.values(t || {}).some(s => s === 'scheduled' || s === 'pending-verification')
+      )
+    })
+
+    const missingDocs = activeJobs.filter(j => {
+      if (!j.permitNumber) return true
+      const permits = j.permits || {}
+      return Object.values(permits).some(s => s === 'pending' || s === 'applied')
+    })
+
+    const builderApproval = extras.filter(e =>
+      e.status === 'Sent to Builder' || e.status === 'pending',
+    )
+
+    return [
+      { key: 'at-risk',         label: 'At Risk',                 count: atRisk.length,            target: 'alerts' },
+      { key: 'awaiting-insp',   label: 'Awaiting Inspection',     count: awaitingInspection.length, target: 'inspections' },
+      { key: 'missing-docs',    label: 'Missing Documentation',   count: missingDocs.length,        target: 'permits' },
+      { key: 'builder-approval', label: 'Builder Approval Required', count: builderApproval.length, target: 'extras' },
+    ]
+  }, [activeJobs, extras])
+
+  // Jobs At Risk — top 5 ranked
+  const jobsAtRisk = useMemo(() => {
     return activeJobs
       .map(j => {
-        const insp = j.insp || {}
-        const phases = []
-        ;['electrical', 'plumbing', 'hvac'].forEach(trade => {
-          const t = insp[trade]
-          if (!t || (t.roughIn === 'n/a' && t.final === 'n/a')) return
-          if (t.roughIn === 'pending') phases.push({ trade, phase: 'Rough-In', status: 'pending', blocker: 'Work in progress' })
-          else if (t.roughIn === 'scheduled') phases.push({ trade, phase: 'Rough-In', status: 'scheduled', blocker: null })
-          else if (t.roughIn === 'passed' && (t.trim === 'pending' || t.trim === 'scheduled')) {
-            phases.push({ trade, phase: 'Trim', status: t.trim, blocker: t.trim === 'pending' ? 'Trim work not called in' : null })
-          } else if (t.roughIn === 'passed' && t.final === 'pending') {
-            phases.push({ trade, phase: 'Final', status: 'pending', blocker: null })
-          } else if (t.roughIn === 'passed' && t.final === 'scheduled') {
-            phases.push({ trade, phase: 'Final', status: 'scheduled', blocker: null })
-          }
-        })
-        return phases.length > 0 ? { ...j, _phases: phases } : null
+        const risk = classifyRisk(j)
+        const stale = daysSince(j.lastStatusChange || j.start)
+        let reason = null, severity = null
+        if (risk?.level === 'critical') { severity = 'High';   reason = risk.reason || 'Critical' }
+        else if (j.status === 'blocked')      { severity = 'High';   reason = 'Blocked' }
+        else if (j.status === 'needs-action') { severity = 'High';   reason = 'Action required' }
+        else if (j.status === 'at-risk')      { severity = 'Medium'; reason = 'At risk' }
+        else if (stale !== null && stale >= 14) { severity = 'High';   reason = `Stalled ${stale}d` }
+        else if (stale !== null && stale >= 7)  { severity = 'Medium'; reason = `Stalled ${stale}d` }
+        else if (risk?.level === 'warning')   { severity = 'Medium'; reason = risk.reason || 'Warning' }
+        return severity ? { job: j, severity, reason } : null
       })
       .filter(Boolean)
-      .slice(0, 10)
+      .sort((a, b) => {
+        const order = { High: 0, Medium: 1, Low: 2 }
+        return (order[a.severity] ?? 3) - (order[b.severity] ?? 3)
+      })
+      .slice(0, 5)
   }, [activeJobs])
 
-  // H. Quick stats
-  const missingReports = crewStatus.filter(c => !c.reportedYesterday).length
-  const inspPendingCount = activeJobs.filter(j =>
-    Object.values(j.insp || {}).some(t =>
-      Object.values(t || {}).some(s => s === 'pending' || s === 'scheduled')
-    )
-  ).length
+  // PM Workload — count active jobs per PM, weighted by issues
+  const pmWorkload = useMemo(() => {
+    const map = new Map()
+    activeJobs.forEach(j => {
+      const pm = j.pm || 'Unassigned'
+      if (!map.has(pm)) {
+        map.set(pm, { pm, zone: PM_ZONES[pm] || null, jobs: 0, issues: 0 })
+      }
+      const row = map.get(pm)
+      row.jobs += 1
+      if (j.status === 'needs-action' || j.status === 'blocked' || j.status === 'at-risk') {
+        row.issues += 1
+      }
+      const stale = daysSince(j.lastStatusChange || j.start)
+      if (stale !== null && stale >= 7) row.issues += 1
+    })
+    const list = Array.from(map.values())
+      .sort((a, b) => b.jobs - a.jobs || b.issues - a.issues)
+      .slice(0, 6)
+    const max = list.length > 0 ? Math.max(...list.map(r => r.jobs)) : 1
+    return list.map(r => ({ ...r, fill: Math.max(8, Math.round((r.jobs / max) * 100)) }))
+  }, [activeJobs])
 
-  const stats = [
-    { label: 'ACTIVE JOBS',     value: activeJobs.length,    color: O,           Icon: ActivityIcon      },
-    { label: 'STALLED',         value: stalledJobs.length,   color: stalledJobs.length > 0 ? '#ef4444' : '#22c55e', Icon: ClockIcon },
-    { label: 'READY TO BILL',   value: billingQueue.length,  color: billingQueue.length > 0 ? '#22c55e' : '#6b7280', Icon: DollarSignIcon },
-    { label: 'MISSING REPORTS', value: missingReports,       color: missingReports > 0 ? '#eab308' : '#22c55e', Icon: AlertTriangleIcon },
-    { label: 'INSPECT PENDING', value: inspPendingCount,     color: inspPendingCount > 0 ? '#3b82f6' : '#6b7280', Icon: CheckCircleIcon  },
-  ]
+  // Inspection Summary — counts across all trades, every active job
+  const inspSummary = useMemo(() => {
+    let passed = 0, pending = 0, failed = 0, overdue = 0
+    activeJobs.forEach(j => {
+      Object.values(j.insp || {}).forEach(trade => {
+        Object.entries(trade || {}).forEach(([phase, status]) => {
+          if (phase.endsWith('Date')) return
+          if (status === 'passed')                                 passed  += 1
+          else if (status === 'failed')                            failed  += 1
+          else if (status === 'pending' || status === 'pending-verification') pending += 1
+          else if (status === 'scheduled') {
+            // Treat scheduled-but-old as overdue — we approximate "old" as
+            // "the job has been stalled 5+ days", since inspection scheduling
+            // dates are not stored on every record.
+            const stale = daysSince(j.lastStatusChange || j.start)
+            if (stale !== null && stale >= 5) overdue += 1
+            else                              pending += 1
+          }
+        })
+      })
+    })
+    const total = passed + pending + failed + overdue
+    return { passed, pending, failed, overdue, total }
+  }, [activeJobs])
+
+  // Billing Opportunities — three slices
+  const billingOpps = useMemo(() => {
+    // Ready to Invoice: bill-ready, not yet invoiced
+    const ready = jobs.filter(j => {
+      if (j.billingStatus === 'invoiced' || j.billingStatus === 'paid') return false
+      if (isComplete(j)) return false
+      const insp = j.insp || {}
+      return Object.values(insp).some(t =>
+        t?.final === 'passed' || t?.roughIn === 'passed',
+      )
+    })
+    const readyAmt = ready.reduce((s, j) => {
+      const anyFinal = ['electrical','plumbing','hvac'].some(t => j.insp?.[t]?.final === 'passed')
+      const pct = anyFinal ? 0.30 : 0.70
+      return s + jobContract(j) * pct
+    }, 0)
+
+    // Recently Invoiced: invoiceDate in last 30 days, not yet paid
+    const cutoff = new Date(TODAY); cutoff.setDate(cutoff.getDate() - 30)
+    const cutoffMs = cutoff.getTime()
+    const recentlyInvoiced = jobs.filter(j => {
+      if (!j.invoiceDate) return false
+      if (j.billingStatus === 'paid') return false
+      const m = String(j.invoiceDate).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+      const ms = m ? Date.parse(`${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`)
+                   : Date.parse(j.invoiceDate)
+      return !isNaN(ms) && ms >= cutoffMs
+    })
+    const recentlyInvoicedAmt = recentlyInvoiced.reduce((s, j) => s + jobContract(j) * 0.7, 0)
+
+    // Approved Pending Invoice: COs approved but not yet billed (qbs flag false)
+    const approvedPending = extras.filter(e =>
+      (e.status === 'Approved' || e.status === 'approved') && !e.qbs,
+    )
+    const approvedPendingAmt = approvedPending.reduce(
+      (s, e) => s + Number(e.total ?? e.amount ?? 0), 0,
+    )
+
+    return {
+      ready:            { count: ready.length,            amount: readyAmt },
+      recentlyInvoiced: { count: recentlyInvoiced.length, amount: recentlyInvoicedAmt },
+      approvedPending:  { count: approvedPending.length,  amount: approvedPendingAmt },
+    }
+  }, [jobs, extras])
+
+  const navigate = (id) => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id } }))
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Command Center"
+        title="Today's operating picture"
+        subtitle="Live across the active portfolio. Money, risk, inspections, approvals."
+        meta={
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+              <span className="font-mono tracking-[0.18em] text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+            </span>
+            <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
+            <span>{activeJobs.length} active jobs</span>
+            <span>Middle Tennessee</span>
+          </>
+        }
+      />
 
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-          style={{ backgroundColor: O + '22', border: `1px solid ${O}44` }}>
-          <BrainCircuitIcon size={18} style={{ color: O }} />
+      {/* KPI strip — 5 financial tiles */}
+      <section
+        className="grid gap-2 sm:gap-3"
+        aria-label="Financial pipeline"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}
+      >
+        <MetricTile
+          label="Total Revenue"
+          value={fmtCompact(kpis.totalRevenue)}
+          Icon={DollarSignIcon}
+          sub={`${jobs.length} contracts`}
+        />
+        <MetricTile
+          label="Open Commitments"
+          value={fmtCompact(kpis.openCommitments)}
+          Icon={ClockIcon}
+          sub={`${activeJobs.length} active`}
+        />
+        <MetricTile
+          label="Approved Extras"
+          value={fmtCompact(kpis.approvedCO)}
+          Icon={CheckCircleIcon}
+          emphasis="success"
+          sub="Approved change orders"
+        />
+        <MetricTile
+          label="Change Order Potential"
+          value={fmtCompact(kpis.pendingCO)}
+          Icon={FilePenLineIcon}
+          emphasis={kpis.pendingCO > 0 ? 'warning' : 'mute'}
+          sub="Awaiting builder approval"
+        />
+        <MetricTile
+          label="Invoiced This Month"
+          value={fmtCompact(kpis.invoicedThisMonthAmt)}
+          Icon={BarChart3Icon}
+          emphasis={kpis.invoicedThisMonthCount > 0 ? 'default' : 'mute'}
+          sub={`${kpis.invoicedThisMonthCount} invoice${kpis.invoicedThisMonthCount === 1 ? '' : 's'}`}
+        />
+      </section>
+
+      {/* Row 1 — Needs Action / Jobs At Risk / PM Workload */}
+      <div className="grid gap-4 md:gap-5 lg:grid-cols-3">
+        <DataPanel
+          title="Needs Action"
+          description="Items that need a person now."
+          Icon={TriangleAlertIcon}
+          badge={
+            <Pill
+              tone={needsAction.some(n => n.count > 0) ? 'brand' : 'success'}
+              size="xs"
+            >
+              {needsAction.reduce((s, n) => s + n.count, 0)}
+            </Pill>
+          }
+          footer={
+            <button
+              type="button"
+              onClick={() => navigate('alerts')}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
+              style={{ color: O }}
+            >
+              View All Alerts <ArrowRightIcon size={13} />
+            </button>
+          }
+        >
+          <ul className="divide-y divide-white/5">
+            {needsAction.map(n => (
+              <li key={n.key}>
+                <button
+                  type="button"
+                  onClick={() => navigate(n.target)}
+                  className="group w-full flex items-center justify-between gap-3 py-2.5 -my-px rounded-md hover:bg-white/[0.03] px-2 transition-colors"
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: O + '22', color: O }}
+                    >
+                      <NeedsActionIcon kind={n.key} />
+                    </span>
+                    <span className="text-sm font-medium text-zinc-100 truncate">{n.label}</span>
+                  </span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span
+                      className="text-lg font-black tabular-nums leading-none"
+                      style={{ color: n.count > 0 ? O : '#9ca3af' }}
+                    >
+                      {n.count}
+                    </span>
+                    <ArrowRightIcon size={14} className="text-zinc-400 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </DataPanel>
+
+        <DataPanel
+          title="Jobs At Risk"
+          description="Risk-scored, top of mind."
+          Icon={RadarIcon}
+          badge={
+            <Pill tone={jobsAtRisk.length > 0 ? 'warning' : 'success'} size="xs">
+              {jobsAtRisk.length}
+            </Pill>
+          }
+          footer={
+            <button
+              type="button"
+              onClick={() => navigate('war-room')}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
+              style={{ color: O }}
+            >
+              View All Jobs At Risk <ArrowRightIcon size={13} />
+            </button>
+          }
+        >
+          {jobsAtRisk.length === 0 ? (
+            <AllClearState title="No risk flagged" description="All active jobs are inside their guardrails." />
+          ) : (
+            <ul className="space-y-1.5">
+              {jobsAtRisk.map(({ job, severity, reason }) => (
+                <li key={job._docId || job.id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate('war-room')}
+                    className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15 transition-colors text-left"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-zinc-100 truncate">{jobLabel(job)}</p>
+                      <p className="text-[11px] text-zinc-400 truncate">{reason}</p>
+                    </div>
+                    <Pill
+                      tone={severity === 'High' ? 'critical' : severity === 'Medium' ? 'warning' : 'neutral'}
+                      size="xs"
+                    >
+                      {severity}
+                    </Pill>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DataPanel>
+
+        <DataPanel
+          title="PM Workload"
+          description="Active jobs per PM."
+          Icon={UserRoundCogIcon}
+          footer={
+            <button
+              type="button"
+              onClick={() => navigate('pm-dashboard')}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
+              style={{ color: O }}
+            >
+              View Full Workload <ArrowRightIcon size={13} />
+            </button>
+          }
+        >
+          {pmWorkload.length === 0 ? (
+            <EmptyState title="No active assignments" description="Active jobs without a PM won't show here." />
+          ) : (
+            <ul className="space-y-2.5">
+              {pmWorkload.map(p => (
+                <li key={p.pm}>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="min-w-0 flex items-center gap-2">
+                      <div
+                        className="shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold"
+                        style={{ width: 26, height: 26, backgroundColor: O + '22', color: O }}
+                      >
+                        {p.pm.split(' ').map(s => s[0]).join('').slice(0, 2)}
+                      </div>
+                      <span className="text-sm font-semibold text-zinc-100 truncate">{p.pm}</span>
+                    </div>
+                    <span className="text-xs text-zinc-300 shrink-0">
+                      <span className="text-white font-semibold">{p.jobs}</span> active
+                      {p.issues > 0 ? <> · <span className="text-amber-300 font-semibold">{p.issues}</span> issue{p.issues === 1 ? '' : 's'}</> : null}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-white/[0.08] overflow-hidden ml-9">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${p.fill}%`,
+                        backgroundColor: p.issues > 0 ? '#eab308' : O,
+                      }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DataPanel>
+      </div>
+
+      {/* Row 2 — Inspection Summary / Billing Opportunities / QuickBooks Status */}
+      <div className="grid gap-4 md:gap-5 lg:grid-cols-3">
+        <DataPanel
+          title="Inspection Summary"
+          description="Across all active jobs and trades."
+          Icon={BadgeCheckIcon}
+          footer={
+            <button
+              type="button"
+              onClick={() => navigate('inspections')}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
+              style={{ color: O }}
+            >
+              View Inspections <ArrowRightIcon size={13} />
+            </button>
+          }
+        >
+          <InspectionDonut summary={inspSummary} />
+        </DataPanel>
+
+        <DataPanel
+          title="Billing Opportunities"
+          description="Cash currently in the pipe."
+          Icon={DollarSignIcon}
+          footer={
+            <button
+              type="button"
+              onClick={() => navigate('billing-queue')}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
+              style={{ color: O }}
+            >
+              Go to Billing Queue <ArrowRightIcon size={13} />
+            </button>
+          }
+        >
+          <ul className="space-y-2">
+            <BillingRow
+              label="Ready to Invoice"
+              amount={billingOpps.ready.amount}
+              count={billingOpps.ready.count}
+              tone="success"
+            />
+            <BillingRow
+              label="Recently Invoiced"
+              amount={billingOpps.recentlyInvoiced.amount}
+              count={billingOpps.recentlyInvoiced.count}
+              tone="info"
+              subtitle="Last 30 days"
+            />
+            <BillingRow
+              label="Approved Pending Invoice"
+              amount={billingOpps.approvedPending.amount}
+              count={billingOpps.approvedPending.count}
+              tone="brand"
+              subtitle="Approved change orders"
+            />
+          </ul>
+        </DataPanel>
+
+        <DataPanel
+          title="QuickBooks Status"
+          description="Auto-sync of invoices and change orders."
+          Icon={BarChart3Icon}
+          footer={
+            <button
+              type="button"
+              onClick={() => navigate('settings')}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
+              style={{ color: O }}
+            >
+              {qb.connected ? 'Sync settings' : 'Connect now'} <ArrowRightIcon size={13} />
+            </button>
+          }
+        >
+          <QuickBooksStatusCard qb={qb} />
+        </DataPanel>
+      </div>
+
+      {/* Quick Modules */}
+      <section aria-label="Quick modules" className="pt-2">
+        <h2 className="text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-300 mb-3">
+          Quick Modules
+        </h2>
+        <div
+          className="grid gap-2"
+          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
+        >
+          <QuickModule id="pm-dashboard"  Icon={UserRoundCogIcon} label="PM Dashboard"  hint="Risk-scored hit list" onSelect={navigate} />
+          <QuickModule id="war-room"      Icon={RadarIcon}        label="War Room"      hint="Field status board"   onSelect={navigate} />
+          <QuickModule id="billing-queue" Icon={DollarSignIcon}   label="Billing Queue" hint="Cash flow control"     onSelect={navigate} />
+          <QuickModule id="extras"        Icon={FilePenLineIcon}  label="Change Orders" hint="Approve & invoice"     badge={kpis.pendingCO > 0 ? extras.filter(e => e.status === 'Sent to Builder' || e.status === 'pending').length : 0} onSelect={navigate} />
+          <QuickModule id="folders"       Icon={FolderOpenIcon}   label="Documents"     hint="Project folders"       onSelect={navigate} />
+          <QuickModule id="analytics"     Icon={BarChart3Icon}    label="Reports"       hint="Portfolio analytics"   onSelect={navigate} />
+        </div>
+      </section>
+    </div>
+  )
+}
+
+// ── Sub-components ───────────────────────────────────────────────────────────
+
+function NeedsActionIcon({ kind }) {
+  const map = {
+    'at-risk':          TriangleAlertIcon,
+    'awaiting-insp':    BadgeCheckIcon,
+    'missing-docs':     NotebookPenIcon,
+    'builder-approval': FilePenLineIcon,
+  }
+  const Icon = map[kind] || AlertCircleIcon
+  return <Icon size={16} strokeWidth={2} />
+}
+
+function BillingRow({ label, amount, count, subtitle, tone = 'neutral' }) {
+  const color =
+    tone === 'success' ? '#22c55e' :
+    tone === 'info'    ? '#3b82f6' :
+    tone === 'brand'   ? O :
+    '#9ca3af'
+  return (
+    <li className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-white/5 bg-white/[0.02]">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-zinc-100 truncate">{label}</p>
+        <p className="text-[11px] text-zinc-400 truncate">
+          {count} item{count === 1 ? '' : 's'}{subtitle ? ` · ${subtitle}` : ''}
+        </p>
+      </div>
+      <p
+        className="text-base font-black tabular-nums shrink-0"
+        style={{ color: count > 0 ? color : '#9ca3af' }}
+      >
+        {amount > 0 ? `$${(amount / 1000).toFixed(amount >= 100_000 ? 0 : 1)}K` : '$0'}
+      </p>
+    </li>
+  )
+}
+
+function InspectionDonut({ summary }) {
+  if (summary.total === 0) {
+    return (
+      <AllClearState
+        title="No inspections logged"
+        description="Inspection statuses across active jobs will populate here."
+      />
+    )
+  }
+  const data = [
+    { name: 'Passed',  value: summary.passed,  color: '#22c55e' },
+    { name: 'Pending', value: summary.pending, color: '#eab308' },
+    { name: 'Failed',  value: summary.failed,  color: '#ef4444' },
+    { name: 'Overdue', value: summary.overdue, color: O },
+  ].filter(d => d.value > 0)
+
+  return (
+    <div className="grid grid-cols-[140px_1fr] gap-4 items-center">
+      <div className="relative h-[140px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              innerRadius={42}
+              outerRadius={62}
+              paddingAngle={3}
+              dataKey="value"
+              stroke="none"
+            >
+              {data.map((d, i) => <Cell key={i} fill={d.color} />)}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <p className="text-2xl font-black tabular-nums leading-none text-white">{summary.total}</p>
+          <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-400 mt-0.5">Total</p>
+        </div>
+      </div>
+      <ul className="space-y-1.5 text-xs">
+        <DonutLegendRow label="Passed"  value={summary.passed}  total={summary.total} color="#22c55e" />
+        <DonutLegendRow label="Pending" value={summary.pending} total={summary.total} color="#eab308" />
+        <DonutLegendRow label="Failed"  value={summary.failed}  total={summary.total} color="#ef4444" />
+        <DonutLegendRow label="Overdue" value={summary.overdue} total={summary.total} color={O} />
+      </ul>
+    </div>
+  )
+}
+
+function DonutLegendRow({ label, value, total, color }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0
+  return (
+    <li className="flex items-center gap-2">
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+      <span className="flex-1 truncate text-zinc-200">{label}</span>
+      <span className="font-mono tabular-nums shrink-0">
+        <span className="font-bold" style={{ color }}>{value}</span>
+        <span className="text-zinc-400 ml-1.5">({pct}%)</span>
+      </span>
+    </li>
+  )
+}
+
+function QuickBooksStatusCard({ qb }) {
+  if (qb.connected === null) {
+    return <p className="text-xs text-zinc-400 py-3">Checking connection…</p>
+  }
+  if (qb.connected) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 mb-3">
+          <div
+            className="shrink-0 flex items-center justify-center rounded-xl"
+            style={{ width: 44, height: 44, backgroundColor: '#22c55e22' }}
+          >
+            <CheckCircleIcon size={20} color="#22c55e" strokeWidth={2.25} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-white">Connected</p>
+            <p className="text-[11px] text-zinc-400">QuickBooks Online</p>
+          </div>
+        </div>
+        <dl className="space-y-1.5 text-[11px] mt-1">
+          {qb.realmId && (
+            <div className="flex justify-between gap-2">
+              <dt className="text-zinc-400">Realm</dt>
+              <dd className="font-mono text-zinc-100 truncate max-w-[55%]">{qb.realmId}</dd>
+            </div>
+          )}
+          {qb.connectedAt && (
+            <div className="flex justify-between gap-2">
+              <dt className="text-zinc-400">Connected</dt>
+              <dd className="text-zinc-100">
+                {qb.connectedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </dd>
+            </div>
+          )}
+        </dl>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 mb-3">
+        <div
+          className="shrink-0 flex items-center justify-center rounded-xl"
+          style={{ width: 44, height: 44, backgroundColor: 'rgba(255,255,255,0.06)' }}
+        >
+          <BarChart3Icon size={20} className="text-zinc-300" strokeWidth={2} />
         </div>
         <div>
-          <h1 className="text-sm sm:text-base font-black tracking-wide sm:tracking-widest uppercase" style={{ color: O }}>
-            PM Agent — Command Center
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            {TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-            &nbsp;·&nbsp;{activeJobs.length} active jobs&nbsp;·&nbsp;Middle Tennessee
-          </p>
-        </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-[10px] text-green-400 font-mono tracking-widest">LIVE</span>
+          <p className="text-sm font-bold text-white">Not connected</p>
+          <p className="text-[11px] text-zinc-400">QuickBooks Online</p>
         </div>
       </div>
-
-      {/* H. Quick Stats Bar */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-        {stats.map(s => (
-          <div key={s.label}
-            className="p-2 sm:p-3 rounded-lg border text-center"
-            style={{ borderColor: s.color + '33', backgroundColor: s.color + '0d' }}>
-            <div className="flex items-center justify-center gap-1 mb-1">
-              <s.Icon size={10} style={{ color: s.color }} />
-              <span className="text-[9px] font-black tracking-widest leading-tight" style={{ color: s.color }}>{s.label}</span>
-            </div>
-            <p className="text-2xl font-black leading-none" style={{ color: s.color }}>{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* B. Stalled Alert Banner */}
-      {stalledJobs.length > 0 && (
-        <div className="flex items-center gap-3 p-3 rounded-lg border"
-          style={{ borderColor: '#ef444466', backgroundColor: '#ef444411' }}>
-          <AlertCircleIcon size={16} color="#ef4444" className="shrink-0" />
-          <div className="flex-1 min-w-0">
-            <span className="text-xs font-black text-red-400 mr-3">
-              {stalledJobs.length} JOB{stalledJobs.length !== 1 ? 'S' : ''} STALLED 48h+
-            </span>
-            <span className="hidden sm:inline text-xs text-muted-foreground">
-              {stalledJobs.slice(0, 4).map(j => `${j.id} (${j.staleDays}d)`).join(' · ')}
-              {stalledJobs.length > 4 && ` · +${stalledJobs.length - 4} more`}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* A. Today's Priority Jobs */}
-      <Card className="border-white/10" style={{ borderColor: priorityJobs.length > 0 ? O + '33' : undefined }}>
-        <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-xs font-black tracking-widest uppercase flex items-center gap-2">
-            <ZapIcon size={13} style={{ color: O }} />
-            Today&apos;s Priority Jobs
-            <span className="ml-auto text-[10px] font-normal text-muted-foreground">
-              {priorityJobs.length} flagged · {activeJobs.length} total active
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-2">
-          {priorityJobs.length === 0 ? (
-            <div className="flex items-center gap-2 py-3 text-green-400">
-              <CheckCircleIcon size={14} />
-              <span className="text-xs font-medium">All jobs clear — no priority flags today</span>
-            </div>
-          ) : (
-            priorityJobs.map((j, i) => {
-              const c = j._class
-              return (
-                <div key={j.id}
-                  className="flex items-start gap-3 p-3 rounded-lg border"
-                  style={{ borderColor: c.color + '33', backgroundColor: c.color + '08' }}>
-                  <div className="text-[10px] font-black w-4 text-center shrink-0 mt-0.5 tabular-nums"
-                    style={{ color: c.color }}>
-                    {i + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-black text-sm">{jobLabel(j)}</span>
-                      <span className="font-mono text-xs text-muted-foreground">{j.id}</span>
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full tracking-widest shrink-0"
-                        style={{ backgroundColor: c.color + '22', color: c.color, border: `1px solid ${c.color}44` }}>
-                        {c.label}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
-                      <span>PM: {j.pm || '—'}</span>
-                      {j._stale !== null && <span>{j._stale}d no update</span>}
-                      <span>{cleanPhase(j.phase)}</span>
-                      {j.billingStatus && <span className="uppercase">{j.billingStatus}</span>}
-                    </div>
-                    <p className="mt-1.5 text-xs font-semibold" style={{ color: c.color }}>
-                      → {c.action}
-                    </p>
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Mid grid: Billing | Crew | No Next Action */}
-      <div className="grid lg:grid-cols-3 gap-4">
-
-        {/* C. Billing Ready Queue */}
-        <Card style={{ borderColor: '#22c55e33' }}>
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-xs font-black tracking-widest uppercase flex items-center gap-2">
-              <DollarSignIcon size={13} color="#22c55e" />
-              Billing Ready
-              <span className="ml-auto text-xs font-mono" style={{ color: '#22c55e' }}>
-                {billingQueue.length > 0
-                  ? fmt$(billingQueue.reduce((s, j) => s + j._est, 0))
-                  : 'CLEAR'}
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-2">
-            {billingQueue.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-1">No billing ready — all clear</p>
-            ) : (
-              <>
-                {billingQueue.slice(0, 7).map(j => (
-                  <div key={j.id}
-                    className="flex items-center justify-between p-2 rounded border"
-                    style={{ borderColor: '#22c55e22', backgroundColor: '#22c55e08' }}>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold truncate">
-                        {jobLabel(j)}
-                        <span className="font-mono font-normal text-muted-foreground ml-1.5">{j.id}</span>
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">{cleanPhase(j.phase)}</p>
-                    </div>
-                    <div className="text-right shrink-0 ml-2">
-                      <p className="text-xs font-black" style={{ color: '#22c55e' }}>{fmt$(j._est)}</p>
-                      <p className="text-[9px] text-muted-foreground">30% due</p>
-                    </div>
-                  </div>
-                ))}
-                {billingQueue.length > 7 && (
-                  <p className="text-[10px] text-muted-foreground text-center pt-1">+{billingQueue.length - 7} more</p>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* E. Crew Status */}
-        <Card className="border-white/10">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-xs font-black tracking-widest uppercase flex items-center gap-2">
-              <UsersIcon size={13} style={{ color: O }} />
-              Crew Status
-              {missingReports > 0 && (
-                <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                  style={{ backgroundColor: '#eab30822', color: '#eab308' }}>
-                  {missingReports} MISSING
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-2">
-            {crewStatus.map(c => (
-              <div key={c.name}
-                className="flex items-center gap-2.5 p-2 rounded border border-white/10">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black shrink-0"
-                  style={{ backgroundColor: O + '22', color: O }}>
-                  {c.name.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold">{c.name}</p>
-                  <p className="text-[10px] text-muted-foreground truncate">
-                    {c.currentJob ? `Last: ${c.currentJob}` : 'No recent job'}
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  {c.reportedYesterday ? (
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400">
-                      REPORTED
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400">
-                      MISSING
-                    </span>
-                  )}
-                  {c.lastReportDays !== null && (
-                    <p className="text-[9px] text-muted-foreground mt-0.5">{c.lastReportDays}d ago</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* D. Next Action Queue */}
-        <Card style={{ borderColor: noNextActionJobs.length > 0 ? '#ef444433' : undefined }}>
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-xs font-black tracking-widest uppercase flex items-center gap-2">
-              <XCircleIcon size={13} color={noNextActionJobs.length > 0 ? '#ef4444' : '#6b7280'} />
-              No Next Action
-              {noNextActionJobs.length > 0 && (
-                <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                  style={{ backgroundColor: '#ef444422', color: '#ef4444' }}>
-                  {noNextActionJobs.length} unaccounted
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-2">
-            {noNextActionJobs.length === 0 ? (
-              <div className="flex items-center gap-2 py-2 text-green-400">
-                <CheckCircleIcon size={12} />
-                <span className="text-xs">All active jobs accounted for</span>
-              </div>
-            ) : (
-              <>
-                <p className="text-[10px] text-muted-foreground mb-1">
-                  These jobs have no explicit next action — assign one now.
-                </p>
-                {noNextActionJobs.slice(0, 8).map(j => (
-                  <div key={j.id}
-                    className="flex items-center justify-between p-2 rounded border"
-                    style={{ borderColor: '#ef444422', backgroundColor: '#ef444408' }}>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold truncate">
-                        {jobLabel(j)}
-                        <span className="font-mono font-normal text-muted-foreground ml-1.5">{j.id}</span>
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">{j.pm || '—'}</p>
-                    </div>
-                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0 ml-2"
-                      style={{ backgroundColor: '#ef444422', color: '#ef4444', border: '1px solid #ef444433' }}>
-                      NO ACTION
-                    </span>
-                  </div>
-                ))}
-                {noNextActionJobs.length > 8 && (
-                  <p className="text-[10px] text-muted-foreground text-center">+{noNextActionJobs.length - 8} more</p>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Bottom grid: Zone Overview | Inspection Pipeline */}
-      <div className="grid lg:grid-cols-2 gap-4">
-
-        {/* F. Zone Overview */}
-        <Card className="border-white/10">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-xs font-black tracking-widest uppercase flex items-center gap-2">
-              <MapPinIcon size={13} style={{ color: O }} />
-              Zone Overview
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-2">
-            {zoneOverview.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-1">No active jobs</p>
-            ) : (
-              zoneOverview.map(z => {
-                const needsAction = z.jobs.filter(j => j.status === 'needs-action').length
-                const blocked = z.jobs.filter(j => j.status === 'blocked').length
-                const stalled = z.jobs.filter(j => {
-                  const d = daysSince(j.lastStatusChange || j.start)
-                  return d !== null && d >= 2 && j.status !== 'pending'
-                }).length
-                const allOk = needsAction === 0 && blocked === 0 && stalled === 0
-                return (
-                  <div key={z.zone} className="p-3 rounded-lg border border-white/10 bg-white/5">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black" style={{ color: O }}>{z.zone}</span>
-                        <span className="text-[10px] text-muted-foreground">{z.pm}</span>
-                      </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-muted-foreground">
-                        {z.jobs.length} job{z.jobs.length !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    <div className="flex gap-1.5 flex-wrap mb-2">
-                      {needsAction > 0 && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ backgroundColor: O + '22', color: O }}>
-                          {needsAction} need action
-                        </span>
-                      )}
-                      {blocked > 0 && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ backgroundColor: '#ef444422', color: '#ef4444' }}>
-                          {blocked} blocked
-                        </span>
-                      )}
-                      {stalled > 0 && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ backgroundColor: '#ef444422', color: '#ef4444' }}>
-                          {stalled} stalled
-                        </span>
-                      )}
-                      {allOk && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ backgroundColor: '#22c55e22', color: '#22c55e' }}>
-                          all clear
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {z.jobs.slice(0, 6).map(j => (
-                        <span key={j.id}
-                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-muted-foreground">
-                          {j.id.replace('QBS-0', '').replace('QBS-', '')}
-                        </span>
-                      ))}
-                      {z.jobs.length > 6 && (
-                        <span className="text-[9px] text-muted-foreground">+{z.jobs.length - 6}</span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </CardContent>
-        </Card>
-
-        {/* G. Inspection Pipeline */}
-        <Card className="border-white/10">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-xs font-black tracking-widest uppercase flex items-center gap-2">
-              <CheckCircleIcon size={13} style={{ color: '#3b82f6' }} />
-              Inspection Pipeline
-              <span className="ml-auto text-[10px] font-normal text-muted-foreground">
-                {inspPipeline.length} jobs
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-2">
-            {inspPipeline.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-1">No inspections in pipeline</p>
-            ) : (
-              inspPipeline.map(j => (
-                <div key={j.id} className="p-2.5 rounded-lg border border-white/10 bg-white/5">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-xs font-bold">{jobLabel(j)}</span>
-                    <span className="text-[10px] font-mono text-muted-foreground">{j.id}</span>
-                    {j.pm && <span className="text-[10px] text-muted-foreground ml-auto">{j.pm.split(' ')[0]}</span>}
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {j._phases.map((p, idx) => {
-                      const col = p.status === 'scheduled' ? '#22c55e'
-                               : p.status === 'pending'   ? '#eab308'
-                               : '#6b7280'
-                      const tradeShort = p.trade === 'electrical' ? 'E'
-                                       : p.trade === 'plumbing'   ? 'P'
-                                       : 'H'
-                      return (
-                        <span key={idx}
-                          className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
-                          style={{ backgroundColor: col + '22', color: col, border: `1px solid ${col}44` }}>
-                          {tradeShort} {p.phase}
-                          {p.status === 'scheduled' ? ' · CALLED' : ' · PENDING'}
-                        </span>
-                      )
-                    })}
-                  </div>
-                  {j._phases.some(p => p.blocker) && (
-                    <p className="text-[9px] text-yellow-400 mt-1.5">
-                      ⚠ {j._phases.find(p => p.blocker)?.blocker}
-                    </p>
-                  )}
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-      </div>
+      <p className="text-[11px] text-zinc-300">
+        Connect QuickBooks to enable invoice and change-order auto-sync. Open
+        <span className="font-semibold text-white"> Settings → QuickBooks Integration</span>.
+      </p>
     </div>
+  )
+}
+
+function QuickModule({ id, Icon, label, hint, badge = 0, onSelect }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect?.(id)}
+      className="group relative flex items-center gap-3 px-3 py-3 rounded-xl border border-white/10 bg-white/[0.025] hover:border-white/25 hover:bg-white/[0.05] transition-colors text-left"
+    >
+      <div
+        className="shrink-0 flex items-center justify-center rounded-lg"
+        style={{ width: 38, height: 38, backgroundColor: O + '22', color: O }}
+      >
+        <Icon size={18} strokeWidth={2} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-zinc-100 truncate flex items-center gap-1.5">
+          {label}
+          {badge > 0 && (
+            <span
+              className="text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white"
+              style={{ backgroundColor: O }}
+            >
+              {badge}
+            </span>
+          )}
+        </p>
+        <p className="text-[11px] text-zinc-400 truncate">{hint}</p>
+      </div>
+      <ArrowRightIcon
+        size={14}
+        className="shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5"
+      />
+    </button>
   )
 }
