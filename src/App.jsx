@@ -2234,97 +2234,358 @@ function ProjectFolders() {
 
 // ── Tab: Notifications ────────────────────────────────────────────────────────
 
+const NOTIF_TYPE_META = {
+  error:   { tone: 'critical', label: 'Error',   Icon: AlertCircleIcon,   color: '#ef4444' },
+  warn:    { tone: 'warning',  label: 'Warning', Icon: AlertTriangleIcon, color: '#eab308' },
+  info:    { tone: 'info',     label: 'Update',  Icon: InfoIcon,          color: '#3b82f6' },
+  success: { tone: 'success',  label: 'Done',    Icon: CheckCircleIcon,   color: '#22c55e' },
+}
+
+const NOTIF_FILTERS = [
+  { id: 'all',           label: 'All' },
+  { id: 'unread',        label: 'Unread' },
+  { id: 'action-needed', label: 'Action needed' },
+  { id: 'billing',       label: 'Billing' },
+  { id: 'change-orders', label: 'Change orders' },
+  { id: 'inspections',   label: 'Inspections' },
+  { id: 'system',        label: 'System' },
+  { id: 'read',          label: 'Read' },
+]
+
+const NOTIF_CATEGORY_LABEL = {
+  billing:         'Billing update',
+  'change-orders': 'Change order update',
+  inspections:     'Inspection update',
+  system:          'System update',
+}
+
+const NOTIF_CATEGORY_ICON = {
+  billing:         DollarSignIcon,
+  'change-orders': FilePenLineIcon,
+  inspections:     BadgeCheckIcon,
+  system:          InfoIcon,
+}
+
+// Derive an operational bucket from the notification message + type. There is
+// no `category` field on the document — this is pure derivation, no schema
+// change. Order matters: billing is checked before change-orders so that a
+// "CO invoiced" message reads as billing, while a "CO approved" message reads
+// as a change-order update.
+function notifCategory(n) {
+  const m = (n.msg || '').toLowerCase()
+  if (/(invoice|bill\b|collection|outstanding|paid|payment)/.test(m)) return 'billing'
+  if (/(change order|\bco-|extras|approved|rejected|revision)/.test(m))  return 'change-orders'
+  if (/(inspection|passed|failed|rough[- ]?in|trim|final)/.test(m))      return 'inspections'
+  return 'system'
+}
+
+function notifMatchesFilter(n, filter) {
+  if (filter === 'all')           return true
+  if (filter === 'unread')        return !n.read
+  if (filter === 'read')          return !!n.read
+  if (filter === 'action-needed') return !n.read && (n.type === 'error' || n.type === 'warn')
+  if (filter === 'billing')       return notifCategory(n) === 'billing'
+  if (filter === 'change-orders') return notifCategory(n) === 'change-orders'
+  if (filter === 'inspections')   return notifCategory(n) === 'inspections'
+  if (filter === 'system')        return notifCategory(n) === 'system'
+  return true
+}
+
+// Firestore Timestamp ({ seconds }), ISO string, or undefined — normalised.
+function notifTimestampMs(n) {
+  const v = n.createdAt
+  if (!v) return null
+  if (v.seconds) return v.seconds * 1000
+  if (typeof v === 'string') {
+    const ms = Date.parse(v)
+    return isNaN(ms) ? null : ms
+  }
+  return null
+}
+
+function fmtNotifTime(n) {
+  const ms = notifTimestampMs(n)
+  if (ms === null) return n.time || ''
+  return new Date(ms).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  })
+}
+
+function notifAgeLabel(n) {
+  const ms = notifTimestampMs(n)
+  if (ms === null) return ''
+  const diff = Date.now() - ms
+  const min = Math.floor(diff / 60000)
+  if (min < 1)  return 'just now'
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24)  return `${hr}h ago`
+  const d = Math.floor(hr / 24)
+  if (d === 1)  return '1d ago'
+  return `${d}d ago`
+}
+
+function notifIsWithinHours(n, hours) {
+  const ms = notifTimestampMs(n)
+  if (ms === null) return false
+  return (Date.now() - ms) / 3600000 <= hours
+}
+
 function Notifications() {
-  const { notifs } = useData()
-  const [notifTab, setNotifTab] = useState('live')
+  const { notifs = [] } = useData()
+  const [filter, setFilter] = useState('all')
 
-  const live     = notifs.filter(n => !n.dismissed)
-  const archived = notifs.filter(n => n.dismissed)
-  const shown    = notifTab === 'live' ? live : archived
-  const unread   = live.filter(n => !n.read).length
+  // Live = not dismissed. Dismiss is the user's "clear" gesture; archived
+  // notifications drop out of view (matches modern notification-center UX).
+  const live = useMemo(() => notifs.filter(n => !n.dismissed), [notifs])
 
+  // KPI counts — derived from `live`, NOT the filtered list.
+  const kpis = useMemo(() => {
+    const unread       = live.filter(n => !n.read).length
+    const actionNeeded = live.filter(n => !n.read && (n.type === 'error' || n.type === 'warn')).length
+    const recent       = live.filter(n => notifIsWithinHours(n, 24)).length
+    const critical     = live.filter(n => n.type === 'error').length
+    return { unread, actionNeeded, recent, critical, total: live.length }
+  }, [live])
+
+  // Chip counts (reflect what would show under each chip).
+  const chipCounts = useMemo(() => {
+    const out = {}
+    NOTIF_FILTERS.forEach(f => { out[f.id] = live.filter(n => notifMatchesFilter(n, f.id)).length })
+    return out
+  }, [live])
+
+  // Visible list — filter + sort: unread first, then newest first within each.
+  const visible = useMemo(() => {
+    return live
+      .filter(n => notifMatchesFilter(n, filter))
+      .slice()
+      .sort((a, b) => {
+        if (!!a.read !== !!b.read) return a.read ? 1 : -1
+        return (notifTimestampMs(b) ?? 0) - (notifTimestampMs(a) ?? 0)
+      })
+  }, [live, filter])
+
+  // Lifecycle mutations — preserved verbatim from prior implementation.
   const markRead = (n) => {
     if (n.read || !n._docId) return
     updateNotification(n._docId, { read: true })
   }
-
-  const dismiss = (e, n) => {
-    e.stopPropagation()
+  const dismiss = (n) => {
     if (!n._docId) return
     updateNotification(n._docId, { dismissed: true, read: true })
   }
-
   const markAll = () => {
     live.filter(n => !n.read && n._docId).forEach(n => updateNotification(n._docId, { read: true }))
   }
 
-  const typeIcon = { error: AlertCircleIcon, warn: AlertTriangleIcon, info: InfoIcon, success: CheckCircleIcon }
-  const typeColor = { error: '#ef4444', warn: '#eab308', info: '#3b82f6', success: '#22c55e' }
+  const filterChips = NOTIF_FILTERS.map(f => ({
+    value: f.id,
+    label: f.label,
+    active: filter === f.id,
+    count: chipCounts[f.id] ?? 0,
+    onClick: () => setFilter(f.id),
+  }))
 
   return (
     <div className="space-y-6">
-      <SectionHeader
-        title="Notifications"
-        sub={`${unread} unread · ${live.length} live · ${archived.length} archived`}
-        action={notifTab === 'live' && unread > 0 && (
-          <Button variant="outline" onClick={markAll} className="gap-2 border-white/20">
-            <CheckIcon size={14} /> Mark All Read
-          </Button>
+      <PageHeader
+        eyebrow="Notifications"
+        title="Notification center"
+        subtitle="Recent activity across active jobs — read, action, or clear from the queue."
+        meta={
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+              />
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+            </span>
+            <span>{kpis.total} live</span>
+            {kpis.unread > 0 && <span>{kpis.unread} unread</span>}
+            {kpis.actionNeeded > 0 && (
+              <span className="text-amber-300">{kpis.actionNeeded} need attention</span>
+            )}
+          </>
+        }
+        actions={
+          kpis.unread > 0 && (
+            <button
+              type="button"
+              onClick={markAll}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            >
+              <CheckIcon size={13} /> Mark all read
+            </button>
+          )
+        }
+      />
+
+      {/* KPI strip — 5 tiles */}
+      <section
+        className="grid gap-2 sm:gap-3"
+        aria-label="Notification pipeline"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
+      >
+        <MetricTile
+          label="Unread"
+          value={kpis.unread}
+          Icon={BellIcon}
+          emphasis={kpis.unread > 0 ? 'warning' : 'success'}
+          sub={kpis.unread > 0 ? 'Review and clear' : 'All caught up'}
+        />
+        <MetricTile
+          label="Action Needed"
+          value={kpis.actionNeeded}
+          Icon={TriangleAlertIcon}
+          emphasis={kpis.actionNeeded > 0 ? 'critical' : 'success'}
+          sub={kpis.actionNeeded > 0 ? 'Warning + error' : 'Nothing flagged'}
+        />
+        <MetricTile
+          label="Recent Updates"
+          value={kpis.recent}
+          Icon={ActivityIcon}
+          emphasis={kpis.recent > 0 ? 'default' : 'mute'}
+          sub="Last 24 hours"
+        />
+        <MetricTile
+          label="Critical"
+          value={kpis.critical}
+          Icon={AlertCircleIcon}
+          emphasis={kpis.critical > 0 ? 'critical' : 'success'}
+          sub={kpis.critical > 0 ? 'System errors' : 'No errors'}
+        />
+        <MetricTile
+          label="Total Live"
+          value={kpis.total}
+          Icon={ClipboardListIcon}
+          emphasis={kpis.total > 0 ? 'default' : 'success'}
+          sub={`${notifs.length} ever`}
+        />
+      </section>
+
+      {/* Filters */}
+      <FilterBar
+        chips={filterChips}
+        trailing={filter !== 'all' && (
+          <button
+            type="button"
+            onClick={() => setFilter('all')}
+            className="text-[11px] font-semibold px-2.5 py-2 rounded-lg border border-white/10 text-zinc-300 hover:text-white"
+          >
+            Clear
+          </button>
         )}
       />
 
-      <div className="flex gap-1 p-1 rounded-lg bg-white/5 w-fit">
-        {[['live', 'Live'], ['archived', 'Archived']].map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setNotifTab(id)}
-            className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
-            style={notifTab === id ? { backgroundColor: O, color: '#fff' } : { color: '#9ca3af' }}
-          >
-            {label}
-            {id === 'live' && unread > 0 && (
-              <span className="ml-1.5 text-xs bg-red-500 text-white rounded-full px-1.5 py-0.5">{unread}</span>
-            )}
-          </button>
-        ))}
+      {/* Notification queue */}
+      <DataPanel
+        title="Recent activity"
+        description={
+          visible.length === 0
+            ? 'No notifications match the current filter.'
+            : `${visible.length} of ${live.length} shown`
+        }
+        Icon={BellIcon}
+        padding="none"
+      >
+        {visible.length === 0 ? (
+          <div className="p-5">
+            <NotificationsEmptyState filter={filter} />
+          </div>
+        ) : (
+          <ul className="divide-y divide-white/5">
+            {visible.map(n => (
+              <li key={n._docId || n.id || n.msg}>
+                <NotificationCard n={n} onRead={markRead} onDismiss={dismiss} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </DataPanel>
+    </div>
+  )
+}
+
+function NotificationsEmptyState({ filter }) {
+  if (filter === 'unread')        return <AllClearState title="All caught up" description="No unread notifications." />
+  if (filter === 'action-needed') return <AllClearState title="Nothing needs attention" description="No warning or error notifications outstanding." />
+  if (filter === 'billing')       return <EmptyState   title="No billing notifications" description="Billing updates will appear here when posted." />
+  if (filter === 'change-orders') return <EmptyState   title="No change-order notifications" description="CO approvals and revisions land here." />
+  if (filter === 'inspections')   return <EmptyState   title="No inspection notifications" description="Inspection results and rework alerts land here." />
+  if (filter === 'system')        return <EmptyState   title="No system notifications" description="System updates and errors land here." />
+  if (filter === 'read')          return <EmptyState   title="Nothing read yet" description="Notifications you mark read will move here." />
+  return <AllClearState title="No notifications" description="You're all caught up." />
+}
+
+function NotificationCard({ n, onRead, onDismiss }) {
+  const meta = NOTIF_TYPE_META[n.type] || NOTIF_TYPE_META.info
+  const cat = notifCategory(n)
+  const CatIcon = NOTIF_CATEGORY_ICON[cat] || InfoIcon
+  const TypeIcon = meta.Icon
+
+  // Outer is a clickable div (not <button>) so we can nest the <button>
+  // dismiss action without invalid HTML. Keyboard support via role/tabIndex.
+  const handleKey = (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button')) {
+      e.preventDefault()
+      onRead(n)
+    }
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={(e) => { if (!e.target.closest('button')) onRead(n) }}
+      onKeyDown={handleKey}
+      className={`flex items-start gap-3 px-4 py-3.5 sm:px-5 sm:py-4 cursor-pointer transition-colors hover:bg-white/[0.025] focus:outline-none focus:bg-white/[0.04] ${n.read ? 'opacity-60' : ''}`}
+      style={{ borderLeft: `3px solid ${n.read ? 'transparent' : meta.color}` }}
+      aria-label={n.read ? `Notification: ${n.msg}` : `Unread notification: ${n.msg}`}
+    >
+      {/* Type icon tile */}
+      <div
+        className="shrink-0 mt-0.5 flex items-center justify-center rounded-lg"
+        style={{ width: 32, height: 32, backgroundColor: meta.color + '22', color: meta.color }}
+      >
+        <TypeIcon size={16} strokeWidth={2} />
       </div>
 
-      <div className="space-y-2">
-        {shown.length === 0 && (
-          <p className="text-sm text-muted-foreground py-8 text-center">
-            {notifTab === 'live' ? 'No live notifications' : 'No archived notifications'}
-          </p>
+      {/* Body */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+          <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
+          <Pill tone="neutral" size="xs" Icon={CatIcon}>{NOTIF_CATEGORY_LABEL[cat]}</Pill>
+          <span className="text-[10px] text-zinc-500">·</span>
+          <span className="text-[10px] text-zinc-400">{notifAgeLabel(n)}</span>
+        </div>
+        <p className={`text-sm leading-snug ${n.read ? 'text-zinc-300' : 'font-semibold text-white'}`}>
+          {n.msg}
+        </p>
+        {fmtNotifTime(n) && (
+          <p className="text-[11px] text-zinc-500 mt-0.5">{fmtNotifTime(n)}</p>
         )}
-        {shown.map((n, i) => {
-          const Icon = typeIcon[n.type] || InfoIcon
-          const color = typeColor[n.type] || '#6b7280'
-          return (
-            <div
-              key={n._docId || n.id || i}
-              className={`flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer ${n.read ? 'border-white/5 bg-white/2 opacity-70' : 'border-white/15 bg-white/8'}`}
-              onClick={() => markRead(n)}>
-              <div className="mt-0.5 p-2 rounded-lg" style={{ backgroundColor: color + '22' }}>
-                <Icon size={14} style={{ color }} />
-              </div>
-              <div className="flex-1">
-                <p className={`text-sm ${n.read ? 'text-muted-foreground' : 'font-medium'}`}>{n.msg}</p>
-                <p className="text-xs text-muted-foreground mt-1">{n.time || n.createdAt?.toDate?.()?.toLocaleDateString?.() || ''}</p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {!n.read && <div className="w-2 h-2 rounded-full mt-2" style={{ backgroundColor: O }} />}
-                {notifTab === 'live' && (
-                  <button
-                    onClick={(e) => dismiss(e, n)}
-                    className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
-                    title="Dismiss"
-                  >
-                    <XIcon size={13} />
-                  </button>
-                )}
-              </div>
-            </div>
-          )
-        })}
+      </div>
+
+      {/* Right column: unread dot + dismiss */}
+      <div className="flex items-start gap-1.5 shrink-0">
+        {!n.read && (
+          <span
+            className="w-2 h-2 rounded-full mt-2"
+            style={{ backgroundColor: O }}
+            aria-label="Unread"
+          />
+        )}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDismiss(n) }}
+          className="h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors shrink-0"
+          title="Clear notification"
+          aria-label="Clear notification"
+        >
+          <XIcon size={14} />
+        </button>
       </div>
     </div>
   )
