@@ -11,7 +11,6 @@ import {
   addExtra, updateNotification, updateJob, updateExtra,
   sendExtraToQBS, approveExtra, rejectExtra,
   passInspection, failInspection, createJob, addSubmit, updatePermit,
-  addUrgentItem, resolveUrgentItem,
   addMaterial, updateMaterial, useHistory, addHistory,
 } from './hooks/useFirestore'
 import { Button } from '@/components/ui/button'
@@ -41,7 +40,6 @@ import {
   TrophyIcon,
   BrainCircuitIcon,
   MoreHorizontalIcon,
-  ReceiptIcon,
   // Phase 3 QA — standardized nav icons
   GaugeIcon, RadarIcon, UserRoundCogIcon, TriangleAlertIcon,
   FilePenLineIcon, ScanSearchIcon, HardHatIcon, BadgeCheckIcon,
@@ -98,7 +96,6 @@ const NAV_SECTIONS = [
     heading: 'Cash Flow',
     items: [
       { id: 'billing-queue',   label: 'Billing Queue',   Icon: DollarSignIcon },
-      { id: 'billing',         label: 'Billing',         Icon: ReceiptIcon },
       { id: 'extras',          label: 'Change Orders',   Icon: FilePenLineIcon },
       { id: 'invoice-auditor', label: 'Invoice Auditor', Icon: ScanSearchIcon },
     ],
@@ -688,170 +685,6 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
   )
 }
 
-
-// ── Urgent Items ──────────────────────────────────────────────────────────────
-
-function UrgentItems() {
-  const { urgentItems, jobs } = useData()
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ jobId: '', priority: 'HIGH', desc: '', flaggedBy: '' })
-  const [submitting, setSubmitting] = useState(false)
-
-  const sorted = [...(urgentItems || [])].sort((a, b) => {
-    const pa = { CRITICAL: 0, HIGH: 1, MEDIUM: 2 }
-    if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
-    return (pa[a.priority] ?? 3) - (pa[b.priority] ?? 3)
-  })
-  const activeCount = sorted.filter(i => !i.resolved).length
-
-  const pStyle = {
-    CRITICAL: { border: '#ef4444', bg: '#ef444411', lc: '#ef4444' },
-    HIGH:     { border: '#f97316', bg: '#f9731611', lc: '#f97316' },
-    MEDIUM:   { border: '#eab308', bg: '#eab30811', lc: '#eab308' },
-  }
-
-  const handleAdd = async () => {
-    if (!form.desc.trim() || !form.flaggedBy.trim()) return
-    setSubmitting(true)
-    await addUrgentItem({ jobId: form.jobId || null, priority: form.priority, desc: form.desc.trim(), flaggedBy: form.flaggedBy.trim() })
-    setForm({ jobId: '', priority: 'HIGH', desc: '', flaggedBy: '' })
-    setShowForm(false)
-    setSubmitting(false)
-  }
-
-  return (
-    <Card className="border-red-500/30 mb-0" style={{ borderColor: '#ef444433' }}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <AlertCircleIcon size={16} color="#ef4444" />
-            Urgent Items
-            {activeCount > 0 && (
-              <span className="text-xs font-black px-2 py-0.5 rounded-full animate-pulse"
-                style={{ backgroundColor: '#ef444422', color: '#ef4444' }}>
-                {activeCount} ACTIVE
-              </span>
-            )}
-            {activeCount === 0 && sorted.length === 0 && (
-              <span className="text-xs text-muted-foreground font-normal">— Priority queue for field flags</span>
-            )}
-          </CardTitle>
-          <Button size="sm" className="gap-1.5 text-xs"
-            style={{ backgroundColor: '#ef444422', color: '#ef4444', border: '1px solid #ef444444' }}
-            onClick={() => setShowForm(v => !v)}>
-            <PlusIcon size={11} /> Flag Urgent Item
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2 pt-0">
-        {showForm && (
-          <div className="p-4 rounded-xl border mb-3 space-y-3" style={{ borderColor: '#ef444433', backgroundColor: '#ef444408' }}>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Job (optional)</label>
-                <Select value={form.jobId} onValueChange={v => setForm(f => ({ ...f, jobId: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 w-full h-8 text-xs">
-                    <SelectValue placeholder="General" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">General / No specific job</SelectItem>
-                    {(jobs || []).filter(j => !['complete','completed'].includes(j.status)).map(j => (
-                      <SelectItem key={j.id} value={j.id}>{j.id} — {j.name || j.client || j.address || j.id}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Priority *</label>
-                <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 w-full h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CRITICAL">CRITICAL — Stop everything</SelectItem>
-                    <SelectItem value="HIGH">HIGH — Today</SelectItem>
-                    <SelectItem value="MEDIUM">MEDIUM — This week</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Flagged By *</label>
-                <Input className="bg-white/5 border-white/20 h-8 text-xs" placeholder="Your name"
-                  value={form.flaggedBy} onChange={e => setForm(f => ({ ...f, flaggedBy: e.target.value }))} />
-              </div>
-              <div className="flex items-end">
-                <Button className="w-full h-8 text-xs text-white" style={{ backgroundColor: '#ef4444' }}
-                  onClick={handleAdd} disabled={submitting || !form.desc.trim() || !form.flaggedBy.trim()}>
-                  {submitting ? 'Flagging…' : 'Flag It'}
-                </Button>
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Description *</label>
-              <Input className="bg-white/5 border-white/20 text-xs" placeholder="Describe the urgent issue clearly..."
-                value={form.desc} onChange={e => setForm(f => ({ ...f, desc: e.target.value }))} />
-            </div>
-          </div>
-        )}
-
-        {sorted.length === 0 && !showForm && (
-          <p className="text-sm text-muted-foreground text-center py-3">No urgent items flagged — all clear.</p>
-        )}
-
-        {sorted.map((item, idx) => {
-          const ps = pStyle[item.priority] || pStyle.MEDIUM
-          const isCritical = item.priority === 'CRITICAL' && !item.resolved
-          const ts = item.createdAt?.toDate?.()
-            ? item.createdAt.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-            : 'Just now'
-          return (
-            <div key={item._docId || idx}
-              className={`flex items-start justify-between p-3 rounded-xl border transition-all ${item.resolved ? 'opacity-40' : ''}`}
-              style={{
-                borderColor: item.resolved ? '#ffffff15' : ps.border + (isCritical ? 'aa' : '55'),
-                backgroundColor: item.resolved ? 'transparent' : ps.bg,
-                borderWidth: isCritical ? '2px' : '1px',
-              }}>
-              <div className="flex items-start gap-3 flex-1 min-w-0">
-                {isCritical && (
-                  <span className="animate-pulse w-2.5 h-2.5 rounded-full mt-1 shrink-0"
-                    style={{ backgroundColor: '#ef4444', boxShadow: '0 0 6px #ef4444' }} />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-xs font-black px-2 py-0.5 rounded-full"
-                      style={{ backgroundColor: ps.border + '22', color: ps.lc, border: `1px solid ${ps.border}44` }}>
-                      {item.priority}
-                    </span>
-                    {item.jobId && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-white/10">{item.jobId}</span>
-                    )}
-                    <span className="text-xs text-muted-foreground">by <strong>{item.flaggedBy}</strong></span>
-                    <span className="text-xs text-muted-foreground">{ts}</span>
-                  </div>
-                  <p className={`text-sm leading-snug ${item.resolved ? 'line-through text-muted-foreground' : ''}`}>
-                    {item.desc}
-                  </p>
-                </div>
-              </div>
-              <button
-                className="ml-3 shrink-0 flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all"
-                style={{
-                  backgroundColor: item.resolved ? '#22c55e22' : '#ffffff0d',
-                  color: item.resolved ? '#22c55e' : '#6b7280',
-                  border: item.resolved ? '1px solid #22c55e44' : '1px solid #ffffff15',
-                }}
-                onClick={() => item._docId && resolveUrgentItem(item._docId, !item.resolved)}>
-                {item.resolved
-                  ? <><CheckIcon size={10} /> Resolved</>
-                  : 'Mark Done'}
-              </button>
-            </div>
-          )
-        })}
-      </CardContent>
-    </Card>
-  )
-}
-
 // ── Tab: Morning Briefing ─────────────────────────────────────────────────────
 
 function MorningBriefing() {
@@ -1291,185 +1124,6 @@ function JobStatus() {
 
 function Extras() {
   return <ChangeOrdersComponent />
-}
-
-// ── Tab: Billing ──────────────────────────────────────────────────────────────
-
-function parseInvoiceDate(str) {
-  if (!str) return null
-  const [m, d, y] = str.split('/')
-  if (!m || !d || !y) return null
-  return new Date(parseInt(y), parseInt(m) - 1, parseInt(d))
-}
-
-function getDaysAging(dateStr) {
-  const date = parseInvoiceDate(dateStr)
-  if (!date) return null
-  return Math.floor((Date.now() - date.getTime()) / 86400000)
-}
-
-const AGING_BUCKETS = [
-  { label: '0–30 days',  min: 0,  max: 30,  color: '#22c55e' },
-  { label: '31–60 days', min: 31, max: 60,  color: '#eab308' },
-  { label: '61–90 days', min: 61, max: 90,  color: '#f97316' },
-  { label: '90+ days',   min: 91, max: Infinity, color: '#ef4444' },
-]
-
-function Billing() {
-  const { jobs } = useData()
-  const [billingTab, setBillingTab] = useState('invoices')
-  const sorted = [...jobs].sort((a, b) => jobName(a).localeCompare(jobName(b)))
-
-  const counts = {
-    'not-invoiced': sorted.filter(j => (j.billingStatus || 'not-invoiced') === 'not-invoiced').length,
-    'invoiced':     sorted.filter(j => j.billingStatus === 'invoiced').length,
-    'partial-pay':  sorted.filter(j => j.billingStatus === 'partial-pay').length,
-    'paid':         sorted.filter(j => j.billingStatus === 'paid').length,
-  }
-
-  const outstandingJobs = sorted.filter(j => j.billingStatus === 'invoiced' || j.billingStatus === 'partial-pay')
-  const overdue60 = outstandingJobs.filter(j => (getDaysAging(j.invoiceDate) ?? 0) > 60).length
-
-  return (
-    <div className="space-y-6">
-      <SectionHeader title="Billing" sub="Invoice tracking — QB manages the money" />
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {BILLING_STATUSES.map(s => (
-          <StatCard
-            key={s}
-            label={BILLING_STATUS_LABEL[s]}
-            value={counts[s]}
-            sub="jobs"
-            Icon={s === 'paid' ? CheckCircleIcon : s === 'invoiced' ? FileTextIcon : s === 'partial-pay' ? ClockIcon : AlertCircleIcon}
-          />
-        ))}
-      </div>
-
-      {/* Sub-tabs */}
-      <div className="flex gap-2">
-        {[['invoices','All Invoices'],['collections','Collections']].map(([id, label]) => (
-          <button key={id} onClick={() => setBillingTab(id)}
-            className="px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-2"
-            style={{ backgroundColor: billingTab === id ? O : 'transparent', color: billingTab === id ? '#fff' : '#6b7280', border: '1px solid', borderColor: billingTab === id ? O : '#ffffff22' }}>
-            {label}
-            {id === 'collections' && overdue60 > 0 && (
-              <span className="text-xs font-black px-1.5 py-0.5 rounded-full bg-red-500 text-white">{overdue60}</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {billingTab === 'invoices' && (
-        <Card className="border-white/10">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-white/10 text-muted-foreground">
-                    <th className="text-left p-4 font-medium">Job</th>
-                    <th className="text-left p-4 font-medium">Client</th>
-                    <th className="text-left p-4 font-medium">Invoice #</th>
-                    <th className="text-left p-4 font-medium">Invoice Date</th>
-                    <th className="text-left p-4 font-medium">QBS PM</th>
-                    <th className="text-left p-4 font-medium">Status</th>
-                    <th className="text-left p-4 font-medium">PDF</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {sorted.map(j => (
-                    <tr key={j.id} className="hover:bg-white/5 transition-colors">
-                      <td className="p-4">
-                        <p className="font-semibold text-base" style={{ color: O }}>{jobName(j)}</p>
-                        <p className="text-xs text-muted-foreground">{j.id}</p>
-                      </td>
-                      <td className="p-4 text-muted-foreground text-sm">{j.client}</td>
-                      <td className="p-4 text-sm">{j.invoiceNum || <span className="text-muted-foreground/40">—</span>}</td>
-                      <td className="p-4 text-muted-foreground text-sm">{j.invoiceDate || <span className="text-muted-foreground/40">—</span>}</td>
-                      <td className="p-4 text-sm">{j.qbsPM || <span className="text-muted-foreground/40">—</span>}</td>
-                      <td className="p-4"><BillingStatusSelect job={j} /></td>
-                      <td className="p-4">
-                        {j.invoiceNum && (
-                          <Button size="sm" variant="outline"
-                            className="h-7 text-xs gap-1.5 border-white/20"
-                            onClick={() => generateInvoicePdf(j)}>
-                            <DownloadIcon size={11} /> PDF
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {billingTab === 'collections' && (
-        <div className="space-y-6">
-          {AGING_BUCKETS.map(bucket => {
-            const bucketJobs = outstandingJobs.filter(j => {
-              const age = getDaysAging(j.invoiceDate) ?? 0
-              return age >= bucket.min && age <= bucket.max
-            })
-            if (bucketJobs.length === 0) return null
-            return (
-              <div key={bucket.label}>
-                <div className="flex items-center gap-2 mb-3">
-                  <h3 className="font-bold text-sm" style={{ color: bucket.color }}>{bucket.label}</h3>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-bold text-white" style={{ backgroundColor: bucket.color }}>
-                    {bucketJobs.length}
-                  </span>
-                </div>
-                <Card className="border-white/10">
-                  <CardContent className="p-0">
-                    <div className="divide-y divide-white/5">
-                      {bucketJobs.map(j => {
-                        const age = getDaysAging(j.invoiceDate) ?? 0
-                        return (
-                          <div key={j.id} className="flex items-center gap-4 p-4">
-                            <div className="flex-1">
-                              <p className="font-bold text-sm" style={{ color: O }}>{jobName(j)}</p>
-                              <p className="text-xs text-muted-foreground">{j.client} · Invoice #{j.invoiceNum || '—'} · {j.invoiceDate || '—'}</p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="text-xs font-bold" style={{ color: bucket.color }}>{age} days</p>
-                              <p className="text-xs text-muted-foreground">{j.qbsPM || '—'}</p>
-                            </div>
-                            <Button size="sm" variant="outline"
-                              className="h-7 text-xs gap-1 border-white/20 shrink-0"
-                              style={{ color: bucket.color, borderColor: bucket.color + '55' }}
-                              onClick={async () => {
-                                if (j._docId) {
-                                  const { addDoc, collection, serverTimestamp } = await import('firebase/firestore')
-                                  const { db } = await import('./firebase')
-                                  await addDoc(collection(db, 'notifications'), {
-                                    type: 'warn',
-                                    msg: `Collections follow-up: ${jobName(j)} (${j.id}) — Invoice #${j.invoiceNum || '—'} outstanding ${getDaysAging(j.invoiceDate) ?? 0} days. QBS PM: ${j.qbsPM || '—'}`,
-                                    read: false,
-                                    createdAt: serverTimestamp(),
-                                  })
-                                }
-                              }}>
-                              <SendIcon size={11} /> Follow-Up
-                            </Button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )
-          })}
-          {outstandingJobs.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground text-sm">No outstanding invoices</div>
-          )}
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Tab: Inspections ──────────────────────────────────────────────────────────
@@ -2903,7 +2557,6 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     'morning':       wrap(<MorningBriefing />),
     'jobs':          wrap(<JobStatus />),
     'extras':        wrap(<Extras />),
-    'billing':       wrap(<Billing />),
     'inspections':   wrap(<Inspections />),
     'subs':          wrap(<SubsTab />),
     'materials':     wrap(<Materials />),
