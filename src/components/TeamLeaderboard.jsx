@@ -9,6 +9,7 @@ import {
   TrophyIcon, StarIcon, UserPlusIcon, ZapIcon, XIcon,
   ClipboardListIcon, ShieldCheckIcon, CameraIcon, TrendingUpIcon,
   ChevronDownIcon, ChevronUpIcon, LinkIcon, CheckIcon, SettingsIcon,
+  TargetIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -323,10 +324,10 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
             <span>✅ {auto.taskCount} tasks completed (+{auto.taskCount * PTS.task})</span>
             {auto.inspReadyCount > 0 && <span className="text-green-600">🔍 {auto.inspReadyCount} inspection-ready flags (+{auto.inspReadyCount * PTS.inspReady})</span>}
             {auto.photoCount > 0 && <span>📷 {auto.photoCount} photo reports (+{auto.photoCount * PTS.photo})</span>}
-            {auto.noBlockerCount > 0 && <span>⚡ {auto.noBlockerCount} no-blocker days (+{auto.noBlockerCount * PTS.noBlocker})</span>}
+            {auto.noBlockerCount > 0 && <span className="inline-flex items-center gap-1"><ZapIcon size={11} /> {auto.noBlockerCount} no-blocker days (+{auto.noBlockerCount * PTS.noBlocker})</span>}
             {(man.googleReviews || 0) > 0 && <span className="text-yellow-500">⭐ {man.googleReviews} Google reviews (+{man.googleReviews * PTS.review})</span>}
             {(man.referrals || 0) > 0 && <span className="text-green-500">👥 {man.referrals} referrals (+{man.referrals * PTS.referral})</span>}
-            {(man.bonusPoints || 0) > 0 && <span style={{ color: O }}>🎯 Bonus: +{man.bonusPoints}{man.bonusNote ? ` (${man.bonusNote})` : ''}</span>}
+            {(man.bonusPoints || 0) > 0 && <span className="inline-flex items-center gap-1" style={{ color: O }}><TargetIcon size={11} /> Bonus: +{man.bonusPoints}{man.bonusNote ? ` (${man.bonusNote})` : ''}</span>}
           </div>
         </div>
       )}
@@ -453,10 +454,15 @@ export default function TeamLeaderboard() {
             style={{ backgroundColor: showUrlEdit ? O + '22' : '#ffffff11', color: showUrlEdit ? O : '#6b7280' }}>
             <SettingsIcon size={14} />
           </button>
-          <div className="px-3 py-1 rounded-full text-xs font-bold"
-            style={{ backgroundColor: O + '22', color: O, border: `1px solid ${O}44` }}>
-            ● Live
-          </div>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+            />
+            <span className="tracking-wider text-[10px] uppercase font-semibold" style={{ color: '#22c55e' }}>
+              Live
+            </span>
+          </span>
         </div>
       </div>
 

@@ -2448,7 +2448,11 @@ function Materials() {
                     <div className="flex items-center gap-3 mb-1 flex-wrap">
                       <span className="font-semibold text-base truncate">{m.name || m.item}</span>
                       <span className="text-xs font-bold shrink-0" style={{ color: O }}>{m.jobId || m.job || '—'}</span>
-                      {od && <span className="text-xs font-bold text-red-400">⚠ OVERDUE</span>}
+                      {od && (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-red-400">
+                          <AlertTriangleIcon size={11} /> OVERDUE
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                       <span>{m.qty} {m.unit}</span>
