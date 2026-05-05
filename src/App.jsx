@@ -65,6 +65,10 @@ import {
   PageHeader, MetricTile, DataPanel, Pill,
   EmptyState, AllClearState, FilterBar,
 } from './components/shared'
+// daysSince is defined locally in this file with identical semantics, so we
+// don't re-import it from agent/scoring (would be a duplicate declaration).
+import { classifyRisk, hasFailedInspection, isBillingReady } from './agent/scoring'
+import { ZONES, getZoneId } from './agent/zones'
 import { generateInvoicePdf } from './lib/generateInvoicePdf'
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
@@ -880,49 +884,212 @@ function MorningBriefing() {
 
 // ── Tab: Job Status ───────────────────────────────────────────────────────────
 
-function JobStatus() {
-  const { jobs, subs } = useData()
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [expanded, setExpanded] = useState(null)
-  const [showNewJob, setShowNewJob] = useState(false)
-  const [jobForm, setJobForm] = useState({ id: '', address: '', city: '', client: '', type: 'Full MEP Renovation', pm: 'Blake Neblett', target: '', permitNumber: '', subElectrical: '', subPlumbing: '', subHvac: '' })
-  const [creating, setCreating] = useState(false)
+const JOB_FILTERS = [
+  { id: 'all',          label: 'All' },
+  { id: 'active',       label: 'Active' },
+  { id: 'complete',     label: 'Complete' },
+  { id: 'at-risk',      label: 'At risk' },
+  { id: 'needs-action', label: 'Needs action' },
+  { id: 'blocked',      label: 'Blocked' },
+  { id: 'stale',        label: 'Stale' },
+]
 
-  const elecSubs = (subs || []).filter(s => s.trade === 'Electrical')
+const JOB_FORM_INITIAL = {
+  id: '', address: '', city: '', client: '', type: 'Full MEP Renovation',
+  pm: 'Blake Neblett', target: '', permitNumber: '',
+  subElectrical: '', subPlumbing: '', subHvac: '',
+}
+
+function isJobComplete(j) {
+  return ['complete', 'completed'].includes(j.status)
+}
+
+function jobStaleness(j) {
+  return daysSince(j.lastStatusChange || j.start)
+}
+
+function jobMatchesFilter(j, filter) {
+  if (filter === 'all')      return true
+  if (filter === 'active')   return !isJobComplete(j)
+  if (filter === 'complete') return isJobComplete(j)
+  if (filter === 'blocked')  return !isJobComplete(j) && (j.status === 'blocked' || j.status === 'hold' || hasFailedInspection(j))
+  if (filter === 'needs-action') return !isJobComplete(j) && (j.status === 'needs-action' || hasFailedInspection(j))
+  if (filter === 'stale') {
+    if (isJobComplete(j)) return false
+    const s = jobStaleness(j)
+    return s !== null && s >= 7
+  }
+  if (filter === 'at-risk') {
+    if (isJobComplete(j)) return false
+    const r = classifyRisk(j)
+    return r?.level === 'critical'
+        || r?.level === 'warning'
+        || j.status === 'at-risk'
+        || j.status === 'needs-action'
+        || j.status === 'blocked'
+        || j.status === 'hold'
+        || hasFailedInspection(j)
+  }
+  return true
+}
+
+// Job-level next-action microcopy. Operational language only.
+function jobNextAction(j) {
+  if (isJobComplete(j))            return 'Closeout'
+  if (hasFailedInspection(j))      return 'Coordinate rework — inspection failed'
+  if (j.status === 'blocked')      return 'Unblock job'
+  if (j.status === 'hold')         return 'Release hold'
+  if (j.status === 'needs-action') return 'Resolve open item'
+  const risk = classifyRisk(j)
+  if (risk?.level === 'critical')  return 'Triage — high risk'
+  const stale = jobStaleness(j)
+  if (stale !== null && stale >= 7) return 'Field update needed'
+  if (stale !== null && stale >= 3) return 'Daily status check-in'
+  if (isBillingReady(j))           return 'Submit invoice — milestone earned'
+  return 'Continue scheduled work'
+}
+
+// Job-level risk pill metadata
+function jobRiskMeta(j) {
+  if (isJobComplete(j)) return null
+  const r = classifyRisk(j)
+  if (!r) return null
+  if (r.level === 'critical') return { tone: 'critical', label: 'High risk' }
+  if (r.level === 'warning')  return { tone: 'warning',  label: 'Medium risk' }
+  if (r.level === 'info')     return { tone: 'info',     label: 'Watch' }
+  return null
+}
+
+function fmtJobDate(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function JobStatus() {
+  const { jobs = [], subs = [] } = useData()
+  const [search, setSearch]         = useState('')
+  const [filter, setFilter]         = useState('all')
+  const [pmFilter, setPmFilter]     = useState('all')
+  const [zoneFilter, setZoneFilter] = useState('all')
+  const [expanded, setExpanded]     = useState(null)
+  const [showNewJob, setShowNewJob] = useState(false)
+  const [jobForm, setJobForm]       = useState(JOB_FORM_INITIAL)
+  const [creating, setCreating]     = useState(false)
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const enriched = useMemo(() => jobs.map(j => ({
+    j,
+    complete: isJobComplete(j),
+    risk:     classifyRisk(j),
+    stale:    jobStaleness(j),
+    failed:   hasFailedInspection(j),
+    billRdy:  isBillingReady(j),
+    zoneId:   getZoneId(j),
+  })), [jobs])
+
+  const kpis = useMemo(() => {
+    const active        = enriched.filter(e => !e.complete).length
+    const completed     = enriched.filter(e => e.complete).length
+    const atRisk        = enriched.filter(e => !e.complete && (
+      e.risk?.level === 'critical' || e.risk?.level === 'warning' ||
+      ['at-risk', 'needs-action', 'blocked', 'hold'].includes(e.j.status) ||
+      e.failed
+    )).length
+    const needsAction   = enriched.filter(e => !e.complete && (e.j.status === 'needs-action' || e.failed)).length
+    const blockedStale  = enriched.filter(e => !e.complete && (
+      e.j.status === 'blocked' || e.j.status === 'hold' || e.failed ||
+      (e.stale !== null && e.stale >= 7)
+    )).length
+    return { active, completed, atRisk, needsAction, blockedStale, total: enriched.length }
+  }, [enriched])
+
+  // Chip counts (computed against the unfiltered set so users see real depth).
+  const chipCounts = useMemo(() => {
+    const out = {}
+    JOB_FILTERS.forEach(f => { out[f.id] = enriched.filter(e => jobMatchesFilter(e.j, f.id)).length })
+    return out
+  }, [enriched])
+
+  // Apply chip + PM + zone + search; sort: at-risk first, then stale, then alpha.
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return enriched
+      .filter(e => jobMatchesFilter(e.j, filter))
+      .filter(e => pmFilter === 'all' || e.j.pm === pmFilter)
+      .filter(e => zoneFilter === 'all' || e.zoneId === zoneFilter)
+      .filter(e => {
+        if (!q) return true
+        return (e.j.id || '').toLowerCase().includes(q)
+            || (e.j.address || '').toLowerCase().includes(q)
+            || (e.j.client || '').toLowerCase().includes(q)
+            || (e.j.name || '').toLowerCase().includes(q)
+            || (e.j.pm || '').toLowerCase().includes(q)
+      })
+      .slice()
+      .sort((a, b) => {
+        // Active before complete, then risk severity, then stale, then alpha.
+        if (a.complete !== b.complete) return a.complete ? 1 : -1
+        const rankRisk = e =>
+          e.risk?.level === 'critical' ? 0 :
+          e.risk?.level === 'warning'  ? 1 :
+          e.failed                     ? 1 :
+          e.j.status === 'blocked'     ? 1 :
+          e.j.status === 'hold'        ? 2 : 3
+        const r = rankRisk(a) - rankRisk(b)
+        if (r !== 0) return r
+        const aStale = a.stale ?? -1
+        const bStale = b.stale ?? -1
+        if (aStale !== bStale) return bStale - aStale
+        return jobName(a.j).localeCompare(jobName(b.j))
+      })
+  }, [enriched, filter, pmFilter, zoneFilter, search])
+
+  // PM list (only PMs that own at least one job in the data, sorted).
+  const pmOptions = useMemo(() => {
+    const set = new Set()
+    jobs.forEach(j => { if (j.pm) set.add(j.pm) })
+    return Array.from(set).sort()
+  }, [jobs])
+
+  const filterChips = JOB_FILTERS.map(f => ({
+    value: f.id,
+    label: f.label,
+    active: filter === f.id,
+    count: chipCounts[f.id] ?? 0,
+    onClick: () => setFilter(f.id),
+  }))
+
+  const hasActiveFilters = filter !== 'all' || pmFilter !== 'all' || zoneFilter !== 'all' || search.trim() !== ''
+
+  // ── New-job mutation (preserved verbatim — same createJob payload shape) ──
+  const elecSubs  = (subs || []).filter(s => s.trade === 'Electrical')
   const plumbSubs = (subs || []).filter(s => s.trade === 'Plumbing')
   const hvacSubs  = (subs || []).filter(s => s.trade === 'HVAC')
-
-  const filtered = jobs
-    .filter(j => {
-      const q = search.toLowerCase()
-      const match = j.id.toLowerCase().includes(q) || j.address.toLowerCase().includes(q) || j.client.toLowerCase().includes(q) || jobName(j).toLowerCase().includes(q)
-      const statusMatch = statusFilter === 'all' || j.status === statusFilter
-      return match && statusMatch
-    })
-    .sort((a, b) => jobName(a).localeCompare(jobName(b)))
 
   const handleCreateJob = async () => {
     if (!jobForm.id || !jobForm.address || !jobForm.client) return
     setCreating(true)
     await createJob({
-      id: jobForm.id,
-      address: jobForm.address,
-      city: jobForm.city,
-      client: jobForm.client,
-      type: jobForm.type,
-      pm: jobForm.pm,
-      status: 'active',
-      progress: 0,
-      extras: 0,
-      tenantId: 'qbs',
-      lead: '',
-      start: new Date().toISOString().slice(0, 10),
-      target: jobForm.target || '',
-      county: '',
-      billingStatus: 'not-invoiced',
+      id:           jobForm.id,
+      address:      jobForm.address,
+      city:         jobForm.city,
+      client:       jobForm.client,
+      type:         jobForm.type,
+      pm:           jobForm.pm,
+      status:       'active',
+      progress:     0,
+      extras:       0,
+      tenantId:     'qbs',
+      lead:         '',
+      start:        new Date().toISOString().slice(0, 10),
+      target:       jobForm.target || '',
+      county:       '',
+      billingStatus:'not-invoiced',
       permitNumber: jobForm.permitNumber || '',
-      subs: { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
+      subs:    { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
       permits: { electrical: 'pending', plumbing: 'pending', hvac: 'pending' },
       insp: {
         electrical: { roughIn: 'pending', trim: 'blocked', final: 'blocked' },
@@ -930,192 +1097,479 @@ function JobStatus() {
         hvac:       { roughIn: 'pending', final: 'blocked' },
       },
     })
-    setJobForm({ id: '', address: '', city: '', client: '', type: 'Full MEP Renovation', pm: 'Blake Neblett', target: '', permitNumber: '', subElectrical: '', subPlumbing: '', subHvac: '' })
+    setJobForm(JOB_FORM_INITIAL)
     setShowNewJob(false)
     setCreating(false)
   }
 
   return (
     <div className="space-y-6">
-      <SectionHeader
-        title="Job Status"
-        sub={`${jobs.filter(j => !['complete','completed'].includes(j.status)).length} active · ${jobs.length} total — Middle TN`}
-        action={
-          <Button onClick={() => setShowNewJob(v => !v)} style={{ backgroundColor: O }} className="text-white gap-2">
-            <PlusIcon size={14} /> New Job
-          </Button>
+      <PageHeader
+        eyebrow="Job Status"
+        title="Portfolio status"
+        subtitle="Active and completed jobs across the portfolio — risk, phase, ownership, next action."
+        meta={
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+              />
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+            </span>
+            <span>{kpis.active} active · {kpis.completed} complete</span>
+            {kpis.atRisk > 0 && (
+              <span className="text-amber-300">{kpis.atRisk} at risk</span>
+            )}
+            <span>Middle Tennessee</span>
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(JOB_FORM_INITIAL) }}
+            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
+            style={{ backgroundColor: O }}
+          >
+            <PlusIcon size={13} /> New job
+          </button>
         }
       />
 
+      {/* KPI strip — 5 tiles */}
+      <section
+        className="grid gap-2 sm:gap-3"
+        aria-label="Portfolio status"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
+      >
+        <MetricTile
+          label="Active Jobs"
+          value={kpis.active}
+          Icon={ActivityIcon}
+          sub={`${kpis.total} on roster`}
+        />
+        <MetricTile
+          label="Completed"
+          value={kpis.completed}
+          Icon={CheckCircleIcon}
+          emphasis={kpis.completed > 0 ? 'success' : 'mute'}
+          sub={kpis.completed > 0 ? 'Lifetime closeouts' : 'No closeouts yet'}
+        />
+        <MetricTile
+          label="At-Risk Jobs"
+          value={kpis.atRisk}
+          Icon={TriangleAlertIcon}
+          emphasis={kpis.atRisk > 0 ? 'critical' : 'success'}
+          sub={kpis.atRisk > 0 ? 'Warning + critical' : 'All active jobs are on track'}
+        />
+        <MetricTile
+          label="Needs Action"
+          value={kpis.needsAction}
+          Icon={AlertCircleIcon}
+          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
+          sub={kpis.needsAction > 0 ? 'Failed inspection or open' : 'Nothing pending'}
+        />
+        <MetricTile
+          label="Blocked / Stale"
+          value={kpis.blockedStale}
+          Icon={BanIcon}
+          emphasis={kpis.blockedStale > 0 ? 'critical' : 'success'}
+          sub={kpis.blockedStale > 0 ? 'Blocked, on hold, or 7+ days stale' : 'No blockers'}
+        />
+      </section>
+
+      {/* New-job form */}
       {showNewJob && (
-        <Card className="border-white/20" style={{ borderColor: O + '55' }}>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><PlusIcon size={14} style={{ color: O }} /> Create New Job</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Job ID *</label>
-                <Input className="bg-white/5 border-white/20" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Street Address *</label>
-                <Input className="bg-white/5 border-white/20" placeholder="123 Main St" value={jobForm.address} onChange={e => setJobForm(f => ({ ...f, address: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">City, State ZIP</label>
-                <Input className="bg-white/5 border-white/20" placeholder="Brentwood, TN 37027" value={jobForm.city} onChange={e => setJobForm(f => ({ ...f, city: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Client *</label>
-                <Input className="bg-white/5 border-white/20" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Project Type</label>
-                <Input className="bg-white/5 border-white/20" value={jobForm.type} onChange={e => setJobForm(f => ({ ...f, type: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">PM</label>
-                <Select value={jobForm.pm} onValueChange={v => setJobForm(f => ({ ...f, pm: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {['Blake Neblett','Brendan Embry','Jeb Brooks','Taylor Hensley','Tim King','Derek Powers'].map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Target Date</label>
-                <Input className="bg-white/5 border-white/20" type="date" value={jobForm.target} onChange={e => setJobForm(f => ({ ...f, target: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Permit Number</label>
-                <Input className="bg-white/5 border-white/20" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Electrical Sub</label>
-                <Select value={jobForm.subElectrical} onValueChange={v => setJobForm(f => ({ ...f, subElectrical: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
-                    {elecSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Plumbing Sub</label>
-                <Select value={jobForm.subPlumbing} onValueChange={v => setJobForm(f => ({ ...f, subPlumbing: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
-                    {plumbSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">HVAC Sub</label>
-                <Select value={jobForm.subHvac} onValueChange={v => setJobForm(f => ({ ...f, subHvac: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
-                    {hvacSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button style={{ backgroundColor: O }} className="text-white" onClick={handleCreateJob} disabled={creating}>
-                {creating ? 'Creating…' : 'Create Job'}
-              </Button>
-              <Button variant="outline" onClick={() => setShowNewJob(false)}>Cancel</Button>
-            </div>
-          </CardContent>
-        </Card>
+        <DataPanel
+          title="Create new job"
+          description="Captures the job record, default permits, and inspection skeleton."
+          Icon={PlusIcon}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <JobFormField label="Job ID *">
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
+            </JobFormField>
+            <JobFormField label="Street address *">
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="123 Main St" value={jobForm.address} onChange={e => setJobForm(f => ({ ...f, address: e.target.value }))} />
+            </JobFormField>
+            <JobFormField label="City, state ZIP">
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Brentwood, TN 37027" value={jobForm.city} onChange={e => setJobForm(f => ({ ...f, city: e.target.value }))} />
+            </JobFormField>
+            <JobFormField label="Client *">
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
+            </JobFormField>
+            <JobFormField label="Project type">
+              <Input className="bg-white/[0.04] border-white/10 text-white" value={jobForm.type} onChange={e => setJobForm(f => ({ ...f, type: e.target.value }))} />
+            </JobFormField>
+            <JobFormField label="PM">
+              <Select value={jobForm.pm} onValueChange={v => setJobForm(f => ({ ...f, pm: v }))}>
+                <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['Blake Neblett','Brendan Embry','Jeb Brooks','Taylor Hensley','Tim King','Derek Powers'].map(p => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </JobFormField>
+            <JobFormField label="Target date">
+              <Input className="bg-white/[0.04] border-white/10 text-white" type="date" value={jobForm.target} onChange={e => setJobForm(f => ({ ...f, target: e.target.value }))} />
+            </JobFormField>
+            <JobFormField label="Permit number">
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
+            </JobFormField>
+            <JobFormField label="Electrical sub">
+              <Select value={jobForm.subElectrical} onValueChange={v => setJobForm(f => ({ ...f, subElectrical: v }))}>
+                <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Unassigned</SelectItem>
+                  {elecSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </JobFormField>
+            <JobFormField label="Plumbing sub">
+              <Select value={jobForm.subPlumbing} onValueChange={v => setJobForm(f => ({ ...f, subPlumbing: v }))}>
+                <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Unassigned</SelectItem>
+                  {plumbSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </JobFormField>
+            <JobFormField label="HVAC sub">
+              <Select value={jobForm.subHvac} onValueChange={v => setJobForm(f => ({ ...f, subHvac: v }))}>
+                <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Unassigned</SelectItem>
+                  {hvacSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </JobFormField>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mt-4">
+            <button
+              type="button"
+              onClick={handleCreateJob}
+              disabled={creating || !jobForm.id || !jobForm.address || !jobForm.client}
+              className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ backgroundColor: O }}
+            >
+              {creating ? 'Creating…' : 'Create job'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowNewJob(false); setJobForm(JOB_FORM_INITIAL) }}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </DataPanel>
       )}
 
-      <div className="flex gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-9 bg-white/5 border-white/20" placeholder="Search jobs, clients, addresses..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-36 bg-white/5 border-white/20">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="hold">On Hold</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Filters — chips + PM + zone + search + clear */}
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search job, client, address, PM…"
+        chips={filterChips}
+        trailing={
+          <>
+            <select
+              value={pmFilter}
+              onChange={e => setPmFilter(e.target.value)}
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[180px]"
+              aria-label="Filter by PM"
+            >
+              <option value="all">All PMs</option>
+              {pmOptions.map(pm => <option key={pm} value={pm}>{pm}</option>)}
+            </select>
+            <select
+              value={zoneFilter}
+              onChange={e => setZoneFilter(e.target.value)}
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[180px]"
+              aria-label="Filter by zone"
+            >
+              <option value="all">All zones</option>
+              {Object.values(ZONES).map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+            </select>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => { setFilter('all'); setPmFilter('all'); setZoneFilter('all'); setSearch('') }}
+                className="text-[11px] font-semibold px-2.5 py-2 rounded-lg border border-white/10 text-zinc-300 hover:text-white"
+              >
+                Clear
+              </button>
+            )}
+          </>
+        }
+      />
 
-      <div className="space-y-4">
-        {filtered.map(j => (
-          <Card key={j.id} className="border-white/10 overflow-hidden">
-            <div
-              className="p-5 cursor-pointer hover:bg-white/5 transition-colors"
-              onClick={() => setExpanded(expanded === j.id ? null : j.id)}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1 flex-wrap">
-                    <span className="font-semibold text-xl" style={{ color: O }}>{jobName(j)}</span>
-                    <InlineStatusSelect job={j} />
-                    <InlinePhaseSelect job={j} />
-                  </div>
-                  <p className="text-sm text-muted-foreground">{j.id} · {j.client}</p>
-                  <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
-                    <span className="flex items-center gap-1"><UsersIcon size={11} /> PM: {j.pm}</span>
-                    {j.qbsPM && <span className="flex items-center gap-1"><UsersIcon size={11} /> QBS: {j.qbsPM}</span>}
-                    <span className="flex items-center gap-1"><CalendarIcon size={11} /> Target: {j.target}</span>
-                    {j.invoiceNum && <span className="flex items-center gap-1"><FileTextIcon size={11} /> Inv #{j.invoiceNum}</span>}
-                  </div>
-                </div>
-                <div className="text-right w-40">
-                  <p className="text-2xl font-semibold mb-1">{j.progress}%</p>
-                  <ProgressBar value={j.progress} className="mb-2" />
-                  <p className="text-xs text-muted-foreground">{j.type}</p>
-                </div>
-              </div>
+      {/* Portfolio queue */}
+      <DataPanel
+        title="Portfolio"
+        description={
+          visible.length === 0
+            ? 'No jobs match the current filters.'
+            : `${visible.length} of ${enriched.length} job${enriched.length === 1 ? '' : 's'}`
+        }
+        Icon={HardHatIcon}
+        padding="none"
+      >
+        {visible.length === 0 ? (
+          <div className="p-5">
+            <JobStatusEmptyState filter={filter} hasOtherFilters={pmFilter !== 'all' || zoneFilter !== 'all' || search.trim() !== ''} />
+          </div>
+        ) : (
+          <ul className="divide-y divide-white/5">
+            {visible.map(({ j, complete, risk, stale, failed, billRdy, zoneId }) => (
+              <li key={j._docId || j.id}>
+                <JobStatusRow
+                  job={j}
+                  complete={complete}
+                  risk={risk}
+                  stale={stale}
+                  failed={failed}
+                  billRdy={billRdy}
+                  zone={ZONES[zoneId] || null}
+                  expanded={expanded === j.id}
+                  onToggle={() => setExpanded(expanded === j.id ? null : j.id)}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </DataPanel>
+    </div>
+  )
+}
+
+function JobStatusEmptyState({ filter, hasOtherFilters }) {
+  if (hasOtherFilters)            return <EmptyState   Icon={HardHatIcon} title="No jobs match" description="Try clearing the search, PM, or zone filter." />
+  if (filter === 'at-risk')       return <AllClearState title="All active jobs are on track" description="No critical or warning-level risk on any active job." />
+  if (filter === 'needs-action')  return <AllClearState title="No jobs need action" description="No failed inspections or jobs flagged 'needs action'." />
+  if (filter === 'blocked')       return <AllClearState title="Nothing blocked" description="No jobs are blocked, on hold, or have failed inspections." />
+  if (filter === 'stale')         return <AllClearState title="No stale jobs" description="No active jobs without a status update in 7+ days." />
+  if (filter === 'complete')      return <EmptyState   title="No completed jobs yet" description="Closeouts will appear here." />
+  return <EmptyState Icon={HardHatIcon} title="No jobs yet" description="Create the first job to populate the portfolio." />
+}
+
+function JobStatusRow({
+  job, complete, risk, stale, failed, billRdy, zone,
+  expanded, onToggle,
+}) {
+  const riskMeta    = jobRiskMeta(job)
+  const next        = jobNextAction(job)
+  const railColor   = failed ? '#ef4444'
+                    : (risk?.level === 'critical' ? '#ef4444'
+                    : risk?.level === 'warning'  ? '#eab308'
+                    : complete                   ? '#22c55e'
+                    : '#3b82f6')
+  const nextColor   = failed ? '#ef4444'
+                    : (risk?.level === 'critical' ? '#ef4444'
+                    : risk?.level === 'warning'  ? '#eab308'
+                    : billRdy                    ? '#22c55e'
+                    : O)
+  const progress    = Math.max(0, Math.min(100, Number(job.progress) || 0))
+  const progressMuted = complete || (risk?.level === 'critical')
+  const handleKey = (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button') && !e.target.closest('select') && !e.target.closest('[role="combobox"]')) {
+      e.preventDefault()
+      onToggle()
+    }
+  }
+
+  return (
+    <div>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          if (e.target.closest('button') || e.target.closest('[role="combobox"]') || e.target.closest('select')) return
+          onToggle()
+        }}
+        onKeyDown={handleKey}
+        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:outline-none focus:bg-white/[0.04]"
+        style={{ borderLeft: `3px solid ${railColor}` }}
+        aria-expanded={expanded}
+      >
+        <div className="flex items-start gap-3 sm:gap-4">
+          {/* Body */}
+          <div className="flex-1 min-w-0">
+            {/* Header row — id pill, name, status select, phase select */}
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
+                {job.id}
+              </span>
+              <span className="text-base font-bold text-white truncate min-w-0">
+                {jobName(job)}
+              </span>
+              <InlineStatusSelect job={job} />
+              <InlinePhaseSelect job={job} />
             </div>
 
-            {expanded === j.id && (
-              <div className="border-t border-white/10 p-5 bg-white/3 grid md:grid-cols-3 gap-6">
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Subcontractors</p>
-                  {['electrical','plumbing','hvac'].map(t => j.subs?.[t] && (
-                    <div key={t} className="flex items-center justify-between py-1.5 border-b border-white/5">
-                      <span className="text-sm capitalize" style={{ color: tradeColor[t.charAt(0).toUpperCase()+t.slice(1)] || '#9ca3af' }}>{t}</span>
-                      <span className="text-sm font-medium">{j.subs[t]}</span>
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Permits</p>
-                  {['electrical','plumbing','hvac'].map(t => j.permits?.[t] && (
-                    <div key={t} className="flex items-center justify-between py-1.5 border-b border-white/5">
-                      <span className="text-sm capitalize">{t}</span>
-                      <InspBadge status={j.permits[t]} />
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Invoice Info</p>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between"><span className="text-muted-foreground">Invoice #</span><span className="font-medium">{j.invoiceNum || '—'}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Invoice Date</span><span>{j.invoiceDate || '—'}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">QBS PM</span><span>{j.qbsPM || '—'}</span></div>
-                    <div className="flex justify-between items-center border-t border-white/10 pt-2">
-                      <span className="text-muted-foreground">Status</span>
-                      <BillingStatusSelect job={j} />
-                    </div>
-                  </div>
-                </div>
+            {/* Customer + address */}
+            <p className="text-[11px] text-zinc-400 truncate">
+              {job.client || '—'}{job.address ? ` · ${job.address}` : ''}
+              {zone?.name ? ` · ${zone.name}` : ''}
+            </p>
+
+            {/* Meta row — PM, target, optional flags */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11px] text-zinc-400">
+              <span className="inline-flex items-center gap-1">
+                <UsersIcon size={11} /> PM <span className="text-zinc-200 font-semibold">{job.pm || '—'}</span>
+              </span>
+              {job.qbsPM && (
+                <span className="inline-flex items-center gap-1">
+                  <UsersIcon size={11} /> QBS {job.qbsPM}
+                </span>
+              )}
+              {job.target && (
+                <span className="inline-flex items-center gap-1">
+                  <CalendarIcon size={11} /> Due {fmtJobDate(job.target)}
+                </span>
+              )}
+              {stale !== null && stale >= 3 && !complete && (
+                <span
+                  className="font-semibold"
+                  style={{ color: stale >= 7 ? '#ef4444' : '#eab308' }}
+                >
+                  {stale === 1 ? '1d since update' : `${stale}d since update`}
+                </span>
+              )}
+              {riskMeta && <Pill tone={riskMeta.tone} size="xs">{riskMeta.label}</Pill>}
+              {failed && <Pill tone="critical" size="xs" Icon={AlertCircleIcon}>Inspection issue</Pill>}
+              {billRdy && !complete && <Pill tone="success" size="xs" Icon={DollarSignIcon}>Billing ready</Pill>}
+            </div>
+
+            {/* Next action */}
+            <div className="flex items-start gap-1.5 mt-2 min-w-0">
+              <span className="text-[10px] uppercase tracking-wide text-zinc-400 shrink-0 mt-px">Next</span>
+              <p
+                className="text-[12px] font-semibold leading-snug min-w-0 truncate"
+                style={{ color: nextColor }}
+                title={next}
+              >
+                {next}
+              </p>
+            </div>
+
+            {/* Mobile-only progress bar (the desktop block on the right hides at < sm) */}
+            <div className="sm:hidden mt-3">
+              <div className="flex items-center justify-between mb-1 text-[11px] text-zinc-400">
+                <span className="truncate">{job.type || 'Project'}</span>
+                <span
+                  className="font-semibold tabular-nums"
+                  style={{ color: progressMuted ? '#9ca3af' : O }}
+                >
+                  {progress}%
+                </span>
               </div>
-            )}
-          </Card>
-        ))}
+              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : O} />
+            </div>
+          </div>
+
+          {/* Desktop progress block */}
+          <div className="hidden sm:flex flex-col items-end shrink-0 w-40">
+            <p
+              className="text-2xl font-semibold tabular-nums leading-none"
+              style={{ color: progressMuted ? '#9ca3af' : O }}
+            >
+              {progress}%
+            </p>
+            <div className="w-full mt-1.5">
+              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : O} />
+            </div>
+            <p className="text-[10px] text-zinc-400 mt-1.5 truncate max-w-full" title={job.type}>
+              {job.type || 'Project'}
+            </p>
+          </div>
+
+          {/* Expand chevron */}
+          <ChevronRightIcon
+            size={16}
+            className="hidden md:block shrink-0 text-zinc-400 mt-1 transition-transform"
+            style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}
+          />
+        </div>
       </div>
+
+      {expanded && <JobStatusDetail job={job} />}
+    </div>
+  )
+}
+
+function JobStatusDetail({ job }) {
+  return (
+    <div className="border-t border-white/5 px-4 py-4 sm:px-5 sm:py-5 grid grid-cols-1 md:grid-cols-3 gap-5 bg-white/[0.015]">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 mb-2">Subcontractors</p>
+        {['electrical','plumbing','hvac'].some(t => job.subs?.[t]) ? (
+          <ul className="space-y-1.5">
+            {['electrical','plumbing','hvac'].map(t => job.subs?.[t] && (
+              <li key={t} className="flex items-center justify-between text-[12px]">
+                <span className="capitalize text-zinc-400">{t}</span>
+                <span className="text-zinc-100 font-semibold truncate ml-2 max-w-[60%]">{job.subs[t]}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[11px] text-zinc-500">No subs assigned</p>
+        )}
+      </div>
+
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 mb-2">Permits</p>
+        {['electrical','plumbing','hvac'].some(t => job.permits?.[t]) ? (
+          <ul className="space-y-1.5">
+            {['electrical','plumbing','hvac'].map(t => job.permits?.[t] && (
+              <li key={t} className="flex items-center justify-between text-[12px]">
+                <span className="capitalize text-zinc-400">{t}</span>
+                <InspBadge status={job.permits[t]} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[11px] text-zinc-500">No permits on file</p>
+        )}
+      </div>
+
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 mb-2">Invoice</p>
+        <ul className="space-y-1.5 text-[12px]">
+          <li className="flex justify-between gap-2">
+            <span className="text-zinc-400">Invoice #</span>
+            <span className="text-zinc-100 font-semibold truncate">{job.invoiceNum || '—'}</span>
+          </li>
+          <li className="flex justify-between gap-2">
+            <span className="text-zinc-400">Invoice date</span>
+            <span className="text-zinc-100">{job.invoiceDate || '—'}</span>
+          </li>
+          <li className="flex justify-between gap-2">
+            <span className="text-zinc-400">QBS PM</span>
+            <span className="text-zinc-100">{job.qbsPM || '—'}</span>
+          </li>
+          <li className="flex justify-between items-center gap-2 pt-2 border-t border-white/5 mt-1">
+            <span className="text-zinc-400">Status</span>
+            <BillingStatusSelect job={job} />
+          </li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+// Form-field wrapper used by the new-job panel — renders an uppercase label
+// above the input control. Sibling to the Materials FormFieldLabel; kept
+// separate so each phase's form helper stays self-contained.
+function JobFormField({ label, children }) {
+  return (
+    <div>
+      <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 block mb-1.5">
+        {label}
+      </span>
+      {children}
     </div>
   )
 }
