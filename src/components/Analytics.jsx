@@ -52,7 +52,7 @@ export default function Analytics() {
           <div className="w-9 h-9 rounded-full border-2 animate-spin"
             style={{ borderColor: O + '33', borderTopColor: O }} />
           <div>
-            <h1 className="text-2xl font-black tracking-tight" style={{ color: O }}>Analytics</h1>
+            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: O }}>Analytics</h1>
             <p className="text-sm text-muted-foreground">Loading portfolio data…</p>
           </div>
         </div>
@@ -148,7 +148,7 @@ export default function Analytics() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div>
-        <h1 className="text-2xl font-black tracking-tight" style={{ color: O }}>Analytics</h1>
+        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: O }}>Analytics</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Portfolio overview across {totalJobs} jobs</p>
       </div>
 
@@ -163,7 +163,7 @@ export default function Analytics() {
           <Card key={label} className="border-white/10 bg-white/5">
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">{label}</p>
-              <p className="text-2xl font-black" style={{ color: O }}>{value}</p>
+              <p className="text-2xl font-semibold" style={{ color: O }}>{value}</p>
             </CardContent>
           </Card>
         ))}

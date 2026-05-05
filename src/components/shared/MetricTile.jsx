@@ -46,7 +46,7 @@ export default function MetricTile({
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400 truncate">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 truncate">
           {label}
         </p>
         {Icon && (
@@ -64,7 +64,7 @@ export default function MetricTile({
         )}
       </div>
       <p
-        className="text-[26px] font-black tracking-tight leading-none mt-2 text-white"
+        className="text-[26px] font-semibold tabular-nums tracking-tight leading-none mt-2 text-white"
         style={emphasisColor ? { color: emphasisColor } : undefined}
       >
         {value}

@@ -425,7 +425,7 @@ function LoginScreen({ onSignup }) {
           <ZapIcon size={22} color="#fff" />
         </div>
         <div>
-          <p className="font-black text-2xl leading-none" style={{ color: O }}>P2</p>
+          <p className="font-semibold text-2xl leading-none" style={{ color: O }}>P2</p>
           <p className="text-xs text-zinc-400 leading-tight">Electrical &amp; Mechanical</p>
         </div>
       </div>
@@ -818,7 +818,7 @@ function UrgentItems() {
                       {item.priority}
                     </span>
                     {item.jobId && (
-                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-white/10">{item.jobId}</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-white/10">{item.jobId}</span>
                     )}
                     <span className="text-xs text-muted-foreground">by <strong>{item.flaggedBy}</strong></span>
                     <span className="text-xs text-muted-foreground">{ts}</span>
@@ -957,7 +957,7 @@ function MorningBriefing() {
                   <div className="w-1 h-10 rounded-full shrink-0" style={{ backgroundColor: pColor[s.priority] }} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-xs bg-white/10 px-2 py-0.5 rounded shrink-0">{s.job}</span>
+                      <span className="text-xs bg-white/10 px-2 py-0.5 rounded shrink-0">{s.job}</span>
                       <span className="text-sm font-medium truncate">{s.task}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{s.crew}</p>
@@ -1117,7 +1117,7 @@ function JobStatus() {
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Job ID *</label>
-                <Input className="bg-white/5 border-white/20 font-mono" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
+                <Input className="bg-white/5 border-white/20" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Street Address *</label>
@@ -1150,7 +1150,7 @@ function JobStatus() {
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Permit Number</label>
-                <Input className="bg-white/5 border-white/20 font-mono" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
+                <Input className="bg-white/5 border-white/20" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
               </div>
             </div>
             <div className="grid md:grid-cols-3 gap-4">
@@ -1222,11 +1222,11 @@ function JobStatus() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-1 flex-wrap">
-                    <span className="font-black text-xl" style={{ color: O }}>{jobName(j)}</span>
+                    <span className="font-semibold text-xl" style={{ color: O }}>{jobName(j)}</span>
                     <InlineStatusSelect job={j} />
                     <InlinePhaseSelect job={j} />
                   </div>
-                  <p className="text-sm text-muted-foreground font-mono">{j.id} · {j.client}</p>
+                  <p className="text-sm text-muted-foreground">{j.id} · {j.client}</p>
                   <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
                     <span className="flex items-center gap-1"><UsersIcon size={11} /> PM: {j.pm}</span>
                     {j.qbsPM && <span className="flex items-center gap-1"><UsersIcon size={11} /> QBS: {j.qbsPM}</span>}
@@ -1235,7 +1235,7 @@ function JobStatus() {
                   </div>
                 </div>
                 <div className="text-right w-40">
-                  <p className="text-2xl font-black mb-1">{j.progress}%</p>
+                  <p className="text-2xl font-semibold mb-1">{j.progress}%</p>
                   <ProgressBar value={j.progress} className="mb-2" />
                   <p className="text-xs text-muted-foreground">{j.type}</p>
                 </div>
@@ -1265,7 +1265,7 @@ function JobStatus() {
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Invoice Info</p>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between"><span className="text-muted-foreground">Invoice #</span><span className="font-mono font-medium">{j.invoiceNum || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Invoice #</span><span className="font-medium">{j.invoiceNum || '—'}</span></div>
                     <div className="flex justify-between"><span className="text-muted-foreground">Invoice Date</span><span>{j.invoiceDate || '—'}</span></div>
                     <div className="flex justify-between"><span className="text-muted-foreground">QBS PM</span><span>{j.qbsPM || '—'}</span></div>
                     <div className="flex justify-between items-center border-t border-white/10 pt-2">
@@ -1376,11 +1376,11 @@ function Billing() {
                   {sorted.map(j => (
                     <tr key={j.id} className="hover:bg-white/5 transition-colors">
                       <td className="p-4">
-                        <p className="font-black text-base" style={{ color: O }}>{jobName(j)}</p>
-                        <p className="text-xs text-muted-foreground font-mono">{j.id}</p>
+                        <p className="font-semibold text-base" style={{ color: O }}>{jobName(j)}</p>
+                        <p className="text-xs text-muted-foreground">{j.id}</p>
                       </td>
                       <td className="p-4 text-muted-foreground text-sm">{j.client}</td>
-                      <td className="p-4 font-mono text-sm">{j.invoiceNum || <span className="text-muted-foreground/40">—</span>}</td>
+                      <td className="p-4 text-sm">{j.invoiceNum || <span className="text-muted-foreground/40">—</span>}</td>
                       <td className="p-4 text-muted-foreground text-sm">{j.invoiceDate || <span className="text-muted-foreground/40">—</span>}</td>
                       <td className="p-4 text-sm">{j.qbsPM || <span className="text-muted-foreground/40">—</span>}</td>
                       <td className="p-4"><BillingStatusSelect job={j} /></td>
@@ -1540,7 +1540,7 @@ function Inspections() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-3">
                   <span className="font-black" style={{ color: O }}>{jobName(j)}</span>
-                  <span className="text-muted-foreground font-normal text-xs font-mono">{j.id}</span>
+                  <span className="text-muted-foreground font-normal text-xs">{j.id}</span>
                   <span className="text-muted-foreground font-normal text-sm">{j.address}</span>
                 </CardTitle>
                 <JobBadge status={j.status} />
@@ -1760,7 +1760,7 @@ function SubsTab() {
                     </div>
                     <div className="text-center">
                       <p className="text-muted-foreground mb-1">Score</p>
-                      <p className="font-black text-xl" style={{ color: s.score >= 90 ? '#22c55e' : s.score >= 80 ? O : '#ef4444' }}>
+                      <p className="font-semibold text-xl" style={{ color: s.score >= 90 ? '#22c55e' : s.score >= 80 ? O : '#ef4444' }}>
                         {s.score}
                       </p>
                     </div>
@@ -1805,7 +1805,7 @@ function SubsTab() {
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
                               <span className="font-bold" style={{ color: O }}>{jobName(j)}</span>
-                              <span className="text-xs text-muted-foreground font-mono">{j.id}</span>
+                              <span className="text-xs text-muted-foreground">{j.id}</span>
                               <span className="text-xs px-1.5 py-0.5 rounded capitalize"
                                 style={{ backgroundColor: tradeColor[j.trade.charAt(0).toUpperCase()+j.trade.slice(1)] + '22', color: tradeColor[j.trade.charAt(0).toUpperCase()+j.trade.slice(1)] || '#9ca3af' }}>
                                 {j.trade}
@@ -2124,7 +2124,7 @@ function Materials() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-1 flex-wrap">
                       <span className="font-semibold text-base truncate">{m.name || m.item}</span>
-                      <span className="font-mono text-xs font-bold shrink-0" style={{ color: O }}>{m.jobId || m.job || '—'}</span>
+                      <span className="text-xs font-bold shrink-0" style={{ color: O }}>{m.jobId || m.job || '—'}</span>
                       {od && <span className="text-xs font-bold text-red-400">⚠ OVERDUE</span>}
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
@@ -2202,7 +2202,7 @@ function Permits() {
           <Card key={j.id} className="border-white/10">
             <CardHeader>
               <CardTitle className="text-sm flex items-center justify-between">
-                <span><span className="font-mono" style={{ color: O }}>{j.id}</span> — {j.address}</span>
+                <span><span className="" style={{ color: O }}>{j.id}</span> — {j.address}</span>
                 <JobBadge status={j.status} />
               </CardTitle>
             </CardHeader>
@@ -2460,12 +2460,12 @@ service cloud.firestore {
             {collections.map(c => (
               <div key={c.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
                 <div className="flex items-center gap-2 mb-1">
-                  <code className="text-sm font-mono font-bold" style={{ color: O }}>{c.name}</code>
+                  <span className="text-sm font-bold" style={{ color: O }}>{c.name}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mb-2">{c.desc}</p>
                 <div className="flex flex-wrap gap-1">
                   {c.fields.map(f => (
-                    <code key={f} className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-muted-foreground">{f}</code>
+                    <span key={f} className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-muted-foreground">{f}</span>
                   ))}
                 </div>
               </div>
@@ -2483,11 +2483,11 @@ service cloud.firestore {
             <CardContent className="space-y-3">
               {functions.map(f => (
                 <div key={f.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
-                  <code className="text-sm font-mono font-bold" style={{ color: O }}>{f.name}</code>
+                  <span className="text-sm font-bold" style={{ color: O }}>{f.name}</span>
                   <p className="text-xs text-muted-foreground mt-1">{f.desc}</p>
                   <div className="flex items-center gap-1.5 mt-1.5">
                     <CloudIcon size={10} className="text-muted-foreground" />
-                    <code className="text-xs text-muted-foreground">{f.trigger}</code>
+                    <span className="text-xs text-muted-foreground">{f.trigger}</span>
                   </div>
                 </div>
               ))}
@@ -2503,7 +2503,7 @@ service cloud.firestore {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <pre className="text-xs text-muted-foreground font-mono overflow-x-auto p-4 rounded-xl bg-black/40 border border-white/5 whitespace-pre leading-relaxed">
+          <pre className="text-xs text-muted-foreground overflow-x-auto p-4 rounded-xl bg-black/40 border border-white/5 whitespace-pre leading-relaxed">
             {rules}
           </pre>
         </CardContent>

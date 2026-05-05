@@ -94,7 +94,7 @@ export function TableHeader({ columns }) {
           <th
             key={col.key}
             className={cn(
-              'text-left text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-400 px-3 pb-2',
+              'text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400 px-3 pb-2',
               col.align === 'right'  && 'text-right',
               col.align === 'center' && 'text-center',
               col.className,
@@ -166,9 +166,9 @@ export function JobRow({
         className,
       )}
     >
-      <code className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 shrink-0">
+      <span className="text-[11px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
         {job?.id || '—'}
-      </code>
+      </span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-zinc-100 truncate">{label}</p>
         {meta && (
@@ -219,9 +219,9 @@ export function JobCard({
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <code className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300">
+          <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">
             {job?.id || '—'}
-          </code>
+          </span>
           <p className="text-base font-bold text-white mt-1.5 truncate">{label}</p>
           {pmLabel && (
             <p className="text-xs text-zinc-400 mt-0.5 truncate">{pmLabel}</p>

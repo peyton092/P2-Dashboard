@@ -145,7 +145,7 @@ export default function ProjectFolders() {
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <FolderIcon size={16} style={{ color: O }} />
-              <span className="font-mono" style={{ color: O }}>{selectedJob.id}</span>
+              <span className="" style={{ color: O }}>{selectedJob.id}</span>
               <span className="text-muted-foreground font-normal">— {selectedJob.client || selectedJob.address}</span>
               <span className="ml-auto text-xs text-muted-foreground">
                 {files.length} file{files.length !== 1 ? 's' : ''}

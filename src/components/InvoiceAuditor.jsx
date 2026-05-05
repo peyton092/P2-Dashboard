@@ -179,7 +179,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
         <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10">
           <XIcon size={16} />
         </button>
-        <h2 className="text-lg font-black" style={{ color: O }}>New Supplier Invoice</h2>
+        <h2 className="text-lg font-semibold" style={{ color: O }}>New Supplier Invoice</h2>
       </div>
 
       {/* Meta */}
@@ -199,7 +199,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Invoice # *</label>
-              <Input className="bg-white/5 border-white/20 font-mono" placeholder="INV-12345"
+              <Input className="bg-white/5 border-white/20" placeholder="INV-12345"
                 value={form.invoiceNum} onChange={e => setForm(f => ({ ...f, invoiceNum: e.target.value }))} />
             </div>
             <div>
@@ -287,7 +287,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
                           value={li.unitPrice} onChange={e => setLine(idx, 'unitPrice', e.target.value)} />
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right font-mono text-sm font-semibold" style={{ color: O }}>
+                    <td className="px-3 py-2 text-right text-sm font-semibold" style={{ color: O }}>
                       {fmt$(li.extPrice)}
                     </td>
                     <td className="px-3 py-2">
@@ -306,7 +306,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
           <div className="border-t border-white/10 p-4 flex justify-end">
             <div className="flex justify-between items-center gap-12">
               <span className="text-sm text-muted-foreground">TOTAL</span>
-              <span className="text-xl font-black font-mono" style={{ color: O }}>{fmt$(total)}</span>
+              <span className="text-xl font-semibold" style={{ color: O }}>{fmt$(total)}</span>
             </div>
           </div>
         </CardContent>
@@ -362,18 +362,18 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
         <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-5 gap-2 items-center">
           <div className="min-w-0">
             <p className="text-sm font-bold truncate">{inv.vendor}</p>
-            <p className="text-xs text-muted-foreground font-mono">#{inv.invoiceNum}</p>
+            <p className="text-xs text-muted-foreground">#{inv.invoiceNum}</p>
           </div>
           <div className="hidden sm:block">
             <p className="text-xs text-muted-foreground">{inv.invoiceDate || '—'}</p>
           </div>
           <div className="hidden sm:block">
-            <p className="text-xs font-mono">{inv.jobId ? (
+            <p className="text-xs">{inv.jobId ? (
               <span className="px-1.5 py-0.5 rounded bg-white/10">{inv.jobId}</span>
             ) : <span className="text-muted-foreground">—</span>}</p>
           </div>
           <div>
-            <p className="text-sm font-black" style={{ color: O }}>{fmt$(inv.total)}</p>
+            <p className="text-sm font-semibold" style={{ color: O }}>{fmt$(inv.total)}</p>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
@@ -431,10 +431,10 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
                   {inv.lineItems.map((li, i) => (
                     <tr key={i} className="hover:bg-white/5">
                       <td className="px-3 py-2">{li.desc}</td>
-                      <td className="px-3 py-2 text-right font-mono">{li.qty}</td>
+                      <td className="px-3 py-2 text-right">{li.qty}</td>
                       <td className="px-3 py-2 text-center text-muted-foreground">{li.unit}</td>
-                      <td className="px-3 py-2 text-right font-mono">{fmt$(li.unitPrice)}</td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold" style={{ color: O }}>{fmt$(li.extPrice)}</td>
+                      <td className="px-3 py-2 text-right">{fmt$(li.unitPrice)}</td>
+                      <td className="px-3 py-2 text-right font-semibold" style={{ color: O }}>{fmt$(li.extPrice)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -532,7 +532,7 @@ export default function InvoiceAuditor() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-black" style={{ color: O }}>Supplier Invoice Auditor</h2>
+          <h2 className="text-2xl font-semibold" style={{ color: O }}>Supplier Invoice Auditor</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
             Audit supplier invoices against POs · flag price variances, duplicates &amp; discrepancies
           </p>
@@ -556,7 +556,7 @@ export default function InvoiceAuditor() {
               <s.Icon size={13} style={{ color: s.color }} />
               <span className="text-xs text-muted-foreground uppercase tracking-widest">{s.label}</span>
             </div>
-            <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
+            <p className="text-2xl font-semibold" style={{ color: s.color }}>{s.value}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{s.sub}</p>
           </div>
         ))}

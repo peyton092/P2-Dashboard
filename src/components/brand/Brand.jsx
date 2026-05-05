@@ -108,7 +108,7 @@ export function BrandWord({ tone = 'light', className = '' }) {
         style={{
           color: subColor,
           fontSize: '0.55rem',
-          letterSpacing: '0.18em',
+          letterSpacing: '0.08em',
           marginTop: '2px',
         }}
       >

@@ -174,7 +174,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
           <ChevronLeftIcon size={18} />
         </button>
         <div className="flex-1">
-          <h2 className="text-2xl font-black" style={{ color: O }}>{form.coNumber}</h2>
+          <h2 className="text-2xl font-semibold" style={{ color: O }}>{form.coNumber}</h2>
           <p className="text-sm text-muted-foreground">Change Order</p>
         </div>
         <div className="flex gap-2">
@@ -320,7 +320,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                         />
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right font-mono text-sm font-semibold" style={{ color: O }}>
+                    <td className="px-3 py-2 text-right text-sm font-semibold" style={{ color: O }}>
                       {fmt$(li.extPrice)}
                     </td>
                     <td className="px-3 py-2">
@@ -344,7 +344,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
             <div className="ml-auto" style={{ maxWidth: 340 }}>
               <div className="flex justify-between text-sm py-1.5 text-muted-foreground">
                 <span>Subtotal</span>
-                <span className="font-mono">{fmt$(subtotal)}</span>
+                <span className="">{fmt$(subtotal)}</span>
               </div>
               <div className="flex justify-between items-center py-1.5 text-sm gap-4">
                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -362,11 +362,11 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     <span className="ml-1 text-muted-foreground text-xs">%</span>
                   </div>
                 </div>
-                <span className="font-mono text-muted-foreground">{fmt$(markup)}</span>
+                <span className="text-muted-foreground">{fmt$(markup)}</span>
               </div>
               <div className="flex justify-between py-2 border-t border-white/20 mt-1">
-                <span className="font-black text-base">TOTAL</span>
-                <span className="font-black text-xl font-mono" style={{ color: O }}>{fmt$(total)}</span>
+                <span className="font-semibold text-base">TOTAL</span>
+                <span className="font-semibold text-xl" style={{ color: O }}>{fmt$(total)}</span>
               </div>
             </div>
           </div>
@@ -562,7 +562,7 @@ export default function ChangeOrders() {
           <>
             <span className="inline-flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="font-mono tracking-[0.18em] text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
             </span>
             <span>{EXTRAS.length} change orders total</span>
             {approvalRequired.length > 0 && (
@@ -794,14 +794,14 @@ function CORow({ co, job, onEdit, onPdf }) {
         : ''
       }
     >
-      <TableCell first className="font-mono font-bold" style={{ color: O }}>
+      <TableCell first className="font-bold" style={{ color: O }}>
         {coNum}
       </TableCell>
       <TableCell className="min-w-0">
         <div className="flex items-center gap-2">
-          <code className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 shrink-0">
+          <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
             {co.job}
-          </code>
+          </span>
           <span className="font-semibold text-zinc-100 truncate">{jobName}</span>
         </div>
         <p className="text-[11px] text-zinc-400 truncate mt-0.5">{builder}</p>
@@ -809,7 +809,7 @@ function CORow({ co, job, onEdit, onPdf }) {
       <TableCell className="text-zinc-200 max-w-[24rem] truncate" title={desc}>
         {desc}
       </TableCell>
-      <TableCell align="right" className="font-mono font-bold tabular-nums" style={{ color: total > 0 ? O : '#9ca3af' }}>
+      <TableCell align="right" className="font-bold tabular-nums" style={{ color: total > 0 ? O : '#9ca3af' }}>
         {total > 0 ? '$' + Math.round(total).toLocaleString() : '—'}
       </TableCell>
       <TableCell><COStatusPill status={co.status || 'Draft'} /></TableCell>
@@ -879,17 +879,17 @@ function COCard({ co, job, onEdit, onPdf }) {
     >
       <header className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <p className="font-mono text-sm font-bold" style={{ color: O }}>{coNum}</p>
-          <code className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300">
+          <p className="text-sm font-bold" style={{ color: O }}>{coNum}</p>
+          <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">
             {co.job}
-          </code>
+          </span>
           <p className="text-base font-bold text-white mt-1.5 truncate">{jobName}</p>
           <p className="text-[11px] text-zinc-400 truncate">
             {builder}{job?.pm ? ` · PM ${job.pm}` : ''}
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-lg font-black tabular-nums" style={{ color: total > 0 ? O : '#9ca3af' }}>
+          <p className="text-lg font-semibold tabular-nums" style={{ color: total > 0 ? O : '#9ca3af' }}>
             {total > 0 ? '$' + Math.round(total).toLocaleString() : '—'}
           </p>
           {age != null && (
@@ -907,7 +907,7 @@ function COCard({ co, job, onEdit, onPdf }) {
 
       {isRejected(co) && co.rejectNotes && (
         <div className="rounded-lg border border-red-500/30 px-3 py-2 mb-3" style={{ backgroundColor: '#ef44440a' }}>
-          <p className="text-[10px] uppercase tracking-[0.14em] font-bold mb-0.5" style={{ color: '#ef4444' }}>
+          <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: '#ef4444' }}>
             Rejection note
           </p>
           <p className="text-[11px] text-zinc-200 italic">“{co.rejectNotes}”</p>
@@ -915,7 +915,7 @@ function COCard({ co, job, onEdit, onPdf }) {
       )}
 
       <div className="mt-3 pt-3 border-t border-white/5">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 mb-0.5">Required action</p>
+        <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-0.5">Required action</p>
         <p className="text-sm font-semibold leading-snug" style={{ color: accent }}>
           {next.text}
         </p>

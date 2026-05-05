@@ -139,7 +139,7 @@ export default function Sidebar({
       <div className="border-t border-white/10 shrink-0">
         {!collapsed && tenants && tenants.length > 1 && onTenantChange && (
           <div className="px-3 pt-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-1">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">
               Workspace
             </p>
             <Select value={tenantId} onValueChange={onTenantChange}>

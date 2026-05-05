@@ -144,7 +144,7 @@ function JobRow({ job, rank }) {
       {/* Job details */}
       <div style={{ minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
-          <span style={{ fontFamily: 'monospace', fontSize: 11, color: O, fontWeight: 700 }}>
+          <span style={{ fontSize: 11, color: O, fontWeight: 700 }}>
             {job.id}
           </span>
           <span style={{ fontSize: 13, fontWeight: 800, color: 'white' }}>
@@ -407,7 +407,7 @@ export default function PMDashboard() {
         </div>
         <div>
           <h1 style={{
-            fontSize: 13, fontWeight: 900, letterSpacing: '0.15em',
+            fontSize: 13, fontWeight: 900, 
             textTransform: 'uppercase', color: O, margin: 0,
           }}>
             PM Hit List
@@ -418,7 +418,7 @@ export default function PMDashboard() {
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#22c55e' }} />
-          <span style={{ fontSize: 10, color: '#22c55e', fontFamily: 'monospace', letterSpacing: '0.1em' }}>LIVE</span>
+          <span style={{ fontSize: 10, color: '#22c55e', letterSpacing: '0.05em', fontWeight: 600 }}>LIVE</span>
         </div>
       </div>
 

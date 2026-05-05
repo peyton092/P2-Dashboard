@@ -322,7 +322,7 @@ export default function CommandCenter() {
           <>
             <span className="inline-flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="font-mono tracking-[0.18em] text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
             </span>
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
             <span>{activeJobs.length} active jobs</span>
@@ -416,7 +416,7 @@ export default function CommandCenter() {
                   </span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span
-                      className="text-lg font-black tabular-nums leading-none"
+                      className="text-lg font-semibold tabular-nums leading-none"
                       style={{ color: n.count > 0 ? O : '#9ca3af' }}
                     >
                       {n.count}
@@ -609,7 +609,7 @@ export default function CommandCenter() {
 
       {/* Quick Modules */}
       <section aria-label="Quick modules" className="pt-2">
-        <h2 className="text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-300 mb-3">
+        <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 mb-3">
           Quick Modules
         </h2>
         <div
@@ -656,7 +656,7 @@ function BillingRow({ label, amount, count, subtitle, tone = 'neutral' }) {
         </p>
       </div>
       <p
-        className="text-base font-black tabular-nums shrink-0"
+        className="text-base font-semibold tabular-nums shrink-0"
         style={{ color: count > 0 ? color : '#9ca3af' }}
       >
         {amount > 0 ? `$${(amount / 1000).toFixed(amount >= 100_000 ? 0 : 1)}K` : '$0'}
@@ -701,8 +701,8 @@ function InspectionDonut({ summary }) {
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <p className="text-2xl font-black tabular-nums leading-none text-white">{summary.total}</p>
-          <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-400 mt-0.5">Total</p>
+          <p className="text-2xl font-semibold tabular-nums leading-none text-white">{summary.total}</p>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-400 mt-0.5">Total</p>
         </div>
       </div>
       <ul className="space-y-1.5 text-xs">
@@ -721,7 +721,7 @@ function DonutLegendRow({ label, value, total, color }) {
     <li className="flex items-center gap-2">
       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
       <span className="flex-1 truncate text-zinc-200">{label}</span>
-      <span className="font-mono tabular-nums shrink-0">
+      <span className="tabular-nums shrink-0">
         <span className="font-bold" style={{ color }}>{value}</span>
         <span className="text-zinc-400 ml-1.5">({pct}%)</span>
       </span>
@@ -752,7 +752,7 @@ function QuickBooksStatusCard({ qb }) {
           {qb.realmId && (
             <div className="flex justify-between gap-2">
               <dt className="text-zinc-400">Realm</dt>
-              <dd className="font-mono text-zinc-100 truncate max-w-[55%]">{qb.realmId}</dd>
+              <dd className="text-zinc-100 truncate max-w-[55%]">{qb.realmId}</dd>
             </div>
           )}
           {qb.connectedAt && (

@@ -100,7 +100,7 @@ export default function MobileNav({
             }}
             onClick={e => e.stopPropagation()}
           >
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground mb-3 px-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-3 px-1">
               All sections
             </p>
             <ul className="grid grid-cols-4 gap-1.5">

@@ -320,7 +320,7 @@ export default function WarRoom() {
           <>
             <span className="inline-flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="font-mono tracking-[0.18em] text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
             </span>
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
             <span>{kpis.active} active · {completedJobs.length} completed</span>
@@ -535,8 +535,8 @@ function InspectionPills({ job }) {
     <div className="flex items-center gap-1">
       {pills.map(p => (
         <Pill key={p.trade} tone={p.tone} size="xs">
-          <span className="font-mono">{p.letter}</span>
-          {p.dot && <span className="ml-0.5 font-mono">{p.dot}</span>}
+          <span className="">{p.letter}</span>
+          {p.dot && <span className="ml-0.5">{p.dot}</span>}
         </Pill>
       ))}
     </div>
@@ -583,14 +583,14 @@ function PriorityJobCard({ job, risk, score }) {
       <header className="p-3 pb-2 border-b border-white/5">
         <div className="flex items-start justify-between gap-2 mb-1">
           <div className="min-w-0">
-            <code className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-400">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-400">
               {job.id}
-            </code>
+            </span>
             <p className="text-sm font-bold text-white mt-1 truncate">{jobLabel(job)}</p>
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
             <Pill tone={score >= 80 ? 'critical' : score >= 60 ? 'brand' : 'warning'} size="xs">
-              <span className="tabular-nums font-mono">{score}</span>
+              <span className="tabular-nums">{score}</span>
             </Pill>
             <RiskPill risk={risk} />
           </div>
@@ -622,7 +622,7 @@ function PriorityJobCard({ job, risk, score }) {
       </div>
 
       <footer className="px-3 py-2.5 border-t border-white/5 bg-white/[0.015]">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 mb-0.5">
+        <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-0.5">
           Next action
         </p>
         <p
@@ -664,9 +664,9 @@ function DispatchRow({ job, risk, stale }) {
       <TableCell first>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <code className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-400 shrink-0">
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-400 shrink-0">
               {job.id}
-            </code>
+            </span>
             <span className="font-semibold text-zinc-100 truncate">{jobLabel(job)}</span>
           </div>
           <ZoneTag job={job} className="mt-0.5" />
@@ -740,9 +740,9 @@ function DispatchCard({ job, risk, score, stale }) {
     >
       <header className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <code className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-400">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-400">
             {job.id}
-          </code>
+          </span>
           <p className="text-base font-bold text-white mt-1.5 truncate">{jobLabel(job)}</p>
           <p className="text-[11px] text-zinc-400 truncate">
             {jobBuilder(job)}{job.address ? ` · ${job.address}` : ''}
@@ -751,7 +751,7 @@ function DispatchCard({ job, risk, score, stale }) {
         <div className="flex flex-col items-end gap-1 shrink-0">
           {score >= 30 && (
             <Pill tone={score >= 80 ? 'critical' : score >= 60 ? 'brand' : 'warning'} size="xs">
-              <span className="tabular-nums font-mono">{score}</span>
+              <span className="tabular-nums">{score}</span>
             </Pill>
           )}
           <RiskPill risk={risk} />
@@ -760,23 +760,23 @@ function DispatchCard({ job, risk, score, stale }) {
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] mt-3">
         <div>
-          <p className="text-zinc-400 uppercase tracking-[0.14em] text-[10px] mb-0.5">PM</p>
+          <p className="text-zinc-400 uppercase tracking-wide text-[10px] mb-0.5">PM</p>
           <p className="font-semibold text-zinc-100 truncate">{job.pm || 'Unassigned'}</p>
           {job.lead && (
             <p className="text-zinc-400 text-[10px] truncate">Lead: {job.lead}</p>
           )}
         </div>
         <div>
-          <p className="text-zinc-400 uppercase tracking-[0.14em] text-[10px] mb-0.5">Phase</p>
+          <p className="text-zinc-400 uppercase tracking-wide text-[10px] mb-0.5">Phase</p>
           <p className="font-semibold text-zinc-100 truncate">{phase}</p>
           <div className="mt-1"><StatusPill status={job.status} /></div>
         </div>
         <div>
-          <p className="text-zinc-400 uppercase tracking-[0.14em] text-[10px] mb-0.5">Inspection</p>
+          <p className="text-zinc-400 uppercase tracking-wide text-[10px] mb-0.5">Inspection</p>
           <InspectionPills job={job} />
         </div>
         <div>
-          <p className="text-zinc-400 uppercase tracking-[0.14em] text-[10px] mb-0.5">Updated</p>
+          <p className="text-zinc-400 uppercase tracking-wide text-[10px] mb-0.5">Updated</p>
           <p className={stale !== null && stale >= 7 ? 'font-semibold text-red-400' : 'font-semibold text-zinc-100'}>
             {fmtDaysAgo(job.lastStatusChange || job.start)}
           </p>
@@ -784,7 +784,7 @@ function DispatchCard({ job, risk, score, stale }) {
       </div>
 
       <div className="mt-3 pt-3 border-t border-white/5">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 mb-0.5">Next action</p>
+        <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-0.5">Next action</p>
         <p
           className="text-sm font-semibold leading-snug"
           style={{ color: accent || O }}

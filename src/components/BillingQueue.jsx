@@ -291,7 +291,7 @@ export default function BillingQueue() {
           <>
             <span className="inline-flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="font-mono tracking-[0.18em] text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
             </span>
             <span>{kpis.ready.count} ready · {fmtCompact(kpis.ready.amount)} billable</span>
             {kpis.aging.count > 0 && (
@@ -654,9 +654,9 @@ function BillingRow({ row }) {
     >
       <TableCell first>
         <div className="flex items-center gap-2 min-w-0">
-          <code className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 shrink-0">
+          <span className="text-[11px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
             {job.id}
-          </code>
+          </span>
           <span className="font-semibold text-zinc-100 truncate">{jobLabel(job)}</span>
         </div>
         <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-zinc-400">
@@ -665,7 +665,7 @@ function BillingRow({ row }) {
         </div>
       </TableCell>
       <TableCell className="text-zinc-200 truncate">{jobBuilder(job)}</TableCell>
-      <TableCell align="right" className="font-mono font-bold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
+      <TableCell align="right" className="font-bold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
         {billable > 0 ? fmt(billable) : '—'}
       </TableCell>
       <TableCell><BillingBadge status={job.billingStatus} /></TableCell>
@@ -732,16 +732,16 @@ function BillingCard({ row }) {
     >
       <header className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <code className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300">
+          <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">
             {job.id}
-          </code>
+          </span>
           <p className="text-base font-bold text-white mt-1.5 truncate">{jobLabel(job)}</p>
           <p className="text-[11px] text-zinc-400 truncate">
             {jobBuilder(job)}{job.pm ? ` · PM ${job.pm}` : ''}
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-lg font-black tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
+          <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
             {billable > 0 ? fmt(billable) : '—'}
           </p>
           <p className="text-[10px] text-zinc-400">{milestone} {anyFinalPassed(job) ? '30%' : '70%'}</p>
@@ -756,7 +756,7 @@ function BillingCard({ row }) {
       </div>
 
       <div className="mt-2 pt-3 border-t border-white/5">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 mb-0.5">Next action</p>
+        <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-0.5">Next action</p>
         <p className="text-sm font-semibold leading-snug" style={{ color: accent || '#9ca3af' }}>
           {next.text}
         </p>

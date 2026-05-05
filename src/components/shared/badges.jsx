@@ -15,9 +15,9 @@ const TONE = {
 }
 
 const SIZE = {
-  xs: 'text-[9px] px-1.5 py-0.5 tracking-[0.14em]',
-  sm: 'text-[10px] px-2 py-0.5 tracking-[0.14em]',
-  md: 'text-[11px] px-2.5 py-1 tracking-[0.12em]',
+  xs: 'text-[9px] px-1.5 py-0.5 tracking-wide',
+  sm: 'text-[10px] px-2 py-0.5 tracking-wide',
+  md: 'text-[11px] px-2.5 py-1 tracking-wide',
 }
 
 export function Pill({ tone = 'neutral', size = 'sm', className = '', children, Icon }) {

@@ -21,13 +21,13 @@ export function PageHeader({
       <div className="min-w-0">
         {eyebrow && (
           <p
-            className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-1.5"
+            className="text-[10px] font-semibold uppercase tracking-wider mb-1.5"
             style={{ color: O }}
           >
             {eyebrow}
           </p>
         )}
-        <h1 className="text-2xl sm:text-[28px] font-black tracking-tight leading-tight text-white">
+        <h1 className="text-2xl sm:text-[28px] font-semibold tracking-tight leading-tight text-white">
           {title}
         </h1>
         {subtitle && (
@@ -70,7 +70,7 @@ export function SectionHeader({
               aria-hidden="true"
             />
           )}
-          <h2 className="text-[13px] font-bold uppercase tracking-[0.14em] text-zinc-100">
+          <h2 className="text-[13px] font-bold uppercase tracking-wide text-zinc-100">
             {title}
           </h2>
           {typeof count === 'number' && (
