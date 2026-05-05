@@ -130,7 +130,7 @@ function Stat({ label, value, sub, color }) {
   return (
     <div>
       <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">{label}</p>
-      <p className="text-lg font-black" style={{ color }}>{value}</p>
+      <p className="text-lg font-semibold" style={{ color }}>{value}</p>
       {sub && <p className="text-[10px] text-zinc-600">{sub}</p>}
     </div>
   )
@@ -234,7 +234,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
         </div>
 
         <div className="text-right shrink-0 mr-1" onClick={e => e.stopPropagation()}>
-          <p className="font-black text-base" style={{ color: isLeader ? O : '#e5e7eb' }}>{totalPts}</p>
+          <p className="font-semibold text-base" style={{ color: isLeader ? O : '#e5e7eb' }}>{totalPts}</p>
           <p className="text-[10px] text-zinc-500">pts</p>
         </div>
 
@@ -341,7 +341,7 @@ function PodiumCard({ name, pts, rank }) {
   return (
     <div className="flex flex-col items-center gap-1.5 text-center">
       <span className="text-xl">{MEDALS[rank]}</span>
-      <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-black border-2"
+      <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-semibold border-2"
         style={{
           backgroundColor: isFirst ? O + '33' : '#ffffff11',
           color: isFirst ? O : '#9ca3af',
@@ -351,7 +351,7 @@ function PodiumCard({ name, pts, rank }) {
       </div>
       <p className="text-xs font-bold text-white">{name}</p>
       <p className="text-[10px] text-zinc-500">{ROLES[name]}</p>
-      <p className="font-black text-base mt-0.5" style={{ color: isFirst ? O : '#9ca3af' }}>{pts}</p>
+      <p className="font-semibold text-base mt-0.5" style={{ color: isFirst ? O : '#9ca3af' }}>{pts}</p>
       <p className="text-[10px] text-zinc-500">pts</p>
     </div>
   )
@@ -441,7 +441,7 @@ export default function TeamLeaderboard() {
             <TrophyIcon size={20} color={O} />
           </div>
           <div>
-            <h2 className="text-xl font-black text-white">Team Leaderboard</h2>
+            <h2 className="text-xl font-semibold text-white">Team Leaderboard</h2>
             <p className="text-xs text-zinc-400">{monthLabel} · Live standings</p>
           </div>
         </div>
@@ -502,7 +502,7 @@ export default function TeamLeaderboard() {
                 <s.icon size={13} color={s.color} />
                 <span className="text-xs text-zinc-400">{s.label}</span>
               </div>
-              <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
+              <p className="text-2xl font-semibold" style={{ color: s.color }}>{s.value}</p>
               {s.pts != null && <p className="text-xs text-zinc-500 mt-0.5">{s.pts.toLocaleString()} pts earned</p>}
             </CardContent>
           </Card>

@@ -162,7 +162,7 @@ export default function SettingsPage({ onLogout }) {
   return (
     <div className="space-y-8 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-black" style={{ color: O }}>Settings</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: O }}>Settings</h1>
         <p className="text-sm text-muted-foreground mt-1">Feature configuration, account, and system info</p>
       </div>
 
@@ -210,7 +210,7 @@ export default function SettingsPage({ onLogout }) {
           </div>
           {qbConnected && (
             <div className="text-xs text-muted-foreground space-y-0.5 pl-1">
-              {qbCompanyId && <p>Company ID: <span className="font-mono">{qbCompanyId}</span></p>}
+              {qbCompanyId && <p>Company ID: <span className="">{qbCompanyId}</span></p>}
               {qbConnectedAt && <p>Connected {qbConnectedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
             </div>
           )}
@@ -336,7 +336,7 @@ export default function SettingsPage({ onLogout }) {
             ].map(({ label, value }) => (
               <div key={label} className="p-3 rounded-lg bg-white/5 border border-white/5">
                 <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                <p className="text-sm font-mono font-bold">{value}</p>
+                <p className="text-sm font-bold">{value}</p>
               </div>
             ))}
           </div>

@@ -174,7 +174,7 @@ export default function CrewReport() {
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl mx-auto space-y-6 pb-8">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-white">Crew Daily Report</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-white">Crew Daily Report</h1>
         <p className="text-zinc-400 text-sm mt-1">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
 
@@ -365,7 +365,7 @@ export default function CrewReport() {
       <Button
         type="submit"
         disabled={submitting}
-        className="w-full h-12 text-base font-black tracking-wide"
+        className="w-full h-12 text-base font-semibold tracking-wide"
         style={{ backgroundColor: O, color: '#fff' }}
       >
         {submitting

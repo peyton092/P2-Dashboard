@@ -42,6 +42,11 @@ import {
   BrainCircuitIcon,
   MoreHorizontalIcon,
   ReceiptIcon,
+  // Phase 3 QA — standardized nav icons
+  GaugeIcon, RadarIcon, UserRoundCogIcon, TriangleAlertIcon,
+  FilePenLineIcon, ScanSearchIcon, HardHatIcon, BadgeCheckIcon,
+  NotebookPenIcon, CalendarClockIcon, BoxesIcon, ClipboardSignatureIcon,
+  UsersRoundIcon, FolderOpenIcon, BarChart3Icon,
 } from 'lucide-react'
 const CommandCenterComponent  = lazy(() => import('./components/CommandCenter'))
 const QBSBuilderPortalComponent = lazy(() => import('./components/QBSBuilderPortal'))
@@ -59,6 +64,9 @@ import AlertsPageComponent from './components/AlertsPage'
 import BillingQueueComponent from './components/BillingQueue'
 import ErrorBoundary from './components/ErrorBoundary'
 import { generateInvoicePdf } from './lib/generateInvoicePdf'
+import AppShell from './components/shell/AppShell'
+import Sidebar from './components/shell/Sidebar'
+import MobileNav from './components/shell/MobileNav'
 
 const O = '#F47920'
 
@@ -70,29 +78,82 @@ const TENANTS = [
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
-const NAV = [
-  { id: 'command-center', label: 'Command Center',  Icon: BrainCircuitIcon, count: 0 },
-  { id: 'war-room',       label: 'War Room',        Icon: TargetIcon,       count: 0 },
-  { id: 'pm-dashboard',   label: 'PM Dashboard',    Icon: UsersIcon,        count: 0 },
-  { id: 'alerts',         label: 'Alerts',          Icon: AlertTriangleIcon, count: 0 },
-  { id: 'billing-queue',  label: 'Billing Queue',   Icon: DollarSignIcon,   count: 0 },
-  { id: 'morning',       label: 'Morning Briefing', Icon: CalendarIcon,     count: 0 },
-  { id: 'jobs',          label: 'Job Status',       Icon: ClipboardIcon,    count: 0 },
-  { id: 'extras',        label: 'Extras / COs',     Icon: PlusIcon,         count: 0 },
-  { id: 'billing',       label: 'Billing',          Icon: DollarSignIcon,   count: 0 },
-  { id: 'inspections',   label: 'Inspections',      Icon: CheckCircleIcon,  count: 0 },
-  { id: 'subs',          label: 'Subs',             Icon: UsersIcon,        count: 0 },
-  { id: 'materials',     label: 'Materials',        Icon: PackageIcon,      count: 0 },
-  { id: 'permits',       label: 'Permits',          Icon: FileTextIcon,     count: 0 },
-  { id: 'folders',       label: 'Project Folders',  Icon: FolderIcon,       count: 0 },
-  { id: 'notifications', label: 'Notifications',    Icon: BellIcon,         count: 0 },
-  { id: 'submit',        label: 'Submit',           Icon: SendIcon,         count: 0 },
-  { id: 'architecture',  label: 'Architecture',     Icon: DatabaseIcon,     count: 0 },
-  { id: 'daily-report',  label: 'Daily Report',     Icon: ClipboardListIcon, count: 0 },
-  { id: 'analytics',     label: 'Analytics',        Icon: BarChart2Icon,     count: 0 },
-  { id: 'team',         label: 'Team',             Icon: TrophyIcon,        count: 0 },
-  { id: 'invoice-auditor', label: 'Invoice Auditor', Icon: ReceiptIcon,       count: 0 },
-  { id: 'settings',     label: 'Settings',         Icon: SettingsIcon,      count: 0 },
+// NAV_SECTIONS is the source of truth for desktop sidebar grouping.
+// Each `id` must match a key in `TAB_COMPONENTS` in MainDashboard.
+const NAV_SECTIONS = [
+  {
+    heading: 'Command',
+    items: [
+      { id: 'command-center', label: 'Command Center', Icon: GaugeIcon },
+      { id: 'war-room',       label: 'War Room',       Icon: RadarIcon },
+      { id: 'pm-dashboard',   label: 'PM Dashboard',   Icon: UserRoundCogIcon },
+      { id: 'alerts',         label: 'Alerts',         Icon: TriangleAlertIcon },
+    ],
+  },
+  {
+    heading: 'Cash Flow',
+    items: [
+      { id: 'billing-queue',   label: 'Billing Queue',   Icon: DollarSignIcon },
+      { id: 'billing',         label: 'Billing',         Icon: ReceiptIcon },
+      { id: 'extras',          label: 'Change Orders',   Icon: FilePenLineIcon },
+      { id: 'invoice-auditor', label: 'Invoice Auditor', Icon: ScanSearchIcon },
+    ],
+  },
+  {
+    heading: 'Field',
+    items: [
+      { id: 'jobs',         label: 'Job Status',       Icon: HardHatIcon },
+      { id: 'inspections',  label: 'Inspections',      Icon: BadgeCheckIcon },
+      { id: 'daily-report', label: 'Daily Report',     Icon: NotebookPenIcon },
+      { id: 'morning',      label: 'Morning Briefing', Icon: CalendarClockIcon },
+      { id: 'materials',    label: 'Materials',        Icon: BoxesIcon },
+      { id: 'permits',      label: 'Permits',          Icon: ClipboardSignatureIcon },
+      { id: 'subs',         label: 'Subs',             Icon: UsersRoundIcon },
+    ],
+  },
+  {
+    heading: 'Workspace',
+    items: [
+      { id: 'folders',       label: 'Documents',     Icon: FolderOpenIcon },
+      { id: 'submit',        label: 'Submit',        Icon: SendIcon },
+      { id: 'notifications', label: 'Notifications', Icon: BellIcon },
+      { id: 'analytics',     label: 'Reports',       Icon: BarChart3Icon },
+      { id: 'team',          label: 'Team',          Icon: TrophyIcon },
+    ],
+  },
+  {
+    heading: 'System',
+    items: [
+      { id: 'architecture', label: 'Architecture', Icon: DatabaseIcon },
+      { id: 'settings',     label: 'Settings',     Icon: SettingsIcon },
+    ],
+  },
+]
+
+// Mobile primary nav (4 thumb-reachable items + a "More" drawer).
+const MOBILE_PRIMARY = [
+  { id: 'command-center', label: 'Command',  Icon: GaugeIcon },
+  { id: 'war-room',       label: 'War Room', Icon: RadarIcon },
+  { id: 'billing-queue',  label: 'Billing',  Icon: DollarSignIcon },
+  { id: 'jobs',           label: 'Jobs',     Icon: HardHatIcon },
+]
+
+const MOBILE_MORE = [
+  { id: 'pm-dashboard',  label: 'PMs',         Icon: UserRoundCogIcon },
+  { id: 'alerts',        label: 'Alerts',      Icon: TriangleAlertIcon },
+  { id: 'extras',        label: 'COs',         Icon: FilePenLineIcon },
+  { id: 'inspections',   label: 'Inspections', Icon: BadgeCheckIcon },
+  { id: 'daily-report',  label: 'Report',      Icon: NotebookPenIcon },
+  { id: 'morning',       label: 'Briefing',    Icon: CalendarClockIcon },
+  { id: 'submit',        label: 'Submit',      Icon: SendIcon },
+  { id: 'notifications', label: 'Notifs',      Icon: BellIcon },
+  { id: 'folders',       label: 'Documents',   Icon: FolderOpenIcon },
+  { id: 'materials',     label: 'Materials',   Icon: BoxesIcon },
+  { id: 'permits',       label: 'Permits',     Icon: ClipboardSignatureIcon },
+  { id: 'subs',          label: 'Subs',        Icon: UsersRoundIcon },
+  { id: 'analytics',     label: 'Reports',     Icon: BarChart3Icon },
+  { id: 'team',          label: 'Team',        Icon: TrophyIcon },
+  { id: 'settings',      label: 'Settings',    Icon: SettingsIcon },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -364,7 +425,7 @@ function LoginScreen({ onSignup }) {
           <ZapIcon size={22} color="#fff" />
         </div>
         <div>
-          <p className="font-black text-2xl leading-none" style={{ color: O }}>P2</p>
+          <p className="font-semibold text-2xl leading-none" style={{ color: O }}>P2</p>
           <p className="text-xs text-zinc-400 leading-tight">Electrical &amp; Mechanical</p>
         </div>
       </div>
@@ -757,7 +818,7 @@ function UrgentItems() {
                       {item.priority}
                     </span>
                     {item.jobId && (
-                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-white/10">{item.jobId}</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-white/10">{item.jobId}</span>
                     )}
                     <span className="text-xs text-muted-foreground">by <strong>{item.flaggedBy}</strong></span>
                     <span className="text-xs text-muted-foreground">{ts}</span>
@@ -896,7 +957,7 @@ function MorningBriefing() {
                   <div className="w-1 h-10 rounded-full shrink-0" style={{ backgroundColor: pColor[s.priority] }} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-xs bg-white/10 px-2 py-0.5 rounded shrink-0">{s.job}</span>
+                      <span className="text-xs bg-white/10 px-2 py-0.5 rounded shrink-0">{s.job}</span>
                       <span className="text-sm font-medium truncate">{s.task}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{s.crew}</p>
@@ -1056,7 +1117,7 @@ function JobStatus() {
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Job ID *</label>
-                <Input className="bg-white/5 border-white/20 font-mono" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
+                <Input className="bg-white/5 border-white/20" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Street Address *</label>
@@ -1089,7 +1150,7 @@ function JobStatus() {
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block">Permit Number</label>
-                <Input className="bg-white/5 border-white/20 font-mono" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
+                <Input className="bg-white/5 border-white/20" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
               </div>
             </div>
             <div className="grid md:grid-cols-3 gap-4">
@@ -1161,11 +1222,11 @@ function JobStatus() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-1 flex-wrap">
-                    <span className="font-black text-xl" style={{ color: O }}>{jobName(j)}</span>
+                    <span className="font-semibold text-xl" style={{ color: O }}>{jobName(j)}</span>
                     <InlineStatusSelect job={j} />
                     <InlinePhaseSelect job={j} />
                   </div>
-                  <p className="text-sm text-muted-foreground font-mono">{j.id} · {j.client}</p>
+                  <p className="text-sm text-muted-foreground">{j.id} · {j.client}</p>
                   <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
                     <span className="flex items-center gap-1"><UsersIcon size={11} /> PM: {j.pm}</span>
                     {j.qbsPM && <span className="flex items-center gap-1"><UsersIcon size={11} /> QBS: {j.qbsPM}</span>}
@@ -1174,7 +1235,7 @@ function JobStatus() {
                   </div>
                 </div>
                 <div className="text-right w-40">
-                  <p className="text-2xl font-black mb-1">{j.progress}%</p>
+                  <p className="text-2xl font-semibold mb-1">{j.progress}%</p>
                   <ProgressBar value={j.progress} className="mb-2" />
                   <p className="text-xs text-muted-foreground">{j.type}</p>
                 </div>
@@ -1204,7 +1265,7 @@ function JobStatus() {
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Invoice Info</p>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between"><span className="text-muted-foreground">Invoice #</span><span className="font-mono font-medium">{j.invoiceNum || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Invoice #</span><span className="font-medium">{j.invoiceNum || '—'}</span></div>
                     <div className="flex justify-between"><span className="text-muted-foreground">Invoice Date</span><span>{j.invoiceDate || '—'}</span></div>
                     <div className="flex justify-between"><span className="text-muted-foreground">QBS PM</span><span>{j.qbsPM || '—'}</span></div>
                     <div className="flex justify-between items-center border-t border-white/10 pt-2">
@@ -1315,11 +1376,11 @@ function Billing() {
                   {sorted.map(j => (
                     <tr key={j.id} className="hover:bg-white/5 transition-colors">
                       <td className="p-4">
-                        <p className="font-black text-base" style={{ color: O }}>{jobName(j)}</p>
-                        <p className="text-xs text-muted-foreground font-mono">{j.id}</p>
+                        <p className="font-semibold text-base" style={{ color: O }}>{jobName(j)}</p>
+                        <p className="text-xs text-muted-foreground">{j.id}</p>
                       </td>
                       <td className="p-4 text-muted-foreground text-sm">{j.client}</td>
-                      <td className="p-4 font-mono text-sm">{j.invoiceNum || <span className="text-muted-foreground/40">—</span>}</td>
+                      <td className="p-4 text-sm">{j.invoiceNum || <span className="text-muted-foreground/40">—</span>}</td>
                       <td className="p-4 text-muted-foreground text-sm">{j.invoiceDate || <span className="text-muted-foreground/40">—</span>}</td>
                       <td className="p-4 text-sm">{j.qbsPM || <span className="text-muted-foreground/40">—</span>}</td>
                       <td className="p-4"><BillingStatusSelect job={j} /></td>
@@ -1479,7 +1540,7 @@ function Inspections() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-3">
                   <span className="font-black" style={{ color: O }}>{jobName(j)}</span>
-                  <span className="text-muted-foreground font-normal text-xs font-mono">{j.id}</span>
+                  <span className="text-muted-foreground font-normal text-xs">{j.id}</span>
                   <span className="text-muted-foreground font-normal text-sm">{j.address}</span>
                 </CardTitle>
                 <JobBadge status={j.status} />
@@ -1699,7 +1760,7 @@ function SubsTab() {
                     </div>
                     <div className="text-center">
                       <p className="text-muted-foreground mb-1">Score</p>
-                      <p className="font-black text-xl" style={{ color: s.score >= 90 ? '#22c55e' : s.score >= 80 ? O : '#ef4444' }}>
+                      <p className="font-semibold text-xl" style={{ color: s.score >= 90 ? '#22c55e' : s.score >= 80 ? O : '#ef4444' }}>
                         {s.score}
                       </p>
                     </div>
@@ -1744,7 +1805,7 @@ function SubsTab() {
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
                               <span className="font-bold" style={{ color: O }}>{jobName(j)}</span>
-                              <span className="text-xs text-muted-foreground font-mono">{j.id}</span>
+                              <span className="text-xs text-muted-foreground">{j.id}</span>
                               <span className="text-xs px-1.5 py-0.5 rounded capitalize"
                                 style={{ backgroundColor: tradeColor[j.trade.charAt(0).toUpperCase()+j.trade.slice(1)] + '22', color: tradeColor[j.trade.charAt(0).toUpperCase()+j.trade.slice(1)] || '#9ca3af' }}>
                                 {j.trade}
@@ -2063,7 +2124,7 @@ function Materials() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-1 flex-wrap">
                       <span className="font-semibold text-base truncate">{m.name || m.item}</span>
-                      <span className="font-mono text-xs font-bold shrink-0" style={{ color: O }}>{m.jobId || m.job || '—'}</span>
+                      <span className="text-xs font-bold shrink-0" style={{ color: O }}>{m.jobId || m.job || '—'}</span>
                       {od && <span className="text-xs font-bold text-red-400">⚠ OVERDUE</span>}
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
@@ -2141,7 +2202,7 @@ function Permits() {
           <Card key={j.id} className="border-white/10">
             <CardHeader>
               <CardTitle className="text-sm flex items-center justify-between">
-                <span><span className="font-mono" style={{ color: O }}>{j.id}</span> — {j.address}</span>
+                <span><span className="" style={{ color: O }}>{j.id}</span> — {j.address}</span>
                 <JobBadge status={j.status} />
               </CardTitle>
             </CardHeader>
@@ -2399,12 +2460,12 @@ service cloud.firestore {
             {collections.map(c => (
               <div key={c.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
                 <div className="flex items-center gap-2 mb-1">
-                  <code className="text-sm font-mono font-bold" style={{ color: O }}>{c.name}</code>
+                  <span className="text-sm font-bold" style={{ color: O }}>{c.name}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mb-2">{c.desc}</p>
                 <div className="flex flex-wrap gap-1">
                   {c.fields.map(f => (
-                    <code key={f} className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-muted-foreground">{f}</code>
+                    <span key={f} className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-muted-foreground">{f}</span>
                   ))}
                 </div>
               </div>
@@ -2422,11 +2483,11 @@ service cloud.firestore {
             <CardContent className="space-y-3">
               {functions.map(f => (
                 <div key={f.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
-                  <code className="text-sm font-mono font-bold" style={{ color: O }}>{f.name}</code>
+                  <span className="text-sm font-bold" style={{ color: O }}>{f.name}</span>
                   <p className="text-xs text-muted-foreground mt-1">{f.desc}</p>
                   <div className="flex items-center gap-1.5 mt-1.5">
                     <CloudIcon size={10} className="text-muted-foreground" />
-                    <code className="text-xs text-muted-foreground">{f.trigger}</code>
+                    <span className="text-xs text-muted-foreground">{f.trigger}</span>
                   </div>
                 </div>
               ))}
@@ -2442,7 +2503,7 @@ service cloud.firestore {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <pre className="text-xs text-muted-foreground font-mono overflow-x-auto p-4 rounded-xl bg-black/40 border border-white/5 whitespace-pre leading-relaxed">
+          <pre className="text-xs text-muted-foreground overflow-x-auto p-4 rounded-xl bg-black/40 border border-white/5 whitespace-pre leading-relaxed">
             {rules}
           </pre>
         </CardContent>
@@ -2456,8 +2517,20 @@ service cloud.firestore {
 function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange, onLogout, onCreateUser, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'command-center')
   const [collapsed, setCollapsed] = useState(false)
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const { loading, jobs, extras, notifs, subs, submits, agentAlerts } = useData()
+
+  // Cross-component navigation. Command Center's "View All" links and Quick
+  // Modules dispatch `p2:navigate` with a tab id; the shell listens here.
+  // Keeping this in MainDashboard means screens stay route-agnostic — they
+  // never import `setActiveTab`.
+  useEffect(() => {
+    const handler = (e) => {
+      const id = e?.detail?.id
+      if (typeof id === 'string') setActiveTab(id)
+    }
+    window.addEventListener('p2:navigate', handler)
+    return () => window.removeEventListener('p2:navigate', handler)
+  }, [])
 
   const navCounts = {
     'command-center': (jobs || []).filter(j => {
@@ -2519,198 +2592,64 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     'settings':       wrap(<SettingsPageComponent onLogout={onLogout} />),
   }
 
+  // Decorate nav items with live counts so the sidebar can render badges
+  // without re-deriving them.
+  const decoratedSections = NAV_SECTIONS.map(section => ({
+    ...section,
+    items: section.items.map(it => ({ ...it, count: navCounts[it.id] ?? 0 })),
+  }))
+  const decoratedMobilePrimary = MOBILE_PRIMARY.map(it => ({ ...it, count: navCounts[it.id] ?? 0 }))
+  const decoratedMobileMore    = MOBILE_MORE.map(it => ({ ...it, count: navCounts[it.id] ?? 0 }))
+
+  const tenantOptions = role === 'internal' ? TENANTS : null
+  const userLabel = role === 'internal'
+    ? 'P2 Field Services'
+    : (TENANTS.find(t => t.id === tenantId)?.name || tenantId)
+  const roleLabel = role === 'internal'
+    ? 'Internal'
+    : role === 'owner'
+      ? 'Owner'
+      : 'Builder'
+
+  const sidebar = (
+    <Sidebar
+      sections={decoratedSections}
+      activeId={activeTab}
+      onSelect={setActiveTab}
+      collapsed={collapsed}
+      onToggleCollapse={() => setCollapsed(c => !c)}
+      tenants={tenantOptions}
+      tenantId={tenantId}
+      onTenantChange={onTenantChange}
+      role={role}
+      userLabel={userLabel}
+      roleLabel={roleLabel}
+      onLogout={onLogout}
+      onCreateUser={onCreateUser}
+    />
+  )
+
+  const mobileNav = (
+    <MobileNav
+      primary={decoratedMobilePrimary}
+      more={decoratedMobileMore}
+      activeId={activeTab}
+      onSelect={setActiveTab}
+    />
+  )
+
   return (
-    <div className="dark flex h-screen bg-background overflow-hidden">
-      {/* Sidebar */}
-      <div className={`hidden md:flex md:flex-col border-r border-white/10 transition-all duration-300 shrink-0 ${collapsed ? 'w-16' : 'w-60'}`}
-        style={{ backgroundColor: 'oklch(0.165 0 0)' }}>
-
-        {/* Logo */}
-        <div className="flex items-center gap-3 p-4 border-b border-white/10">
-          <div className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center" style={{ backgroundColor: O }}>
-            <HammerIcon size={16} color="#fff" />
-          </div>
-          {!collapsed && (
-            <div className="overflow-hidden">
-              <p className="font-black text-sm leading-none" style={{ color: O }}>P2</p>
-              <p className="text-xs text-zinc-400">Electrical &amp; Mechanical</p>
-            </div>
-          )}
-          <button
-            className="ml-auto p-1 rounded-lg hover:bg-white/10 transition-colors shrink-0"
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            onClick={() => setCollapsed(c => !c)}>
-            {collapsed ? <ChevronRightIcon size={14} /> : <ChevronLeftIcon size={14} />}
-          </button>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-2">
-          {NAV.map(item => {
-            const active = activeTab === item.id
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 text-sm transition-all relative group"
-                style={{
-                  backgroundColor: active ? O + '22' : 'transparent',
-                  color: active ? O : '#9ca3af',
-                }}>
-                {active && <div className="absolute left-0 top-0 bottom-0 w-0.5 rounded-full" style={{ backgroundColor: O }} />}
-                <item.Icon size={16} className="shrink-0" />
-                {!collapsed && (
-                  <>
-                    <span className="flex-1 text-left font-medium truncate">{item.label}</span>
-                    {(navCounts[item.id] ?? item.count) > 0 && (
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-                        style={{ backgroundColor: active ? O : '#374151', color: active ? '#fff' : '#9ca3af' }}>
-                        {navCounts[item.id] ?? item.count}
-                      </span>
-                    )}
-                  </>
-                )}
-                {collapsed && (navCounts[item.id] ?? item.count) > 0 && (
-                  <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: O }} />
-                )}
-              </button>
-            )
-          })}
-        </nav>
-
-        {/* Bottom */}
-        {!collapsed && (
-          <div className="border-t border-white/10 p-4 space-y-3">
-            {role === 'internal' && onTenantChange && (
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Tenant View</p>
-                <Select value={tenantId} onValueChange={onTenantChange}>
-                  <SelectTrigger className="w-full h-8 text-xs bg-white/5 border-white/20">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TENANTS.map(t => (
-                      <SelectItem key={t.id} value={t.id} className="text-xs">{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: O + '33', color: O }}>
-                {role === 'internal' ? 'P2' : tenantId.slice(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <p className="text-xs font-medium">{role === 'internal' ? 'P2 Field Services' : TENANTS.find(t => t.id === tenantId)?.name || tenantId}</p>
-                <p className="text-xs text-muted-foreground">{role === 'internal' ? 'P2 Internal' : 'Builder'}</p>
-              </div>
-            </div>
-            {(role === 'owner' || role === 'internal') && onCreateUser && (
-              <button
-                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
-                onClick={onCreateUser}>
-                <UsersIcon size={12} /> Manage Users
-              </button>
-            )}
-            <button
-              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
-              onClick={onLogout}>
-              <LogOutIcon size={12} /> Sign out
-            </button>
+    <AppShell sidebar={sidebar} mobileNav={mobileNav}>
+      <Suspense
+        fallback={(
+          <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+            Loading…
           </div>
         )}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto pb-16 md:pb-0">
-        <div className="p-3 sm:p-6 max-w-7xl">
-          <Suspense fallback={<div className="flex items-center justify-center h-48 text-muted-foreground text-sm">Loading…</div>}>
-            {TAB_COMPONENTS[activeTab]}
-          </Suspense>
-        </div>
-      </div>
-
-      {/* Mobile bottom nav */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 border-t border-white/10 flex z-50"
-        style={{ backgroundColor: 'oklch(0.165 0 0)' }}>
-        {[
-          { id: 'war-room',     label: 'War Room', Icon: TargetIcon        },
-          { id: 'pm-dashboard', label: 'PMs',      Icon: UsersIcon         },
-          { id: 'alerts',       label: 'Alerts',   Icon: AlertTriangleIcon },
-          { id: 'jobs',         label: 'Jobs',     Icon: ClipboardIcon     },
-          { id: 'daily-report', label: 'Report',   Icon: ClipboardListIcon },
-        ].map(item => {
-          const cnt = navCounts[item.id] ?? 0
-          const isActive = activeTab === item.id
-          return (
-            <button key={item.id} onClick={() => { setActiveTab(item.id); setMoreMenuOpen(false) }}
-              className="flex-1 flex flex-col items-center gap-0.5 py-2 relative transition-colors"
-              style={{ color: isActive ? O : '#6b7280' }}>
-              <div className="relative">
-                <item.Icon size={20} />
-                {cnt > 0 && (
-                  <span className="absolute -top-1 -right-2 text-white font-black rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: O, fontSize: '9px', width: 14, height: 14 }}>
-                    {cnt}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] font-medium leading-none">{item.label}</span>
-            </button>
-          )
-        })}
-        <button onClick={() => setMoreMenuOpen(m => !m)}
-          className="flex-1 flex flex-col items-center gap-0.5 py-2 transition-colors"
-          style={{ color: moreMenuOpen ? O : '#6b7280' }}>
-          <MoreHorizontalIcon size={20} />
-          <span className="text-[10px] font-medium leading-none">More</span>
-        </button>
-      </div>
-
-      {/* More slide-up drawer */}
-      {moreMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)}>
-          <div className="absolute bottom-14 left-0 right-0 border-t border-white/10 p-4 grid grid-cols-4 gap-2"
-            style={{ backgroundColor: 'oklch(0.165 0 0)' }}
-            onClick={e => e.stopPropagation()}>
-            {[
-              { id: 'command-center', label: 'Agent',     Icon: BrainCircuitIcon  },
-              { id: 'extras',         label: 'COs',        Icon: PlusIcon          },
-              { id: 'billing',        label: 'Billing',    Icon: DollarSignIcon    },
-              { id: 'notifications',  label: 'Notifs',     Icon: BellIcon          },
-              { id: 'submit',         label: 'Submit',     Icon: SendIcon          },
-              { id: 'folders',        label: 'Folders',    Icon: FolderIcon        },
-              { id: 'materials',      label: 'Materials',  Icon: PackageIcon       },
-              { id: 'permits',        label: 'Permits',    Icon: FileTextIcon      },
-              { id: 'subs',           label: 'Subs',       Icon: UsersIcon         },
-              { id: 'analytics',      label: 'Analytics',  Icon: BarChart2Icon     },
-              { id: 'team',           label: 'Team',       Icon: TrophyIcon        },
-              { id: 'settings',       label: 'Settings',   Icon: SettingsIcon      },
-            ].map(item => {
-              const cnt = navCounts[item.id] ?? 0
-              const isActive = activeTab === item.id
-              return (
-                <button key={item.id}
-                  onClick={() => { setActiveTab(item.id); setMoreMenuOpen(false) }}
-                  className="flex flex-col items-center gap-1 p-2 rounded-xl transition-colors relative"
-                  style={{ backgroundColor: isActive ? O + '22' : 'transparent', color: isActive ? O : '#9ca3af' }}>
-                  <div className="relative">
-                    <item.Icon size={20} />
-                    {cnt > 0 && (
-                      <span className="absolute -top-1 -right-2 text-white font-black rounded-full flex items-center justify-center"
-                        style={{ backgroundColor: O, fontSize: '9px', width: 14, height: 14 }}>
-                        {cnt}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10px] font-medium text-center leading-tight">{item.label}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+      >
+        {TAB_COMPONENTS[activeTab]}
+      </Suspense>
+    </AppShell>
   )
 }
 

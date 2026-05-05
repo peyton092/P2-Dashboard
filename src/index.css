@@ -157,3 +157,33 @@
   h2 { @apply text-xl font-bold; }
   h3 { @apply text-base font-semibold; }
 }
+
+/* Premium dark scrollbars — applied inside any element that has the `.dark`
+   class (which is set on AppShell). Uses only existing oklch palette tones —
+   the dark sidebar background and a subtle white-alpha thumb. */
+.dark *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.dark *::-webkit-scrollbar-track {
+  background: oklch(0.165 0 0);
+}
+.dark *::-webkit-scrollbar-thumb {
+  background: oklch(1 0 0 / 8%);
+  border-radius: 4px;
+}
+.dark *::-webkit-scrollbar-thumb:hover {
+  background: oklch(1 0 0 / 14%);
+}
+.dark * {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(1 0 0 / 8%) oklch(0.165 0 0);
+}
+/* The sidebar nav scroll area gets an even quieter thumb so the brand panel
+   stays calm — `p2-scrollarea` is on the <nav> in `Sidebar.jsx`. */
+.dark .p2-scrollarea::-webkit-scrollbar-thumb {
+  background: oklch(1 0 0 / 6%);
+}
+.dark .p2-scrollarea {
+  scrollbar-color: oklch(1 0 0 / 6%) oklch(0.165 0 0);
+}
