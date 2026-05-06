@@ -22,7 +22,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  ShieldIcon, AlertTriangleIcon, CheckCircleIcon, Building2Icon,
+  ShieldIcon, ShieldCheckIcon, AlertTriangleIcon, CheckCircleIcon, Building2Icon,
   WrenchIcon, DollarSignIcon, FileTextIcon, BellIcon,
   UsersIcon, PackageIcon, ClipboardIcon, MapPinIcon,
   ZapIcon, TruckIcon, CalendarIcon, ClockIcon, TrendingUpIcon,
@@ -67,7 +67,7 @@ import {
 } from './components/shared'
 // daysSince is defined locally in this file with identical semantics, so we
 // don't re-import it from agent/scoring (would be a duplicate declaration).
-import { classifyRisk, hasFailedInspection, isBillingReady } from './agent/scoring'
+import { classifyRisk, hasFailedInspection, isBillingReady, isHvacStartupBlocked } from './agent/scoring'
 import { ZONES, getZoneId } from './agent/zones'
 import { generateInvoicePdf } from './lib/generateInvoicePdf'
 import AppShell from './components/shell/AppShell'
@@ -690,195 +690,659 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
 }
 
 // ── Tab: Morning Briefing ─────────────────────────────────────────────────────
+//
+// Read-only daily operating brief. Surfaces the most important things to
+// review before the day starts: job risk, inspections, billing, change
+// orders, materials, sub compliance, PM workload, and yesterday's crew
+// reports. No write paths — only read derivations from useData().
+
+const BRIEF_CATEGORY_META = {
+  'job-risk':    { label: 'Job Risk',         Icon: TriangleAlertIcon, accent: '#ef4444' },
+  'inspections': { label: 'Inspections',      Icon: BadgeCheckIcon,    accent: '#3b82f6' },
+  'billing':     { label: 'Billing',          Icon: DollarSignIcon,    accent: '#22c55e' },
+  'co':          { label: 'Change Orders',    Icon: FilePenLineIcon,   accent: '#eab308' },
+  'materials':   { label: 'Materials',        Icon: PackageIcon,       accent: O },
+  'subs':        { label: 'Subs Compliance',  Icon: ShieldCheckIcon,   accent: '#06b6d4' },
+  'pm':          { label: 'PM Workload',      Icon: UserRoundCogIcon,  accent: '#a78bfa' },
+}
+
+const SEVERITY_RANK = { critical: 0, warning: 1, info: 2 }
+
+function severityTone(sev) {
+  if (sev === 'critical') return 'critical'
+  if (sev === 'warning')  return 'warning'
+  return 'info'
+}
+function severityColor(sev) {
+  if (sev === 'critical') return '#ef4444'
+  if (sev === 'warning')  return '#eab308'
+  return '#3b82f6'
+}
+
+// Generate the full set of briefing items from the live data set. Each item
+// is independent and self-describing so the priority list and the grouped
+// section panels both render the same shape.
+function buildBriefingItems({ jobs, extras, materials, subs }) {
+  const items = []
+  const activeJobs = jobs.filter(j => !['complete', 'completed'].includes(j.status))
+
+  // Job risk — failed inspections, blocked, on-hold, critical-risk, stale.
+  for (const j of activeJobs) {
+    const risk = classifyRisk(j)
+    const stale = daysSince(j.lastStatusChange || j.start)
+    if (hasFailedInspection(j)) {
+      items.push({
+        id: `risk_failed_${j.id}`,
+        category: 'job-risk',
+        severity: 'critical',
+        jobId: j.id,
+        title: `${jobName(j)} — failed inspection`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: 'Coordinate rework — inspection failed',
+        age: stale,
+      })
+      continue
+    }
+    if (j.status === 'blocked' || isHvacStartupBlocked(j)) {
+      items.push({
+        id: `risk_blocked_${j.id}`,
+        category: 'job-risk',
+        severity: 'critical',
+        jobId: j.id,
+        title: `${jobName(j)} — blocked`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: isHvacStartupBlocked(j) ? 'HVAC startup blocked — release E service' : 'Unblock job',
+        age: stale,
+      })
+      continue
+    }
+    if (j.status === 'hold') {
+      items.push({
+        id: `risk_hold_${j.id}`,
+        category: 'job-risk',
+        severity: 'critical',
+        jobId: j.id,
+        title: `${jobName(j)} — on hold`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: 'Release hold',
+        age: stale,
+      })
+      continue
+    }
+    if (risk?.level === 'critical') {
+      items.push({
+        id: `risk_crit_${j.id}`,
+        category: 'job-risk',
+        severity: 'critical',
+        jobId: j.id,
+        title: `${jobName(j)} — high risk`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: risk.reason ? `Triage — ${risk.reason}` : 'Triage — high risk',
+        age: stale,
+      })
+      continue
+    }
+    if (j.status === 'needs-action') {
+      items.push({
+        id: `risk_needs_${j.id}`,
+        category: 'job-risk',
+        severity: 'warning',
+        jobId: j.id,
+        title: `${jobName(j)} — needs action`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: 'Resolve open item',
+        age: stale,
+      })
+      continue
+    }
+    if (risk?.level === 'warning') {
+      items.push({
+        id: `risk_warn_${j.id}`,
+        category: 'job-risk',
+        severity: 'warning',
+        jobId: j.id,
+        title: `${jobName(j)} — at risk`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: risk.reason ? `Follow up — ${risk.reason}` : 'Follow up — at risk',
+        age: stale,
+      })
+      continue
+    }
+    if (stale !== null && stale >= 7) {
+      items.push({
+        id: `risk_stale_${j.id}`,
+        category: 'job-risk',
+        severity: 'warning',
+        jobId: j.id,
+        title: `${jobName(j)} — ${stale}d since update`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: 'Field update needed',
+        age: stale,
+      })
+    }
+  }
+
+  // Inspections — scheduled (next call-in) and pending-verification.
+  for (const j of activeJobs) {
+    const insp = j.insp || {}
+    for (const trade of ['electrical', 'plumbing', 'hvac']) {
+      const t = insp[trade] || {}
+      for (const phase of ['roughIn', 'trim', 'final']) {
+        const v = t[phase]
+        if (v === 'scheduled' || v === 'pending-verification') {
+          const phaseLabelText = phase === 'roughIn' ? 'rough-in' : phase
+          items.push({
+            id: `insp_${j.id}_${trade}_${phase}`,
+            category: 'inspections',
+            severity: v === 'scheduled' ? 'info' : 'warning',
+            jobId: j.id,
+            title: `${jobName(j)} — ${trade} ${phaseLabelText}`,
+            owner: j.pm ? `PM ${j.pm}${j.subs?.[trade] ? ` · Sub ${j.subs[trade]}` : ''}` : null,
+            nextAction: v === 'scheduled' ? 'Confirm with inspector' : 'Verify last result',
+            age: null,
+          })
+        }
+      }
+    }
+  }
+
+  // Billing — holds, missing-permit on bill-ready jobs, overdue invoices.
+  const pendingCOByJob = new Map()
+  extras.forEach(e => {
+    if (e.status === 'pending' || e.status === 'Sent to Builder' || e.status === 'Draft') {
+      if (e.job) pendingCOByJob.set(e.job, (pendingCOByJob.get(e.job) || 0) + 1)
+    }
+  })
+  for (const j of jobs) {
+    const ready = isBillingReady(j, extras)
+    if (j.billingStatus === 'hold') {
+      items.push({
+        id: `bill_hold_${j.id}`,
+        category: 'billing',
+        severity: 'critical',
+        jobId: j.id,
+        title: `${jobName(j)} — billing on hold`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: 'Resolve hold reason',
+        age: null,
+      })
+      continue
+    }
+    if (ready && !j.permitNumber) {
+      items.push({
+        id: `bill_perm_${j.id}`,
+        category: 'billing',
+        severity: 'warning',
+        jobId: j.id,
+        title: `${jobName(j)} — billable, missing permit`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: 'Add permit number',
+        age: null,
+      })
+      continue
+    }
+    if (ready && (pendingCOByJob.get(j.id) || 0) > 0) {
+      items.push({
+        id: `bill_co_${j.id}`,
+        category: 'billing',
+        severity: 'warning',
+        jobId: j.id,
+        title: `${jobName(j)} — billable, CO pending`,
+        owner: j.pm ? `PM ${j.pm}` : null,
+        nextAction: 'Confirm CO before billing',
+        age: null,
+      })
+    }
+  }
+
+  // Change Orders — pending or sent-to-builder, especially aging ones.
+  for (const e of extras) {
+    if (e.status !== 'pending' && e.status !== 'Sent to Builder') continue
+    const sentTs = e.sentAt?.toDate?.() || (e.sentAt ? new Date(e.sentAt) : null)
+    const dateTs = e.date ? new Date(e.date) : null
+    const created = e.createdAt?.toDate?.() || (e.createdAt ? new Date(e.createdAt) : null)
+    const t = sentTs || dateTs || created
+    const age = t && !isNaN(t.getTime()) ? Math.floor((Date.now() - t.getTime()) / 86400000) : null
+    let severity = 'info'
+    let nextAction = 'Awaiting builder approval'
+    if (age != null && age >= 7) { severity = 'critical'; nextAction = 'Escalate — long pending' }
+    else if (age != null && age >= 3) { severity = 'warning'; nextAction = 'Follow up with builder' }
+    items.push({
+      id: `co_${e._docId || e.id}`,
+      category: 'co',
+      severity,
+      jobId: e.job || null,
+      title: `${e.coNumber || e.id || 'CO'} — ${e.desc || 'change order'}`,
+      owner: e.pm ? `PM ${e.pm}` : null,
+      nextAction,
+      age,
+    })
+  }
+
+  // Materials — overdue or blocking-soon. Helpers `matIsOpen`, `matIsOverdue`,
+  // `matIsBlocking`, `matDaysUntilNeeded` are function declarations (hoisted),
+  // so safe to call from here. The arrow-const helpers (`matName`/`matJobId`)
+  // are NOT hoisted, so we inline their tiny bodies to avoid a TDZ trap.
+  for (const m of materials) {
+    if (!matIsOpen(m)) continue
+    const overdue = matIsOverdue(m)
+    const blocking = matIsBlocking(m)
+    if (!overdue && !blocking) continue
+    const days = matDaysUntilNeeded(m)
+    const matNameLocal = m.name || m.item || '—'
+    const matJobIdLocal = m.jobId || m.job || null
+    items.push({
+      id: `mat_${m._docId || m.id}_${matNameLocal}`,
+      category: 'materials',
+      severity: overdue ? 'critical' : 'warning',
+      jobId: matJobIdLocal,
+      title: `${matNameLocal} — ${m.qty || 0} ${m.unit || 'ea'}`,
+      owner: m.vendor ? `Vendor ${m.vendor}` : null,
+      nextAction: overdue
+        ? 'Follow up today — overdue'
+        : days !== null ? `Due in ${days}d — confirm with supplier` : 'Confirm with supplier',
+      age: overdue && days !== null ? Math.abs(days) : null,
+    })
+  }
+
+  // Subs / Compliance — expired insurance, missing W-9.
+  for (const s of subs) {
+    if (subInsuranceExpired(s)) {
+      items.push({
+        id: `sub_insexp_${s.id}`,
+        category: 'subs',
+        severity: 'critical',
+        jobId: null,
+        title: `${s.name} — insurance expired`,
+        owner: s.trade ? `${s.trade} sub` : null,
+        nextAction: 'Insurance expired — do not assign',
+        age: null,
+      })
+      continue
+    }
+    if (subHasMissingDocs(s)) {
+      items.push({
+        id: `sub_w9_${s.id}`,
+        category: 'subs',
+        severity: 'critical',
+        jobId: null,
+        title: `${s.name} — W-9 missing`,
+        owner: s.trade ? `${s.trade} sub` : null,
+        nextAction: 'Collect W-9 — cannot assign',
+        age: null,
+      })
+      continue
+    }
+    if (subInsuranceExpiringSoon(s)) {
+      items.push({
+        id: `sub_insexp_soon_${s.id}`,
+        category: 'subs',
+        severity: 'warning',
+        jobId: null,
+        title: `${s.name} — insurance expiring`,
+        owner: s.trade ? `${s.trade} sub` : null,
+        nextAction: 'Insurance expiring soon — request renewal',
+        age: null,
+      })
+    }
+  }
+
+  // PM Workload — PMs with critical risk OR ≥10 active jobs.
+  const pmMap = new Map()
+  for (const j of activeJobs) {
+    const pm = j.pm
+    if (!pm) continue
+    if (!pmMap.has(pm)) pmMap.set(pm, { pm, jobs: 0, critical: 0, warning: 0, blocked: 0 })
+    const entry = pmMap.get(pm)
+    entry.jobs += 1
+    const r = classifyRisk(j)
+    if (r?.level === 'critical') entry.critical += 1
+    else if (r?.level === 'warning') entry.warning += 1
+    if (j.status === 'blocked' || hasFailedInspection(j)) entry.blocked += 1
+  }
+  for (const entry of pmMap.values()) {
+    if (entry.critical >= 1 || entry.blocked >= 2) {
+      items.push({
+        id: `pm_help_${entry.pm}`,
+        category: 'pm',
+        severity: 'critical',
+        jobId: null,
+        title: `${entry.pm} — help needed`,
+        owner: `${entry.jobs} active job${entry.jobs === 1 ? '' : 's'}`,
+        nextAction: entry.critical > 0
+          ? `${entry.critical} high-risk job${entry.critical === 1 ? '' : 's'} — triage today`
+          : `${entry.blocked} blocked job${entry.blocked === 1 ? '' : 's'} — clear blockers`,
+        age: null,
+      })
+    } else if (entry.warning >= 3 || entry.jobs >= 10) {
+      items.push({
+        id: `pm_load_${entry.pm}`,
+        category: 'pm',
+        severity: 'warning',
+        jobId: null,
+        title: `${entry.pm} — workload pressure`,
+        owner: `${entry.jobs} active job${entry.jobs === 1 ? '' : 's'}`,
+        nextAction: entry.warning >= 3
+          ? `${entry.warning} at-risk jobs — follow up`
+          : 'Volume risk — watch for dropped items',
+        age: null,
+      })
+    }
+  }
+
+  // Sort: severity first, then age desc (older items surface first).
+  items.sort((a, b) => {
+    const sa = SEVERITY_RANK[a.severity] ?? 9
+    const sb = SEVERITY_RANK[b.severity] ?? 9
+    if (sa !== sb) return sa - sb
+    return (b.age ?? -1) - (a.age ?? -1)
+  })
+
+  return items
+}
 
 function MorningBriefing() {
-  const { dailyReports, jobs, subs: SUBS, notifs } = useData()
-  const submittedYesterday = new Set(
-    (dailyReports || []).filter(r => r.date === YESTERDAY_STR).map(r => r.crewMember)
+  const {
+    dailyReports = [],
+    jobs = [],
+    subs = [],
+    extras = [],
+    materials = [],
+  } = useData()
+
+  const submittedYesterday = useMemo(
+    () => new Set((dailyReports || []).filter(r => r.date === YESTERDAY_STR).map(r => r.crewMember)),
+    [dailyReports],
   )
 
-  const needsActionJobs = [...jobs]
-    .filter(j => j.status === 'needs-action')
-    .sort((a, b) => jobName(a).localeCompare(jobName(b)))
+  const items = useMemo(
+    () => buildBriefingItems({ jobs, extras, materials, subs }),
+    [jobs, extras, materials, subs],
+  )
 
-  const scheduledInspJobs = [...jobs]
-    .filter(j => !['complete','completed'].includes(j.status) &&
-      ['electrical','plumbing','hvac'].some(t => j.insp?.[t] && Object.values(j.insp[t]).includes('scheduled'))
-    )
-    .sort((a, b) => jobName(a).localeCompare(jobName(b)))
+  // KPI counts derived from the briefing items themselves so the strip
+  // exactly matches the panels below.
+  const kpis = useMemo(() => {
+    const byCat = (cat) => items.filter(i => i.category === cat).length
+    const failedInsp = jobs.filter(j =>
+      !['complete','completed'].includes(j.status) && hasFailedInspection(j),
+    ).length
+    return {
+      needsAction:    items.filter(i => i.category === 'job-risk').length,
+      atRisk:         items.filter(i => i.category === 'job-risk' && i.severity !== 'info').length,
+      failedInsp,
+      billing:        byCat('billing'),
+      pendingCO:      byCat('co'),
+      materials:      byCat('materials'),
+      subsBlocked:    byCat('subs'),
+      pmHelp:         byCat('pm'),
+      critical:       items.filter(i => i.severity === 'critical').length,
+    }
+  }, [items, jobs])
 
-  const staleActionJobs = [...jobs]
-    .filter(j => !['complete','completed'].includes(j.status))
-    .map(j => ({ ...j, staleDays: daysSince(j.lastStatusChange || j.start) }))
-    .filter(j => j.staleDays !== null && j.staleDays > 7)
-    .sort((a, b) => b.staleDays - a.staleDays)
-    .slice(0, 3)
+  // Group briefing items by category for the section panels.
+  const groupedItems = useMemo(() => {
+    const out = {}
+    for (const i of items) {
+      if (!out[i.category]) out[i.category] = []
+      out[i.category].push(i)
+    }
+    return out
+  }, [items])
 
-  const actionItems = [
-    ...needsActionJobs.map(j => ({
-      priority: 'urgent',
-      job: j.id,
-      task: `${j.phase || phaseLabel(j.progress)} — action required`,
-      crew: `PM: ${j.pm}${j.lead ? ` · Lead: ${j.lead}` : ''}`,
-    })),
-    ...scheduledInspJobs.flatMap(j => {
-      const trades = ['electrical','plumbing','hvac'].filter(t =>
-        j.insp?.[t] && Object.values(j.insp[t]).includes('scheduled')
-      )
-      return trades.map(t => {
-        const phase = Object.entries(j.insp[t]).find(([,v]) => v === 'scheduled')?.[0] || 'phase'
-        return {
-          priority: 'high',
-          job: j.id,
-          task: `Inspection scheduled — ${t} ${phase}`,
-          crew: `Sub: ${j.subs?.[t] || '—'} · PM: ${j.pm}`,
-        }
-      })
-    }),
-    ...staleActionJobs.map(j => ({
-      priority: 'normal',
-      job: j.id,
-      task: `Stale ${j.staleDays} days — check-in needed`,
-      crew: `PM: ${j.pm} · ${j.phase || phaseLabel(j.progress)}`,
-    })),
-  ].slice(0, 10)
+  // Top priority list — first ~12 items (already sorted by severity then age).
+  const priorityItems = items.slice(0, 12)
 
-  const activeSubNames = new Set()
-  jobs.filter(j => !['complete','completed'].includes(j.status)).forEach(j => {
-    if (j.subs?.electrical) activeSubNames.add(j.subs.electrical)
-    if (j.subs?.plumbing)   activeSubNames.add(j.subs.plumbing)
-    if (j.subs?.hvac)       activeSubNames.add(j.subs.hvac)
+  const dateStr = TODAY.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
-  const crewOnField = activeSubNames.size
-
-  const scores = [...(SUBS || [])]
-    .sort((a, b) => b.score - a.score)
-    .map(s => ({
-      name: s.name,
-      trade: s.trade,
-      score: s.score,
-      jobs: s.jobs,
-    }))
-
-  const openNotifCount = (notifs || []).filter(n => !n.read).length
-  const pColor = { urgent: '#ef4444', high: O, normal: '#22c55e' }
-  const dateStr = TODAY.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const submittedCount = CREW_LIST.filter(n => submittedYesterday.has(n)).length
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Morning Briefing" sub={`${dateStr} · Middle Tennessee`} />
-
-      <div className="grid grid-cols-3 gap-4">
-        <StatCard label="Scheduled Inspections" value={scheduledInspJobs.length}
-          sub={scheduledInspJobs.slice(0,2).map(j => jobName(j)).join(' · ') || 'None scheduled'}
-          Icon={CheckCircleIcon} />
-        <StatCard label="Crew on Field" value={crewOnField}
-          sub={`of ${(SUBS||[]).length} registered subs`}
-          Icon={UsersIcon} />
-        <StatCard label="Open Action Items" value={openNotifCount}
-          sub={`${needsActionJobs.length} job${needsActionJobs.length !== 1 ? 's' : ''} need action`}
-          Icon={AlertTriangleIcon} />
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <Card className="border-white/10">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <CalendarIcon size={16} style={{ color: O }} /> Today's Priority Actions
-                <span className="text-xs font-normal text-muted-foreground ml-1">derived from live job data</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {actionItems.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">No urgent actions — all jobs on track.</p>
-              )}
-              {actionItems.map((s, i) => (
-                <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-white/5 border border-white/5">
-                  <div className="w-1 h-10 rounded-full shrink-0" style={{ backgroundColor: pColor[s.priority] }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs bg-white/10 px-2 py-0.5 rounded shrink-0">{s.job}</span>
-                      <span className="text-sm font-medium truncate">{s.task}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{s.crew}</p>
-                  </div>
-                  <span className="text-xs uppercase font-bold px-2 py-0.5 rounded shrink-0"
-                    style={{ color: pColor[s.priority], backgroundColor: pColor[s.priority] + '22' }}>
-                    {s.priority}
-                  </span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div>
-          <Card className="border-white/10 h-full">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <StarIcon size={16} style={{ color: O }} /> Crew Scoreboard
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {scores.map((s, i) => (
-                <div key={s.name} className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground w-4">#{i+1}</span>
-                      <div>
-                        <p className="text-sm font-medium">{s.name}</p>
-                        <p className="text-xs" style={{ color: tradeColor[s.trade] }}>{s.trade}</p>
-                      </div>
-                    </div>
-                    <span className="font-bold text-lg" style={{ color: s.score >= 90 ? '#22c55e' : s.score >= 80 ? O : '#ef4444' }}>
-                      {s.score}
-                    </span>
-                  </div>
-                  <ProgressBar value={s.score} color={s.score >= 90 ? '#22c55e' : s.score >= 80 ? O : '#ef4444'} />
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      <Card className="border-white/10">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <ClipboardIcon size={16} style={{ color: O }} /> Crew Reports — Yesterday ({YESTERDAY_STR})
-            <span className="text-xs font-normal text-muted-foreground ml-1">
-              {CREW_LIST.filter(n => submittedYesterday.has(n)).length}/{CREW_LIST.length} submitted
+      <PageHeader
+        eyebrow="Morning Briefing"
+        title="Daily operating brief"
+        subtitle="What needs attention today, ranked by severity and age. Read top to bottom before the day starts."
+        meta={
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+              />
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
             </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-            {CREW_LIST.map(name => {
-              const submitted = submittedYesterday.has(name)
-              return (
-                <div key={name} className="flex flex-col items-center gap-2 p-3 rounded-xl border"
-                  style={{
-                    borderColor: submitted ? '#22c55e44' : '#ef444444',
-                    backgroundColor: submitted ? '#22c55e0a' : '#ef44440a',
-                  }}>
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: submitted ? '#22c55e22' : '#ef444422' }}>
-                    {submitted
-                      ? <CheckIcon size={18} color="#22c55e" />
-                      : <XIcon size={18} color="#ef4444" />}
-                  </div>
-                  <p className="text-xs font-semibold text-center">{name}</p>
-                  <p className="text-xs font-bold" style={{ color: submitted ? '#22c55e' : '#ef4444' }}>
-                    {submitted ? 'Submitted' : 'MISSING'}
-                  </p>
-                </div>
-              )
-            })}
+            <span>{dateStr}</span>
+            <span>Middle Tennessee</span>
+            {kpis.critical > 0 && (
+              <span className="text-red-300">{kpis.critical} critical item{kpis.critical === 1 ? '' : 's'}</span>
+            )}
+          </>
+        }
+      />
+
+      {/* KPI strip — 5 tiles */}
+      <section
+        className="grid gap-2 sm:gap-3"
+        aria-label="Briefing summary"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
+      >
+        <MetricTile
+          label="Jobs Needing Action"
+          value={kpis.needsAction}
+          Icon={TriangleAlertIcon}
+          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
+          sub={kpis.needsAction > 0 ? 'Risk + needs action' : 'No PM issues this morning'}
+        />
+        <MetricTile
+          label="Failed Inspections"
+          value={kpis.failedInsp}
+          Icon={AlertCircleIcon}
+          emphasis={kpis.failedInsp > 0 ? 'critical' : 'success'}
+          sub={kpis.failedInsp > 0 ? 'Coordinate rework' : 'No failures'}
+        />
+        <MetricTile
+          label="Billing Blockers"
+          value={kpis.billing}
+          Icon={DollarSignIcon}
+          emphasis={kpis.billing > 0 ? 'warning' : 'success'}
+          sub={kpis.billing > 0 ? 'Hold, missing docs, or CO' : 'Clean billing pipe'}
+        />
+        <MetricTile
+          label="Pending Change Orders"
+          value={kpis.pendingCO}
+          Icon={FilePenLineIcon}
+          emphasis={kpis.pendingCO > 0 ? 'warning' : 'mute'}
+          sub={kpis.pendingCO > 0 ? 'Awaiting approval' : 'No COs in flight'}
+        />
+        <MetricTile
+          label="Materials Blockers"
+          value={kpis.materials}
+          Icon={PackageIcon}
+          emphasis={kpis.materials > 0 ? 'critical' : 'success'}
+          sub={kpis.materials > 0 ? 'Overdue or blocking soon' : 'No materials blocking work'}
+        />
+      </section>
+
+      {/* Today's priority list — combined feed across all categories */}
+      <DataPanel
+        title="Today's priority"
+        description={
+          priorityItems.length === 0
+            ? 'Ready for the day. No critical items this morning.'
+            : `Top ${priorityItems.length} item${priorityItems.length === 1 ? '' : 's'} — review in order.`
+        }
+        Icon={CalendarClockIcon}
+        padding="none"
+      >
+        {priorityItems.length === 0 ? (
+          <div className="p-5">
+            <AllClearState
+              title="Ready for the day"
+              description="No critical items this morning. All active jobs are on track."
+            />
           </div>
-        </CardContent>
-      </Card>
+        ) : (
+          <ul className="divide-y divide-white/5">
+            {priorityItems.map(item => (
+              <li key={item.id}>
+                <BriefingItem item={item} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </DataPanel>
+
+      {/* Grouped briefing sections — only show categories that have items */}
+      {['job-risk', 'inspections', 'billing', 'co', 'materials', 'subs', 'pm'].map(cat => {
+        const list = groupedItems[cat]
+        if (!list || list.length === 0) return null
+        return (
+          <BriefingGroup key={cat} category={cat} items={list} />
+        )
+      })}
+
+      {/* Yesterday's crew reports — preserved daily ritual signal */}
+      <DataPanel
+        title={`Yesterday's crew reports — ${YESTERDAY_STR}`}
+        description={`${submittedCount} of ${CREW_LIST.length} submitted`}
+        Icon={ClipboardListIcon}
+        badge={
+          <Pill tone={submittedCount === CREW_LIST.length ? 'success' : submittedCount === 0 ? 'critical' : 'warning'} size="xs">
+            {submittedCount}/{CREW_LIST.length}
+          </Pill>
+        }
+      >
+        <div
+          className="grid gap-2 sm:gap-3"
+          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}
+        >
+          {CREW_LIST.map(name => {
+            const submitted = submittedYesterday.has(name)
+            const tone = submitted ? '#22c55e' : '#ef4444'
+            return (
+              <div
+                key={name}
+                className="flex flex-col items-center gap-2 px-3 py-3 rounded-xl border min-w-0"
+                style={{
+                  borderColor: tone + '44',
+                  backgroundColor: tone + '0a',
+                }}
+              >
+                <div
+                  className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: tone + '22' }}
+                >
+                  {submitted
+                    ? <CheckIcon size={18} color={tone} />
+                    : <XIcon size={18} color={tone} />}
+                </div>
+                <p className="text-xs font-semibold text-zinc-100 text-center truncate w-full">{name}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-center" style={{ color: tone }}>
+                  {submitted ? 'Submitted' : 'Missing'}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      </DataPanel>
     </div>
+  )
+}
+
+function BriefingItem({ item }) {
+  const sev = severityTone(item.severity)
+  const railColor = severityColor(item.severity)
+  const meta = BRIEF_CATEGORY_META[item.category] || BRIEF_CATEGORY_META['job-risk']
+  const CatIcon = meta.Icon
+  return (
+    <div
+      className="px-4 py-3 sm:px-5 sm:py-3.5 transition-colors hover:bg-white/[0.015]"
+      style={{ borderLeft: `3px solid ${railColor}` }}
+    >
+      <div className="flex items-start gap-3 flex-wrap">
+        {/* Category pill */}
+        <Pill tone="neutral" size="xs" Icon={CatIcon} className="mt-0.5 shrink-0">
+          {meta.label}
+        </Pill>
+
+        {/* Body */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+            {item.jobId && (
+              <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
+                {item.jobId}
+              </span>
+            )}
+            <span className="text-sm font-semibold text-white truncate min-w-0">
+              {item.title}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-zinc-400">
+            {item.owner && <span>{item.owner}</span>}
+            {item.age !== null && item.age !== undefined && (
+              <span className="font-semibold" style={{ color: item.age >= 7 ? '#ef4444' : item.age >= 3 ? '#eab308' : '#9ca3af' }}>
+                {item.age === 0 ? 'today' : item.age === 1 ? '1d' : `${item.age}d`}
+              </span>
+            )}
+          </div>
+          <div className="flex items-start gap-1.5 mt-1.5 min-w-0">
+            <span className="text-[10px] uppercase tracking-wide text-zinc-400 shrink-0 mt-px">Next</span>
+            <p className="text-[12px] font-semibold leading-snug min-w-0" style={{ color: railColor }} title={item.nextAction}>
+              {item.nextAction}
+            </p>
+          </div>
+        </div>
+
+        {/* Severity pill on the right */}
+        <Pill tone={sev} size="xs" className="shrink-0 mt-0.5">
+          {item.severity === 'critical' ? 'Critical'
+           : item.severity === 'warning'  ? 'Needs attention'
+           : 'Review today'}
+        </Pill>
+      </div>
+    </div>
+  )
+}
+
+function BriefingGroup({ category, items }) {
+  const meta = BRIEF_CATEGORY_META[category] || BRIEF_CATEGORY_META['job-risk']
+  const critical = items.filter(i => i.severity === 'critical').length
+  const warning  = items.filter(i => i.severity === 'warning').length
+  const description = critical > 0
+    ? `${critical} critical${warning > 0 ? `, ${warning} need${warning === 1 ? 's' : ''} attention` : ''}`
+    : warning > 0
+      ? `${warning} need${warning === 1 ? 's' : ''} attention`
+      : `${items.length} item${items.length === 1 ? '' : 's'} to review`
+
+  return (
+    <DataPanel
+      title={meta.label}
+      description={description}
+      Icon={meta.Icon}
+      badge={
+        <Pill tone={critical > 0 ? 'critical' : warning > 0 ? 'warning' : 'info'} size="xs">
+          {items.length}
+        </Pill>
+      }
+      padding="none"
+    >
+      <ul className="divide-y divide-white/5">
+        {items.slice(0, 8).map(item => (
+          <li key={`group_${item.id}`}>
+            <BriefingItem item={item} />
+          </li>
+        ))}
+        {items.length > 8 && (
+          <li className="px-4 py-2.5 sm:px-5">
+            <p className="text-[11px] text-zinc-400">
+              {items.length - 8} more {meta.label.toLowerCase()} item{items.length - 8 === 1 ? '' : 's'} not shown — see the relevant tab for the full queue.
+            </p>
+          </li>
+        )}
+      </ul>
+    </DataPanel>
   )
 }
 
