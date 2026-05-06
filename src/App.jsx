@@ -10,7 +10,7 @@ import { DataProvider, useData } from './DataContext'
 import {
   addExtra, updateNotification, updateJob, updateExtra,
   sendExtraToQBS, approveExtra, rejectExtra,
-  passInspection, failInspection, createJob, addSubmit, updatePermit,
+  passInspection, failInspection, createJob, addSubmit,
   addMaterial, updateMaterial, useHistory, addHistory,
 } from './hooks/useFirestore'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select'
 import {
   ShieldIcon, ShieldCheckIcon, AlertTriangleIcon, CheckCircleIcon, Building2Icon, BanIcon,
-  WrenchIcon, DollarSignIcon, FileTextIcon, BellIcon,
+  DollarSignIcon, FileTextIcon, BellIcon,
   UsersIcon, PackageIcon, ClipboardIcon, MapPinIcon,
   ZapIcon, TruckIcon, CalendarIcon, ClockIcon, TrendingUpIcon,
   TargetIcon, StarIcon, LockIcon, LogOutIcon,
@@ -31,9 +31,9 @@ import {
   AlertCircleIcon, InfoIcon, SearchIcon,
   DownloadIcon, PencilIcon, Trash2Icon, PhoneIcon, MailIcon,
   BarChart2Icon, ActivityIcon, SendIcon,
-  MessageSquareIcon, FolderIcon, HammerIcon,
+  MessageSquareIcon, FolderIcon,
   ArrowUpIcon, RefreshCwIcon,
-  DatabaseIcon, ServerIcon, CloudIcon, CodeIcon, LayersIcon,
+  DatabaseIcon, CodeIcon, LayersIcon,
   MenuIcon,
   ClipboardListIcon,
   SettingsIcon,
@@ -56,6 +56,9 @@ const SettingsPageComponent    = lazy(() => import('./components/SettingsPage'))
 const AnalyticsComponent       = lazy(() => import('./components/Analytics'))
 const TeamLeaderboardComponent = lazy(() => import('./components/TeamLeaderboard'))
 const InvoiceAuditorComponent  = lazy(() => import('./components/InvoiceAuditor'))
+// Phase 20 — Architecture + Permits extracted from this file.
+const ArchitectureComponent    = lazy(() => import('./components/Architecture'))
+const PermitsComponent         = lazy(() => import('./components/Permits'))
 import WarRoomComponent from './components/WarRoom'
 import PMDashboardComponent from './components/PMDashboard'
 import AlertsPageComponent from './components/AlertsPage'
@@ -242,21 +245,9 @@ const daysSince = (date) => {
 // InlineStatusSelect, InlinePhaseSelect (and their JOB_STATUS_OPTIONS /
 // PHASE_OPTIONS data) moved to src/components/shared/* (Phase 19) and
 // re-imported via the named-imports block at the top of this file.
-// Behavior preserved exactly. SectionHeader (below) is a different
-// component than the modern shared/headers.jsx version — kept local for
-// Architecture and Permits inline tabs that haven't been redesigned yet.
-
-function SectionHeader({ title, sub, action }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-      {action}
-    </div>
-  )
-}
+// The legacy local SectionHeader (used by Architecture + Permits) moved
+// alongside those tabs in Phase 20 — see src/components/Architecture.jsx
+// and src/components/Permits.jsx.
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
 
@@ -3102,71 +3093,7 @@ function FormFieldLabel({ children }) {
 // ── Tab: Permits ──────────────────────────────────────────────────────────────
 
 function Permits() {
-  const { jobs } = useData()
-  const allPermits = jobs.flatMap(j =>
-    ['electrical', 'plumbing', 'hvac'].filter(t => j.permits[t]).map(t => ({
-      job: j.id, address: j.address, trade: t, status: j.permits[t],
-    }))
-  )
-  const approved = allPermits.filter(p => ['approved','finaled'].includes(p.status)).length
-  const pending  = allPermits.filter(p => p.status === 'pending').length
-  const applied  = allPermits.filter(p => p.status === 'applied').length
-
-  return (
-    <div className="space-y-6">
-      <SectionHeader title="Permits" sub="Permit status across all active jobs and trades" />
-
-      <div className="grid grid-cols-3 gap-4">
-        <StatCard label="Approved / Finaled" value={approved} Icon={CheckCircleIcon} />
-        <StatCard label="Applied / Pending"  value={applied + pending} sub="awaiting approval" Icon={ClockIcon} />
-        <StatCard label="Total Permits"      value={allPermits.length} Icon={FileTextIcon} />
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        {jobs.map(j => (
-          <Card key={j.id} className="border-white/10">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span><span className="" style={{ color: O }}>{j.id}</span> — {j.address}</span>
-                <JobBadge status={j.status} />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {['electrical','plumbing','hvac'].map(t => {
-                if (!j.permits[t]) return null
-                const pStatus = j.permits[t]
-                const PERMIT_STATUSES = ['pending','applied','approved','finaled','denied']
-                return (
-                  <div key={t} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                    <div className="flex items-center gap-3">
-                      {t === 'electrical' ? <ZapIcon size={14} style={{ color: O }} /> :
-                       t === 'plumbing'   ? <WrenchIcon size={14} color="#06b6d4" /> :
-                                            <HammerIcon size={14} color="#3b82f6" />}
-                      <span className="text-sm capitalize font-medium">{t}</span>
-                    </div>
-                    {j._docId ? (
-                      <select
-                        value={pStatus}
-                        onChange={e => updatePermit(j._docId, t, e.target.value)}
-                        className="text-xs font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none"
-                        style={{ color: iMeta(pStatus).color, backgroundColor: iMeta(pStatus).color + '22', border: `1px solid ${iMeta(pStatus).color}44` }}
-                      >
-                        {PERMIT_STATUSES.map(s => (
-                          <option key={s} value={s} style={{ backgroundColor: '#111', color: '#fff' }}>{s.toUpperCase()}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <InspBadge status={pStatus} />
-                    )}
-                  </div>
-                )
-              })}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  )
+  return <PermitsComponent />
 }
 
 // ── Tab: Project Folders ──────────────────────────────────────────────────────
@@ -3456,151 +3383,7 @@ function CrewReport() {
 // ── Tab: Architecture ─────────────────────────────────────────────────────────
 
 function Architecture() {
-  const collections = [
-    { name: 'jobs', desc: 'Top-level job records', fields: ['id', 'address', 'client', 'status', 'progress', 'pm', 'billing', 'permits', 'inspections'] },
-    { name: 'jobs/{jobId}/extras', desc: 'Change orders per job', fields: ['id', 'desc', 'amount', 'status', 'qbsSync', 'createdAt', 'approvedBy'] },
-    { name: 'jobs/{jobId}/materials', desc: 'Material orders per job', fields: ['item', 'qty', 'cost', 'status', 'vendor', 'eta', 'orderedAt'] },
-    { name: 'subs', desc: 'Subcontractor master list', fields: ['name', 'company', 'trade', 'license', 'licenseExp', 'insurance', 'w9', 'score'] },
-    { name: 'inspections', desc: 'Inspection records with photos', fields: ['jobId', 'trade', 'phase', 'status', 'inspector', 'date', 'notes', 'photos'] },
-    { name: 'notifications', desc: 'System alerts + user notifications', fields: ['type', 'msg', 'jobId', 'userId', 'read', 'createdAt'] },
-    { name: 'leads', desc: 'Incoming lead intake', fields: ['name', 'phone', 'email', 'address', 'type', 'budget', 'status', 'assignedPm'] },
-  ]
-
-  const functions = [
-    { name: 'onJobStatusChange', trigger: 'Firestore write — jobs/{jobId}', desc: 'Push notifications to PM when job status changes' },
-    { name: 'onInspectionFail', trigger: 'Firestore write — inspections/', desc: 'Block next phase, alert PM + sub, log to Slack' },
-    { name: 'syncExtraToQBS', trigger: 'Firestore write — extras/', desc: 'Mirror approved COs to QuickBooks via API' },
-    { name: 'subComplianceCheck', trigger: 'Scheduled — daily 06:00 CT', desc: 'Check license/insurance expiry, create alerts' },
-    { name: 'billingMilestone', trigger: 'Firestore write — jobs/{jobId}/billing', desc: 'Trigger invoice generation at 70%/100% thresholds' },
-    { name: 'leadNotification', trigger: 'Firestore write — leads/', desc: 'Email PM assignment + create morning briefing entry' },
-  ]
-
-  const rules = `rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // Jobs — P2 internal only
-    match /jobs/{jobId} {
-      allow read:  if isP2Internal() || isQBS();
-      allow write: if isP2Internal();
-
-      match /extras/{coId} {
-        allow read:  if isP2Internal() || isQBS();
-        allow create: if isP2Internal();
-        allow update: if isP2Internal() || (isQBS() && onlyUpdates(['status','approvedBy','approvedAt']));
-      }
-      match /materials/{matId} {
-        allow read, write: if isP2Internal();
-      }
-    }
-
-    // Subs — P2 internal admin only
-    match /subs/{subId} {
-      allow read:  if isP2Internal();
-      allow write: if isP2Admin();
-    }
-
-    // Inspections
-    match /inspections/{inspId} {
-      allow read:  if isP2Internal() || isQBS();
-      allow write: if isP2Internal();
-    }
-
-    // Leads — internal only
-    match /leads/{leadId} {
-      allow create: if true;  // public form
-      allow read, update: if isP2Internal();
-    }
-
-    function isP2Internal() {
-      return request.auth != null
-          && request.auth.token.role == 'p2_internal';
-    }
-    function isP2Admin() {
-      return request.auth != null
-          && request.auth.token.role == 'p2_admin';
-    }
-    function isQBS() {
-      return request.auth != null
-          && request.auth.token.role == 'qbs_coordinator';
-    }
-    function onlyUpdates(fields) {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
-    }
-  }
-}`
-
-  return (
-    <div className="space-y-6">
-      <SectionHeader title="Architecture" sub="Firestore blueprint · Cloud Functions · Security rules" />
-
-      <div className="grid lg:grid-cols-3 gap-4 mb-6">
-        <StatCard label="Collections"    value={collections.length}  Icon={DatabaseIcon} />
-        <StatCard label="Cloud Functions" value={functions.length}   Icon={ServerIcon} />
-        <StatCard label="Auth Roles"      value="3"                  sub="p2_internal · qbs · p2_admin" Icon={ShieldIcon} />
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-6">
-        <Card className="border-white/10">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <DatabaseIcon size={16} style={{ color: O }} /> Firestore Collections
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {collections.map(c => (
-              <div key={c.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-bold" style={{ color: O }}>{c.name}</span>
-                </div>
-                <p className="text-xs text-muted-foreground mb-2">{c.desc}</p>
-                <div className="flex flex-wrap gap-1">
-                  {c.fields.map(f => (
-                    <span key={f} className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-muted-foreground">{f}</span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-6">
-          <Card className="border-white/10">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <ServerIcon size={16} style={{ color: O }} /> Cloud Functions
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {functions.map(f => (
-                <div key={f.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
-                  <span className="text-sm font-bold" style={{ color: O }}>{f.name}</span>
-                  <p className="text-xs text-muted-foreground mt-1">{f.desc}</p>
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    <CloudIcon size={10} className="text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">{f.trigger}</span>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      <Card className="border-white/10">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <ShieldIcon size={16} style={{ color: O }} /> Firestore Security Rules
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="text-xs text-muted-foreground overflow-x-auto p-4 rounded-xl bg-black/40 border border-white/5 whitespace-pre leading-relaxed">
-            {rules}
-          </pre>
-        </CardContent>
-      </Card>
-    </div>
-  )
+  return <ArchitectureComponent />
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
