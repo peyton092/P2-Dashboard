@@ -69,6 +69,45 @@ import {
 // don't re-import it from agent/scoring (would be a duplicate declaration).
 import { classifyRisk, hasFailedInspection, isBillingReady, isHvacStartupBlocked } from './agent/scoring'
 import { ZONES, getZoneId } from './agent/zones'
+
+// Phase 18 — Domain helpers extracted from App.jsx into src/lib/.
+// Pure data + pure functions. No behavior change.
+import { BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR } from './lib/billing'
+import {
+  INSP_STATUSES, TRADE_META, PHASE_LABEL,
+  inspectionStatusTone, inspectionStatusLabel, inspJobStatusTone,
+} from './lib/inspections'
+import {
+  NOTIF_TYPE_META, NOTIF_FILTERS, NOTIF_CATEGORY_LABEL, NOTIF_CATEGORY_ICON,
+  notifCategory, notifMatchesFilter, notifTimestampMs, fmtNotifTime,
+  notifAgeLabel, notifIsWithinHours,
+} from './lib/notifications'
+import {
+  MAT_STATUS_OPTIONS, MAT_STATUS_COLOR, MAT_UNITS, MAT_STATUS_TONE,
+  MAT_FILTERS, MAT_FORM_INITIAL,
+  normalizeMatStatus,
+  matName, matJobId, matOrdered,
+  matDaysUntilNeeded, matIsOpen, matIsOverdue, matIsBlocking, matIsRecent,
+  matNextAction, matMatchesFilter, fmtMatDate,
+} from './lib/materials'
+import {
+  SUB_STATUS_OPTIONS, SUB_STATUS_COLOR, SUB_FILTERS, TRADE_FILTERS,
+  daysUntilDate,
+  subInsuranceState, subLicenseState,
+  subHasMissingDocs, subInsuranceExpired, subInsuranceExpiringSoon, subLicenseExpired,
+  subComplianceVerdict, subMatchesFilter, subNextAction,
+  fmtSubDate, subJobKey,
+} from './lib/subs'
+import {
+  jobName, phaseLabel,
+  JOB_FILTERS, JOB_FORM_INITIAL,
+  isJobComplete, jobStaleness, jobMatchesFilter,
+  jobNextAction, jobRiskMeta, fmtJobDate,
+} from './lib/jobs'
+import {
+  BRIEF_CATEGORY_META, SEVERITY_RANK,
+  severityTone, severityColor, buildBriefingItems,
+} from './lib/briefing'
 import { generateInvoicePdf } from './lib/generateInvoicePdf'
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
@@ -165,21 +204,9 @@ const MOBILE_MORE = [
 
 const fmt$ = (n) => `$${Number(n).toLocaleString()}`
 
-const jobName = (j) => j.name || j.client.split(' ')[0]
-
-const BILLING_STATUSES = ['not-invoiced', 'invoiced', 'partial-pay', 'paid']
-const BILLING_STATUS_LABEL = {
-  'not-invoiced': 'Not Invoiced',
-  'invoiced':     'Invoiced',
-  'partial-pay':  'Partial Pay',
-  'paid':         'Paid',
-}
-const BILLING_STATUS_COLOR = {
-  'not-invoiced': '#6b7280',
-  'invoiced':     '#3b82f6',
-  'partial-pay':  '#eab308',
-  'paid':         '#22c55e',
-}
+// jobName moved to src/lib/jobs.js (Phase 18).
+// BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR moved to
+// src/lib/billing.js (Phase 18).
 
 const inspMeta = {
   passed:    { color: '#22c55e', label: 'PASSED'    },
@@ -220,7 +247,7 @@ const daysSince = (date) => {
   } catch { return null }
 }
 
-const phaseLabel = (p) => p >= 67 ? 'Final Phase' : p >= 34 ? 'Mid Phase' : 'Rough-In Phase'
+// phaseLabel moved to src/lib/jobs.js (Phase 18).
 
 // ── Reusable components ───────────────────────────────────────────────────────
 
@@ -696,350 +723,9 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
 // orders, materials, sub compliance, PM workload, and yesterday's crew
 // reports. No write paths — only read derivations from useData().
 
-const BRIEF_CATEGORY_META = {
-  'job-risk':    { label: 'Job Risk',         Icon: TriangleAlertIcon, accent: '#ef4444' },
-  'inspections': { label: 'Inspections',      Icon: BadgeCheckIcon,    accent: '#3b82f6' },
-  'billing':     { label: 'Billing',          Icon: DollarSignIcon,    accent: '#22c55e' },
-  'co':          { label: 'Change Orders',    Icon: FilePenLineIcon,   accent: '#eab308' },
-  'materials':   { label: 'Materials',        Icon: PackageIcon,       accent: O },
-  'subs':        { label: 'Subs Compliance',  Icon: ShieldCheckIcon,   accent: '#06b6d4' },
-  'pm':          { label: 'PM Workload',      Icon: UserRoundCogIcon,  accent: '#a78bfa' },
-}
+// BRIEF_CATEGORY_META, SEVERITY_RANK, severityTone, severityColor, and
+// buildBriefingItems moved to src/lib/briefing.js (Phase 18).
 
-const SEVERITY_RANK = { critical: 0, warning: 1, info: 2 }
-
-function severityTone(sev) {
-  if (sev === 'critical') return 'critical'
-  if (sev === 'warning')  return 'warning'
-  return 'info'
-}
-function severityColor(sev) {
-  if (sev === 'critical') return '#ef4444'
-  if (sev === 'warning')  return '#eab308'
-  return '#3b82f6'
-}
-
-// Generate the full set of briefing items from the live data set. Each item
-// is independent and self-describing so the priority list and the grouped
-// section panels both render the same shape.
-function buildBriefingItems({ jobs, extras, materials, subs }) {
-  const items = []
-  const activeJobs = jobs.filter(j => !['complete', 'completed'].includes(j.status))
-
-  // Job risk — failed inspections, blocked, on-hold, critical-risk, stale.
-  for (const j of activeJobs) {
-    const risk = classifyRisk(j)
-    const stale = daysSince(j.lastStatusChange || j.start)
-    if (hasFailedInspection(j)) {
-      items.push({
-        id: `risk_failed_${j.id}`,
-        category: 'job-risk',
-        severity: 'critical',
-        jobId: j.id,
-        title: `${jobName(j)} — failed inspection`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: 'Coordinate rework — inspection failed',
-        age: stale,
-      })
-      continue
-    }
-    if (j.status === 'blocked' || isHvacStartupBlocked(j)) {
-      items.push({
-        id: `risk_blocked_${j.id}`,
-        category: 'job-risk',
-        severity: 'critical',
-        jobId: j.id,
-        title: `${jobName(j)} — blocked`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: isHvacStartupBlocked(j) ? 'HVAC startup blocked — release E service' : 'Unblock job',
-        age: stale,
-      })
-      continue
-    }
-    if (j.status === 'hold') {
-      items.push({
-        id: `risk_hold_${j.id}`,
-        category: 'job-risk',
-        severity: 'critical',
-        jobId: j.id,
-        title: `${jobName(j)} — on hold`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: 'Release hold',
-        age: stale,
-      })
-      continue
-    }
-    if (risk?.level === 'critical') {
-      items.push({
-        id: `risk_crit_${j.id}`,
-        category: 'job-risk',
-        severity: 'critical',
-        jobId: j.id,
-        title: `${jobName(j)} — high risk`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: risk.reason ? `Triage — ${risk.reason}` : 'Triage — high risk',
-        age: stale,
-      })
-      continue
-    }
-    if (j.status === 'needs-action') {
-      items.push({
-        id: `risk_needs_${j.id}`,
-        category: 'job-risk',
-        severity: 'warning',
-        jobId: j.id,
-        title: `${jobName(j)} — needs action`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: 'Resolve open item',
-        age: stale,
-      })
-      continue
-    }
-    if (risk?.level === 'warning') {
-      items.push({
-        id: `risk_warn_${j.id}`,
-        category: 'job-risk',
-        severity: 'warning',
-        jobId: j.id,
-        title: `${jobName(j)} — at risk`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: risk.reason ? `Follow up — ${risk.reason}` : 'Follow up — at risk',
-        age: stale,
-      })
-      continue
-    }
-    if (stale !== null && stale >= 7) {
-      items.push({
-        id: `risk_stale_${j.id}`,
-        category: 'job-risk',
-        severity: 'warning',
-        jobId: j.id,
-        title: `${jobName(j)} — ${stale}d since update`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: 'Field update needed',
-        age: stale,
-      })
-    }
-  }
-
-  // Inspections — scheduled (next call-in) and pending-verification.
-  for (const j of activeJobs) {
-    const insp = j.insp || {}
-    for (const trade of ['electrical', 'plumbing', 'hvac']) {
-      const t = insp[trade] || {}
-      for (const phase of ['roughIn', 'trim', 'final']) {
-        const v = t[phase]
-        if (v === 'scheduled' || v === 'pending-verification') {
-          const phaseLabelText = phase === 'roughIn' ? 'rough-in' : phase
-          items.push({
-            id: `insp_${j.id}_${trade}_${phase}`,
-            category: 'inspections',
-            severity: v === 'scheduled' ? 'info' : 'warning',
-            jobId: j.id,
-            title: `${jobName(j)} — ${trade} ${phaseLabelText}`,
-            owner: j.pm ? `PM ${j.pm}${j.subs?.[trade] ? ` · Sub ${j.subs[trade]}` : ''}` : null,
-            nextAction: v === 'scheduled' ? 'Confirm with inspector' : 'Verify last result',
-            age: null,
-          })
-        }
-      }
-    }
-  }
-
-  // Billing — holds, missing-permit on bill-ready jobs, overdue invoices.
-  const pendingCOByJob = new Map()
-  extras.forEach(e => {
-    if (e.status === 'pending' || e.status === 'Sent to Builder' || e.status === 'Draft') {
-      if (e.job) pendingCOByJob.set(e.job, (pendingCOByJob.get(e.job) || 0) + 1)
-    }
-  })
-  for (const j of jobs) {
-    const ready = isBillingReady(j, extras)
-    if (j.billingStatus === 'hold') {
-      items.push({
-        id: `bill_hold_${j.id}`,
-        category: 'billing',
-        severity: 'critical',
-        jobId: j.id,
-        title: `${jobName(j)} — billing on hold`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: 'Resolve hold reason',
-        age: null,
-      })
-      continue
-    }
-    if (ready && !j.permitNumber) {
-      items.push({
-        id: `bill_perm_${j.id}`,
-        category: 'billing',
-        severity: 'warning',
-        jobId: j.id,
-        title: `${jobName(j)} — billable, missing permit`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: 'Add permit number',
-        age: null,
-      })
-      continue
-    }
-    if (ready && (pendingCOByJob.get(j.id) || 0) > 0) {
-      items.push({
-        id: `bill_co_${j.id}`,
-        category: 'billing',
-        severity: 'warning',
-        jobId: j.id,
-        title: `${jobName(j)} — billable, CO pending`,
-        owner: j.pm ? `PM ${j.pm}` : null,
-        nextAction: 'Confirm CO before billing',
-        age: null,
-      })
-    }
-  }
-
-  // Change Orders — pending or sent-to-builder, especially aging ones.
-  for (const e of extras) {
-    if (e.status !== 'pending' && e.status !== 'Sent to Builder') continue
-    const sentTs = e.sentAt?.toDate?.() || (e.sentAt ? new Date(e.sentAt) : null)
-    const dateTs = e.date ? new Date(e.date) : null
-    const created = e.createdAt?.toDate?.() || (e.createdAt ? new Date(e.createdAt) : null)
-    const t = sentTs || dateTs || created
-    const age = t && !isNaN(t.getTime()) ? Math.floor((Date.now() - t.getTime()) / 86400000) : null
-    let severity = 'info'
-    let nextAction = 'Awaiting builder approval'
-    if (age != null && age >= 7) { severity = 'critical'; nextAction = 'Escalate — long pending' }
-    else if (age != null && age >= 3) { severity = 'warning'; nextAction = 'Follow up with builder' }
-    items.push({
-      id: `co_${e._docId || e.id}`,
-      category: 'co',
-      severity,
-      jobId: e.job || null,
-      title: `${e.coNumber || e.id || 'CO'} — ${e.desc || 'change order'}`,
-      owner: e.pm ? `PM ${e.pm}` : null,
-      nextAction,
-      age,
-    })
-  }
-
-  // Materials — overdue or blocking-soon. Helpers `matIsOpen`, `matIsOverdue`,
-  // `matIsBlocking`, `matDaysUntilNeeded` are function declarations (hoisted),
-  // so safe to call from here. The arrow-const helpers (`matName`/`matJobId`)
-  // are NOT hoisted, so we inline their tiny bodies to avoid a TDZ trap.
-  for (const m of materials) {
-    if (!matIsOpen(m)) continue
-    const overdue = matIsOverdue(m)
-    const blocking = matIsBlocking(m)
-    if (!overdue && !blocking) continue
-    const days = matDaysUntilNeeded(m)
-    const matNameLocal = m.name || m.item || '—'
-    const matJobIdLocal = m.jobId || m.job || null
-    items.push({
-      id: `mat_${m._docId || m.id}_${matNameLocal}`,
-      category: 'materials',
-      severity: overdue ? 'critical' : 'warning',
-      jobId: matJobIdLocal,
-      title: `${matNameLocal} — ${m.qty || 0} ${m.unit || 'ea'}`,
-      owner: m.vendor ? `Vendor ${m.vendor}` : null,
-      nextAction: overdue
-        ? 'Follow up today — overdue'
-        : days !== null ? `Due in ${days}d — confirm with supplier` : 'Confirm with supplier',
-      age: overdue && days !== null ? Math.abs(days) : null,
-    })
-  }
-
-  // Subs / Compliance — expired insurance, missing W-9.
-  for (const s of subs) {
-    if (subInsuranceExpired(s)) {
-      items.push({
-        id: `sub_insexp_${s.id}`,
-        category: 'subs',
-        severity: 'critical',
-        jobId: null,
-        title: `${s.name} — insurance expired`,
-        owner: s.trade ? `${s.trade} sub` : null,
-        nextAction: 'Insurance expired — do not assign',
-        age: null,
-      })
-      continue
-    }
-    if (subHasMissingDocs(s)) {
-      items.push({
-        id: `sub_w9_${s.id}`,
-        category: 'subs',
-        severity: 'critical',
-        jobId: null,
-        title: `${s.name} — W-9 missing`,
-        owner: s.trade ? `${s.trade} sub` : null,
-        nextAction: 'Collect W-9 — cannot assign',
-        age: null,
-      })
-      continue
-    }
-    if (subInsuranceExpiringSoon(s)) {
-      items.push({
-        id: `sub_insexp_soon_${s.id}`,
-        category: 'subs',
-        severity: 'warning',
-        jobId: null,
-        title: `${s.name} — insurance expiring`,
-        owner: s.trade ? `${s.trade} sub` : null,
-        nextAction: 'Insurance expiring soon — request renewal',
-        age: null,
-      })
-    }
-  }
-
-  // PM Workload — PMs with critical risk OR ≥10 active jobs.
-  const pmMap = new Map()
-  for (const j of activeJobs) {
-    const pm = j.pm
-    if (!pm) continue
-    if (!pmMap.has(pm)) pmMap.set(pm, { pm, jobs: 0, critical: 0, warning: 0, blocked: 0 })
-    const entry = pmMap.get(pm)
-    entry.jobs += 1
-    const r = classifyRisk(j)
-    if (r?.level === 'critical') entry.critical += 1
-    else if (r?.level === 'warning') entry.warning += 1
-    if (j.status === 'blocked' || hasFailedInspection(j)) entry.blocked += 1
-  }
-  for (const entry of pmMap.values()) {
-    if (entry.critical >= 1 || entry.blocked >= 2) {
-      items.push({
-        id: `pm_help_${entry.pm}`,
-        category: 'pm',
-        severity: 'critical',
-        jobId: null,
-        title: `${entry.pm} — help needed`,
-        owner: `${entry.jobs} active job${entry.jobs === 1 ? '' : 's'}`,
-        nextAction: entry.critical > 0
-          ? `${entry.critical} high-risk job${entry.critical === 1 ? '' : 's'} — triage today`
-          : `${entry.blocked} blocked job${entry.blocked === 1 ? '' : 's'} — clear blockers`,
-        age: null,
-      })
-    } else if (entry.warning >= 3 || entry.jobs >= 10) {
-      items.push({
-        id: `pm_load_${entry.pm}`,
-        category: 'pm',
-        severity: 'warning',
-        jobId: null,
-        title: `${entry.pm} — workload pressure`,
-        owner: `${entry.jobs} active job${entry.jobs === 1 ? '' : 's'}`,
-        nextAction: entry.warning >= 3
-          ? `${entry.warning} at-risk jobs — follow up`
-          : 'Volume risk — watch for dropped items',
-        age: null,
-      })
-    }
-  }
-
-  // Sort: severity first, then age desc (older items surface first).
-  items.sort((a, b) => {
-    const sa = SEVERITY_RANK[a.severity] ?? 9
-    const sb = SEVERITY_RANK[b.severity] ?? 9
-    if (sa !== sb) return sa - sb
-    return (b.age ?? -1) - (a.age ?? -1)
-  })
-
-  return items
-}
 
 function MorningBriefing() {
   const {
@@ -1348,88 +1034,9 @@ function BriefingGroup({ category, items }) {
 
 // ── Tab: Job Status ───────────────────────────────────────────────────────────
 
-const JOB_FILTERS = [
-  { id: 'all',          label: 'All' },
-  { id: 'active',       label: 'Active' },
-  { id: 'complete',     label: 'Complete' },
-  { id: 'at-risk',      label: 'At risk' },
-  { id: 'needs-action', label: 'Needs action' },
-  { id: 'blocked',      label: 'Blocked' },
-  { id: 'stale',        label: 'Stale' },
-]
-
-const JOB_FORM_INITIAL = {
-  id: '', address: '', city: '', client: '', type: 'Full MEP Renovation',
-  pm: 'Blake Neblett', target: '', permitNumber: '',
-  subElectrical: '', subPlumbing: '', subHvac: '',
-}
-
-function isJobComplete(j) {
-  return ['complete', 'completed'].includes(j.status)
-}
-
-function jobStaleness(j) {
-  return daysSince(j.lastStatusChange || j.start)
-}
-
-function jobMatchesFilter(j, filter) {
-  if (filter === 'all')      return true
-  if (filter === 'active')   return !isJobComplete(j)
-  if (filter === 'complete') return isJobComplete(j)
-  if (filter === 'blocked')  return !isJobComplete(j) && (j.status === 'blocked' || j.status === 'hold' || hasFailedInspection(j))
-  if (filter === 'needs-action') return !isJobComplete(j) && (j.status === 'needs-action' || hasFailedInspection(j))
-  if (filter === 'stale') {
-    if (isJobComplete(j)) return false
-    const s = jobStaleness(j)
-    return s !== null && s >= 7
-  }
-  if (filter === 'at-risk') {
-    if (isJobComplete(j)) return false
-    const r = classifyRisk(j)
-    return r?.level === 'critical'
-        || r?.level === 'warning'
-        || j.status === 'at-risk'
-        || j.status === 'needs-action'
-        || j.status === 'blocked'
-        || j.status === 'hold'
-        || hasFailedInspection(j)
-  }
-  return true
-}
-
-// Job-level next-action microcopy. Operational language only.
-function jobNextAction(j) {
-  if (isJobComplete(j))            return 'Closeout'
-  if (hasFailedInspection(j))      return 'Coordinate rework — inspection failed'
-  if (j.status === 'blocked')      return 'Unblock job'
-  if (j.status === 'hold')         return 'Release hold'
-  if (j.status === 'needs-action') return 'Resolve open item'
-  const risk = classifyRisk(j)
-  if (risk?.level === 'critical')  return 'Triage — high risk'
-  const stale = jobStaleness(j)
-  if (stale !== null && stale >= 7) return 'Field update needed'
-  if (stale !== null && stale >= 3) return 'Daily status check-in'
-  if (isBillingReady(j))           return 'Submit invoice — milestone earned'
-  return 'Continue scheduled work'
-}
-
-// Job-level risk pill metadata
-function jobRiskMeta(j) {
-  if (isJobComplete(j)) return null
-  const r = classifyRisk(j)
-  if (!r) return null
-  if (r.level === 'critical') return { tone: 'critical', label: 'High risk' }
-  if (r.level === 'warning')  return { tone: 'warning',  label: 'Medium risk' }
-  if (r.level === 'info')     return { tone: 'info',     label: 'Watch' }
-  return null
-}
-
-function fmtJobDate(dateStr) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
+// JOB_FILTERS, JOB_FORM_INITIAL, isJobComplete, jobStaleness,
+// jobMatchesFilter, jobNextAction, jobRiskMeta, fmtJobDate moved to
+// src/lib/jobs.js (Phase 18).
 
 function JobStatus() {
   const { jobs = [], subs = [] } = useData()
@@ -2046,47 +1653,8 @@ function Extras() {
 
 // ── Tab: Inspections ──────────────────────────────────────────────────────────
 
-const INSP_STATUSES = ['pending', 'scheduled', 'passed', 'failed', 'blocked', 'n/a']
-
-const TRADE_META = {
-  electrical: { label: 'Electrical (3-Phase)',          color: O,         Icon: ZapIcon,    phases: ['roughIn', 'trim', 'final'] },
-  plumbing:   { label: 'Plumbing (2-Phase)',            color: '#06b6d4', Icon: WrenchIcon, phases: ['roughIn', 'final'] },
-  hvac:       { label: 'HVAC (2-Phase · Blocking)',     color: '#3b82f6', Icon: HammerIcon, phases: ['roughIn', 'final'] },
-}
-
-const PHASE_LABEL = { roughIn: 'Rough-In', trim: 'Trim', final: 'Final' }
-
-// Inspection status → Pill tone in the Phase 1 palette.
-function inspectionStatusTone(status) {
-  if (status === 'passed')                                            return 'success'
-  if (status === 'failed')                                            return 'critical'
-  if (status === 'scheduled')                                         return 'warning'
-  if (status === 'blocked')                                           return 'info'
-  if (status === 'pending' || status === 'pending-verification')      return 'mute'
-  if (status === 'n/a')                                               return 'neutral'
-  return 'neutral'
-}
-
-function inspectionStatusLabel(status) {
-  if (status === 'passed')                return 'Passed'
-  if (status === 'failed')                return 'Failed'
-  if (status === 'scheduled')             return 'Scheduled'
-  if (status === 'blocked')               return 'Blocked'
-  if (status === 'pending')               return 'Pending'
-  if (status === 'pending-verification')  return 'Verify'
-  if (status === 'n/a')                   return 'N/A'
-  return (status || 'Pending').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-}
-
-// Job status → Pill tone
-function inspJobStatusTone(status) {
-  if (status === 'on-track' || status === 'complete' || status === 'completed') return 'success'
-  if (status === 'needs-action' || status === 'active') return 'brand'
-  if (status === 'at-risk') return 'warning'
-  if (status === 'blocked' || status === 'hold') return 'critical'
-  if (status === 'pending') return 'mute'
-  return 'neutral'
-}
+// INSP_STATUSES, TRADE_META, PHASE_LABEL, inspection* helpers moved to
+// src/lib/inspections.js (Phase 18).
 
 function PhaseRow({ label, status, note, docId, field }) {
   const canEdit = !!docId
@@ -2556,118 +2124,7 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
 
 // ── Tab: Subs ─────────────────────────────────────────────────────────────────
 
-const SUB_STATUS_OPTIONS = ['active', 'done', 'issue']
-const SUB_STATUS_COLOR   = { active: '#22c55e', done: '#6b7280', issue: '#ef4444' }
-
-const SUB_FILTERS = [
-  { id: 'all',            label: 'All' },
-  { id: 'approved',       label: 'Approved' },
-  { id: 'pending',        label: 'Pending' },
-  { id: 'blocked',        label: 'Blocked' },
-  { id: 'missing-docs',   label: 'Missing docs' },
-  { id: 'expired',        label: 'Expired insurance' },
-  { id: 'expiring-soon',  label: 'Expiring soon' },
-]
-
-// Date utility — null when missing/invalid; integer days otherwise (negative = expired).
-function daysUntilDate(dateStr) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.ceil((d.getTime() - today.getTime()) / 86400000)
-}
-
-function subInsuranceState(s) {
-  const days = daysUntilDate(s.insExp)
-  if (days === null) return 'unknown'
-  if (days < 0)      return 'expired'
-  if (days < 30)     return 'expiring-30'
-  if (days < 60)     return 'expiring-60'
-  return 'valid'
-}
-function subLicenseState(s) {
-  const days = daysUntilDate(s.licExp)
-  if (days === null) return 'unknown'
-  if (days < 0)      return 'expired'
-  if (days < 60)     return 'expiring-60'
-  return 'valid'
-}
-
-function subHasMissingDocs(s) {
-  return !s.w9
-}
-function subInsuranceExpired(s) {
-  return subInsuranceState(s) === 'expired'
-}
-function subInsuranceExpiringSoon(s) {
-  const st = subInsuranceState(s)
-  return st === 'expiring-30' || st === 'expiring-60'
-}
-function subLicenseExpired(s) {
-  return subLicenseState(s) === 'expired'
-}
-
-// Compliance verdict for the sub. Order matters: blocked > pending > approved.
-function subComplianceVerdict(s) {
-  if (subHasMissingDocs(s) || subInsuranceExpired(s) || subLicenseExpired(s)) {
-    return { tone: 'critical', label: 'Do not assign' }
-  }
-  if (subInsuranceExpiringSoon(s) || subLicenseState(s) === 'expiring-60') {
-    return { tone: 'warning', label: 'Compliance review needed' }
-  }
-  if ((s.score ?? 100) < 80) {
-    return { tone: 'warning', label: 'Compliance review needed' }
-  }
-  return { tone: 'success', label: 'Approved for work' }
-}
-
-function subMatchesFilter(s, filter) {
-  if (filter === 'all')           return true
-  const v = subComplianceVerdict(s)
-  if (filter === 'approved')      return v.label === 'Approved for work'
-  if (filter === 'pending')       return v.label === 'Compliance review needed'
-  if (filter === 'blocked')       return v.label === 'Do not assign'
-  if (filter === 'missing-docs')  return subHasMissingDocs(s)
-  if (filter === 'expired')       return subInsuranceExpired(s) || subLicenseExpired(s)
-  if (filter === 'expiring-soon') return subInsuranceExpiringSoon(s)
-  return true
-}
-
-// Single most important next action per sub.
-function subNextAction(s) {
-  if (subHasMissingDocs(s))            return 'Collect W-9 — cannot assign'
-  if (subInsuranceExpired(s))          return 'Insurance expired — do not assign'
-  if (subLicenseExpired(s))            return 'License expired — do not assign'
-  if (subInsuranceState(s) === 'expiring-30') return 'Insurance expiring within 30 days — request renewal'
-  if (subInsuranceState(s) === 'expiring-60') return 'Insurance expiring soon — flag for follow-up'
-  if (subLicenseState(s) === 'expiring-60')   return 'License expiring soon — flag for follow-up'
-  const days = daysSince(s.lastUpdate)
-  if (days !== null && days > 5)       return 'Field update needed'
-  if ((s.score ?? 100) < 80)           return 'Compliance review needed'
-  return 'Ready to assign — no compliance issues'
-}
-
-function fmtSubDate(dateStr) {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-// Map a sub to the trade-key form found on job documents (e.g. "P2 In-House"
-// for the in-house sub vs. first-name slug for outside subs).
-function subJobKey(s) {
-  return s.id === 'p2' ? 'P2 In-House' : (s.name || '').split(' ')[0]
-}
-
-const TRADE_FILTERS = [
-  { id: 'all',        label: 'All trades' },
-  { id: 'Electrical', label: 'Electrical' },
-  { id: 'Plumbing',   label: 'Plumbing' },
-  { id: 'HVAC',       label: 'HVAC' },
-]
+// Subs helpers + TRADE_FILTERS moved to src/lib/subs.js (Phase 18).
 
 function SubsTab() {
   const { subs: SUBS = [], jobs = [] } = useData()
@@ -3141,20 +2598,7 @@ function SubAssignmentRow({ job: j }) {
 
 // ── Tab: Materials ────────────────────────────────────────────────────────────
 
-const MAT_STATUS_OPTIONS = ['Ordered', 'In Transit', 'Delivered', 'At Job Site', 'Used', 'Cancelled']
-const MAT_STATUS_COLOR = {
-  'Ordered':    '#3b82f6',
-  'In Transit': '#eab308',
-  'Delivered':  '#22c55e',
-  'At Job Site':'#22c55e',
-  'Used':       '#6b7280',
-  'Cancelled':  '#6b7280',
-  // legacy
-  'delivered':  '#22c55e',
-  'in-transit': '#eab308',
-  'ordered':    '#3b82f6',
-  'pending':    '#6b7280',
-}
+// MAT_STATUS_OPTIONS / MAT_STATUS_COLOR moved to src/lib/materials.js (Phase 18).
 
 function MatStatusBadge({ status, docId, onUpdate }) {
   const color = MAT_STATUS_COLOR[status] || '#6b7280'
@@ -3173,111 +2617,7 @@ function MatStatusBadge({ status, docId, onUpdate }) {
   )
 }
 
-// ── Materials helpers ─────────────────────────────────────────────────────────
-
-const MAT_UNITS = ['ea', 'roll', 'stick', 'box', 'bag', 'pallet', 'ft', 'lf']
-
-function normalizeMatStatus(s) {
-  if (!s) return 'Ordered'
-  const map = { 'delivered': 'Delivered', 'in-transit': 'In Transit', 'ordered': 'Ordered', 'pending': 'Ordered' }
-  return map[s] || s
-}
-
-const MAT_STATUS_TONE = {
-  'Ordered':    'info',
-  'In Transit': 'warning',
-  'Delivered':  'success',
-  'At Job Site':'success',
-  'Used':       'mute',
-  'Cancelled':  'mute',
-}
-
-const MAT_FILTERS = [
-  { id: 'all',       label: 'All' },
-  { id: 'urgent',    label: 'Urgent' },
-  { id: 'blocking',  label: 'Blocking' },
-  { id: 'needed',    label: 'Needed' },
-  { id: 'ordered',   label: 'Ordered' },
-  { id: 'delivered', label: 'Delivered' },
-]
-
-const matName    = (m) => m.name || m.item || '—'
-const matJobId   = (m) => m.jobId || m.job || ''
-const matOrdered = (m) => m.dateOrdered || m.eta || ''
-
-function matDaysUntilNeeded(m) {
-  if (!m.dateNeeded) return null
-  const d = new Date(m.dateNeeded)
-  if (isNaN(d.getTime())) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.ceil((d.getTime() - today.getTime()) / 86400000)
-}
-
-function matIsOpen(m) {
-  const s = normalizeMatStatus(m.status)
-  return !['Delivered', 'At Job Site', 'Used', 'Cancelled'].includes(s)
-}
-
-function matIsOverdue(m) {
-  if (!matIsOpen(m)) return false
-  const days = matDaysUntilNeeded(m)
-  return days !== null && days < 0
-}
-
-function matIsBlocking(m) {
-  if (!matIsOpen(m)) return false
-  const days = matDaysUntilNeeded(m)
-  return days !== null && days <= 7
-}
-
-function matIsRecent(m) {
-  const ts = m.createdAt
-  if (!ts) return false
-  const ms = ts.seconds ? ts.seconds * 1000
-           : typeof ts === 'string' ? Date.parse(ts) : null
-  if (!ms || isNaN(ms)) return false
-  return (Date.now() - ms) <= 86400000 // last 24 hours
-}
-
-function matNextAction(m) {
-  const s = normalizeMatStatus(m.status)
-  if (s === 'Cancelled')   return 'Order cancelled'
-  if (s === 'Used')        return 'Used on job'
-  if (s === 'At Job Site') return 'On site — ready for install'
-  if (s === 'Delivered')   return 'Ready for pickup'
-  if (matIsOverdue(m))     return 'Follow up today — overdue'
-  if (s === 'In Transit')  return 'Track delivery — in transit'
-  const days = matDaysUntilNeeded(m)
-  if (s === 'Ordered' && days !== null && days <= 7) return 'Confirm with supplier'
-  if (s === 'Ordered')     return 'Waiting on supplier'
-  return 'Continue tracking'
-}
-
-function matMatchesFilter(m, filter) {
-  if (filter === 'all')       return true
-  if (filter === 'urgent')    return matIsOverdue(m)
-  if (filter === 'blocking')  return matIsBlocking(m)
-  if (filter === 'needed')    return matIsOpen(m)
-  if (filter === 'ordered')   return normalizeMatStatus(m.status) === 'Ordered'
-  if (filter === 'delivered') {
-    const s = normalizeMatStatus(m.status)
-    return s === 'Delivered' || s === 'At Job Site'
-  }
-  return true
-}
-
-function fmtMatDate(dateStr) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-const MAT_FORM_INITIAL = {
-  name: '', qty: 1, unit: 'ea', jobId: '',
-  status: 'Ordered', vendor: '', dateOrdered: '', dateNeeded: '', notes: '',
-}
+// Materials helpers moved to src/lib/materials.js (Phase 18).
 
 // ── Materials tab ────────────────────────────────────────────────────────────
 
@@ -3989,102 +3329,7 @@ function ProjectFolders() {
 
 // ── Tab: Notifications ────────────────────────────────────────────────────────
 
-const NOTIF_TYPE_META = {
-  error:   { tone: 'critical', label: 'Error',   Icon: AlertCircleIcon,   color: '#ef4444' },
-  warn:    { tone: 'warning',  label: 'Warning', Icon: AlertTriangleIcon, color: '#eab308' },
-  info:    { tone: 'info',     label: 'Update',  Icon: InfoIcon,          color: '#3b82f6' },
-  success: { tone: 'success',  label: 'Done',    Icon: CheckCircleIcon,   color: '#22c55e' },
-}
-
-const NOTIF_FILTERS = [
-  { id: 'all',           label: 'All' },
-  { id: 'unread',        label: 'Unread' },
-  { id: 'action-needed', label: 'Action needed' },
-  { id: 'billing',       label: 'Billing' },
-  { id: 'change-orders', label: 'Change orders' },
-  { id: 'inspections',   label: 'Inspections' },
-  { id: 'system',        label: 'System' },
-  { id: 'read',          label: 'Read' },
-]
-
-const NOTIF_CATEGORY_LABEL = {
-  billing:         'Billing update',
-  'change-orders': 'Change order update',
-  inspections:     'Inspection update',
-  system:          'System update',
-}
-
-const NOTIF_CATEGORY_ICON = {
-  billing:         DollarSignIcon,
-  'change-orders': FilePenLineIcon,
-  inspections:     BadgeCheckIcon,
-  system:          InfoIcon,
-}
-
-// Derive an operational bucket from the notification message + type. There is
-// no `category` field on the document — this is pure derivation, no schema
-// change. Order matters: billing is checked before change-orders so that a
-// "CO invoiced" message reads as billing, while a "CO approved" message reads
-// as a change-order update.
-function notifCategory(n) {
-  const m = (n.msg || '').toLowerCase()
-  if (/(invoice|bill\b|collection|outstanding|paid|payment)/.test(m)) return 'billing'
-  if (/(change order|\bco-|extras|approved|rejected|revision)/.test(m))  return 'change-orders'
-  if (/(inspection|passed|failed|rough[- ]?in|trim|final)/.test(m))      return 'inspections'
-  return 'system'
-}
-
-function notifMatchesFilter(n, filter) {
-  if (filter === 'all')           return true
-  if (filter === 'unread')        return !n.read
-  if (filter === 'read')          return !!n.read
-  if (filter === 'action-needed') return !n.read && (n.type === 'error' || n.type === 'warn')
-  if (filter === 'billing')       return notifCategory(n) === 'billing'
-  if (filter === 'change-orders') return notifCategory(n) === 'change-orders'
-  if (filter === 'inspections')   return notifCategory(n) === 'inspections'
-  if (filter === 'system')        return notifCategory(n) === 'system'
-  return true
-}
-
-// Firestore Timestamp ({ seconds }), ISO string, or undefined — normalised.
-function notifTimestampMs(n) {
-  const v = n.createdAt
-  if (!v) return null
-  if (v.seconds) return v.seconds * 1000
-  if (typeof v === 'string') {
-    const ms = Date.parse(v)
-    return isNaN(ms) ? null : ms
-  }
-  return null
-}
-
-function fmtNotifTime(n) {
-  const ms = notifTimestampMs(n)
-  if (ms === null) return n.time || ''
-  return new Date(ms).toLocaleString('en-US', {
-    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  })
-}
-
-function notifAgeLabel(n) {
-  const ms = notifTimestampMs(n)
-  if (ms === null) return ''
-  const diff = Date.now() - ms
-  const min = Math.floor(diff / 60000)
-  if (min < 1)  return 'just now'
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24)  return `${hr}h ago`
-  const d = Math.floor(hr / 24)
-  if (d === 1)  return '1d ago'
-  return `${d}d ago`
-}
-
-function notifIsWithinHours(n, hours) {
-  const ms = notifTimestampMs(n)
-  if (ms === null) return false
-  return (Date.now() - ms) / 3600000 <= hours
-}
+// Notification helpers moved to src/lib/notifications.js (Phase 18).
 
 function Notifications() {
   const { notifs = [] } = useData()
