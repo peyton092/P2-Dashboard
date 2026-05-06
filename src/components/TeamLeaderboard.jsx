@@ -9,6 +9,9 @@ import {
   TrophyIcon, StarIcon, UserPlusIcon, ZapIcon, XIcon,
   ClipboardListIcon, ShieldCheckIcon, CameraIcon, TrendingUpIcon,
   ChevronDownIcon, ChevronUpIcon, LinkIcon, CheckIcon, SettingsIcon,
+  TargetIcon,
+  AwardIcon, MedalIcon, BadgeCheckIcon, UsersRoundIcon,
+  CheckCircleIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -25,7 +28,16 @@ const ROLES = {
 }
 
 const PTS = { report: 5, task: 2, inspReady: 15, photo: 5, noBlocker: 5, review: 50, referral: 150 }
-const MEDALS = ['🥇', '🥈', '🥉']
+
+// Rank icons — top 3 use a graduated medal hierarchy (trophy → award → medal)
+// rendered in lucide; outside the top 3 we show "#N" instead.
+const RANK_ICONS = [TrophyIcon, AwardIcon, MedalIcon]
+
+function RankBadge({ idx, size = 16 }) {
+  const Icon = RANK_ICONS[idx]
+  if (!Icon) return null
+  return <Icon size={size} strokeWidth={2.25} className="inline" />
+}
 
 const CURRENT_MONTH = (() => {
   const d = new Date()
@@ -204,9 +216,11 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
       {/* Main row */}
       <div className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer"
         onClick={() => setExpanded(e => !e)}>
-        <span className="w-7 text-center font-black text-sm shrink-0"
+        <span className="w-7 inline-flex items-center justify-center font-black text-sm shrink-0"
           style={{ color: idx < 3 && totalPts > 0 ? O : '#6b7280' }}>
-          {idx < 3 && totalPts > 0 ? MEDALS[idx] : `#${idx + 1}`}
+          {idx < 3 && totalPts > 0
+            ? <RankBadge idx={idx} size={16} />
+            : `#${idx + 1}`}
         </span>
 
         <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0 border-2"
@@ -319,14 +333,14 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
           </div>
 
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-zinc-500">
-            <span>📋 {auto.reportCount} reports submitted (+{auto.reportCount * PTS.report})</span>
-            <span>✅ {auto.taskCount} tasks completed (+{auto.taskCount * PTS.task})</span>
-            {auto.inspReadyCount > 0 && <span className="text-green-600">🔍 {auto.inspReadyCount} inspection-ready flags (+{auto.inspReadyCount * PTS.inspReady})</span>}
-            {auto.photoCount > 0 && <span>📷 {auto.photoCount} photo reports (+{auto.photoCount * PTS.photo})</span>}
-            {auto.noBlockerCount > 0 && <span>⚡ {auto.noBlockerCount} no-blocker days (+{auto.noBlockerCount * PTS.noBlocker})</span>}
-            {(man.googleReviews || 0) > 0 && <span className="text-yellow-500">⭐ {man.googleReviews} Google reviews (+{man.googleReviews * PTS.review})</span>}
-            {(man.referrals || 0) > 0 && <span className="text-green-500">👥 {man.referrals} referrals (+{man.referrals * PTS.referral})</span>}
-            {(man.bonusPoints || 0) > 0 && <span style={{ color: O }}>🎯 Bonus: +{man.bonusPoints}{man.bonusNote ? ` (${man.bonusNote})` : ''}</span>}
+            <span className="inline-flex items-center gap-1"><ClipboardListIcon size={11} /> {auto.reportCount} reports submitted (+{auto.reportCount * PTS.report})</span>
+            <span className="inline-flex items-center gap-1"><CheckCircleIcon size={11} /> {auto.taskCount} tasks completed (+{auto.taskCount * PTS.task})</span>
+            {auto.inspReadyCount > 0 && <span className="inline-flex items-center gap-1 text-green-600"><BadgeCheckIcon size={11} /> {auto.inspReadyCount} inspection-ready flags (+{auto.inspReadyCount * PTS.inspReady})</span>}
+            {auto.photoCount > 0 && <span className="inline-flex items-center gap-1"><CameraIcon size={11} /> {auto.photoCount} photo reports (+{auto.photoCount * PTS.photo})</span>}
+            {auto.noBlockerCount > 0 && <span className="inline-flex items-center gap-1"><ZapIcon size={11} /> {auto.noBlockerCount} no-blocker days (+{auto.noBlockerCount * PTS.noBlocker})</span>}
+            {(man.googleReviews || 0) > 0 && <span className="inline-flex items-center gap-1 text-yellow-500"><StarIcon size={11} /> {man.googleReviews} Google reviews (+{man.googleReviews * PTS.review})</span>}
+            {(man.referrals || 0) > 0 && <span className="inline-flex items-center gap-1 text-green-500"><UsersRoundIcon size={11} /> {man.referrals} referrals (+{man.referrals * PTS.referral})</span>}
+            {(man.bonusPoints || 0) > 0 && <span className="inline-flex items-center gap-1" style={{ color: O }}><TargetIcon size={11} /> Bonus: +{man.bonusPoints}{man.bonusNote ? ` (${man.bonusNote})` : ''}</span>}
           </div>
         </div>
       )}
@@ -340,7 +354,9 @@ function PodiumCard({ name, pts, rank }) {
   const isFirst = rank === 0
   return (
     <div className="flex flex-col items-center gap-1.5 text-center">
-      <span className="text-xl">{MEDALS[rank]}</span>
+      <span className="inline-flex items-center justify-center" style={{ color: isFirst ? O : '#9ca3af' }}>
+        <RankBadge idx={rank} size={22} />
+      </span>
       <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-semibold border-2"
         style={{
           backgroundColor: isFirst ? O + '33' : '#ffffff11',
@@ -453,10 +469,15 @@ export default function TeamLeaderboard() {
             style={{ backgroundColor: showUrlEdit ? O + '22' : '#ffffff11', color: showUrlEdit ? O : '#6b7280' }}>
             <SettingsIcon size={14} />
           </button>
-          <div className="px-3 py-1 rounded-full text-xs font-bold"
-            style={{ backgroundColor: O + '22', color: O, border: `1px solid ${O}44` }}>
-            ● Live
-          </div>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+            />
+            <span className="tracking-wider text-[10px] uppercase font-semibold" style={{ color: '#22c55e' }}>
+              Live
+            </span>
+          </span>
         </div>
       </div>
 

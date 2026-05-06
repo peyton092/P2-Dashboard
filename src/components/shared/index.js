@@ -24,3 +24,17 @@ export {
   JobRow,
   JobCard,
 } from './lists'
+
+// Phase 19 — primitives extracted from src/App.jsx. Pure UI; behavior
+// preserved exactly. The legacy InspBadge/JobBadge live alongside the
+// modern Pill from `./badges`; new screens should prefer Pill.
+export { ProgressBar } from './ProgressBar'
+export { StatCard } from './StatCard'
+export {
+  inspMeta, iMeta, statusMeta, sMeta,
+  InspBadge, JobBadge,
+} from './legacy-badges'
+export {
+  InlineStatusSelect, InlinePhaseSelect,
+  BillingStatusSelect, MatStatusBadge,
+} from './inline-edits'
