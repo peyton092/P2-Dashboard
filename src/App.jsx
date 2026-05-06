@@ -64,6 +64,12 @@ import ErrorBoundary from './components/ErrorBoundary'
 import {
   PageHeader, MetricTile, DataPanel, Pill,
   EmptyState, AllClearState, FilterBar,
+  // Phase 19 — primitives extracted from App.jsx
+  ProgressBar, StatCard,
+  inspMeta, iMeta, statusMeta, sMeta,
+  InspBadge, JobBadge,
+  InlineStatusSelect, InlinePhaseSelect,
+  BillingStatusSelect, MatStatusBadge,
 } from './components/shared'
 // daysSince is defined locally in this file with identical semantics, so we
 // don't re-import it from agent/scoring (would be a duplicate declaration).
@@ -208,28 +214,9 @@ const fmt$ = (n) => `$${Number(n).toLocaleString()}`
 // BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR moved to
 // src/lib/billing.js (Phase 18).
 
-const inspMeta = {
-  passed:    { color: '#22c55e', label: 'PASSED'    },
-  failed:    { color: '#ef4444', label: 'FAILED'    },
-  scheduled: { color: '#eab308', label: 'SCHEDULED' },
-  pending:   { color: '#6b7280', label: 'PENDING'   },
-  blocked:   { color: '#3b82f6', label: 'BLOCKED'   },
-  'n/a':     { color: '#374151', label: 'N/A'       },
-}
-const iMeta = (s) => inspMeta[s] || { color: '#6b7280', label: (s || '').toUpperCase() }
-
-const statusMeta = {
-  'on-track':     { color: '#22c55e', label: 'ON TRACK'     },
-  'needs-action': { color: O,         label: 'NEEDS ACTION' },
-  'at-risk':      { color: '#eab308', label: 'AT RISK'      },
-  'blocked':      { color: '#ef4444', label: 'BLOCKED'      },
-  'complete':     { color: '#22c55e', label: 'COMPLETE'     },
-  'completed':    { color: '#22c55e', label: 'COMPLETED'    },
-  'active':       { color: O,         label: 'ACTIVE'       },
-  'hold':         { color: '#ef4444', label: 'ON HOLD'      },
-  'pending':      { color: '#6b7280', label: 'PENDING'      },
-}
-const sMeta = (s) => statusMeta[s] || { color: '#6b7280', label: s.toUpperCase() }
+// inspMeta, iMeta, statusMeta, sMeta moved to
+// src/components/shared/legacy-badges.jsx (Phase 19) and re-exported here
+// via the named imports at the top of this file.
 
 const tradeColor = { HVAC: '#3b82f6', Plumbing: '#06b6d4', Electrical: O }
 
@@ -250,135 +237,14 @@ const daysSince = (date) => {
 // phaseLabel moved to src/lib/jobs.js (Phase 18).
 
 // ── Reusable components ───────────────────────────────────────────────────────
-
-function ProgressBar({ value, color = O, className = '' }) {
-  return (
-    <div className={`h-2 bg-white/10 rounded-full overflow-hidden ${className}`}>
-      <div
-        className="h-full rounded-full transition-all duration-700"
-        style={{ width: `${Math.min(100, Math.max(0, value))}%`, backgroundColor: color }}
-      />
-    </div>
-  )
-}
-
-function StatCard({ label, value, sub, trend, Icon }) {
-  return (
-    <Card className="border-white/10 bg-white/5">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between mb-3">
-          <p className="text-xs text-muted-foreground uppercase tracking-widest">{label}</p>
-          {Icon && <div className="p-2 rounded-lg" style={{ backgroundColor: O + '22' }}><Icon size={16} style={{ color: O }} /></div>}
-        </div>
-        <p className="text-3xl font-bold tracking-tight">{value}</p>
-        {sub && <p className="text-sm text-muted-foreground mt-1">{sub}</p>}
-        {trend !== undefined && (
-          <div className="flex items-center gap-1 mt-2">
-            <ArrowUpIcon size={11} style={{ color: trend ? '#22c55e' : '#ef4444', transform: trend ? 'none' : 'rotate(180deg)' }} />
-            <span className="text-xs" style={{ color: trend ? '#22c55e' : '#ef4444' }}>
-              {trend ? '+8%' : '-3%'} vs last month
-            </span>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function InspBadge({ status }) {
-  const { color, label } = iMeta(status)
-  return (
-    <span className="text-xs font-bold px-2 py-0.5 rounded-full tracking-wider"
-      style={{ backgroundColor: color + '22', color, border: `1px solid ${color}44` }}>
-      {label}
-    </span>
-  )
-}
-
-function JobBadge({ status }) {
-  const { color, label } = sMeta(status)
-  return (
-    <span className="text-xs font-bold px-3 py-1 rounded-full tracking-wider"
-      style={{ backgroundColor: color + '22', color, border: `1px solid ${color}55` }}>
-      {label}
-    </span>
-  )
-}
-
-function BillingStatusSelect({ job }) {
-  const status = job.billingStatus || 'not-invoiced'
-  const color  = BILLING_STATUS_COLOR[status] || '#6b7280'
-  const label  = BILLING_STATUS_LABEL[status]  || 'Not Invoiced'
-  return (
-    <Select
-      value={status}
-      onValueChange={v => job._docId && updateJob(job._docId, { billingStatus: v })}
-    >
-      <SelectTrigger className="h-auto py-1 px-3 text-xs font-bold border rounded-full min-w-[7.5rem]"
-        style={{ backgroundColor: color + '22', color, borderColor: color + '55' }}>
-        <SelectValue>{label}</SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        {BILLING_STATUSES.map(s => (
-          <SelectItem key={s} value={s}>{BILLING_STATUS_LABEL[s]}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
-
-const JOB_STATUS_OPTIONS = [
-  { value: 'on-track',     label: 'On Track',     color: '#22c55e' },
-  { value: 'needs-action', label: 'Needs Action', color: O         },
-  { value: 'at-risk',      label: 'At Risk',      color: '#eab308' },
-  { value: 'blocked',      label: 'Blocked',      color: '#ef4444' },
-  { value: 'complete',     label: 'Complete',     color: '#22c55e' },
-  { value: 'active',       label: 'Active',       color: O         },
-  { value: 'hold',         label: 'On Hold',      color: '#ef4444' },
-  { value: 'completed',    label: 'Completed',    color: '#22c55e' },
-  { value: 'pending',      label: 'Pending',      color: '#6b7280' },
-]
-
-const PHASE_OPTIONS = ['Precon', 'Rough-In', 'Service Release', 'Trim', 'Final', 'Closeout', 'Complete']
-
-function InlineStatusSelect({ job }) {
-  const opt = JOB_STATUS_OPTIONS.find(o => o.value === job.status) || JOB_STATUS_OPTIONS[5]
-  const handleChange = (v) => { if (job._docId) updateJob(job._docId, { status: v }) }
-  return (
-    <div onClick={e => e.stopPropagation()}>
-      <Select value={job.status} onValueChange={handleChange}>
-        <SelectTrigger className="h-auto py-0.5 px-3 text-xs font-bold border rounded-full w-auto gap-1"
-          style={{ backgroundColor: opt.color + '22', color: opt.color, borderColor: opt.color + '55' }}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {JOB_STATUS_OPTIONS.slice(0, 5).map(o => (
-            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  )
-}
-
-function InlinePhaseSelect({ job }) {
-  const current = job.phase || phaseLabel(job.progress)
-  const handleChange = (v) => { if (job._docId) updateJob(job._docId, { phase: v }) }
-  return (
-    <div onClick={e => e.stopPropagation()}>
-      <Select value={current} onValueChange={handleChange}>
-        <SelectTrigger className="h-auto py-0.5 px-3 text-xs border rounded-full w-auto gap-1 bg-white/10 border-white/20 text-muted-foreground">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {PHASE_OPTIONS.map(p => (
-            <SelectItem key={p} value={p}>{p}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  )
-}
+//
+// ProgressBar, StatCard, InspBadge, JobBadge, BillingStatusSelect,
+// InlineStatusSelect, InlinePhaseSelect (and their JOB_STATUS_OPTIONS /
+// PHASE_OPTIONS data) moved to src/components/shared/* (Phase 19) and
+// re-imported via the named-imports block at the top of this file.
+// Behavior preserved exactly. SectionHeader (below) is a different
+// component than the modern shared/headers.jsx version — kept local for
+// Architecture and Permits inline tabs that haven't been redesigned yet.
 
 function SectionHeader({ title, sub, action }) {
   return (
@@ -2599,24 +2465,7 @@ function SubAssignmentRow({ job: j }) {
 // ── Tab: Materials ────────────────────────────────────────────────────────────
 
 // MAT_STATUS_OPTIONS / MAT_STATUS_COLOR moved to src/lib/materials.js (Phase 18).
-
-function MatStatusBadge({ status, docId, onUpdate }) {
-  const color = MAT_STATUS_COLOR[status] || '#6b7280'
-  return (
-    <div onClick={e => e.stopPropagation()}>
-      <Select value={status || 'Ordered'} onValueChange={v => onUpdate(docId, v)}>
-        <SelectTrigger className="h-auto py-0.5 px-2 text-xs font-bold border rounded-full min-w-[7rem]"
-          style={{ backgroundColor: color + '22', color, borderColor: color + '55' }}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {MAT_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-        </SelectContent>
-      </Select>
-    </div>
-  )
-}
-
+// MatStatusBadge moved to src/components/shared/inline-edits.jsx (Phase 19).
 // Materials helpers moved to src/lib/materials.js (Phase 18).
 
 // ── Materials tab ────────────────────────────────────────────────────────────
