@@ -22,7 +22,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  ShieldIcon, ShieldCheckIcon, AlertTriangleIcon, CheckCircleIcon, Building2Icon,
+  ShieldIcon, ShieldCheckIcon, AlertTriangleIcon, CheckCircleIcon, Building2Icon, BanIcon,
   WrenchIcon, DollarSignIcon, FileTextIcon, BellIcon,
   UsersIcon, PackageIcon, ClipboardIcon, MapPinIcon,
   ZapIcon, TruckIcon, CalendarIcon, ClockIcon, TrendingUpIcon,
