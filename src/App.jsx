@@ -63,6 +63,7 @@ const PermitsComponent         = lazy(() => import('./components/Permits'))
 import WarRoomComponent from './components/WarRoom'
 import CommandPalette from './components/CommandPalette'
 import JobDetail from './components/JobDetail'
+const CalendarComponent = lazy(() => import('./components/Calendar'))
 import PMDashboardComponent from './components/PMDashboard'
 import AlertsPageComponent from './components/AlertsPage'
 import BillingQueueComponent from './components/BillingQueue'
@@ -160,6 +161,7 @@ const NAV_SECTIONS = [
     heading: 'Field',
     items: [
       { id: 'jobs',         label: 'Job Status',       Icon: HardHatIcon },
+      { id: 'calendar',     label: 'Calendar',         Icon: CalendarClockIcon },
       { id: 'inspections',  label: 'Inspections',      Icon: BadgeCheckIcon },
       { id: 'daily-report', label: 'Daily Report',     Icon: NotebookPenIcon },
       { id: 'morning',      label: 'Morning Briefing', Icon: CalendarClockIcon },
@@ -201,6 +203,7 @@ const MOBILE_MORE = [
   { id: 'extras',        label: 'COs',         Icon: FilePenLineIcon },
   { id: 'inspections',   label: 'Inspections', Icon: BadgeCheckIcon },
   { id: 'daily-report',  label: 'Report',      Icon: NotebookPenIcon },
+  { id: 'calendar',      label: 'Calendar',    Icon: CalendarClockIcon },
   { id: 'morning',       label: 'Briefing',    Icon: CalendarClockIcon },
   { id: 'submit',        label: 'Submit',      Icon: SendIcon },
   { id: 'notifications', label: 'Notifs',      Icon: BellIcon },
@@ -3541,6 +3544,7 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     'invoice-auditor': wrap(<Suspense fallback={<div className="p-8 text-muted-foreground text-sm">Loading…</div>}><InvoiceAuditorComponent /></Suspense>),
     'settings':       wrap(<SettingsPageComponent onLogout={onLogout} />),
     'job-detail':     wrap(<JobDetail jobId={selectedJobId} onBack={() => setActiveTab('jobs')} />),
+    'calendar':       wrap(<CalendarComponent />),
   }
 
   // Decorate nav items with live counts so the sidebar can render badges
