@@ -3607,7 +3607,9 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
           </div>
         )}
       >
-        {TAB_COMPONENTS[activeTab]}
+        <div key={activeTab} className="p2-page-enter">
+          {TAB_COMPONENTS[activeTab]}
+        </div>
       </Suspense>
     </AppShell>
   )

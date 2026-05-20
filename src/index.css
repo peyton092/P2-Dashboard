@@ -187,3 +187,26 @@
 .dark .p2-scrollarea {
   scrollbar-color: oklch(1 0 0 / 6%) oklch(0.165 0 0);
 }
+
+/* ── Accessibility: visible keyboard focus ─────────────────────────────────
+   Keyboard users get a clear brand-orange focus ring; mouse clicks don't
+   (focus-visible only). Applies app-wide to interactive elements. */
+:where(button, a, input, textarea, select, [role="switch"], [tabindex]):focus-visible {
+  outline: 2px solid #F47920;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ── Subtle page transition ────────────────────────────────────────────────
+   A short fade+rise applied to routed page content when the active tab
+   changes. Respects reduced-motion preferences. */
+@keyframes p2-page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.p2-page-enter {
+  animation: p2-page-in 220ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .p2-page-enter { animation: none; }
+}
