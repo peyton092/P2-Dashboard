@@ -210,3 +210,26 @@
 @media (prefers-reduced-motion: reduce) {
   .p2-page-enter { animation: none; }
 }
+
+/* ── Skeleton shimmer ──────────────────────────────────────────────────────
+   Content-shaped loading placeholders use `.p2-skeleton`; a soft light sweep
+   crosses them so loads feel alive rather than frozen. */
+@keyframes p2-shimmer {
+  100% { transform: translateX(100%); }
+}
+.p2-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: oklch(1 0 0 / 5%);
+}
+.p2-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 7%), transparent);
+  animation: p2-shimmer 1.6s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .p2-skeleton::after { animation: none; }
+}

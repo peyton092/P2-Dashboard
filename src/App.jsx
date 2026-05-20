@@ -71,7 +71,7 @@ import BillingQueueComponent from './components/BillingQueue'
 import ErrorBoundary from './components/ErrorBoundary'
 import {
   PageHeader, MetricTile, DataPanel, Pill,
-  EmptyState, AllClearState, FilterBar,
+  EmptyState, AllClearState, FilterBar, PageSkeleton,
   // Phase 19 — primitives extracted from App.jsx
   ProgressBar, StatCard,
   inspMeta, iMeta, statusMeta, sMeta,
@@ -3600,13 +3600,7 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
   return (
     <AppShell sidebar={sidebar} mobileNav={mobileNav}>
       <CommandPalette />
-      <Suspense
-        fallback={(
-          <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
-            Loading…
-          </div>
-        )}
-      >
+      <Suspense fallback={<PageSkeleton />}>
         <div key={activeTab} className="p2-page-enter">
           {TAB_COMPONENTS[activeTab]}
         </div>

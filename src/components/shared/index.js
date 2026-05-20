@@ -28,6 +28,7 @@ export {
 // Phase 19 — primitives extracted from src/App.jsx. Pure UI; behavior
 // preserved exactly. The legacy InspBadge/JobBadge live alongside the
 // modern Pill from `./badges`; new screens should prefer Pill.
+export { Skeleton, PageSkeleton } from './Skeleton'
 export { ProgressBar } from './ProgressBar'
 export { StatCard } from './StatCard'
 export {
