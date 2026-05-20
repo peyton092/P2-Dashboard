@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { storage } from '../firebase'
 import { useData } from '../DataContext'
 import {
   approveExtra, updateExtra, addNotification, useJobFiles,
-  addSubmit, useSubmitReplies, addSubmitReply, updateSubmit,
+  addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile,
 } from '../hooks/useFirestore'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { Button } from '@/components/ui/button'
@@ -18,6 +20,7 @@ import {
   LogOutIcon, ActivityIcon, BadgeCheckIcon, TriangleAlertIcon,
   GaugeIcon, DownloadIcon, FileTextIcon, CameraIcon,
   MessageSquareIcon, SendIcon, PlusIcon, ChevronLeftIcon,
+  CalendarClockIcon, UploadIcon, CreditCardIcon,
 } from 'lucide-react'
 import Brand from './brand/Brand'
 import { DataPanel, Pill, EmptyState, AllClearState } from './shared'
@@ -364,6 +367,12 @@ function InvoiceRow({ job }) {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
+        {job.paymentUrl && job.billingStatus !== 'paid' && (
+          <a href={job.paymentUrl} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] font-bold text-white" style={{ backgroundColor: '#22c55e' }}>
+            <CreditCardIcon size={13} /> Pay now
+          </a>
+        )}
         {hasInvoice && (
           <Button variant="outline" className="h-8 px-2.5 text-[11px] gap-1.5 border-white/20 hover:bg-white/[0.05] text-zinc-200" onClick={() => generateInvoicePdf(job)}>
             <DownloadIcon size={13} /> PDF
@@ -384,8 +393,36 @@ function isImage(file) {
 
 function JobFiles({ job }) {
   const { files, loading } = useJobFiles(job._docId)
+  const fileInputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadErr, setUploadErr] = useState('')
   const photos = files.filter(isImage)
   const docs   = files.filter(f => !isImage(f))
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !job._docId) return
+    setUploading(true); setUploadErr('')
+    try {
+      const path = `jobs/${job._docId}/client-uploads/${Date.now()}-${file.name}`
+      const sref = storageRef(storage, path)
+      await uploadBytes(sref, file)
+      const url = await getDownloadURL(sref)
+      await addJobFile(job._docId, {
+        name: file.name,
+        url,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        source: 'client-upload',
+      })
+    } catch (err) {
+      console.error('[Client] Upload failed:', err)
+      setUploadErr('Upload failed — check the file size or contact P2.')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <Card className="border-white/10 bg-white/[0.025]">
@@ -393,7 +430,14 @@ function JobFiles({ job }) {
         <div className="flex items-center gap-2">
           <p className="font-bold text-sm text-white truncate">{jobName(job)}</p>
           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">{job.id}</span>
+          <div className="ml-auto shrink-0">
+            <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
+            <Button variant="outline" className="h-7 px-2 text-[11px] gap-1.5 border-white/20 text-zinc-200" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+              <UploadIcon size={12} /> {uploading ? 'Uploading…' : 'Upload'}
+            </Button>
+          </div>
         </div>
+        {uploadErr && <p className="text-[11px] text-red-400">{uploadErr}</p>}
 
         {loading ? (
           <p className="text-xs text-zinc-400 py-2">Loading files…</p>
@@ -657,6 +701,56 @@ function ClientMessages({ jobs, clientName }) {
   )
 }
 
+// ── Schedule (milestone timeline) ────────────────────────────────────────────
+
+function fmtFullDate(d) {
+  if (!d) return null
+  try {
+    const dt = d?.toDate ? d.toDate() : new Date(d)
+    if (isNaN(dt.getTime())) return null
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch { return null }
+}
+
+function ScheduleCard({ job }) {
+  const phases = getJobInspectionTimeline(job)
+  const isComplete = ['complete', 'completed'].includes(job.status)
+  const milestones = [
+    { label: 'Project start', date: job.start, status: job.start ? 'passed' : 'not-started' },
+    ...phases.map(p => ({ label: p.label, date: p.date, status: p.status })),
+    { label: 'Target completion', date: job.target, status: isComplete ? 'passed' : 'not-started' },
+  ]
+
+  return (
+    <Card className="border-white/10 bg-white/[0.025]">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <p className="font-bold text-sm text-white truncate">{jobName(job)}</p>
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">{job.id}</span>
+        </div>
+        <ol className="relative ml-1.5">
+          {milestones.map((m, i) => {
+            const meta = PHASE_STATUS[m.status] || PHASE_STATUS['not-started']
+            const last = i === milestones.length - 1
+            const dateStr = fmtFullDate(m.date)
+            return (
+              <li key={m.label + i} className="relative pl-6 pb-4 last:pb-0">
+                {!last && <span className="absolute left-[5px] top-3 bottom-0 w-px bg-white/10" />}
+                <span className="absolute left-0 top-1 w-3 h-3 rounded-full border-2" style={{ borderColor: meta.color, backgroundColor: meta.color + '44' }} />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-zinc-100">{m.label}</p>
+                  <span className="text-[10px] font-bold uppercase tracking-wide shrink-0" style={{ color: meta.color }}>{meta.label}</span>
+                </div>
+                <p className="text-[11px] text-zinc-400">{dateStr || (m.status === 'passed' ? 'Done' : 'Date TBD')}</p>
+              </li>
+            )
+          })}
+        </ol>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Stat tile ────────────────────────────────────────────────────────────────
 
 function PortalStat({ label, value, sub, Icon, accent }) {
@@ -698,6 +792,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
 
   const TABS = [
     { id: 'projects',  label: 'Projects',  Icon: HomeIcon,          count: 0 },
+    { id: 'schedule',  label: 'Schedule',  Icon: CalendarClockIcon, count: 0 },
     { id: 'extras',    label: 'Approvals', Icon: FilePenLineIcon,   count: pendingExtras.length },
     { id: 'invoices',  label: 'Invoices',  Icon: ReceiptIcon,       count: 0 },
     { id: 'files',     label: 'Photos',    Icon: ImageIcon,         count: 0 },
@@ -789,6 +884,23 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
               )}
             </>
           )
+        )}
+
+        {activeTab === 'schedule' && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Schedule</p>
+              <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Project milestones</h2>
+              <p className="text-xs text-zinc-400 mt-1">Start, inspection milestones, and target completion for each project.</p>
+            </div>
+            {visibleJobs.length === 0 ? (
+              <EmptyState Icon={CalendarClockIcon} title="No schedule yet" description="Milestones appear here once your projects are underway." />
+            ) : (
+              <div className="space-y-3">
+                {visibleJobs.map(j => <ScheduleCard key={j._docId || j.id} job={j} />)}
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === 'extras' && (
