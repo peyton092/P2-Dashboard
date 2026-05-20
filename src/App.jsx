@@ -62,6 +62,7 @@ const ArchitectureComponent    = lazy(() => import('./components/Architecture'))
 const PermitsComponent         = lazy(() => import('./components/Permits'))
 import WarRoomComponent from './components/WarRoom'
 import CommandPalette from './components/CommandPalette'
+import JobDetail from './components/JobDetail'
 import PMDashboardComponent from './components/PMDashboard'
 import AlertsPageComponent from './components/AlertsPage'
 import BillingQueueComponent from './components/BillingQueue'
@@ -1456,7 +1457,8 @@ function JobStatusRow({
 
 function JobStatusDetail({ job }) {
   return (
-    <div className="border-t border-white/5 px-4 py-4 sm:px-5 sm:py-5 grid grid-cols-1 md:grid-cols-3 gap-5 bg-white/[0.015]">
+    <div className="border-t border-white/5 bg-white/[0.015]">
+      <div className="px-4 py-4 sm:px-5 sm:py-5 grid grid-cols-1 md:grid-cols-3 gap-5">
       <div>
         <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 mb-2">Subcontractors</p>
         {['electrical','plumbing','hvac'].some(t => job.subs?.[t]) ? (
@@ -1509,6 +1511,17 @@ function JobStatusDetail({ job }) {
             <BillingStatusSelect job={job} />
           </li>
         </ul>
+      </div>
+      </div>
+      <div className="px-4 pb-4 sm:px-5">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: job.id } }))}
+          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white"
+          style={{ backgroundColor: O }}
+        >
+          Open full view →
+        </button>
       </div>
     </div>
   )
@@ -3417,6 +3430,7 @@ function Architecture() {
 function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange, onLogout, onCreateUser, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'command-center')
   const [collapsed, setCollapsed] = useState(false)
+  const [selectedJobId, setSelectedJobId] = useState(null)
   const { loading, jobs, extras, notifs, subs, submits, agentAlerts } = useData()
 
   // Cross-component navigation. Command Center's "View All" links and Quick
@@ -3428,8 +3442,17 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
       const id = e?.detail?.id
       if (typeof id === 'string') setActiveTab(id)
     }
+    // Deep-link to a single job's full-detail view.
+    const openJob = (e) => {
+      const id = e?.detail?.id
+      if (typeof id === 'string') { setSelectedJobId(id); setActiveTab('job-detail') }
+    }
     window.addEventListener('p2:navigate', handler)
-    return () => window.removeEventListener('p2:navigate', handler)
+    window.addEventListener('p2:open-job', openJob)
+    return () => {
+      window.removeEventListener('p2:navigate', handler)
+      window.removeEventListener('p2:open-job', openJob)
+    }
   }, [])
 
   const navCounts = {
@@ -3489,6 +3512,7 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     'team':           wrap(<TeamLeaderboardComponent />),
     'invoice-auditor': wrap(<Suspense fallback={<div className="p-8 text-muted-foreground text-sm">Loading…</div>}><InvoiceAuditorComponent /></Suspense>),
     'settings':       wrap(<SettingsPageComponent onLogout={onLogout} />),
+    'job-detail':     wrap(<JobDetail jobId={selectedJobId} onBack={() => setActiveTab('jobs')} />),
   }
 
   // Decorate nav items with live counts so the sidebar can render badges

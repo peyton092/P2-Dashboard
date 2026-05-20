@@ -84,7 +84,7 @@ export default function CommandPalette() {
       const jobHits = jobs.filter(j =>
         [j.id, j.name, j.address, j.client, j.pm, j.permitNumber].some(v => (v || '').toString().toLowerCase().includes(q)),
       ).slice(0, 8)
-      if (jobHits.length) groups.push({ heading: 'Jobs', Icon: HardHatIcon, items: jobHits.map(j => ({ key: `job_${j.id}`, title: `${j.id} — ${j.name || j.client || ''}`.trim(), sub: j.address || j.pm || '', tab: 'jobs' })) })
+      if (jobHits.length) groups.push({ heading: 'Jobs', Icon: HardHatIcon, items: jobHits.map(j => ({ key: `job_${j.id}`, title: `${j.id} — ${j.name || j.client || ''}`.trim(), sub: j.address || j.pm || '', job: j.id })) })
 
       const subHits = subs.filter(s =>
         [s.name, s.co, s.trade].some(v => (v || '').toString().toLowerCase().includes(q)),
@@ -112,7 +112,8 @@ export default function CommandPalette() {
 
   const select = (item) => {
     if (!item) return
-    navigate(item.tab)
+    if (item.job) window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: item.job } }))
+    else navigate(item.tab)
     close()
   }
 
