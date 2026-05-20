@@ -1,9 +1,13 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
-import { approveExtra, updateExtra, addNotification, useJobFiles } from '../hooks/useFirestore'
+import {
+  approveExtra, updateExtra, addNotification, useJobFiles,
+  addSubmit, useSubmitReplies, addSubmitReply, updateSubmit,
+} from '../hooks/useFirestore'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -13,6 +17,7 @@ import {
   CheckIcon, XIcon, CheckCircleIcon, ClockIcon, MapPinIcon,
   LogOutIcon, ActivityIcon, BadgeCheckIcon, TriangleAlertIcon,
   GaugeIcon, DownloadIcon, FileTextIcon, CameraIcon,
+  MessageSquareIcon, SendIcon, PlusIcon, ChevronLeftIcon,
 } from 'lucide-react'
 import Brand from './brand/Brand'
 import { DataPanel, Pill, EmptyState, AllClearState } from './shared'
@@ -439,6 +444,219 @@ function JobFiles({ job }) {
   )
 }
 
+// ── Messages / RFI ───────────────────────────────────────────────────────────
+
+function ClientMessages({ jobs, clientName }) {
+  const { submits } = useData()
+  const [view, setView] = useState('inbox')
+  const [selectedId, setSelectedId] = useState(null)
+  const [form, setForm] = useState({ subject: '', category: 'Question', body: '', jobId: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const [replyText, setReplyText] = useState('')
+  const [replying, setReplying] = useState(false)
+
+  const selected = submits.find(s => s._docId === selectedId) || null
+  const { replies } = useSubmitReplies(selected?._docId)
+
+  // DataContext already scopes submits to this client's jobs.
+  const myMessages = submits
+
+  const CATEGORIES = ['Question', 'Schedule', 'Change Request', 'Issue', 'Other']
+  const statusColor = { Open: '#ef4444', 'In Progress': O, Resolved: '#22c55e' }
+
+  const handleNew = async () => {
+    if (!form.subject.trim() || !form.body.trim() || !form.jobId) return
+    setSubmitting(true)
+    await addSubmit({
+      subject: form.subject.trim(),
+      category: form.category,
+      priority: 'Medium',
+      body: form.body.trim(),
+      portal: 'Client',
+      clientName: clientName || null,
+      jobId: form.jobId,
+      status: 'Open',
+    })
+    setForm({ subject: '', category: 'Question', body: '', jobId: '' })
+    setSubmitting(false)
+    setView('inbox')
+  }
+
+  const handleReply = async () => {
+    if (!replyText.trim() || !selected?._docId) return
+    setReplying(true)
+    await addSubmitReply(selected._docId, {
+      body: replyText.trim(),
+      author: clientName || 'Client',
+      authorRole: 'client',
+    })
+    if (selected.status === 'Open') await updateSubmit(selected._docId, { status: 'In Progress' })
+    setReplyText('')
+    setReplying(false)
+  }
+
+  if (view === 'thread' && selected) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <Button variant="outline" className="border-white/20 gap-2 shrink-0 h-9 text-xs" onClick={() => { setView('inbox'); setSelectedId(null) }}>
+            <ChevronLeftIcon size={13} /> Back
+          </Button>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-bold text-white truncate">{selected.subject}</h2>
+            <p className="text-[11px] text-zinc-400">{selected.category} · {selected.jobId || 'No job'} · {fmtDate(selected.createdAt)}</p>
+          </div>
+          <Pill tone={selected.status === 'Resolved' ? 'success' : selected.status === 'In Progress' ? 'brand' : 'critical'} size="xs">{selected.status || 'Open'}</Pill>
+        </div>
+
+        <Card className="border-white/10">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0" style={{ backgroundColor: O + '33', color: O }}>
+                {(clientName || 'You').slice(0, 2).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="text-xs font-semibold">{selected.clientName || clientName || 'You'}</span>
+                  <span className="text-[10px] text-muted-foreground">{fmtDate(selected.createdAt)}</span>
+                </div>
+                <p className="text-xs whitespace-pre-wrap">{selected.body}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {replies.map(r => (
+          <Card key={r._docId} className={`border-white/10 ${r.authorRole === 'internal' ? 'ml-6' : ''}`}>
+            <CardContent className="p-3">
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                  style={{ backgroundColor: r.authorRole === 'internal' ? '#3b82f622' : '#22c55e22', color: r.authorRole === 'internal' ? '#3b82f6' : '#22c55e' }}>
+                  {(r.author || 'P2').slice(0, 2).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-medium">{r.author}{r.authorRole === 'internal' ? ' · P2' : ''}</span>
+                    <span className="text-[10px] text-muted-foreground">{fmtDate(r.createdAt)}</span>
+                  </div>
+                  <p className="text-xs whitespace-pre-wrap">{r.body}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+
+        <Card className="border-white/10">
+          <CardContent className="p-3 space-y-2">
+            <Textarea className="bg-white/5 border-white/20 min-h-20 text-xs" placeholder="Write a reply…" value={replyText} onChange={e => setReplyText(e.target.value)} />
+            <Button className="w-full h-9 text-white text-xs gap-1.5" style={{ backgroundColor: O }} disabled={replying || !replyText.trim()} onClick={handleReply}>
+              <SendIcon size={13} /> {replying ? 'Sending…' : 'Send reply'}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (view === 'new') {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" className="border-white/20 gap-2 h-9 text-xs" onClick={() => setView('inbox')}>
+            <ChevronLeftIcon size={13} /> Back
+          </Button>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Contact P2</p>
+            <h2 className="text-lg font-semibold tracking-tight text-white mt-0.5">New message</h2>
+          </div>
+        </div>
+        <Card className="border-white/10" style={{ borderColor: O + '33' }}>
+          <CardContent className="p-4 space-y-3">
+            <div>
+              <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Project *</label>
+              <Select value={form.jobId} onValueChange={v => setForm(f => ({ ...f, jobId: v }))}>
+                <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue placeholder="Select a project" /></SelectTrigger>
+                <SelectContent>
+                  {jobs.map(j => <SelectItem key={j.id} value={j.id}>{j.id} — {jobName(j)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Subject *</label>
+              <Input className="bg-white/5 border-white/20 h-9 text-xs" placeholder="Brief summary" value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Category</label>
+              <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
+                <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Message *</label>
+              <Textarea className="bg-white/5 border-white/20 min-h-24 text-xs" placeholder="How can P2 help?" value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} />
+            </div>
+            <Button className="w-full h-9 text-white text-xs" style={{ backgroundColor: O }} disabled={submitting || !form.subject.trim() || !form.body.trim() || !form.jobId} onClick={handleNew}>
+              {submitting ? 'Sending…' : 'Send to P2'}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  const openCount = myMessages.filter(s => s.status === 'Open' || !s.status).length
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Contact P2</p>
+          <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Messages</h2>
+          <p className="text-xs text-zinc-400 mt-1">{openCount} open · {myMessages.length} total</p>
+        </div>
+        <Button className="h-9 text-white text-xs gap-1.5 font-bold shrink-0" style={{ backgroundColor: O }} onClick={() => setView('new')} disabled={jobs.length === 0}>
+          <PlusIcon size={13} /> New message
+        </Button>
+      </div>
+
+      {myMessages.length === 0 ? (
+        <EmptyState
+          Icon={MessageSquareIcon}
+          title="No messages yet"
+          description="Send your P2 team a question, schedule request, or issue about your project and the conversation appears here."
+          action={jobs.length > 0 ? (
+            <Button className="text-white text-xs h-9 font-bold gap-1.5" style={{ backgroundColor: O }} onClick={() => setView('new')}>
+              <PlusIcon size={13} /> Start a message
+            </Button>
+          ) : null}
+        />
+      ) : (
+        <div className="space-y-2">
+          {myMessages.map(s => {
+            const sc = statusColor[s.status || 'Open']
+            return (
+              <button key={s._docId} className="w-full text-left flex items-start gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/25 transition-colors"
+                onClick={() => { setSelectedId(s._docId); setView('thread') }}>
+                <div className="shrink-0 flex items-center justify-center rounded-lg" style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}>
+                  <MessageSquareIcon size={14} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-zinc-100 truncate">{s.subject}</p>
+                  <p className="text-[11px] text-zinc-400">{s.category} · {s.jobId || 'general'} · {fmtDate(s.createdAt)}</p>
+                </div>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0" style={{ backgroundColor: sc + '22', color: sc, border: `1px solid ${sc}44` }}>
+                  {s.status || 'Open'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Stat tile ────────────────────────────────────────────────────────────────
 
 function PortalStat({ label, value, sub, Icon, accent }) {
@@ -459,7 +677,7 @@ function PortalStat({ label, value, sub, Icon, accent }) {
 // ── Main Portal ──────────────────────────────────────────────────────────────
 
 export default function ClientPortal({ clientName = 'Client', userName = '', onLogout }) {
-  const { jobs, extras } = useData()
+  const { jobs, extras, submits = [] } = useData()
   const [activeTab, setActiveTab] = useState('projects')
   const [projectFilter, setProjectFilter] = useState('__ALL__')
 
@@ -476,12 +694,14 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
   const pendingExtras = visibleExtras.filter(e => e.status === 'pending')
   const pendingValue  = pendingExtras.reduce((s, e) => s + (e.amount || 0), 0)
   const openInvoices  = visibleJobs.filter(j => j.invoiceNum && j.billingStatus !== 'paid').length
+  const openMessages  = submits.filter(s => s.status === 'Open' || !s.status).length
 
   const TABS = [
-    { id: 'projects',  label: 'Projects',  Icon: HomeIcon,        count: 0 },
-    { id: 'extras',    label: 'Approvals', Icon: FilePenLineIcon, count: pendingExtras.length },
-    { id: 'invoices',  label: 'Invoices',  Icon: ReceiptIcon,     count: 0 },
-    { id: 'files',     label: 'Photos',    Icon: ImageIcon,       count: 0 },
+    { id: 'projects',  label: 'Projects',  Icon: HomeIcon,          count: 0 },
+    { id: 'extras',    label: 'Approvals', Icon: FilePenLineIcon,   count: pendingExtras.length },
+    { id: 'invoices',  label: 'Invoices',  Icon: ReceiptIcon,       count: 0 },
+    { id: 'files',     label: 'Photos',    Icon: ImageIcon,         count: 0 },
+    { id: 'messages',  label: 'Messages',  Icon: MessageSquareIcon, count: openMessages },
   ]
 
   return (
@@ -630,12 +850,16 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
             )}
           </div>
         )}
+
+        {activeTab === 'messages' && (
+          <ClientMessages jobs={visibleJobs} clientName={userName || clientName} />
+        )}
       </main>
 
       {/* Mobile bottom nav */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur border-t border-white/10"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-        <div className="grid grid-cols-4">
+        <div className="grid" style={{ gridTemplateColumns: `repeat(${TABS.length}, minmax(0, 1fr))` }}>
           {TABS.map(t => {
             const active = activeTab === t.id
             return (
