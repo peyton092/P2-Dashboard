@@ -1,0 +1,79 @@
+rules_version = '2';
+
+// P2 Field Control — Firestore security rules.
+//
+// Baseline posture: nothing is accessible without authentication, and the
+// crown jewels (OAuth access tokens, app settings, user role records) are
+// locked to staff (owner / internal) only.
+//
+// KNOWN LIMITATION: operational collections (jobs, extras, …) are readable by
+// any signed-in user. The builder/client portals currently scope what each
+// user SEES in JavaScript (DataContext: tenantId / clientJobIds), not at the
+// database layer, because the portals issue unscoped collection queries. Fully
+// enforcing per-tenant/per-client READ isolation at the DB requires scoping
+// those queries first — see SECURITY.md. These rules close the highest-value
+// holes (auth required everywhere; tokens/settings/roles protected) without
+// breaking the existing client-side filtering.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Role comes from a custom claim when present, otherwise the users doc.
+    function userRole() {
+      return request.auth.token.role != null
+        ? request.auth.token.role
+        : (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+            : null);
+    }
+
+    function isStaff() {
+      return signedIn() && (userRole() == 'owner' || userRole() == 'internal');
+    }
+
+    // ── Secrets: QuickBooks / CompanyCam OAuth tokens. Staff only. ──────────
+    // (Cloud Functions use the Admin SDK and bypass these rules.)
+    match /qb_config/{doc=**} { allow read, write: if isStaff(); }
+    match /cc_config/{doc=**} { allow read, write: if isStaff(); }
+
+    // ── App settings + agent config: everyone reads, staff writes. ──────────
+    match /config/{doc=**}       { allow read: if signedIn(); allow write: if isStaff(); }
+    match /agent_alerts/{doc}    { allow read: if signedIn(); allow write: if isStaff(); }
+
+    // ── User records hold roles + client scoping — never self-writable, ─────
+    //    so a user can't escalate their own role or widen clientJobIds.
+    match /users/{uid} {
+      allow read:  if signedIn() && (request.auth.uid == uid || isStaff());
+      allow write: if isStaff();
+      // Builders accept Terms of Access as themselves.
+      match /termsAcceptances/{version} {
+        allow read, write: if signedIn() && (request.auth.uid == uid || isStaff());
+      }
+    }
+
+    // ── Device push tokens. A user registers their own; staff can read all. ─
+    match /fcm_tokens/{token} {
+      allow read:  if isStaff();
+      allow write: if signedIn();
+    }
+
+    // ── Operational data: signed-in access (see KNOWN LIMITATION above). ────
+    match /jobs/{doc=**}            { allow read, write: if signedIn(); }
+    match /extras/{doc=**}          { allow read, write: if signedIn(); }
+    match /notifications/{doc}      { allow read, write: if signedIn(); }
+    match /subs/{doc}               { allow read, write: if signedIn(); }
+    match /materials/{doc}          { allow read, write: if signedIn(); }
+    match /permits/{doc}            { allow read, write: if signedIn(); }
+    match /submits/{doc=**}         { allow read, write: if signedIn(); }
+    match /daily_reports/{doc}      { allow read, write: if signedIn(); }
+    match /urgent_items/{doc}       { allow read, write: if signedIn(); }
+    match /history/{doc}            { allow read, write: if signedIn(); }
+    match /supplier_invoices/{doc}  { allow read, write: if signedIn(); }
+
+    // Default deny: any path not matched above is inaccessible.
+  }
+}
