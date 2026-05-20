@@ -6,7 +6,9 @@ import {
 import { doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../firebase'
+import { enablePushNotifications } from '../lib/push'
 import { useData } from '../DataContext'
+import { useToast } from '@/components/ui/toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,6 +54,7 @@ function Toggle({ enabled, onChange }) {
 export default function SettingsPage({ onLogout }) {
   const { jobs, settings } = useData()
   const user = auth.currentUser
+  const toast = useToast()
 
   const [pwMode, setPwMode]   = useState(false)
   const [curPw, setCurPw]     = useState('')
@@ -67,6 +70,18 @@ export default function SettingsPage({ onLogout }) {
   const [qbError, setQbError] = useState('')
   const [qbInfo, setQbInfo] = useState('')
 
+  const [ccConnected, setCcConnected] = useState(false)
+  const [ccConnectedAt, setCcConnectedAt] = useState(null)
+  const [ccScope, setCcScope] = useState(null)
+  const [ccConnecting, setCcConnecting] = useState(false)
+  const [ccDisconnecting, setCcDisconnecting] = useState(false)
+  const [ccError, setCcError] = useState('')
+  const [ccInfo, setCcInfo] = useState('')
+  const [ccSyncing, setCcSyncing] = useState(false)
+  const [ccSync, setCcSync] = useState(null)
+
+  const [pushBusy, setPushBusy] = useState(false)
+
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'qb_config', 'tokens'), snap => {
       const d = snap.data()
@@ -74,6 +89,24 @@ export default function SettingsPage({ onLogout }) {
       setQbCompanyId(d?.realmId || null)
       const ts = d?.connectedAt?.toDate?.() || (d?.connectedAt ? new Date(d.connectedAt) : null)
       setQbConnectedAt(ts && !isNaN(ts.getTime()) ? ts : null)
+    }, () => {})
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'cc_config', 'tokens'), snap => {
+      const d = snap.data()
+      setCcConnected(snap.exists() && !!d?.access_token)
+      setCcScope(d?.scope || null)
+      const ts = d?.connectedAt?.toDate?.() || (d?.connectedAt ? new Date(d.connectedAt) : null)
+      setCcConnectedAt(ts && !isNaN(ts.getTime()) ? ts : null)
+    }, () => {})
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'cc_config', 'sync'), snap => {
+      setCcSync(snap.exists() ? snap.data() : null)
     }, () => {})
     return unsub
   }, [])
@@ -127,6 +160,92 @@ export default function SettingsPage({ onLogout }) {
       setQbError('Could not disconnect. Try again.')
     } finally {
       setQbDisconnecting(false)
+    }
+  }
+
+  const handleConnectCC = async () => {
+    setCcConnecting(true)
+    setCcError('')
+    setCcInfo('')
+    const timeout = setTimeout(() => {
+      setCcConnecting(false)
+      setCcError('Connection timed out — CompanyCam auth did not respond. Try again.')
+    }, 10000)
+    try {
+      const { data } = await httpsCallable(functions, 'ccAuth')()
+      clearTimeout(timeout)
+      if (!data?.authUrl) {
+        setCcConnecting(false)
+        setCcError('CompanyCam integration is not configured on the server yet. Contact support.')
+        return
+      }
+      window.location.href = data.authUrl
+    } catch (e) {
+      clearTimeout(timeout)
+      console.error('CompanyCam auth error:', e)
+      setCcConnecting(false)
+      const code = e?.code || ''
+      if (code === 'functions/unavailable' || code === 'functions/not-found') {
+        setCcError('CompanyCam integration is not deployed on the server yet.')
+      } else {
+        setCcError('Could not connect to CompanyCam. Try again.')
+      }
+    }
+  }
+
+  const handleDisconnectCC = async () => {
+    if (!ccConnected) return
+    if (!window.confirm('Disconnect CompanyCam? Photo sync will stop until you reconnect.')) return
+    setCcDisconnecting(true)
+    setCcError('')
+    setCcInfo('')
+    try {
+      try {
+        await httpsCallable(functions, 'ccDisconnect')()
+      } catch {
+        // Fallback: clear the token doc directly so the UI reflects disconnect.
+        await deleteDoc(doc(db, 'cc_config', 'tokens'))
+      }
+      setCcInfo('CompanyCam disconnected.')
+    } catch (e) {
+      console.error('CompanyCam disconnect error:', e)
+      setCcError('Could not disconnect. Try again.')
+    } finally {
+      setCcDisconnecting(false)
+    }
+  }
+
+  const handleSyncCC = async () => {
+    setCcSyncing(true)
+    setCcError('')
+    setCcInfo('')
+    try {
+      const { data } = await httpsCallable(functions, 'ccSyncPhotos')()
+      const n = data?.photosWritten ?? 0
+      const m = data?.matchedProjects ?? 0
+      toast({ tone: 'success', title: 'CompanyCam sync complete', description: `${n} photo${n === 1 ? '' : 's'} across ${m} matched project${m === 1 ? '' : 's'}.` })
+    } catch (e) {
+      console.error('CompanyCam sync error:', e)
+      const code = e?.code || ''
+      const msg = (code === 'functions/unavailable' || code === 'functions/not-found')
+        ? 'Photo sync is not deployed on the server yet.'
+        : 'Could not sync photos. Try again.'
+      toast({ tone: 'error', title: 'CompanyCam sync failed', description: msg })
+    } finally {
+      setCcSyncing(false)
+    }
+  }
+
+  const handleEnablePush = async () => {
+    setPushBusy(true)
+    try {
+      await enablePushNotifications()
+      toast({ tone: 'success', title: 'Notifications enabled', description: 'This device will receive P2 alerts.' })
+    } catch (e) {
+      console.error('Push enable error:', e)
+      toast({ tone: 'error', title: 'Could not enable notifications', description: e?.message || 'Try again.' })
+    } finally {
+      setPushBusy(false)
     }
   }
 
@@ -241,6 +360,105 @@ export default function SettingsPage({ onLogout }) {
         </CardContent>
       </Card>
 
+      {/* ── CompanyCam Integration ───────────────────────────────────── */}
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <CameraIcon size={15} style={{ color: O }} /> CompanyCam Integration
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-6 pb-5 space-y-3">
+          <div className="flex items-center gap-2">
+            {ccConnected
+              ? <CheckCircleIcon size={14} className="text-green-400 shrink-0" />
+              : <div className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0" />
+            }
+            <span className="text-sm">
+              {ccConnected ? 'CompanyCam connected' : 'Not connected'}
+            </span>
+          </div>
+          {ccConnected && (
+            <div className="text-xs text-muted-foreground space-y-0.5 pl-1">
+              {ccScope && <p>Access: <span className="">{ccScope}</span></p>}
+              {ccConnectedAt && <p>Connected {ccConnectedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
+            </div>
+          )}
+          {!ccConnected && (
+            <p className="text-xs text-muted-foreground pl-1">
+              Connect to auto-pull jobsite photos. Once connected, enable <span className="text-zinc-300">CompanyCam Sync</span> above to turn on auto-pull.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="text-xs h-8 text-white"
+              style={{ backgroundColor: O }}
+              onClick={handleConnectCC}
+              disabled={ccConnecting || ccDisconnecting}
+            >
+              {ccConnecting ? 'Redirecting…' : ccConnected ? 'Reconnect CompanyCam' : 'Connect CompanyCam'}
+            </Button>
+            {ccConnected && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-8 border-white/20"
+                  onClick={handleSyncCC}
+                  disabled={ccSyncing || ccConnecting || ccDisconnecting}
+                >
+                  {ccSyncing ? 'Syncing…' : 'Sync photos now'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-8 border-white/20"
+                  onClick={handleDisconnectCC}
+                  disabled={ccConnecting || ccDisconnecting || ccSyncing}
+                >
+                  {ccDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                </Button>
+              </>
+            )}
+          </div>
+          {ccConnected && ccSync?.syncedAt && (
+            <p className="text-[11px] text-muted-foreground pl-1">
+              Last sync {new Date(ccSync.syncedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              {typeof ccSync.photosWritten === 'number' ? ` · ${ccSync.photosWritten} photos` : ''}
+              {typeof ccSync.matchedProjects === 'number' ? ` · ${ccSync.matchedProjects} projects matched` : ''}
+            </p>
+          )}
+          <p className="text-[11px] text-muted-foreground pl-1">
+            Photos auto-sync every 6 hours and land on jobs matched by address — visible in the client portal and project documents.
+          </p>
+          {ccError && <p className="text-xs text-red-400 mt-2">{ccError}</p>}
+          {ccInfo  && <p className="text-xs text-green-400 mt-2">{ccInfo}</p>}
+        </CardContent>
+      </Card>
+
+      {/* ── Push Notifications ───────────────────────────────────────── */}
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <BellIcon size={15} style={{ color: O }} /> Push Notifications
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-6 pb-5 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Get alerts on this device for inspection results, change-order approvals, and billing updates.
+          </p>
+          <Button
+            size="sm"
+            className="text-xs h-8 text-white"
+            style={{ backgroundColor: O }}
+            onClick={handleEnablePush}
+            disabled={pushBusy}
+          >
+            {pushBusy ? 'Enabling…' : 'Enable on this device'}
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* ── Account ──────────────────────────────────────────────────── */}
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
@@ -332,6 +550,7 @@ export default function SettingsPage({ onLogout }) {
               { label: 'Total Jobs',       value: String(jobs?.length ?? '—') },
               { label: 'Active Jobs',      value: String((jobs || []).filter(j => !['complete','completed'].includes(j.status)).length) },
               { label: 'QuickBooks',       value: qbConnected ? 'Connected' : 'Not connected' },
+              { label: 'CompanyCam',       value: ccConnected ? 'Connected' : 'Not connected' },
               { label: 'Build Date',       value: __BUILD_DATE__           },
             ].map(({ label, value }) => (
               <div key={label} className="p-3 rounded-lg bg-white/5 border border-white/5">

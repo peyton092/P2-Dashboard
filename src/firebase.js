@@ -1,8 +1,12 @@
 import { initializeApp, getApps } from 'firebase/app'
-import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
+import {
+  initializeFirestore, persistentLocalCache,
+  persistentMultipleTabManager, CACHE_SIZE_UNLIMITED,
+} from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 import { getStorage } from 'firebase/storage'
 import { getFunctions } from 'firebase/functions'
+import { getMessaging, isSupported as messagingIsSupported } from 'firebase/messaging'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyDm5I5iCbe3_0IZdtabw4WYTMW1YTaL9R4',
@@ -18,10 +22,27 @@ const app = initializeApp(firebaseConfig)
 // Secondary app used to create users without signing out the current session
 const secondaryApp = getApps().find(a => a.name === 'secondary') || initializeApp(firebaseConfig, 'secondary')
 
+// Offline-first local cache. Multi-tab manager keeps data consistent across
+// multiple browser tabs and desktop (Tauri) windows; unlimited cache size lets
+// field crews retain full project data with no connection. Writes made offline
+// reflect immediately via the local cache (optimistic UI) and flush on reconnect.
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache(),
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+    cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+  }),
 })
 export const auth = getAuth(app)
 export const secondaryAuth = getAuth(secondaryApp)
 export const storage = getStorage(app)
 export const functions = getFunctions(app)
+
+// Cloud Messaging is only available in browsers with service-worker + push
+// support; resolve to null elsewhere so callers can no-op gracefully.
+export async function getMessagingIfSupported() {
+  try {
+    return (await messagingIsSupported()) ? getMessaging(app) : null
+  } catch {
+    return null
+  }
+}

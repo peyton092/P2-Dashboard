@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import {
   approveExtra, updateExtra, addNotification, addSubmit, updateSubmit,
-  useSubmitReplies, addSubmitReply, updateNotification,
+  useSubmitReplies, addSubmitReply, updateNotification, addHistory,
 } from '../hooks/useFirestore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -418,6 +418,7 @@ function ExtraRow({ co, compact = false }) {
         type: 'success',
         msg: `${co.id || 'CO'} approved by QBS — ${fmt$(co.amount)} (${co.job})`,
       })
+      await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: 'QBS Coordinator', jobId: co.job })
     } catch (err) {
       console.error('[QBS] Approve failed:', err)
       setErrMsg('Could not save approval. Check your connection and try again.')
@@ -441,6 +442,7 @@ function ExtraRow({ co, compact = false }) {
         type: 'warn',
         msg: `${co.id || 'CO'} rejected by QBS — ${co.job}: ${rejectNotes.trim().slice(0, 80)}`,
       })
+      await addHistory({ type: 'change-order', action: 'rejected', summary: `${co.id || 'CO'} revision requested — ${rejectNotes.trim().slice(0, 60)}`, actor: 'QBS Coordinator', jobId: co.job })
       setShowReject(false)
       setRejectNotes('')
     } catch (err) {
@@ -976,7 +978,7 @@ function QBSNotifications({ notifs }) {
 // ── Main Portal ──────────────────────────────────────────────────────────────
 
 export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', onLogout }) {
-  const { jobs, extras, notifs } = useData()
+  const { jobs, extras, notifs, loading } = useData()
 
   // Read URL param for initial qbsPM (?qbsPM=Taylor%20Hensley)
   const urlPM = useMemo(() => {
@@ -1044,6 +1046,17 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
   })
   const projectsOnTrack = onTrackJobs.length === activeJobs.length && activeJobs.length > 0
 
+  if (loading && jobs.length === 0) {
+    return (
+      <div className="dark min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full border-2 animate-spin" style={{ borderColor: O + '33', borderTopColor: O }} />
+          <p className="text-sm text-muted-foreground">Loading your projects…</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="dark min-h-screen bg-background text-foreground flex flex-col">
       {/* Sticky header — brand + tenant + PM selector */}
@@ -1059,11 +1072,12 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
           </div>
           {onLogout && (
             <Button
+              aria-label="Sign out"
               variant="outline"
               className="border-white/15 h-9 w-9 p-0 sm:w-auto sm:px-3 gap-1.5 shrink-0 hover:bg-white/[0.05] text-zinc-200"
               onClick={onLogout}
             >
-              <LogOutIcon size={13} />
+              <LogOutIcon size={13} aria-hidden="true" />
               <span className="hidden sm:inline text-xs">Sign out</span>
             </Button>
           )}

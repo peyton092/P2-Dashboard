@@ -45,26 +45,6 @@ const PieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
 export default function Analytics() {
   const { jobs = [], extras = [], loading } = useData()
 
-  if (loading && jobs.length === 0) {
-    return (
-      <div className="p-6 max-w-7xl mx-auto">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-9 h-9 rounded-full border-2 animate-spin"
-            style={{ borderColor: O + '33', borderTopColor: O }} />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: O }}>Analytics</h1>
-            <p className="text-sm text-muted-foreground">Loading portfolio data…</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[0,1,2,3].map(i => (
-            <div key={i} className="rounded-xl border border-white/10 bg-white/5 h-24 animate-pulse" />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
   // ── 1. Job Phase Distribution ───────────────────────────────────────────────
   const phaseData = useMemo(() => {
     const bins = { 'Rough-In': 0, 'Mid Phase': 0, 'Final Phase': 0 }
@@ -144,6 +124,28 @@ export default function Analytics() {
   const activeJobs  = jobs.filter(j => !['complete', 'completed'].includes(j.status)).length
   const avgProgress = totalJobs ? Math.round(jobs.reduce((s, j) => s + (j.progress || 0), 0) / totalJobs) : 0
   const totalExtras = extras.reduce((s, e) => s + (Number(e.amount) || 0), 0)
+
+  // Loading guard lives AFTER all hooks so hook order stays stable across
+  // renders (an early return above the useMemo calls would change hook count).
+  if (loading && jobs.length === 0) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-9 h-9 rounded-full border-2 animate-spin"
+            style={{ borderColor: O + '33', borderTopColor: O }} />
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: O }}>Analytics</h1>
+            <p className="text-sm text-muted-foreground">Loading portfolio data…</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[0,1,2,3].map(i => (
+            <div key={i} className="rounded-xl border border-white/10 bg-white/5 h-24 animate-pulse" />
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">

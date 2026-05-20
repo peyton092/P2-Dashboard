@@ -48,6 +48,7 @@ import {
 } from 'lucide-react'
 const CommandCenterComponent  = lazy(() => import('./components/CommandCenter'))
 const QBSBuilderPortalComponent = lazy(() => import('./components/QBSBuilderPortal'))
+const ClientPortalComponent    = lazy(() => import('./components/ClientPortal'))
 const ProjectFoldersComponent  = lazy(() => import('./components/ProjectFolders'))
 const SubmitInboxComponent     = lazy(() => import('./components/SubmitInbox'))
 const CrewReportComponent      = lazy(() => import('./components/CrewReport'))
@@ -60,13 +61,17 @@ const InvoiceAuditorComponent  = lazy(() => import('./components/InvoiceAuditor'
 const ArchitectureComponent    = lazy(() => import('./components/Architecture'))
 const PermitsComponent         = lazy(() => import('./components/Permits'))
 import WarRoomComponent from './components/WarRoom'
+import CommandPalette from './components/CommandPalette'
+import JobDetail from './components/JobDetail'
+const CalendarComponent = lazy(() => import('./components/Calendar'))
+const ActivityComponent = lazy(() => import('./components/Activity'))
 import PMDashboardComponent from './components/PMDashboard'
 import AlertsPageComponent from './components/AlertsPage'
 import BillingQueueComponent from './components/BillingQueue'
 import ErrorBoundary from './components/ErrorBoundary'
 import {
   PageHeader, MetricTile, DataPanel, Pill,
-  EmptyState, AllClearState, FilterBar,
+  EmptyState, AllClearState, FilterBar, PageSkeleton,
   // Phase 19 — primitives extracted from App.jsx
   ProgressBar, StatCard,
   inspMeta, iMeta, statusMeta, sMeta,
@@ -118,6 +123,7 @@ import {
   severityTone, severityColor, buildBriefingItems,
 } from './lib/briefing'
 import { generateInvoicePdf } from './lib/generateInvoicePdf'
+import { exportToCsv } from './lib/exportCsv'
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
 import MobileNav from './components/shell/MobileNav'
@@ -156,6 +162,7 @@ const NAV_SECTIONS = [
     heading: 'Field',
     items: [
       { id: 'jobs',         label: 'Job Status',       Icon: HardHatIcon },
+      { id: 'calendar',     label: 'Calendar',         Icon: CalendarClockIcon },
       { id: 'inspections',  label: 'Inspections',      Icon: BadgeCheckIcon },
       { id: 'daily-report', label: 'Daily Report',     Icon: NotebookPenIcon },
       { id: 'morning',      label: 'Morning Briefing', Icon: CalendarClockIcon },
@@ -177,6 +184,7 @@ const NAV_SECTIONS = [
   {
     heading: 'System',
     items: [
+      { id: 'activity',     label: 'Activity',     Icon: ActivityIcon },
       { id: 'architecture', label: 'Architecture', Icon: DatabaseIcon },
       { id: 'settings',     label: 'Settings',     Icon: SettingsIcon },
     ],
@@ -197,6 +205,7 @@ const MOBILE_MORE = [
   { id: 'extras',        label: 'COs',         Icon: FilePenLineIcon },
   { id: 'inspections',   label: 'Inspections', Icon: BadgeCheckIcon },
   { id: 'daily-report',  label: 'Report',      Icon: NotebookPenIcon },
+  { id: 'calendar',      label: 'Calendar',    Icon: CalendarClockIcon },
   { id: 'morning',       label: 'Briefing',    Icon: CalendarClockIcon },
   { id: 'submit',        label: 'Submit',      Icon: SendIcon },
   { id: 'notifications', label: 'Notifs',      Icon: BellIcon },
@@ -206,6 +215,7 @@ const MOBILE_MORE = [
   { id: 'subs',          label: 'Subs',        Icon: UsersRoundIcon },
   { id: 'analytics',     label: 'Reports',     Icon: BarChart3Icon },
   { id: 'team',          label: 'Team',        Icon: TrophyIcon },
+  { id: 'activity',      label: 'Activity',    Icon: ActivityIcon },
   { id: 'settings',      label: 'Settings',    Icon: SettingsIcon },
 ]
 
@@ -392,6 +402,7 @@ function CreateUserModal({ onClose }) {
   const [role, setRole] = useState('internal')
   const [tenantId, setTenantId] = useState('qbs')
   const [displayName, setDisplayName] = useState('')
+  const [clientJobs, setClientJobs] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -403,16 +414,24 @@ function CreateUserModal({ onClose }) {
     setLoading(true)
     try {
       const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password)
+      const parsedClientJobs = clientJobs
+        .split(/[\s,]+/)
+        .map(s => s.trim().toUpperCase())
+        .filter(Boolean)
       await setDoc(doc(db, 'users', cred.user.uid), {
         email: email.trim(),
         displayName: displayName.trim() || email.trim(),
         role,
         tenantId: role === 'builder' ? tenantId : 'p2-core',
+        ...(role === 'client' ? {
+          clientName: displayName.trim() || email.trim(),
+          clientJobIds: parsedClientJobs,
+        } : {}),
         createdAt: new Date().toISOString(),
       })
       await signOut(secondaryAuth)
       setSuccess(`Account created for ${email.trim()}.`)
-      setEmail(''); setPassword(''); setDisplayName('')
+      setEmail(''); setPassword(''); setDisplayName(''); setClientJobs('')
     } catch (err) {
       const msg = {
         'auth/email-already-in-use': 'An account with that email already exists.',
@@ -461,6 +480,7 @@ function CreateUserModal({ onClose }) {
                   <SelectItem value="owner">Owner</SelectItem>
                   <SelectItem value="internal">Internal (P2 staff)</SelectItem>
                   <SelectItem value="builder">Builder (portal access)</SelectItem>
+                  <SelectItem value="client">Client (project owner)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -475,6 +495,20 @@ function CreateUserModal({ onClose }) {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {role === 'client' && (
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Project IDs (comma-separated)</label>
+                <Input
+                  value={clientJobs}
+                  onChange={e => setClientJobs(e.target.value)}
+                  placeholder="QBS-018, QBS-032, QBS-041"
+                  className="bg-white/5 border-white/20"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  The client will only see these projects. The Name above is shown as the client/company name in their portal.
+                </p>
               </div>
             )}
             {error   && <p className="text-xs text-red-400 font-medium">{error}</p>}
@@ -1030,6 +1064,24 @@ function JobStatus() {
     setCreating(false)
   }
 
+  const exportVisibleCsv = () => {
+    exportToCsv('p2-jobs', [
+      { label: 'Job ID',    key: 'id' },
+      { label: 'Name',      get: e => jobName(e.j) },
+      { label: 'Client',    get: e => e.j.client || '' },
+      { label: 'Address',   get: e => e.j.address || '' },
+      { label: 'City',      get: e => e.j.city || '' },
+      { label: 'PM',        get: e => e.j.pm || '' },
+      { label: 'Status',    get: e => e.j.status || '' },
+      { label: 'Phase',     get: e => e.j.phase || '' },
+      { label: 'Progress',  get: e => `${e.j.progress ?? 0}%` },
+      { label: 'Target',    get: e => e.j.target || '' },
+      { label: 'Billing',   get: e => e.j.billingStatus || '' },
+      { label: 'Permit #',  get: e => e.j.permitNumber || '' },
+      { label: 'At Risk',   get: e => (e.risk?.level === 'critical' || e.risk?.level === 'warning' || e.failed) ? 'yes' : 'no' },
+    ], visible)
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -1053,14 +1105,23 @@ function JobStatus() {
           </>
         }
         actions={
-          <button
-            type="button"
-            onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(JOB_FORM_INITIAL) }}
-            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
-            style={{ backgroundColor: O }}
-          >
-            <PlusIcon size={13} /> New job
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => exportVisibleCsv()}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            >
+              <DownloadIcon size={13} /> Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(JOB_FORM_INITIAL) }}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
+              style={{ backgroundColor: O }}
+            >
+              <PlusIcon size={13} /> New job
+            </button>
+          </div>
         }
       />
 
@@ -1430,7 +1491,8 @@ function JobStatusRow({
 
 function JobStatusDetail({ job }) {
   return (
-    <div className="border-t border-white/5 px-4 py-4 sm:px-5 sm:py-5 grid grid-cols-1 md:grid-cols-3 gap-5 bg-white/[0.015]">
+    <div className="border-t border-white/5 bg-white/[0.015]">
+      <div className="px-4 py-4 sm:px-5 sm:py-5 grid grid-cols-1 md:grid-cols-3 gap-5">
       <div>
         <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 mb-2">Subcontractors</p>
         {['electrical','plumbing','hvac'].some(t => job.subs?.[t]) ? (
@@ -1483,6 +1545,17 @@ function JobStatusDetail({ job }) {
             <BillingStatusSelect job={job} />
           </li>
         </ul>
+      </div>
+      </div>
+      <div className="px-4 pb-4 sm:px-5">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: job.id } }))}
+          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white"
+          style={{ backgroundColor: O }}
+        >
+          Open full view →
+        </button>
       </div>
     </div>
   )
@@ -3391,6 +3464,7 @@ function Architecture() {
 function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange, onLogout, onCreateUser, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'command-center')
   const [collapsed, setCollapsed] = useState(false)
+  const [selectedJobId, setSelectedJobId] = useState(null)
   const { loading, jobs, extras, notifs, subs, submits, agentAlerts } = useData()
 
   // Cross-component navigation. Command Center's "View All" links and Quick
@@ -3402,8 +3476,17 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
       const id = e?.detail?.id
       if (typeof id === 'string') setActiveTab(id)
     }
+    // Deep-link to a single job's full-detail view.
+    const openJob = (e) => {
+      const id = e?.detail?.id
+      if (typeof id === 'string') { setSelectedJobId(id); setActiveTab('job-detail') }
+    }
     window.addEventListener('p2:navigate', handler)
-    return () => window.removeEventListener('p2:navigate', handler)
+    window.addEventListener('p2:open-job', openJob)
+    return () => {
+      window.removeEventListener('p2:navigate', handler)
+      window.removeEventListener('p2:open-job', openJob)
+    }
   }, [])
 
   const navCounts = {
@@ -3463,6 +3546,9 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     'team':           wrap(<TeamLeaderboardComponent />),
     'invoice-auditor': wrap(<Suspense fallback={<div className="p-8 text-muted-foreground text-sm">Loading…</div>}><InvoiceAuditorComponent /></Suspense>),
     'settings':       wrap(<SettingsPageComponent onLogout={onLogout} />),
+    'job-detail':     wrap(<JobDetail jobId={selectedJobId} onBack={() => setActiveTab('jobs')} />),
+    'calendar':       wrap(<CalendarComponent />),
+    'activity':       wrap(<ActivityComponent />),
   }
 
   // Decorate nav items with live counts so the sidebar can render badges
@@ -3513,14 +3599,11 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
 
   return (
     <AppShell sidebar={sidebar} mobileNav={mobileNav}>
-      <Suspense
-        fallback={(
-          <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
-            Loading…
-          </div>
-        )}
-      >
-        {TAB_COMPONENTS[activeTab]}
+      <CommandPalette />
+      <Suspense fallback={<PageSkeleton />}>
+        <div key={activeTab} className="p2-page-enter">
+          {TAB_COMPONENTS[activeTab]}
+        </div>
       </Suspense>
     </AppShell>
   )
@@ -3534,17 +3617,25 @@ export default function P2DashboardV4() {
   const [userName, setUserName]       = useState('')
   const [role, setRole]               = useState(null)
   const [tenantId, setTenantId]       = useState('p2-core')
+  const [clientName, setClientName]   = useState('')
+  const [clientJobIds, setClientJobIds] = useState([])
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showSignup, setShowSignup]   = useState(false)
   const [showCreateUser, setShowCreateUser] = useState(false)
-  const [qbCallbackState, setQbCallbackState] = useState(null) // null | 'loading' | 'success' | { error: string }
+  const [oauthState, setOauthState]   = useState(null) // null | 'loading' | 'success' | { error: string }
+  const [oauthProvider, setOauthProvider] = useState(null) // 'QuickBooks' | 'CompanyCam'
   const [initialTab, setInitialTab]   = useState(null)
 
-  // Capture QB OAuth callback params from URL on mount
-  const [qbParams] = useState(() => {
+  // Capture OAuth callback params from URL on mount. QuickBooks (Intuit) and
+  // CompanyCam both redirect back with ?code=…&state=…, but only Intuit appends
+  // a realmId — that's how we route the callback to the right Cloud Function.
+  const [oauthParams] = useState(() => {
     const p = new URLSearchParams(window.location.search)
     const code = p.get('code'), state = p.get('state'), realmId = p.get('realmId')
-    return code && state && realmId ? { code, state, realmId } : null
+    if (!code || !state) return null
+    return realmId
+      ? { provider: 'QuickBooks', fn: 'qbCallback', data: { code, state, realmId } }
+      : { provider: 'CompanyCam', fn: 'ccCallback', data: { code, state } }
   })
 
   // ?portal=qbs forces builder QBS portal view (bypasses auth/terms — for demos/links)
@@ -3553,23 +3644,24 @@ export default function P2DashboardV4() {
     return p.get('portal')
   })
 
-  // Process QB callback once user is authenticated
+  // Process the OAuth callback once user is authenticated
   useEffect(() => {
-    if (!qbParams || !user) return
+    if (!oauthParams || !user) return
     const run = async () => {
-      setQbCallbackState('loading')
+      setOauthProvider(oauthParams.provider)
+      setOauthState('loading')
       try {
-        await httpsCallable(functions, 'qbCallback')(qbParams)
+        await httpsCallable(functions, oauthParams.fn)(oauthParams.data)
         window.history.replaceState({}, '', window.location.pathname)
-        setQbCallbackState('success')
-        setTimeout(() => { setQbCallbackState(null); setInitialTab('settings') }, 2000)
+        setOauthState('success')
+        setTimeout(() => { setOauthState(null); setInitialTab('settings') }, 2000)
       } catch (e) {
         window.history.replaceState({}, '', window.location.pathname)
-        setQbCallbackState({ error: e.message || 'Connection failed.' })
+        setOauthState({ error: e.message || 'Connection failed.' })
       }
     }
     run()
-  }, [user, qbParams])
+  }, [user, oauthParams])
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -3582,19 +3674,26 @@ export default function P2DashboardV4() {
       let r  = tokenResult.claims.role     || null
       let tid = tokenResult.claims.tenantId || 'p2-core'
       let dn = firebaseUser.displayName || ''
+      let cName = tokenResult.claims.clientName || ''
+      let cJobs = Array.isArray(tokenResult.claims.clientJobIds) ? tokenResult.claims.clientJobIds : null
 
-      if (!r) {
+      // Always consult the users doc when claims are incomplete (client scoping
+      // and tenant/role are commonly stored there rather than as custom claims).
+      if (!r || cJobs === null) {
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid))
           if (snap.exists()) {
-            r   = snap.data().role     || 'internal'
-            tid = snap.data().tenantId || 'p2-core'
-            dn  = snap.data().displayName || dn
-          } else {
+            const u = snap.data()
+            r   = r   || u.role     || 'internal'
+            tid = u.tenantId || tid
+            dn  = u.displayName || dn
+            cName = cName || u.clientName || u.displayName || ''
+            if (cJobs === null) cJobs = Array.isArray(u.clientJobIds) ? u.clientJobIds : []
+          } else if (!r) {
             r = 'internal'
           }
         } catch {
-          r = 'internal'
+          if (!r) r = 'internal'
         }
       }
 
@@ -3602,6 +3701,8 @@ export default function P2DashboardV4() {
       setUserName(dn)
       setRole(r)
       setTenantId(tid)
+      setClientName(cName)
+      setClientJobIds(cJobs || [])
       setAuthLoading(false)
     })
     return unsub
@@ -3612,7 +3713,7 @@ export default function P2DashboardV4() {
     setUser(null); setRole(null); setTenantId('p2-core'); setTermsAccepted(false)
   }
 
-  if (authLoading || qbCallbackState === 'loading') {
+  if (authLoading || oauthState === 'loading') {
     return (
       <div className="dark min-h-screen bg-background flex items-center justify-center">
         <div className="flex items-center gap-3">
@@ -3620,15 +3721,15 @@ export default function P2DashboardV4() {
             <ZapIcon size={18} color="#fff" />
           </div>
           <p className="text-muted-foreground text-sm">
-            {qbCallbackState === 'loading' ? 'Connecting QuickBooks…' : 'Loading…'}
+            {oauthState === 'loading' ? `Connecting ${oauthProvider}…` : 'Loading…'}
           </p>
         </div>
       </div>
     )
   }
 
-  if (qbCallbackState === 'success' || (qbCallbackState && qbCallbackState.error)) {
-    const ok = qbCallbackState === 'success'
+  if (oauthState === 'success' || (oauthState && oauthState.error)) {
+    const ok = oauthState === 'success'
     return (
       <div className="dark min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-center px-6">
@@ -3639,12 +3740,12 @@ export default function P2DashboardV4() {
               : <AlertCircleIcon size={24} color="#ef4444" />}
           </div>
           <p className="text-sm font-medium" style={{ color: ok ? '#22c55e' : '#ef4444' }}>
-            {ok ? 'QuickBooks connected successfully!' : qbCallbackState.error}
+            {ok ? `${oauthProvider} connected successfully!` : oauthState.error}
           </p>
           {!ok && (
             <button
               className="text-xs text-muted-foreground underline hover:text-white"
-              onClick={() => { setQbCallbackState(null); setInitialTab('settings') }}
+              onClick={() => { setOauthState(null); setInitialTab('settings') }}
             >
               Back to Settings
             </button>
@@ -3692,6 +3793,21 @@ export default function P2DashboardV4() {
     return (
       <DataProvider>
         <TermsGate tenantId={tenantId} tenantName={tenant?.name} onAccept={() => setTermsAccepted(true)} />
+      </DataProvider>
+    )
+  }
+
+  if (role === 'client') {
+    return (
+      <DataProvider role="client" clientJobIds={clientJobIds}>
+        {showCreateUser && <CreateUserModal onClose={() => setShowCreateUser(false)} />}
+        <Suspense fallback={<PortalLoading />}>
+          <ClientPortalComponent
+            clientName={clientName || 'Client'}
+            userName={userName || clientName}
+            onLogout={handleLogout}
+          />
+        </Suspense>
       </DataProvider>
     )
   }

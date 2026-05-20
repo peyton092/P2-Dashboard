@@ -1,4 +1,5 @@
-import { jsPDF } from 'jspdf'
+// jsPDF is imported dynamically (see generateCOPdf) so its ~400 kB dependency
+// tree stays out of the initial bundle and only loads on first PDF export.
 
 const ORANGE     = [244, 121, 32]
 const BLACK      = [20, 20, 20]
@@ -17,7 +18,8 @@ function money(n) {
   return `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-export function generateCOPdf(co, jobLabel) {
+export async function generateCOPdf(co, jobLabel) {
+  const { jsPDF } = await import('jspdf')
   const doc  = new jsPDF({ unit: 'pt', format: 'letter' })
   const W    = 612
   const H    = 792
