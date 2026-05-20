@@ -40,3 +40,12 @@ functions/.runtimeconfig.json
 # Claude Code working state (project-local notes, agent caches)
 memory/
 .claude/
+
+# Tauri (Rust build output + generated mobile projects)
+src-tauri/target/
+src-tauri/gen/
+
+# Capacitor native platforms (generated locally via `npx cap add`)
+/ios/
+/android/
+.capacitor/
