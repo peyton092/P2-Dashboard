@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../DataContext'
 import { updateJob } from '../hooks/useFirestore'
+import { exportToCsv } from '../lib/exportCsv'
 import { ZONES, getZoneId } from '../agent/zones'
 import {
   PageHeader,
@@ -302,8 +303,19 @@ export default function BillingQueue() {
         actions={
           <button
             type="button"
+            onClick={() => exportToCsv('p2-billing-queue', [
+              { label: 'Job ID',      get: e => e.job.id },
+              { label: 'Name',        get: e => jobLabel(e.job) },
+              { label: 'PM',          get: e => e.job.pm || '' },
+              { label: 'Billing',     get: e => e.job.billingStatus || '' },
+              { label: 'Billable',    get: e => Math.round(e.billable || 0) },
+              { label: 'Invoice #',   get: e => e.job.invoiceNum || '' },
+              { label: 'Invoice Date',get: e => e.job.invoiceDate || '' },
+              { label: 'Aging (days)',get: e => e.agingDays ?? '' },
+              { label: 'Ready',       get: e => e.isReady ? 'yes' : 'no' },
+            ], display)}
             className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
-            title="Export CSV — coming soon"
+            title="Export the current billing list to CSV"
           >
             <DownloadIcon size={13} /> Export
           </button>

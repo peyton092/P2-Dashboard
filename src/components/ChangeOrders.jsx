@@ -16,6 +16,7 @@ import {
   FilePenLineIcon, FileCheckIcon,
 } from 'lucide-react'
 import { generateCOPdf } from '../lib/generateCOPdf'
+import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader,
   MetricTile,
@@ -571,13 +572,30 @@ export default function ChangeOrders() {
           </>
         }
         actions={
-          <Button
-            onClick={startNew}
-            style={{ backgroundColor: O }}
-            className="text-white gap-2 font-bold"
-          >
-            <PlusIcon size={14} /> New CO
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => exportToCsv('p2-change-orders', [
+                { label: 'CO #',        get: e => e.id || e.coNumber || '' },
+                { label: 'Job',         key: 'job' },
+                { label: 'Description', get: e => e.desc || '' },
+                { label: 'Amount',      get: e => Number(e.amount || 0) },
+                { label: 'Status',      get: e => e.status || 'pending' },
+                { label: 'Date',        get: e => e.date || '' },
+                { label: 'Sent to QBS', get: e => e.qbs ? 'yes' : 'no' },
+              ], EXTRAS)}
+              className="border-white/15 gap-2 text-zinc-200"
+            >
+              <DownloadIcon size={14} /> Export CSV
+            </Button>
+            <Button
+              onClick={startNew}
+              style={{ backgroundColor: O }}
+              className="text-white gap-2 font-bold"
+            >
+              <PlusIcon size={14} /> New CO
+            </Button>
+          </div>
         }
       />
 

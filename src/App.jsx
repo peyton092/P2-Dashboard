@@ -121,6 +121,7 @@ import {
   severityTone, severityColor, buildBriefingItems,
 } from './lib/briefing'
 import { generateInvoicePdf } from './lib/generateInvoicePdf'
+import { exportToCsv } from './lib/exportCsv'
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
 import MobileNav from './components/shell/MobileNav'
@@ -1057,6 +1058,24 @@ function JobStatus() {
     setCreating(false)
   }
 
+  const exportVisibleCsv = () => {
+    exportToCsv('p2-jobs', [
+      { label: 'Job ID',    key: 'id' },
+      { label: 'Name',      get: e => jobName(e.j) },
+      { label: 'Client',    get: e => e.j.client || '' },
+      { label: 'Address',   get: e => e.j.address || '' },
+      { label: 'City',      get: e => e.j.city || '' },
+      { label: 'PM',        get: e => e.j.pm || '' },
+      { label: 'Status',    get: e => e.j.status || '' },
+      { label: 'Phase',     get: e => e.j.phase || '' },
+      { label: 'Progress',  get: e => `${e.j.progress ?? 0}%` },
+      { label: 'Target',    get: e => e.j.target || '' },
+      { label: 'Billing',   get: e => e.j.billingStatus || '' },
+      { label: 'Permit #',  get: e => e.j.permitNumber || '' },
+      { label: 'At Risk',   get: e => (e.risk?.level === 'critical' || e.risk?.level === 'warning' || e.failed) ? 'yes' : 'no' },
+    ], visible)
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -1080,14 +1099,23 @@ function JobStatus() {
           </>
         }
         actions={
-          <button
-            type="button"
-            onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(JOB_FORM_INITIAL) }}
-            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
-            style={{ backgroundColor: O }}
-          >
-            <PlusIcon size={13} /> New job
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => exportVisibleCsv()}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            >
+              <DownloadIcon size={13} /> Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(JOB_FORM_INITIAL) }}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
+              style={{ backgroundColor: O }}
+            >
+              <PlusIcon size={13} /> New job
+            </button>
+          </div>
         }
       />
 
