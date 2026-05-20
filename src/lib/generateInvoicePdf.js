@@ -1,4 +1,6 @@
-import { jsPDF } from 'jspdf'
+// jsPDF (and its dependency tree) is large (~400 kB+). Import it dynamically
+// so it only loads when a PDF is actually generated, keeping it out of the
+// initial app bundle.
 
 const ORANGE     = [244, 121, 32]
 const BLACK      = [20, 20, 20]
@@ -24,7 +26,8 @@ function addDays(date, n) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export function generateInvoicePdf(job) {
+export async function generateInvoicePdf(job) {
+  const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'pt', format: 'letter' })
   const W = 612
   const H = 792
