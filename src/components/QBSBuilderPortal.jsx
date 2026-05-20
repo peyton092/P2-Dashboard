@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import {
   approveExtra, updateExtra, addNotification, addSubmit, updateSubmit,
-  useSubmitReplies, addSubmitReply, updateNotification,
+  useSubmitReplies, addSubmitReply, updateNotification, addHistory,
 } from '../hooks/useFirestore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -418,6 +418,7 @@ function ExtraRow({ co, compact = false }) {
         type: 'success',
         msg: `${co.id || 'CO'} approved by QBS — ${fmt$(co.amount)} (${co.job})`,
       })
+      await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: 'QBS Coordinator', jobId: co.job })
     } catch (err) {
       console.error('[QBS] Approve failed:', err)
       setErrMsg('Could not save approval. Check your connection and try again.')
@@ -441,6 +442,7 @@ function ExtraRow({ co, compact = false }) {
         type: 'warn',
         msg: `${co.id || 'CO'} rejected by QBS — ${co.job}: ${rejectNotes.trim().slice(0, 80)}`,
       })
+      await addHistory({ type: 'change-order', action: 'rejected', summary: `${co.id || 'CO'} revision requested — ${rejectNotes.trim().slice(0, 60)}`, actor: 'QBS Coordinator', jobId: co.job })
       setShowReject(false)
       setRejectNotes('')
     } catch (err) {

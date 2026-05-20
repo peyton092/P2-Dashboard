@@ -64,6 +64,7 @@ import WarRoomComponent from './components/WarRoom'
 import CommandPalette from './components/CommandPalette'
 import JobDetail from './components/JobDetail'
 const CalendarComponent = lazy(() => import('./components/Calendar'))
+const ActivityComponent = lazy(() => import('./components/Activity'))
 import PMDashboardComponent from './components/PMDashboard'
 import AlertsPageComponent from './components/AlertsPage'
 import BillingQueueComponent from './components/BillingQueue'
@@ -183,6 +184,7 @@ const NAV_SECTIONS = [
   {
     heading: 'System',
     items: [
+      { id: 'activity',     label: 'Activity',     Icon: ActivityIcon },
       { id: 'architecture', label: 'Architecture', Icon: DatabaseIcon },
       { id: 'settings',     label: 'Settings',     Icon: SettingsIcon },
     ],
@@ -213,6 +215,7 @@ const MOBILE_MORE = [
   { id: 'subs',          label: 'Subs',        Icon: UsersRoundIcon },
   { id: 'analytics',     label: 'Reports',     Icon: BarChart3Icon },
   { id: 'team',          label: 'Team',        Icon: TrophyIcon },
+  { id: 'activity',      label: 'Activity',    Icon: ActivityIcon },
   { id: 'settings',      label: 'Settings',    Icon: SettingsIcon },
 ]
 
@@ -3545,6 +3548,7 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     'settings':       wrap(<SettingsPageComponent onLogout={onLogout} />),
     'job-detail':     wrap(<JobDetail jobId={selectedJobId} onBack={() => setActiveTab('jobs')} />),
     'calendar':       wrap(<CalendarComponent />),
+    'activity':       wrap(<ActivityComponent />),
   }
 
   // Decorate nav items with live counts so the sidebar can render badges

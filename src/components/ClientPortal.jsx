@@ -4,7 +4,7 @@ import { storage } from '../firebase'
 import { useData } from '../DataContext'
 import {
   approveExtra, updateExtra, addNotification, useJobFiles,
-  addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile,
+  addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile, addHistory,
 } from '../hooks/useFirestore'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { useToast } from '@/components/ui/toast'
@@ -237,6 +237,7 @@ function ExtraRow({ co, clientName }) {
     try {
       await approveExtra(co._docId, clientName || 'Client')
       await addNotification({ type: 'success', msg: `${co.id || 'CO'} approved by ${clientName || 'client'} — ${fmt$(co.amount)} (${co.job})` })
+      await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: clientName || 'Client', jobId: co.job })
       toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
     } catch (err) {
       console.error('[Client] Approve failed:', err)
@@ -255,6 +256,7 @@ function ExtraRow({ co, clientName }) {
         rejectNotes: rejectNotes.trim(),
       })
       await addNotification({ type: 'warn', msg: `${co.id || 'CO'} rejected by ${clientName || 'client'} — ${co.job}: ${rejectNotes.trim().slice(0, 80)}` })
+      await addHistory({ type: 'change-order', action: 'rejected', summary: `${co.id || 'CO'} revision requested — ${rejectNotes.trim().slice(0, 60)}`, actor: clientName || 'Client', jobId: co.job })
       toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
       setShowReject(false); setRejectNotes('')
     } catch (err) {
