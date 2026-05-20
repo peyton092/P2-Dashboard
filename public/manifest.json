@@ -4,7 +4,7 @@
   "description": "P2 Electrical & Mechanical field operations management",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1a1a2e",
+  "background_color": "#0a0a0a",
   "theme_color": "#F47920",
   "orientation": "portrait-primary",
   "icons": [
