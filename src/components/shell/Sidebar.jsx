@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import {
-  ChevronLeftIcon, ChevronRightIcon, LogOutIcon, UsersIcon,
+  ChevronLeftIcon, ChevronRightIcon, LogOutIcon, UsersIcon, SearchIcon,
 } from 'lucide-react'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -63,6 +63,28 @@ export default function Sidebar({
           )}
         >
           {collapsed ? <ChevronRightIcon size={14} /> : <ChevronLeftIcon size={14} />}
+        </button>
+      </div>
+
+      {/* Global search trigger — opens the command palette (also ⌘K). */}
+      <div className="px-2 pt-3">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('p2:open-search'))}
+          className={cn(
+            'w-full flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-zinc-400 hover:text-zinc-200',
+            collapsed ? 'justify-center py-2' : 'px-2.5 py-2',
+          )}
+          title="Search (⌘K)"
+          aria-label="Search"
+        >
+          <SearchIcon size={16} className="shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="flex-1 text-left text-sm">Search…</span>
+              <kbd className="text-[10px] font-semibold border border-white/10 rounded px-1.5 py-0.5">⌘K</kbd>
+            </>
+          )}
         </button>
       </div>
 

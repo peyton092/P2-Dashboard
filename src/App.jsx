@@ -61,6 +61,7 @@ const InvoiceAuditorComponent  = lazy(() => import('./components/InvoiceAuditor'
 const ArchitectureComponent    = lazy(() => import('./components/Architecture'))
 const PermitsComponent         = lazy(() => import('./components/Permits'))
 import WarRoomComponent from './components/WarRoom'
+import CommandPalette from './components/CommandPalette'
 import PMDashboardComponent from './components/PMDashboard'
 import AlertsPageComponent from './components/AlertsPage'
 import BillingQueueComponent from './components/BillingQueue'
@@ -3538,6 +3539,7 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
 
   return (
     <AppShell sidebar={sidebar} mobileNav={mobileNav}>
+      <CommandPalette />
       <Suspense
         fallback={(
           <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
