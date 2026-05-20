@@ -8,6 +8,7 @@ import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../firebase'
 import { enablePushNotifications } from '../lib/push'
 import { useData } from '../DataContext'
+import { useToast } from '@/components/ui/toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,6 +54,7 @@ function Toggle({ enabled, onChange }) {
 export default function SettingsPage({ onLogout }) {
   const { jobs, settings } = useData()
   const user = auth.currentUser
+  const toast = useToast()
 
   const [pwMode, setPwMode]   = useState(false)
   const [curPw, setCurPw]     = useState('')
@@ -79,7 +81,6 @@ export default function SettingsPage({ onLogout }) {
   const [ccSync, setCcSync] = useState(null)
 
   const [pushBusy, setPushBusy] = useState(false)
-  const [pushMsg, setPushMsg] = useState(null)
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'qb_config', 'tokens'), snap => {
@@ -222,15 +223,14 @@ export default function SettingsPage({ onLogout }) {
       const { data } = await httpsCallable(functions, 'ccSyncPhotos')()
       const n = data?.photosWritten ?? 0
       const m = data?.matchedProjects ?? 0
-      setCcInfo(`Synced ${n} photo${n === 1 ? '' : 's'} across ${m} matched project${m === 1 ? '' : 's'}.`)
+      toast({ tone: 'success', title: 'CompanyCam sync complete', description: `${n} photo${n === 1 ? '' : 's'} across ${m} matched project${m === 1 ? '' : 's'}.` })
     } catch (e) {
       console.error('CompanyCam sync error:', e)
       const code = e?.code || ''
-      if (code === 'functions/unavailable' || code === 'functions/not-found') {
-        setCcError('Photo sync is not deployed on the server yet.')
-      } else {
-        setCcError('Could not sync photos. Try again.')
-      }
+      const msg = (code === 'functions/unavailable' || code === 'functions/not-found')
+        ? 'Photo sync is not deployed on the server yet.'
+        : 'Could not sync photos. Try again.'
+      toast({ tone: 'error', title: 'CompanyCam sync failed', description: msg })
     } finally {
       setCcSyncing(false)
     }
@@ -238,13 +238,12 @@ export default function SettingsPage({ onLogout }) {
 
   const handleEnablePush = async () => {
     setPushBusy(true)
-    setPushMsg(null)
     try {
       await enablePushNotifications()
-      setPushMsg({ ok: true, text: 'Notifications enabled on this device.' })
+      toast({ tone: 'success', title: 'Notifications enabled', description: 'This device will receive P2 alerts.' })
     } catch (e) {
       console.error('Push enable error:', e)
-      setPushMsg({ ok: false, text: e?.message || 'Could not enable notifications.' })
+      toast({ tone: 'error', title: 'Could not enable notifications', description: e?.message || 'Try again.' })
     } finally {
       setPushBusy(false)
     }
@@ -457,9 +456,6 @@ export default function SettingsPage({ onLogout }) {
           >
             {pushBusy ? 'Enabling…' : 'Enable on this device'}
           </Button>
-          {pushMsg && (
-            <p className="text-xs mt-1" style={{ color: pushMsg.ok ? '#22c55e' : '#ef4444' }}>{pushMsg.text}</p>
-          )}
         </CardContent>
       </Card>
 

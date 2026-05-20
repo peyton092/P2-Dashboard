@@ -7,6 +7,7 @@ import {
   addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile,
 } from '../hooks/useFirestore'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
+import { useToast } from '@/components/ui/toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -221,6 +222,7 @@ function ProjectCard({ job, extras }) {
 // ── Change Order row (approve / request revision) ────────────────────────────
 
 function ExtraRow({ co, clientName }) {
+  const toast = useToast()
   const [showReject, setShowReject] = useState(false)
   const [rejectNotes, setRejectNotes] = useState('')
   const [busy, setBusy] = useState(false)
@@ -235,6 +237,7 @@ function ExtraRow({ co, clientName }) {
     try {
       await approveExtra(co._docId, clientName || 'Client')
       await addNotification({ type: 'success', msg: `${co.id || 'CO'} approved by ${clientName || 'client'} — ${fmt$(co.amount)} (${co.job})` })
+      toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
     } catch (err) {
       console.error('[Client] Approve failed:', err)
       setErrMsg('Could not save approval. Check your connection and try again.')
@@ -252,6 +255,7 @@ function ExtraRow({ co, clientName }) {
         rejectNotes: rejectNotes.trim(),
       })
       await addNotification({ type: 'warn', msg: `${co.id || 'CO'} rejected by ${clientName || 'client'} — ${co.job}: ${rejectNotes.trim().slice(0, 80)}` })
+      toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
       setShowReject(false); setRejectNotes('')
     } catch (err) {
       console.error('[Client] Reject failed:', err)
