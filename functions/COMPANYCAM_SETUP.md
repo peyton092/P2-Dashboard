@@ -58,8 +58,22 @@ npx firebase functions:secrets:set CC_CLIENT_ID
 npx firebase functions:secrets:set CC_CLIENT_SECRET
 
 # Redeploy so the functions pick up the new secret versions
-npx firebase deploy --only functions:ccAuth,functions:ccCallback,functions:ccDisconnect
+npx firebase deploy --only functions:ccAuth,functions:ccCallback,functions:ccDisconnect,functions:ccSyncPhotos,functions:ccSyncPhotosScheduled
 ```
+
+## Photo sync
+
+Once connected, **Settings → CompanyCam → Sync photos now** runs `ccSyncPhotos`,
+and `ccSyncPhotosScheduled` runs automatically every 6 hours. The sync pulls
+CompanyCam projects, matches them to P2 jobs **by street address**, and writes
+each photo into `jobs/{jobDocId}/files` (source `companycam`). Those files
+surface in the Client Portal "Photos" tab and project documents — no extra
+wiring. A summary of the last run (projects scanned, projects matched, photos
+written) is stored at `cc_config/sync` and shown in Settings.
+
+If photos aren't matching, confirm the P2 job `address` and the CompanyCam
+project street address refer to the same place — matching is tolerant of
+suffix abbreviations (Drive/Dr) but not of different addresses.
 
 **Test it:** open https://p2-dashboard.web.app → Settings → **Connect
 CompanyCam**. You should be redirected to CompanyCam, asked to authorize, and

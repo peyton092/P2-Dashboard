@@ -14,7 +14,7 @@ import path from 'node:path'
 
 const PROJECT  = 'p2-dashboard'
 const REGION   = 'us-central1'
-const SERVICES = ['qbauth', 'qbcallback', 'qbdisconnect', 'ccauth', 'cccallback', 'ccdisconnect']
+const SERVICES = ['qbauth', 'qbcallback', 'qbdisconnect', 'ccauth', 'cccallback', 'ccdisconnect', 'ccsyncphotos']
 
 function readFirebaseToken() {
   const cfgPath = path.join(os.homedir(), '.config', 'configstore', 'firebase-tools.json')

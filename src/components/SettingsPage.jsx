@@ -74,6 +74,8 @@ export default function SettingsPage({ onLogout }) {
   const [ccDisconnecting, setCcDisconnecting] = useState(false)
   const [ccError, setCcError] = useState('')
   const [ccInfo, setCcInfo] = useState('')
+  const [ccSyncing, setCcSyncing] = useState(false)
+  const [ccSync, setCcSync] = useState(null)
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'qb_config', 'tokens'), snap => {
@@ -93,6 +95,13 @@ export default function SettingsPage({ onLogout }) {
       setCcScope(d?.scope || null)
       const ts = d?.connectedAt?.toDate?.() || (d?.connectedAt ? new Date(d.connectedAt) : null)
       setCcConnectedAt(ts && !isNaN(ts.getTime()) ? ts : null)
+    }, () => {})
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'cc_config', 'sync'), snap => {
+      setCcSync(snap.exists() ? snap.data() : null)
     }, () => {})
     return unsub
   }, [])
@@ -198,6 +207,28 @@ export default function SettingsPage({ onLogout }) {
       setCcError('Could not disconnect. Try again.')
     } finally {
       setCcDisconnecting(false)
+    }
+  }
+
+  const handleSyncCC = async () => {
+    setCcSyncing(true)
+    setCcError('')
+    setCcInfo('')
+    try {
+      const { data } = await httpsCallable(functions, 'ccSyncPhotos')()
+      const n = data?.photosWritten ?? 0
+      const m = data?.matchedProjects ?? 0
+      setCcInfo(`Synced ${n} photo${n === 1 ? '' : 's'} across ${m} matched project${m === 1 ? '' : 's'}.`)
+    } catch (e) {
+      console.error('CompanyCam sync error:', e)
+      const code = e?.code || ''
+      if (code === 'functions/unavailable' || code === 'functions/not-found') {
+        setCcError('Photo sync is not deployed on the server yet.')
+      } else {
+        setCcError('Could not sync photos. Try again.')
+      }
+    } finally {
+      setCcSyncing(false)
     }
   }
 
@@ -351,17 +382,38 @@ export default function SettingsPage({ onLogout }) {
               {ccConnecting ? 'Redirecting…' : ccConnected ? 'Reconnect CompanyCam' : 'Connect CompanyCam'}
             </Button>
             {ccConnected && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-xs h-8 border-white/20"
-                onClick={handleDisconnectCC}
-                disabled={ccConnecting || ccDisconnecting}
-              >
-                {ccDisconnecting ? 'Disconnecting…' : 'Disconnect'}
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-8 border-white/20"
+                  onClick={handleSyncCC}
+                  disabled={ccSyncing || ccConnecting || ccDisconnecting}
+                >
+                  {ccSyncing ? 'Syncing…' : 'Sync photos now'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-8 border-white/20"
+                  onClick={handleDisconnectCC}
+                  disabled={ccConnecting || ccDisconnecting || ccSyncing}
+                >
+                  {ccDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                </Button>
+              </>
             )}
           </div>
+          {ccConnected && ccSync?.syncedAt && (
+            <p className="text-[11px] text-muted-foreground pl-1">
+              Last sync {new Date(ccSync.syncedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              {typeof ccSync.photosWritten === 'number' ? ` · ${ccSync.photosWritten} photos` : ''}
+              {typeof ccSync.matchedProjects === 'number' ? ` · ${ccSync.matchedProjects} projects matched` : ''}
+            </p>
+          )}
+          <p className="text-[11px] text-muted-foreground pl-1">
+            Photos auto-sync every 6 hours and land on jobs matched by address — visible in the client portal and project documents.
+          </p>
           {ccError && <p className="text-xs text-red-400 mt-2">{ccError}</p>}
           {ccInfo  && <p className="text-xs text-green-400 mt-2">{ccInfo}</p>}
         </CardContent>
