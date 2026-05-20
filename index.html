@@ -18,9 +18,29 @@
     <!-- SEO / Open Graph -->
     <meta name="description" content="P2 Electrical & Mechanical field operations management" />
     <meta name="application-name" content="P2 Field Control Center" />
+
+    <!-- Prevent flash-of-white before the dark app + CSS load, and show a
+         branded splash until React mounts (it replaces #root contents). -->
+    <style>
+      html, body { margin: 0; background-color: #0a0a0a; }
+      #app-splash {
+        position: fixed; inset: 0; display: flex; align-items: center;
+        justify-content: center; background-color: #0a0a0a;
+      }
+      #app-splash svg { width: 56px; height: 56px; animation: splash-pulse 1.4s ease-in-out infinite; }
+      @keyframes splash-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.94); } }
+      @media (prefers-reduced-motion: reduce) { #app-splash svg { animation: none; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="app-splash" aria-hidden="true">
+        <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="44" height="44" rx="11" fill="#F47920" />
+          <path d="M27 11 L17 27 L23.5 27 L21 37 L32 21 L25.5 21 Z" fill="#ffffff" />
+        </svg>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
