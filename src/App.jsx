@@ -48,6 +48,7 @@ import {
 } from 'lucide-react'
 const CommandCenterComponent  = lazy(() => import('./components/CommandCenter'))
 const QBSBuilderPortalComponent = lazy(() => import('./components/QBSBuilderPortal'))
+const ClientPortalComponent    = lazy(() => import('./components/ClientPortal'))
 const ProjectFoldersComponent  = lazy(() => import('./components/ProjectFolders'))
 const SubmitInboxComponent     = lazy(() => import('./components/SubmitInbox'))
 const CrewReportComponent      = lazy(() => import('./components/CrewReport'))
@@ -392,6 +393,7 @@ function CreateUserModal({ onClose }) {
   const [role, setRole] = useState('internal')
   const [tenantId, setTenantId] = useState('qbs')
   const [displayName, setDisplayName] = useState('')
+  const [clientJobs, setClientJobs] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -403,16 +405,24 @@ function CreateUserModal({ onClose }) {
     setLoading(true)
     try {
       const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password)
+      const parsedClientJobs = clientJobs
+        .split(/[\s,]+/)
+        .map(s => s.trim().toUpperCase())
+        .filter(Boolean)
       await setDoc(doc(db, 'users', cred.user.uid), {
         email: email.trim(),
         displayName: displayName.trim() || email.trim(),
         role,
         tenantId: role === 'builder' ? tenantId : 'p2-core',
+        ...(role === 'client' ? {
+          clientName: displayName.trim() || email.trim(),
+          clientJobIds: parsedClientJobs,
+        } : {}),
         createdAt: new Date().toISOString(),
       })
       await signOut(secondaryAuth)
       setSuccess(`Account created for ${email.trim()}.`)
-      setEmail(''); setPassword(''); setDisplayName('')
+      setEmail(''); setPassword(''); setDisplayName(''); setClientJobs('')
     } catch (err) {
       const msg = {
         'auth/email-already-in-use': 'An account with that email already exists.',
@@ -461,6 +471,7 @@ function CreateUserModal({ onClose }) {
                   <SelectItem value="owner">Owner</SelectItem>
                   <SelectItem value="internal">Internal (P2 staff)</SelectItem>
                   <SelectItem value="builder">Builder (portal access)</SelectItem>
+                  <SelectItem value="client">Client (project owner)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -475,6 +486,20 @@ function CreateUserModal({ onClose }) {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {role === 'client' && (
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Project IDs (comma-separated)</label>
+                <Input
+                  value={clientJobs}
+                  onChange={e => setClientJobs(e.target.value)}
+                  placeholder="QBS-018, QBS-032, QBS-041"
+                  className="bg-white/5 border-white/20"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  The client will only see these projects. The Name above is shown as the client/company name in their portal.
+                </p>
               </div>
             )}
             {error   && <p className="text-xs text-red-400 font-medium">{error}</p>}
@@ -3534,6 +3559,8 @@ export default function P2DashboardV4() {
   const [userName, setUserName]       = useState('')
   const [role, setRole]               = useState(null)
   const [tenantId, setTenantId]       = useState('p2-core')
+  const [clientName, setClientName]   = useState('')
+  const [clientJobIds, setClientJobIds] = useState([])
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showSignup, setShowSignup]   = useState(false)
   const [showCreateUser, setShowCreateUser] = useState(false)
@@ -3589,19 +3616,26 @@ export default function P2DashboardV4() {
       let r  = tokenResult.claims.role     || null
       let tid = tokenResult.claims.tenantId || 'p2-core'
       let dn = firebaseUser.displayName || ''
+      let cName = tokenResult.claims.clientName || ''
+      let cJobs = Array.isArray(tokenResult.claims.clientJobIds) ? tokenResult.claims.clientJobIds : null
 
-      if (!r) {
+      // Always consult the users doc when claims are incomplete (client scoping
+      // and tenant/role are commonly stored there rather than as custom claims).
+      if (!r || cJobs === null) {
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid))
           if (snap.exists()) {
-            r   = snap.data().role     || 'internal'
-            tid = snap.data().tenantId || 'p2-core'
-            dn  = snap.data().displayName || dn
-          } else {
+            const u = snap.data()
+            r   = r   || u.role     || 'internal'
+            tid = u.tenantId || tid
+            dn  = u.displayName || dn
+            cName = cName || u.clientName || u.displayName || ''
+            if (cJobs === null) cJobs = Array.isArray(u.clientJobIds) ? u.clientJobIds : []
+          } else if (!r) {
             r = 'internal'
           }
         } catch {
-          r = 'internal'
+          if (!r) r = 'internal'
         }
       }
 
@@ -3609,6 +3643,8 @@ export default function P2DashboardV4() {
       setUserName(dn)
       setRole(r)
       setTenantId(tid)
+      setClientName(cName)
+      setClientJobIds(cJobs || [])
       setAuthLoading(false)
     })
     return unsub
@@ -3699,6 +3735,21 @@ export default function P2DashboardV4() {
     return (
       <DataProvider>
         <TermsGate tenantId={tenantId} tenantName={tenant?.name} onAccept={() => setTermsAccepted(true)} />
+      </DataProvider>
+    )
+  }
+
+  if (role === 'client') {
+    return (
+      <DataProvider role="client" clientJobIds={clientJobIds}>
+        {showCreateUser && <CreateUserModal onClose={() => setShowCreateUser(false)} />}
+        <Suspense fallback={<PortalLoading />}>
+          <ClientPortalComponent
+            clientName={clientName || 'Client'}
+            userName={userName || clientName}
+            onLogout={handleLogout}
+          />
+        </Suspense>
       </DataProvider>
     )
   }

@@ -946,7 +946,7 @@ async function seedFirestore() {
 
 const DataContext = createContext(null)
 
-export function DataProvider({ children, tenantId = null, role = null }) {
+export function DataProvider({ children, tenantId = null, role = null, clientJobIds = null }) {
   const { jobs: firestoreJobs, loading: jobsLoading }               = useJobs()
   const { extras: firestoreExtras, loading: extrasLoading }         = useAllExtras()
   const { notifs: firestoreNotifs, loading: notifsLoading }         = useNotifications()
@@ -974,27 +974,36 @@ export function DataProvider({ children, tenantId = null, role = null }) {
   const materials = firestoreMaterials.length > 0 ? firestoreMaterials : STATIC_MATERIALS
   const submits   = firestoreSubmits
 
-  const shouldFilter = tenantId && (role === 'builder' || (role === 'internal' && tenantId !== 'p2-core'))
-  const jobs   = shouldFilter ? allJobs.filter(j => (j.tenantId || 'qbs') === tenantId) : allJobs
-  const extras = shouldFilter
-    ? allExtras.filter(e => { const j = allJobs.find(x => x.id === e.job); return (j?.tenantId || 'qbs') === tenantId })
-    : allExtras
+  // Client portal: scope strictly to the explicit set of job IDs the client owns.
+  const isClient = role === 'client'
+  const clientJobIdSet = isClient ? new Set(Array.isArray(clientJobIds) ? clientJobIds : []) : null
 
-  // Filter per-job records (dailyReports, urgentItems, submits) by job tenancy when scoped.
-  const jobIdSet = shouldFilter ? new Set(jobs.map(j => j.id)) : null
+  const shouldFilter = !isClient && tenantId && (role === 'builder' || (role === 'internal' && tenantId !== 'p2-core'))
 
-  const matchesTenantJob = (rec) => {
+  const jobs = isClient
+    ? allJobs.filter(j => clientJobIdSet.has(j.id))
+    : shouldFilter
+      ? allJobs.filter(j => (j.tenantId || 'qbs') === tenantId)
+      : allJobs
+
+  // Once jobs are scoped (builder tenancy OR client ownership), everything else
+  // hangs off the visible job-id set.
+  const scoped = isClient || shouldFilter
+  const jobIdSet = scoped ? new Set(jobs.map(j => j.id)) : null
+
+  const extras = scoped ? allExtras.filter(e => jobIdSet.has(e.job)) : allExtras
+
+  const matchesScopedJob = (rec) => {
     if (!jobIdSet) return true
     const id = rec?.jobId || rec?.job
-    // Pass-through records with no job association (e.g. general urgent items, general submits)
-    // when viewing builder portal — they're typically internal-only, so hide them for builders.
-    if (!id) return role !== 'builder'
+    // Records with no job association are internal-only — hide them in any scoped portal.
+    if (!id) return false
     return jobIdSet.has(id)
   }
 
-  const dailyReports = shouldFilter ? firestoreDailyReports.filter(matchesTenantJob) : firestoreDailyReports
-  const urgentItems  = shouldFilter ? firestoreUrgentItems.filter(matchesTenantJob)  : firestoreUrgentItems
-  const submitsScoped = shouldFilter ? submits.filter(matchesTenantJob) : submits
+  const dailyReports = scoped ? firestoreDailyReports.filter(matchesScopedJob) : firestoreDailyReports
+  const urgentItems  = scoped ? firestoreUrgentItems.filter(matchesScopedJob)  : firestoreUrgentItems
+  const submitsScoped = scoped ? submits.filter(matchesScopedJob) : submits
 
   return (
     <DataContext.Provider value={{
