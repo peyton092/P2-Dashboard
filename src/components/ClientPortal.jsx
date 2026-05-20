@@ -771,7 +771,7 @@ function PortalStat({ label, value, sub, Icon, accent }) {
 // ── Main Portal ──────────────────────────────────────────────────────────────
 
 export default function ClientPortal({ clientName = 'Client', userName = '', onLogout }) {
-  const { jobs, extras, submits = [] } = useData()
+  const { jobs, extras, submits = [], loading } = useData()
   const [activeTab, setActiveTab] = useState('projects')
   const [projectFilter, setProjectFilter] = useState('__ALL__')
 
@@ -799,6 +799,17 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
     { id: 'messages',  label: 'Messages',  Icon: MessageSquareIcon, count: openMessages },
   ]
 
+  if (loading && jobs.length === 0) {
+    return (
+      <div className="dark min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full border-2 animate-spin" style={{ borderColor: O + '33', borderTopColor: O }} />
+          <p className="text-sm text-muted-foreground">Loading your projects…</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="dark min-h-screen bg-background text-foreground flex flex-col">
       {/* Sticky header */}
@@ -811,8 +822,8 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
             <p className="font-bold text-base text-white leading-tight truncate mt-0.5">{clientName}</p>
           </div>
           {onLogout && (
-            <Button variant="outline" className="border-white/15 h-9 w-9 p-0 sm:w-auto sm:px-3 gap-1.5 shrink-0 hover:bg-white/[0.05] text-zinc-200" onClick={onLogout}>
-              <LogOutIcon size={13} />
+            <Button aria-label="Sign out" variant="outline" className="border-white/15 h-9 w-9 p-0 sm:w-auto sm:px-3 gap-1.5 shrink-0 hover:bg-white/[0.05] text-zinc-200" onClick={onLogout}>
+              <LogOutIcon size={13} aria-hidden="true" />
               <span className="hidden sm:inline text-xs">Sign out</span>
             </Button>
           )}
