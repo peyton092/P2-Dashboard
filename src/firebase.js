@@ -6,6 +6,7 @@ import {
 import { getAuth } from 'firebase/auth'
 import { getStorage } from 'firebase/storage'
 import { getFunctions } from 'firebase/functions'
+import { getMessaging, isSupported as messagingIsSupported } from 'firebase/messaging'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyDm5I5iCbe3_0IZdtabw4WYTMW1YTaL9R4',
@@ -35,3 +36,13 @@ export const auth = getAuth(app)
 export const secondaryAuth = getAuth(secondaryApp)
 export const storage = getStorage(app)
 export const functions = getFunctions(app)
+
+// Cloud Messaging is only available in browsers with service-worker + push
+// support; resolve to null elsewhere so callers can no-op gracefully.
+export async function getMessagingIfSupported() {
+  try {
+    return (await messagingIsSupported()) ? getMessaging(app) : null
+  } catch {
+    return null
+  }
+}

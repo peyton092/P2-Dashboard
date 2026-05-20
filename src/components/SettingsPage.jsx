@@ -6,6 +6,7 @@ import {
 import { doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../firebase'
+import { enablePushNotifications } from '../lib/push'
 import { useData } from '../DataContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -76,6 +77,9 @@ export default function SettingsPage({ onLogout }) {
   const [ccInfo, setCcInfo] = useState('')
   const [ccSyncing, setCcSyncing] = useState(false)
   const [ccSync, setCcSync] = useState(null)
+
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushMsg, setPushMsg] = useState(null)
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'qb_config', 'tokens'), snap => {
@@ -229,6 +233,20 @@ export default function SettingsPage({ onLogout }) {
       }
     } finally {
       setCcSyncing(false)
+    }
+  }
+
+  const handleEnablePush = async () => {
+    setPushBusy(true)
+    setPushMsg(null)
+    try {
+      await enablePushNotifications()
+      setPushMsg({ ok: true, text: 'Notifications enabled on this device.' })
+    } catch (e) {
+      console.error('Push enable error:', e)
+      setPushMsg({ ok: false, text: e?.message || 'Could not enable notifications.' })
+    } finally {
+      setPushBusy(false)
     }
   }
 
@@ -416,6 +434,32 @@ export default function SettingsPage({ onLogout }) {
           </p>
           {ccError && <p className="text-xs text-red-400 mt-2">{ccError}</p>}
           {ccInfo  && <p className="text-xs text-green-400 mt-2">{ccInfo}</p>}
+        </CardContent>
+      </Card>
+
+      {/* ── Push Notifications ───────────────────────────────────────── */}
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <BellIcon size={15} style={{ color: O }} /> Push Notifications
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-6 pb-5 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Get alerts on this device for inspection results, change-order approvals, and billing updates.
+          </p>
+          <Button
+            size="sm"
+            className="text-xs h-8 text-white"
+            style={{ backgroundColor: O }}
+            onClick={handleEnablePush}
+            disabled={pushBusy}
+          >
+            {pushBusy ? 'Enabling…' : 'Enable on this device'}
+          </Button>
+          {pushMsg && (
+            <p className="text-xs mt-1" style={{ color: pushMsg.ok ? '#22c55e' : '#ef4444' }}>{pushMsg.text}</p>
+          )}
         </CardContent>
       </Card>
 

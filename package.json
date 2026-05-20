@@ -19,6 +19,7 @@
     "@base-ui/react": "^1.4.0",
     "@capacitor/app": "^7.1.2",
     "@capacitor/core": "^7.6.5",
+    "@capacitor/push-notifications": "^7.0.6",
     "@capacitor/status-bar": "^7.0.6",
     "@fontsource-variable/geist": "^5.2.8",
     "class-variance-authority": "^0.7.1",
