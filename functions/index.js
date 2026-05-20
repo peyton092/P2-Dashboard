@@ -1,9 +1,10 @@
 // ============================================================================
 //  P2 Field Control — Cloud Functions
 //  QuickBooks Online OAuth (Intuit OAuth 2.0)
+//  CompanyCam OAuth (Doorkeeper OAuth 2.0)
 // ============================================================================
 //
-//  Functions:
+//  QuickBooks functions:
 //    qbAuth        — Returns an Intuit OAuth2 authorization URL for the
 //                    frontend to redirect to. Stores a one-time `state` token
 //                    in Firestore so the callback can verify it.
@@ -13,17 +14,33 @@
 //    qbDisconnect  — Revokes the refresh token at Intuit and deletes the
 //                    Firestore tokens doc.
 //
+//  CompanyCam functions (mirror the QuickBooks flow):
+//    ccAuth        — Returns a CompanyCam OAuth2 authorization URL. Stores a
+//                    one-time `state` token at cc_config/oauth_states.
+//    ccCallback    — Receives { code, state } from the redirect (CompanyCam
+//                    does NOT return a realmId — that absence is how the
+//                    frontend tells a CompanyCam callback apart from QB),
+//                    verifies state, exchanges the code, persists tokens at
+//                    cc_config/tokens.
+//    ccDisconnect  — Revokes the token at CompanyCam and deletes the doc.
+//
 //  Required Firebase secrets (set with `firebase functions:secrets:set`):
 //    QB_CLIENT_ID       — Intuit app's Client ID
 //    QB_CLIENT_SECRET   — Intuit app's Client Secret
+//    CC_CLIENT_ID       — CompanyCam app's Client ID
+//    CC_CLIENT_SECRET   — CompanyCam app's Client Secret
 //
 //  Optional environment via `firebase functions:config:set` or hardcoded:
 //    QB_ENV             — 'sandbox' | 'production' (default 'production')
 //    QB_REDIRECT_URI    — full redirect URL configured in Intuit dashboard
 //                         (default: https://p2-dashboard.web.app/)
+//    CC_REDIRECT_URI    — full redirect URL configured in CompanyCam dashboard
+//                         (default: https://p2-dashboard.web.app/)
+//    CC_SCOPES          — space-separated CompanyCam scopes (default 'read')
 //
-//  The redirect URI you register at developer.intuit.com MUST match
-//  QB_REDIRECT_URI exactly (including trailing slash and protocol).
+//  The redirect URIs you register at developer.intuit.com and
+//  app.companycam.com MUST match QB_REDIRECT_URI / CC_REDIRECT_URI exactly
+//  (including trailing slash and protocol).
 // ============================================================================
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
@@ -38,6 +55,8 @@ const db = getFirestore()
 // ── Secrets ───────────────────────────────────────────────────────────────────
 const QB_CLIENT_ID     = defineSecret('QB_CLIENT_ID')
 const QB_CLIENT_SECRET = defineSecret('QB_CLIENT_SECRET')
+const CC_CLIENT_ID     = defineSecret('CC_CLIENT_ID')
+const CC_CLIENT_SECRET = defineSecret('CC_CLIENT_SECRET')
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 const QB_ENV          = process.env.QB_ENV || 'production'  // 'sandbox' | 'production'
@@ -50,6 +69,13 @@ const INTUIT_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2'
 const INTUIT_TOKEN_URL     = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
 const INTUIT_REVOKE_URL    = 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke'
 
+// CompanyCam OAuth (Doorkeeper). Photo sync only needs the `read` scope.
+const CC_REDIRECT_URI = process.env.CC_REDIRECT_URI || 'https://p2-dashboard.web.app/'
+const CC_SCOPES       = process.env.CC_SCOPES || 'read'
+const CC_AUTHORIZE_URL = 'https://app.companycam.com/oauth/authorize'
+const CC_TOKEN_URL     = 'https://app.companycam.com/oauth/token'
+const CC_REVOKE_URL    = 'https://app.companycam.com/oauth/revoke'
+
 const STATE_TTL_MS = 10 * 60 * 1000  // OAuth states are valid for 10 minutes
 
 const region = 'us-central1'
@@ -57,6 +83,11 @@ const callableOpts = {
   region,
   cors: true,
   secrets: [QB_CLIENT_ID, QB_CLIENT_SECRET],
+}
+const ccCallableOpts = {
+  region,
+  cors: true,
+  secrets: [CC_CLIENT_ID, CC_CLIENT_SECRET],
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -194,6 +225,148 @@ export const qbDisconnect = onCall(callableOpts, async (req) => {
       }
     } catch (err) {
       console.warn('[qbDisconnect] Revoke threw (deleting anyway):', err.message)
+    }
+  }
+
+  await ref.delete()
+  return { ok: true }
+})
+
+// ============================================================================
+//  CompanyCam OAuth — mirrors the QuickBooks flow above.
+//  Tokens live at cc_config/tokens; one-time states at cc_config/oauth_states.
+// ============================================================================
+
+// ── ccAuth ──────────────────────────────────────────────────────────────────
+// Generates a one-time `state` token, stores it, and returns the CompanyCam
+// authorization URL. Frontend then does `window.location.href = data.authUrl`.
+export const ccAuth = onCall(ccCallableOpts, async (req) => {
+  const auth = requireAuth(req)
+
+  const state = randomBytes(24).toString('hex')
+  await db.collection('cc_config').doc('oauth_states').set(
+    { [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
+    { merge: true },
+  )
+
+  const params = new URLSearchParams({
+    client_id:     CC_CLIENT_ID.value(),
+    response_type: 'code',
+    scope:         CC_SCOPES,
+    redirect_uri:  CC_REDIRECT_URI,
+    state,
+  })
+  const authUrl = `${CC_AUTHORIZE_URL}?${params.toString()}`
+  return { authUrl }
+})
+
+// ── ccCallback ────────────────────────────────────────────────────────────────
+// Frontend extracts ?code=…&state=… from the redirect URL and posts them here.
+// CompanyCam does not return a realmId — the frontend uses that absence to route
+// the redirect to this function rather than qbCallback.
+export const ccCallback = onCall(ccCallableOpts, async (req) => {
+  const auth = requireAuth(req)
+  const { code, state } = req.data || {}
+
+  if (!code || !state) {
+    throw new HttpsError('invalid-argument', 'Missing OAuth parameters from CompanyCam redirect.')
+  }
+
+  // ── Verify state ──────────────────────────────────────────────────────────
+  const stateRef  = db.collection('cc_config').doc('oauth_states')
+  const stateSnap = await stateRef.get()
+  const stateMap  = stateSnap.exists ? (stateSnap.data() || {}) : {}
+  const stateRec  = stateMap[state]
+
+  if (!stateRec) {
+    throw new HttpsError('failed-precondition', 'OAuth state expired or invalid. Try connecting again.')
+  }
+  const stateAge = Date.now() - (stateRec.createdAt?.toMillis?.() || 0)
+  if (stateAge > STATE_TTL_MS) {
+    await stateRef.update({ [state]: FieldValue.delete() })
+    throw new HttpsError('failed-precondition', 'OAuth state expired. Try connecting again.')
+  }
+  if (stateRec.uid && stateRec.uid !== auth.uid) {
+    throw new HttpsError('permission-denied', 'OAuth state belongs to a different user.')
+  }
+  // Burn the state so it can't be replayed
+  await stateRef.update({ [state]: FieldValue.delete() })
+
+  // ── Exchange code for tokens ──────────────────────────────────────────────
+  // Doorkeeper expects client credentials in the form body.
+  const body = new URLSearchParams({
+    grant_type:    'authorization_code',
+    code,
+    redirect_uri:  CC_REDIRECT_URI,
+    client_id:     CC_CLIENT_ID.value(),
+    client_secret: CC_CLIENT_SECRET.value(),
+  })
+  const tokenRes = await fetch(CC_TOKEN_URL, {
+    method:  'POST',
+    headers: {
+      'Accept':       'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: body.toString(),
+  })
+
+  if (!tokenRes.ok) {
+    const errText = await tokenRes.text().catch(() => '')
+    console.error('[ccCallback] Token exchange failed:', tokenRes.status, errText)
+    throw new HttpsError('internal', 'CompanyCam token exchange failed. Try again.')
+  }
+  const tokens = await tokenRes.json()
+  // tokens = { token_type, access_token, refresh_token, expires_in, scope, created_at }
+
+  // ── Persist ───────────────────────────────────────────────────────────────
+  const now = Date.now()
+  await db.collection('cc_config').doc('tokens').set({
+    access_token:     tokens.access_token,
+    refresh_token:    tokens.refresh_token || null,
+    // CompanyCam tokens may be long-lived (no expires_in) — only stamp expiry when given.
+    expires_at:       tokens.expires_in ? now + (tokens.expires_in * 1000) : null,
+    scope:            tokens.scope || CC_SCOPES,
+    connectedAt:      FieldValue.serverTimestamp(),
+    connectedBy:      auth.uid,
+    connectedByEmail: auth.token?.email || null,
+  })
+
+  return { ok: true }
+})
+
+// ── ccDisconnect ────────────────────────────────────────────────────────────────
+// Revokes the access token at CompanyCam and deletes the local tokens doc.
+export const ccDisconnect = onCall(ccCallableOpts, async (req) => {
+  requireAuth(req)
+
+  const ref  = db.collection('cc_config').doc('tokens')
+  const snap = await ref.get()
+  if (!snap.exists) {
+    return { ok: true, alreadyDisconnected: true }
+  }
+  const token = snap.data()?.access_token
+
+  if (token) {
+    try {
+      const body = new URLSearchParams({
+        token,
+        client_id:     CC_CLIENT_ID.value(),
+        client_secret: CC_CLIENT_SECRET.value(),
+      })
+      const res = await fetch(CC_REVOKE_URL, {
+        method:  'POST',
+        headers: {
+          'Accept':       'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: body.toString(),
+      })
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '')
+        console.warn('[ccDisconnect] Revoke returned non-OK (deleting anyway):', res.status, txt)
+      }
+    } catch (err) {
+      console.warn('[ccDisconnect] Revoke threw (deleting anyway):', err.message)
     }
   }
 

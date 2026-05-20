@@ -3537,14 +3537,20 @@ export default function P2DashboardV4() {
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showSignup, setShowSignup]   = useState(false)
   const [showCreateUser, setShowCreateUser] = useState(false)
-  const [qbCallbackState, setQbCallbackState] = useState(null) // null | 'loading' | 'success' | { error: string }
+  const [oauthState, setOauthState]   = useState(null) // null | 'loading' | 'success' | { error: string }
+  const [oauthProvider, setOauthProvider] = useState(null) // 'QuickBooks' | 'CompanyCam'
   const [initialTab, setInitialTab]   = useState(null)
 
-  // Capture QB OAuth callback params from URL on mount
-  const [qbParams] = useState(() => {
+  // Capture OAuth callback params from URL on mount. QuickBooks (Intuit) and
+  // CompanyCam both redirect back with ?code=…&state=…, but only Intuit appends
+  // a realmId — that's how we route the callback to the right Cloud Function.
+  const [oauthParams] = useState(() => {
     const p = new URLSearchParams(window.location.search)
     const code = p.get('code'), state = p.get('state'), realmId = p.get('realmId')
-    return code && state && realmId ? { code, state, realmId } : null
+    if (!code || !state) return null
+    return realmId
+      ? { provider: 'QuickBooks', fn: 'qbCallback', data: { code, state, realmId } }
+      : { provider: 'CompanyCam', fn: 'ccCallback', data: { code, state } }
   })
 
   // ?portal=qbs forces builder QBS portal view (bypasses auth/terms — for demos/links)
@@ -3553,23 +3559,24 @@ export default function P2DashboardV4() {
     return p.get('portal')
   })
 
-  // Process QB callback once user is authenticated
+  // Process the OAuth callback once user is authenticated
   useEffect(() => {
-    if (!qbParams || !user) return
+    if (!oauthParams || !user) return
     const run = async () => {
-      setQbCallbackState('loading')
+      setOauthProvider(oauthParams.provider)
+      setOauthState('loading')
       try {
-        await httpsCallable(functions, 'qbCallback')(qbParams)
+        await httpsCallable(functions, oauthParams.fn)(oauthParams.data)
         window.history.replaceState({}, '', window.location.pathname)
-        setQbCallbackState('success')
-        setTimeout(() => { setQbCallbackState(null); setInitialTab('settings') }, 2000)
+        setOauthState('success')
+        setTimeout(() => { setOauthState(null); setInitialTab('settings') }, 2000)
       } catch (e) {
         window.history.replaceState({}, '', window.location.pathname)
-        setQbCallbackState({ error: e.message || 'Connection failed.' })
+        setOauthState({ error: e.message || 'Connection failed.' })
       }
     }
     run()
-  }, [user, qbParams])
+  }, [user, oauthParams])
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -3612,7 +3619,7 @@ export default function P2DashboardV4() {
     setUser(null); setRole(null); setTenantId('p2-core'); setTermsAccepted(false)
   }
 
-  if (authLoading || qbCallbackState === 'loading') {
+  if (authLoading || oauthState === 'loading') {
     return (
       <div className="dark min-h-screen bg-background flex items-center justify-center">
         <div className="flex items-center gap-3">
@@ -3620,15 +3627,15 @@ export default function P2DashboardV4() {
             <ZapIcon size={18} color="#fff" />
           </div>
           <p className="text-muted-foreground text-sm">
-            {qbCallbackState === 'loading' ? 'Connecting QuickBooks…' : 'Loading…'}
+            {oauthState === 'loading' ? `Connecting ${oauthProvider}…` : 'Loading…'}
           </p>
         </div>
       </div>
     )
   }
 
-  if (qbCallbackState === 'success' || (qbCallbackState && qbCallbackState.error)) {
-    const ok = qbCallbackState === 'success'
+  if (oauthState === 'success' || (oauthState && oauthState.error)) {
+    const ok = oauthState === 'success'
     return (
       <div className="dark min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-center px-6">
@@ -3639,12 +3646,12 @@ export default function P2DashboardV4() {
               : <AlertCircleIcon size={24} color="#ef4444" />}
           </div>
           <p className="text-sm font-medium" style={{ color: ok ? '#22c55e' : '#ef4444' }}>
-            {ok ? 'QuickBooks connected successfully!' : qbCallbackState.error}
+            {ok ? `${oauthProvider} connected successfully!` : oauthState.error}
           </p>
           {!ok && (
             <button
               className="text-xs text-muted-foreground underline hover:text-white"
-              onClick={() => { setQbCallbackState(null); setInitialTab('settings') }}
+              onClick={() => { setOauthState(null); setInitialTab('settings') }}
             >
               Back to Settings
             </button>

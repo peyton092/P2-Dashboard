@@ -67,6 +67,14 @@ export default function SettingsPage({ onLogout }) {
   const [qbError, setQbError] = useState('')
   const [qbInfo, setQbInfo] = useState('')
 
+  const [ccConnected, setCcConnected] = useState(false)
+  const [ccConnectedAt, setCcConnectedAt] = useState(null)
+  const [ccScope, setCcScope] = useState(null)
+  const [ccConnecting, setCcConnecting] = useState(false)
+  const [ccDisconnecting, setCcDisconnecting] = useState(false)
+  const [ccError, setCcError] = useState('')
+  const [ccInfo, setCcInfo] = useState('')
+
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'qb_config', 'tokens'), snap => {
       const d = snap.data()
@@ -74,6 +82,17 @@ export default function SettingsPage({ onLogout }) {
       setQbCompanyId(d?.realmId || null)
       const ts = d?.connectedAt?.toDate?.() || (d?.connectedAt ? new Date(d.connectedAt) : null)
       setQbConnectedAt(ts && !isNaN(ts.getTime()) ? ts : null)
+    }, () => {})
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'cc_config', 'tokens'), snap => {
+      const d = snap.data()
+      setCcConnected(snap.exists() && !!d?.access_token)
+      setCcScope(d?.scope || null)
+      const ts = d?.connectedAt?.toDate?.() || (d?.connectedAt ? new Date(d.connectedAt) : null)
+      setCcConnectedAt(ts && !isNaN(ts.getTime()) ? ts : null)
     }, () => {})
     return unsub
   }, [])
@@ -127,6 +146,58 @@ export default function SettingsPage({ onLogout }) {
       setQbError('Could not disconnect. Try again.')
     } finally {
       setQbDisconnecting(false)
+    }
+  }
+
+  const handleConnectCC = async () => {
+    setCcConnecting(true)
+    setCcError('')
+    setCcInfo('')
+    const timeout = setTimeout(() => {
+      setCcConnecting(false)
+      setCcError('Connection timed out — CompanyCam auth did not respond. Try again.')
+    }, 10000)
+    try {
+      const { data } = await httpsCallable(functions, 'ccAuth')()
+      clearTimeout(timeout)
+      if (!data?.authUrl) {
+        setCcConnecting(false)
+        setCcError('CompanyCam integration is not configured on the server yet. Contact support.')
+        return
+      }
+      window.location.href = data.authUrl
+    } catch (e) {
+      clearTimeout(timeout)
+      console.error('CompanyCam auth error:', e)
+      setCcConnecting(false)
+      const code = e?.code || ''
+      if (code === 'functions/unavailable' || code === 'functions/not-found') {
+        setCcError('CompanyCam integration is not deployed on the server yet.')
+      } else {
+        setCcError('Could not connect to CompanyCam. Try again.')
+      }
+    }
+  }
+
+  const handleDisconnectCC = async () => {
+    if (!ccConnected) return
+    if (!window.confirm('Disconnect CompanyCam? Photo sync will stop until you reconnect.')) return
+    setCcDisconnecting(true)
+    setCcError('')
+    setCcInfo('')
+    try {
+      try {
+        await httpsCallable(functions, 'ccDisconnect')()
+      } catch {
+        // Fallback: clear the token doc directly so the UI reflects disconnect.
+        await deleteDoc(doc(db, 'cc_config', 'tokens'))
+      }
+      setCcInfo('CompanyCam disconnected.')
+    } catch (e) {
+      console.error('CompanyCam disconnect error:', e)
+      setCcError('Could not disconnect. Try again.')
+    } finally {
+      setCcDisconnecting(false)
     }
   }
 
@@ -241,6 +312,61 @@ export default function SettingsPage({ onLogout }) {
         </CardContent>
       </Card>
 
+      {/* ── CompanyCam Integration ───────────────────────────────────── */}
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <CameraIcon size={15} style={{ color: O }} /> CompanyCam Integration
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-6 pb-5 space-y-3">
+          <div className="flex items-center gap-2">
+            {ccConnected
+              ? <CheckCircleIcon size={14} className="text-green-400 shrink-0" />
+              : <div className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0" />
+            }
+            <span className="text-sm">
+              {ccConnected ? 'CompanyCam connected' : 'Not connected'}
+            </span>
+          </div>
+          {ccConnected && (
+            <div className="text-xs text-muted-foreground space-y-0.5 pl-1">
+              {ccScope && <p>Access: <span className="">{ccScope}</span></p>}
+              {ccConnectedAt && <p>Connected {ccConnectedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
+            </div>
+          )}
+          {!ccConnected && (
+            <p className="text-xs text-muted-foreground pl-1">
+              Connect to auto-pull jobsite photos. Once connected, enable <span className="text-zinc-300">CompanyCam Sync</span> above to turn on auto-pull.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="text-xs h-8 text-white"
+              style={{ backgroundColor: O }}
+              onClick={handleConnectCC}
+              disabled={ccConnecting || ccDisconnecting}
+            >
+              {ccConnecting ? 'Redirecting…' : ccConnected ? 'Reconnect CompanyCam' : 'Connect CompanyCam'}
+            </Button>
+            {ccConnected && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-8 border-white/20"
+                onClick={handleDisconnectCC}
+                disabled={ccConnecting || ccDisconnecting}
+              >
+                {ccDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+              </Button>
+            )}
+          </div>
+          {ccError && <p className="text-xs text-red-400 mt-2">{ccError}</p>}
+          {ccInfo  && <p className="text-xs text-green-400 mt-2">{ccInfo}</p>}
+        </CardContent>
+      </Card>
+
       {/* ── Account ──────────────────────────────────────────────────── */}
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
@@ -332,6 +458,7 @@ export default function SettingsPage({ onLogout }) {
               { label: 'Total Jobs',       value: String(jobs?.length ?? '—') },
               { label: 'Active Jobs',      value: String((jobs || []).filter(j => !['complete','completed'].includes(j.status)).length) },
               { label: 'QuickBooks',       value: qbConnected ? 'Connected' : 'Not connected' },
+              { label: 'CompanyCam',       value: ccConnected ? 'Connected' : 'Not connected' },
               { label: 'Build Date',       value: __BUILD_DATE__           },
             ].map(({ label, value }) => (
               <div key={label} className="p-3 rounded-lg bg-white/5 border border-white/5">

@@ -33,8 +33,9 @@ src/
   hooks/useFirestore.js        # All collection subscriptions + mutations
   lib/                         # Invoice/CO PDF generators
 functions/
-  index.js                     # Cloud Functions (currently QB OAuth: qbAuth, qbCallback, qbDisconnect)
+  index.js                     # Cloud Functions — QB OAuth (qbAuth/qbCallback/qbDisconnect) + CompanyCam OAuth (ccAuth/ccCallback/ccDisconnect)
   QUICKBOOKS_SETUP.md          # Step-by-step QB connect setup
+  COMPANYCAM_SETUP.md          # Step-by-step CompanyCam connect setup
   scripts/grant-public-invoker.js  # IAM helper for Firebase callables
 ```
 
@@ -55,15 +56,18 @@ npm run dev          # http://localhost:5173
 
 `npm run build` produces `dist/` — `firebase deploy --only hosting` ships it.
 
-## Firebase Cloud Functions (QuickBooks OAuth)
+## Firebase Cloud Functions (QuickBooks + CompanyCam OAuth)
 
-The Connect QuickBooks button in Settings calls Cloud Functions. Setup steps and required Intuit Developer config are in [`functions/QUICKBOOKS_SETUP.md`](./functions/QUICKBOOKS_SETUP.md).
+The Connect QuickBooks / Connect CompanyCam buttons in Settings call Cloud Functions. Both use the same OAuth pattern (Cloud Function → provider authorize URL → redirect back → token exchange → tokens in Firestore). Setup steps and required provider config are in [`functions/QUICKBOOKS_SETUP.md`](./functions/QUICKBOOKS_SETUP.md) and [`functions/COMPANYCAM_SETUP.md`](./functions/COMPANYCAM_SETUP.md).
 
 ```bash
 cd functions
 npm install
 firebase deploy --only functions:qbAuth,functions:qbCallback,functions:qbDisconnect
+firebase deploy --only functions:ccAuth,functions:ccCallback,functions:ccDisconnect
 ```
+
+Both providers redirect back to the same URL with `?code=…&state=…`; only Intuit appends `&realmId=…`, which is how `src/App.jsx` routes the callback to the right function.
 
 ## Conventions
 
