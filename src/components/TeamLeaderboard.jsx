@@ -107,20 +107,21 @@ async function patchScore(name, updates) {
   })
 }
 
+const reviewUrlRef = () => doc(db, 'app_settings', 'google_review')
+
 function useReviewUrl() {
   const [url, setUrl] = useState('')
   const [loaded, setLoaded] = useState(false)
-  const ref = doc(db, 'app_settings', 'google_review')
 
   useEffect(() => {
-    getDoc(ref).then(snap => {
+    getDoc(reviewUrlRef()).then(snap => {
       if (snap.exists()) setUrl(snap.data().url || '')
       setLoaded(true)
     }).catch(() => setLoaded(true))
   }, [])
 
   async function saveUrl(val) {
-    await setDoc(ref, { url: val, updatedAt: serverTimestamp() }, { merge: true })
+    await setDoc(reviewUrlRef(), { url: val, updatedAt: serverTimestamp() }, { merge: true })
     setUrl(val)
   }
 
@@ -202,7 +203,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
 
 // ── Per-person expandable card ─────────────────────────────────────────────────
 
-function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, onLogReferral, onLogBonus }) {
+function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral, onLogBonus }) {
   const [expanded, setExpanded] = useState(false)
   const [showReviewLink, setShowReviewLink] = useState(false)
   const { name, auto, man, totalPts } = entry
@@ -378,13 +379,11 @@ function PodiumCard({ name, pts, rank }) {
 export default function TeamLeaderboard() {
   const { dailyReports, loading: reportsLoading } = useDailyReports()
   const { scores, loading: scoresLoading } = useCrewScores()
-  const { url: reviewUrl, loaded: urlLoaded, saveUrl } = useReviewUrl()
+  const { url: reviewUrl, saveUrl } = useReviewUrl()
   const [adding, setAdding] = useState(null)
   const [showUrlEdit, setShowUrlEdit] = useState(false)
   const [urlDraft, setUrlDraft] = useState('')
   const [savingUrl, setSavingUrl] = useState(false)
-
-  useEffect(() => { if (urlLoaded) setUrlDraft(reviewUrl) }, [urlLoaded, reviewUrl])
 
   const loading = reportsLoading || scoresLoading
 
@@ -464,7 +463,7 @@ export default function TeamLeaderboard() {
         <div className="flex items-center gap-2">
           <button
             title="Configure Google Review URL"
-            onClick={() => setShowUrlEdit(v => !v)}
+            onClick={() => { if (!showUrlEdit) setUrlDraft(reviewUrl); setShowUrlEdit(v => !v) }}
             className="p-2 rounded-lg transition-colors"
             style={{ backgroundColor: showUrlEdit ? O + '22' : '#ffffff11', color: showUrlEdit ? O : '#6b7280' }}>
             <SettingsIcon size={14} />

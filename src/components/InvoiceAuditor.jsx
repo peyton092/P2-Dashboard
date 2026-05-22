@@ -335,12 +335,9 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
 
 function InvoiceRow({ inv, jobs, allInvoices, materials }) {
   const [expanded, setExpanded] = useState(false)
-  const [editStatus, setEditStatus] = useState(false)
 
   const meta = STATUS_META[inv.status] || STATUS_META['pending-review']
   const job = jobs.find(j => j.id === inv.jobId)
-  const criticalFlags = (inv.flags || []).filter(f => f.severity === 'critical')
-  const warningFlags  = (inv.flags || []).filter(f => f.severity === 'warning')
 
   // Re-run audit live against current materials (may have changed since save)
   const liveFlags = useMemo(

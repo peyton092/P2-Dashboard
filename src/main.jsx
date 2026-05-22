@@ -22,7 +22,7 @@ if ('serviceWorker' in navigator) {
         const pending = JSON.parse(localStorage.getItem('p2_offline_queue') || '[]')
         pending.push(event.data.entry)
         localStorage.setItem('p2_offline_queue', JSON.stringify(pending.slice(-50)))
-      } catch {}
+      } catch { /* storage unavailable — drop the queued write */ }
     }
 
     if (event.data?.type === 'FLUSH_QUEUE') {
@@ -42,7 +42,7 @@ if ('serviceWorker' in navigator) {
           }
         }
         localStorage.setItem('p2_offline_queue', JSON.stringify(failed))
-      } catch {}
+      } catch { /* storage unavailable — skip flush */ }
     }
   })
 }

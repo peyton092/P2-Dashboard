@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { collection, getDocs, writeBatch, doc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { collection, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase'
 import { useJobs, useAllExtras, useNotifications, useSubs, useMaterials, useSubmits, useDailyReports, useUrgentItems, useSettings, useAgentAlerts } from './hooks/useFirestore'
 
@@ -922,22 +922,20 @@ async function seedFirestore() {
     batch.set(ref, { ...job, ...agentFields(job), _seeded: true, createdAt: serverTimestamp() })
   })
 
-  if (true) {
-    STATIC_EXTRAS.forEach(extra => {
-      const ref = doc(collection(db, 'extras'))
-      batch.set(ref, { ...extra, createdAt: serverTimestamp() })
-    })
-    STATIC_NOTIFS.forEach(n => {
-      const ref = doc(collection(db, 'notifications'))
-      batch.set(ref, { type: n.type, msg: n.msg, read: n.read, createdAt: serverTimestamp() })
-    })
-    STATIC_SUBS.forEach(sub => {
-      batch.set(doc(db, 'subs', sub.id), sub)
-    })
-    STATIC_MATERIALS.forEach(m => {
-      batch.set(doc(db, 'materials', m.id), { ...m, createdAt: serverTimestamp() })
-    })
-  }
+  STATIC_EXTRAS.forEach(extra => {
+    const ref = doc(collection(db, 'extras'))
+    batch.set(ref, { ...extra, createdAt: serverTimestamp() })
+  })
+  STATIC_NOTIFS.forEach(n => {
+    const ref = doc(collection(db, 'notifications'))
+    batch.set(ref, { type: n.type, msg: n.msg, read: n.read, createdAt: serverTimestamp() })
+  })
+  STATIC_SUBS.forEach(sub => {
+    batch.set(doc(db, 'subs', sub.id), sub)
+  })
+  STATIC_MATERIALS.forEach(m => {
+    batch.set(doc(db, 'materials', m.id), { ...m, createdAt: serverTimestamp() })
+  })
 
   await batch.commit()
 }
@@ -956,7 +954,7 @@ export function DataProvider({ children, tenantId = null, role = null, clientJob
   const { dailyReports: firestoreDailyReports, loading: drLoading } = useDailyReports()
   const { urgentItems: firestoreUrgentItems, loading: uiLoading }   = useUrgentItems()
   const { settings }                                                 = useSettings()
-  const { alerts: agentAlerts, loading: alertsLoading }             = useAgentAlerts()
+  const { alerts: agentAlerts }                                      = useAgentAlerts()
   const [seeded, setSeeded] = useState(false)
 
   useEffect(() => {

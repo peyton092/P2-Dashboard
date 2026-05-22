@@ -8,9 +8,8 @@ import { auth, secondaryAuth, db, functions } from './firebase'
 import { httpsCallable } from 'firebase/functions'
 import { DataProvider, useData } from './DataContext'
 import {
-  addExtra, updateNotification, updateJob, updateExtra,
-  sendExtraToQBS, approveExtra, rejectExtra,
-  passInspection, failInspection, createJob, addSubmit,
+  updateNotification, updateJob,
+  passInspection, failInspection, createJob,
   addMaterial, updateMaterial, useHistory, addHistory,
 } from './hooks/useFirestore'
 import { Button } from '@/components/ui/button'
@@ -74,14 +73,14 @@ import {
   EmptyState, AllClearState, FilterBar, PageSkeleton,
   // Phase 19 — primitives extracted from App.jsx
   ProgressBar, StatCard,
-  inspMeta, iMeta, statusMeta, sMeta,
+  iMeta,
   InspBadge, JobBadge,
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,
 } from './components/shared'
 // daysSince is defined locally in this file with identical semantics, so we
 // don't re-import it from agent/scoring (would be a duplicate declaration).
-import { classifyRisk, hasFailedInspection, isBillingReady, isHvacStartupBlocked } from './agent/scoring'
+import { classifyRisk, hasFailedInspection, isBillingReady } from './agent/scoring'
 import { ZONES, getZoneId } from './agent/zones'
 
 // Phase 18 — Domain helpers extracted from App.jsx into src/lib/.
@@ -113,7 +112,7 @@ import {
   fmtSubDate, subJobKey,
 } from './lib/subs'
 import {
-  jobName, phaseLabel,
+  jobName,
   JOB_FILTERS, JOB_FORM_INITIAL,
   isJobComplete, jobStaleness, jobMatchesFilter,
   jobNextAction, jobRiskMeta, fmtJobDate,
@@ -122,7 +121,6 @@ import {
   BRIEF_CATEGORY_META, SEVERITY_RANK,
   severityTone, severityColor, buildBriefingItems,
 } from './lib/briefing'
-import { generateInvoicePdf } from './lib/generateInvoicePdf'
 import { exportToCsv } from './lib/exportCsv'
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
@@ -220,8 +218,6 @@ const MOBILE_MORE = [
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const fmt$ = (n) => `$${Number(n).toLocaleString()}`
 
 // jobName moved to src/lib/jobs.js (Phase 18).
 // BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR moved to

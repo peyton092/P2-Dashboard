@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   collection, doc, onSnapshot, addDoc, updateDoc, setDoc,
-  query, orderBy, limit, serverTimestamp, where,
+  query, orderBy, limit, serverTimestamp,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db } from '../firebase'
@@ -156,7 +156,7 @@ export function useJobFiles(jobDocId) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!jobDocId) { setFiles([]); setLoading(false); return }
+    if (!jobDocId) return
     const q = query(collection(db, 'jobs', jobDocId, 'files'), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(q, snap => {
       setFiles(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
@@ -165,7 +165,8 @@ export function useJobFiles(jobDocId) {
     return unsub
   }, [jobDocId])
 
-  return { files, loading }
+  // No doc id → nothing to load; derive rather than reset state in the effect.
+  return jobDocId ? { files, loading } : { files: [], loading: false }
 }
 
 export function useSubmitReplies(submitDocId) {
@@ -173,7 +174,7 @@ export function useSubmitReplies(submitDocId) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!submitDocId) { setReplies([]); setLoading(false); return }
+    if (!submitDocId) return
     const q = query(collection(db, 'submits', submitDocId, 'replies'), orderBy('createdAt', 'asc'))
     const unsub = onSnapshot(q, snap => {
       setReplies(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
@@ -182,7 +183,8 @@ export function useSubmitReplies(submitDocId) {
     return unsub
   }, [submitDocId])
 
-  return { replies, loading }
+  // No doc id → nothing to load; derive rather than reset state in the effect.
+  return submitDocId ? { replies, loading } : { replies: [], loading: false }
 }
 
 // ── Basic Mutations ───────────────────────────────────────────────────────────
