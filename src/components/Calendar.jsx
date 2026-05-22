@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
+import { exportToIcs } from '../lib/exportIcs'
 import { PageHeader, Pill } from './shared'
-import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon } from 'lucide-react'
+import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon, DownloadIcon } from 'lucide-react'
 
 const O = '#F47920'
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -71,6 +72,16 @@ export default function Calendar() {
   })
   const goToday = () => setCursor({ year: today.getFullYear(), month: today.getMonth() })
 
+  const exportIcs = () => {
+    const events = jobs.flatMap(j => jobEvents(j).map((e, i) => ({
+      uid: `${e.jobId}-${e.type}-${e.date}-${i}`,
+      date: e.date,
+      summary: e.label,
+      description: (EVENT_META[e.type] || {}).label,
+    })))
+    exportToIcs('p2-schedule', events)
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -80,6 +91,7 @@ export default function Calendar() {
         meta={<><span>{MONTHS[cursor.month]} {cursor.year}</span><span>{monthEventCount} event{monthEventCount === 1 ? '' : 's'} this month</span></>}
         actions={
           <div className="flex items-center gap-1.5">
+            <button type="button" onClick={exportIcs} className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25" title="Download all events as a calendar file (.ics)"><DownloadIcon size={13} /> Export .ics</button>
             <button type="button" onClick={() => shift(-1)} aria-label="Previous month" className="p-2 rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:border-white/25"><ChevronLeftIcon size={14} /></button>
             <button type="button" onClick={goToday} className="text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25">Today</button>
             <button type="button" onClick={() => shift(1)} aria-label="Next month" className="p-2 rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:border-white/25"><ChevronRightIcon size={14} /></button>
