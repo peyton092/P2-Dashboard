@@ -16,7 +16,7 @@ import {
   SettingsIcon, ShieldIcon, ServerIcon,
   BellIcon, MailIcon, BrainCircuitIcon, CameraIcon, MapPinIcon,
   ClipboardListIcon, DollarSignIcon, ZapIcon, Building2Icon,
-  LogOutIcon, CheckCircleIcon, LinkIcon,
+  LogOutIcon, CheckCircleIcon, LinkIcon, KeyboardIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -532,6 +532,39 @@ export default function SettingsPage({ onLogout }) {
               <LogOutIcon size={13} /> Sign out
             </button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Keyboard shortcuts ───────────────────────────────────────── */}
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <KeyboardIcon size={15} style={{ color: O }} /> Keyboard shortcuts
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-6 pb-5">
+          <ul className="divide-y divide-white/5">
+            {[
+              { keys: ['⌘', 'K'],    label: 'Open command palette' },
+              { keys: ['Ctrl', 'K'], label: 'Open command palette (Windows / Linux)' },
+              { keys: ['↑', '↓'],    label: 'Navigate results in the command palette' },
+              { keys: ['↵'],         label: 'Open the selected result' },
+              { keys: ['←', '→'],    label: 'Previous / next photo in the lightbox' },
+              { keys: ['Esc'],       label: 'Close the palette, lightbox, or dialog' },
+            ].map(({ keys, label }) => (
+              <li key={label} className="flex items-center justify-between gap-3 py-2">
+                <span className="text-sm text-zinc-200">{label}</span>
+                <span className="flex items-center gap-1 shrink-0">
+                  {keys.map(k => (
+                    <kbd
+                      key={k}
+                      className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-white/15 text-zinc-300 bg-white/[0.04] min-w-[18px] text-center"
+                    >{k}</kbd>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
         </CardContent>
       </Card>
 
