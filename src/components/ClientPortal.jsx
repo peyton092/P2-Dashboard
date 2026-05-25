@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import Brand from './brand/Brand'
 import { DataPanel, Pill, EmptyState, AllClearState } from './shared'
+import PhotoLightbox from './PhotoLightbox'
 
 const O = '#F47920'
 
@@ -402,6 +403,7 @@ function JobFiles({ job }) {
   const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [uploadErr, setUploadErr] = useState('')
+  const [lightboxIdx, setLightboxIdx] = useState(-1)
   const photos = files.filter(isImage)
   const docs   = files.filter(f => !isImage(f))
 
@@ -431,6 +433,8 @@ function JobFiles({ job }) {
   }
 
   return (
+    <>
+    <PhotoLightbox photos={photos} index={lightboxIdx} onClose={() => setLightboxIdx(-1)} onIndexChange={setLightboxIdx} />
     <Card className="border-white/10 bg-white/[0.025]">
       <CardContent className="p-3 sm:p-4 space-y-3">
         <div className="flex items-center gap-2">
@@ -461,11 +465,12 @@ function JobFiles({ job }) {
                   <ImageIcon size={11} /> Photos · {photos.length}
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                  {photos.map(p => (
-                    <a key={p._docId} href={p.url} target="_blank" rel="noopener noreferrer"
-                      className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 block">
-                      <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
-                    </a>
+                  {photos.map((p, i) => (
+                    <button type="button" key={p._docId} onClick={() => setLightboxIdx(i)}
+                      title={p.name || 'Open photo'}
+                      className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 hover:border-white/25 transition-colors group">
+                      <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300" loading="lazy" />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -491,6 +496,7 @@ function JobFiles({ job }) {
         )}
       </CardContent>
     </Card>
+    </>
   )
 }
 

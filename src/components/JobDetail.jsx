@@ -1,10 +1,11 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useData } from '../DataContext'
 import { useJobFiles } from '../hooks/useFirestore'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
 import { classifyRisk, hasFailedInspection } from '../agent/scoring'
+import PhotoLightbox from './PhotoLightbox'
 import {
   ChevronLeftIcon, MapPinIcon, UserRoundCogIcon, HardHatIcon,
   DollarSignIcon, FilePenLineIcon, BoxesIcon, BadgeCheckIcon,
@@ -80,6 +81,7 @@ export default function JobDetail({ jobId, onBack }) {
     () => dailyReports.filter(r => (r.jobId || r.job) === jobId).slice(0, 6),
     [dailyReports, jobId],
   )
+  const [lightboxIdx, setLightboxIdx] = useState(-1)
 
   if (!job) {
     return (
@@ -220,10 +222,16 @@ export default function JobDetail({ jobId, onBack }) {
           <div className="space-y-3">
             {photos.length > 0 && (
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-                {photos.map(p => (
-                  <a key={p._docId} href={p.url} target="_blank" rel="noopener noreferrer" className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5">
-                    <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
-                  </a>
+                {photos.map((p, i) => (
+                  <button
+                    type="button"
+                    key={p._docId}
+                    onClick={() => setLightboxIdx(i)}
+                    className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 hover:border-white/25 transition-colors group"
+                    title={p.name || 'Open photo'}
+                  >
+                    <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300" loading="lazy" />
+                  </button>
                 ))}
               </div>
             )}
@@ -237,6 +245,13 @@ export default function JobDetail({ jobId, onBack }) {
           </div>
         )}
       </DataPanel>
+
+      <PhotoLightbox
+        photos={photos}
+        index={lightboxIdx}
+        onClose={() => setLightboxIdx(-1)}
+        onIndexChange={setLightboxIdx}
+      />
 
       {/* Daily reports */}
       {jobReports.length > 0 && (
