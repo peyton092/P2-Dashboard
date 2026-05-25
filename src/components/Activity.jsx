@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../DataContext'
 import { useHistory } from '../hooks/useFirestore'
+import { exportToCsv } from '../lib/exportCsv'
 import { PageHeader, DataPanel, Pill, EmptyState } from './shared'
 import {
   ActivityIcon, FilePenLineIcon, BadgeCheckIcon, DollarSignIcon,
-  BellIcon, HardHatIcon, InfoIcon,
+  BellIcon, HardHatIcon, InfoIcon, DownloadIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -83,6 +84,24 @@ export default function Activity() {
         title="Activity log"
         subtitle="Chronological feed of changes and system events across the workspace."
         meta={<><span>{feed.length} entries</span></>}
+        actions={
+          <button
+            type="button"
+            onClick={() => exportToCsv('p2-activity', [
+              { label: 'When',   get: i => i.ts ? new Date(i.ts).toISOString() : '' },
+              { label: 'Source', key: 'source' },
+              { label: 'Type',   key: 'type' },
+              { label: 'Detail', key: 'text' },
+              { label: 'Actor',  get: i => i.actor || '' },
+              { label: 'Job',    get: i => i.jobId || '' },
+            ], filtered)}
+            disabled={filtered.length === 0}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Export the current activity view to CSV"
+          >
+            <DownloadIcon size={13} /> Export CSV
+          </button>
+        }
       />
 
       <div className="flex gap-1.5 flex-wrap">
