@@ -14,13 +14,14 @@ import {
 import {
   AlertCircleIcon, CheckCircleIcon,
   DollarSignIcon, ClockIcon,
-  ArrowRightIcon,
+  ArrowRightIcon, CalendarClockIcon,
   // Phase 3 QA — preferred lucide names
   RadarIcon, UserRoundCogIcon, TriangleAlertIcon,
   BadgeCheckIcon, NotebookPenIcon,
   FilePenLineIcon, FolderOpenIcon, BarChart3Icon,
 } from 'lucide-react'
 import { classifyRisk } from '../agent/scoring'
+import { jobEvents, EVENT_META, todayKey } from '../lib/jobEvents'
 
 const O = '#F47920'
 
@@ -214,6 +215,17 @@ export default function CommandCenter() {
       })
       .slice(0, 5)
   }, [activeJobs])
+
+  // Upcoming milestones — flat, chronological event list (today onward),
+  // sourced from the same per-job event extractor the Calendar uses.
+  const upcoming = useMemo(() => {
+    const today = todayKey()
+    return jobs
+      .flatMap(j => jobEvents(j))
+      .filter(e => e.date && e.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 8)
+  }, [jobs])
 
   // PM Workload — count active jobs per PM, weighted by issues
   const pmWorkload = useMemo(() => {
@@ -427,6 +439,50 @@ export default function CommandCenter() {
               </li>
             ))}
           </ul>
+        </DataPanel>
+
+        <DataPanel
+          title="Upcoming Milestones"
+          description={upcoming.length === 0 ? 'No scheduled milestones ahead.' : 'Next ' + upcoming.length + ' target dates & inspections — newest first.'}
+          Icon={CalendarClockIcon}
+          padding="none"
+          actions={
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'calendar' } }))}
+              className="text-[11px] font-semibold text-zinc-300 hover:text-white inline-flex items-center gap-1"
+            >
+              Open calendar <ArrowRightIcon size={11} />
+            </button>
+          }
+        >
+          {upcoming.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-zinc-500 text-center">Nothing scheduled.</p>
+          ) : (
+            <ul className="divide-y divide-white/5">
+              {upcoming.map((e, i) => {
+                const meta = EVENT_META[e.type] || EVENT_META.target
+                const d = new Date(e.date + 'T00:00:00')
+                const dateLbl = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' })
+                return (
+                  <li key={`${e.jobId}-${e.type}-${i}`}>
+                    <button
+                      type="button"
+                      onClick={() => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: e.jobId } }))}
+                      className="w-full text-left flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.025] transition-colors"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: meta.color }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-zinc-100 truncate">{e.label}</p>
+                        <p className="text-[11px] text-zinc-500">{meta.label}</p>
+                      </div>
+                      <span className="text-[11px] font-semibold text-zinc-400 tabular-nums shrink-0">{dateLbl}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </DataPanel>
 
         <DataPanel

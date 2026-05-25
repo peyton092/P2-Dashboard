@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { exportToIcs } from '../lib/exportIcs'
+import { jobEvents, EVENT_META } from '../lib/jobEvents'
 import { PageHeader, Pill } from './shared'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon, DownloadIcon } from 'lucide-react'
 
@@ -8,29 +9,7 @@ const O = '#F47920'
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
-const EVENT_META = {
-  target: { color: O,         label: 'Target completion' },
-  start:  { color: '#3b82f6', label: 'Job start' },
-  pass:   { color: '#22c55e', label: 'Inspection passed' },
-  fail:   { color: '#ef4444', label: 'Inspection failed' },
-}
-
-const jobLabel = (j) => j.name || j.client || j.id
-const isoDay = (d) => (d || '').toString().slice(0, 10)
 const openJob = (id) => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id } }))
-
-function jobEvents(job) {
-  const evs = []
-  if (job.target) evs.push({ date: isoDay(job.target), type: 'target', jobId: job.id, label: `${jobLabel(job)} — target` })
-  if (job.start)  evs.push({ date: isoDay(job.start),  type: 'start',  jobId: job.id, label: `${jobLabel(job)} — start` })
-  const insp = job.insp || {}
-  ;['electrical', 'plumbing', 'hvac'].forEach(t => {
-    const tr = insp[t] || {}
-    if (tr.roughInDate) evs.push({ date: isoDay(tr.roughInDate), type: tr.roughIn === 'failed' ? 'fail' : 'pass', jobId: job.id, label: `${job.id} ${t} rough-in` })
-    if (tr.finalDate)   evs.push({ date: isoDay(tr.finalDate),   type: tr.final === 'failed' ? 'fail' : 'pass',   jobId: job.id, label: `${job.id} ${t} final` })
-  })
-  return evs
-}
 
 export default function Calendar() {
   const { jobs = [] } = useData()
