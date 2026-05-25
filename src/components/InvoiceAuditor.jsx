@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { useSupplierInvoices, addSupplierInvoice, updateSupplierInvoice } from '../hooks/useFirestore'
+import { exportToCsv } from '../lib/exportCsv'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -11,7 +12,7 @@ import {
 import {
   PlusIcon, XIcon, AlertTriangleIcon, CheckCircleIcon,
   DollarSignIcon, FileTextIcon, ChevronDownIcon, ChevronUpIcon,
-  ShieldAlertIcon, ReceiptIcon, SearchIcon, PencilIcon,
+  ShieldAlertIcon, ReceiptIcon, SearchIcon, PencilIcon, DownloadIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -534,9 +535,27 @@ export default function InvoiceAuditor() {
             Audit supplier invoices against POs · flag price variances, duplicates &amp; discrepancies
           </p>
         </div>
-        <Button className="text-white gap-2" style={{ backgroundColor: O }} onClick={() => setShowForm(true)}>
-          <PlusIcon size={14} /> New Invoice
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            disabled={filtered.length === 0}
+            onClick={() => exportToCsv('p2-supplier-invoices', [
+              { label: 'Vendor',      key: 'vendor' },
+              { label: 'Invoice #',   key: 'invoiceNum' },
+              { label: 'Date',        get: i => i.invoiceDate || '' },
+              { label: 'Job',         get: i => i.jobId || '' },
+              { label: 'Total',       get: i => Number(i.total || 0) },
+              { label: 'Status',      get: i => i.status || '' },
+              { label: 'Flags',       get: i => (i.flags || []).length },
+            ], filtered)}
+            className="border-white/15 gap-2 text-zinc-200"
+          >
+            <DownloadIcon size={14} /> Export CSV
+          </Button>
+          <Button className="text-white gap-2" style={{ backgroundColor: O }} onClick={() => setShowForm(true)}>
+            <PlusIcon size={14} /> New Invoice
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
