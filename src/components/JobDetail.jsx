@@ -10,7 +10,7 @@ import {
   ChevronLeftIcon, MapPinIcon, UserRoundCogIcon, HardHatIcon,
   DollarSignIcon, FilePenLineIcon, BoxesIcon, BadgeCheckIcon,
   ClipboardSignatureIcon, FileTextIcon, ImageIcon, DownloadIcon,
-  NotebookPenIcon, ActivityIcon, ReceiptIcon, CalendarIcon,
+  NotebookPenIcon, ActivityIcon, ReceiptIcon, CalendarIcon, PrinterIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -113,7 +113,7 @@ export default function JobDetail({ jobId, onBack }) {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white mb-3">
+        <button onClick={onBack} className="no-print inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white mb-3">
           <ChevronLeftIcon size={15} /> Back to jobs
         </button>
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] overflow-hidden" style={{ borderLeftWidth: 3, borderLeftColor: railColor }}>
@@ -134,11 +134,20 @@ export default function JobDetail({ jobId, onBack }) {
                 )}
                 <p className="text-sm text-zinc-400 mt-1">{job.client}{job.type ? ` · ${job.type}` : ''}</p>
               </div>
-              {hasInvoice && (
-                <button onClick={() => generateInvoicePdf(job)} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
-                  <DownloadIcon size={13} /> Invoice PDF
+              <div className="no-print flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
+                  title="Print this job summary"
+                >
+                  <PrinterIcon size={13} /> Print
                 </button>
-              )}
+                {hasInvoice && (
+                  <button onClick={() => generateInvoicePdf(job)} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
+                    <DownloadIcon size={13} /> Invoice PDF
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="mt-4">

@@ -233,3 +233,35 @@
 @media (prefers-reduced-motion: reduce) {
   .p2-skeleton::after { animation: none; }
 }
+
+/* ── Print stylesheet ──────────────────────────────────────────────────────
+   Strip the chrome (sidebar, mobile nav, anything tagged .no-print), flip
+   the dark UI to an ink-friendly light palette, and protect panels from
+   awkward page breaks. Inline brand/status colors (e.g. orange status pills)
+   are preserved by not using !important on the text color override. */
+@media print {
+  aside,
+  nav[aria-label="Mobile navigation"],
+  .no-print { display: none !important; }
+
+  html, body { background: #fff !important; }
+  body, body * {
+    background-color: transparent !important;
+    border-color: #d4d4d4 !important;
+    box-shadow: none !important;
+    color: #111;
+  }
+
+  /* Stretch content beyond the screen container */
+  main { padding: 0 !important; overflow: visible !important; }
+  main > div { max-width: 100% !important; padding: 0 !important; }
+
+  /* Keep panels intact across pages */
+  section,
+  article,
+  [class*="rounded-2xl"],
+  [class*="rounded-xl"] { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Constrain image grids to thumbnail size on paper */
+  img { max-height: 180px; object-fit: contain; }
+}
