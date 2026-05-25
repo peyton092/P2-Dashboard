@@ -14,7 +14,7 @@ import {
 import {
   AlertCircleIcon, CheckCircleIcon,
   DollarSignIcon, ClockIcon,
-  ArrowRightIcon, CalendarClockIcon,
+  ArrowRightIcon, CalendarClockIcon, ShieldAlertIcon,
   // Phase 3 QA — preferred lucide names
   RadarIcon, UserRoundCogIcon, TriangleAlertIcon,
   BadgeCheckIcon, NotebookPenIcon,
@@ -119,7 +119,7 @@ function useQuickBooksStatus() {
 // ── Top-level component ──────────────────────────────────────────────────────
 
 export default function CommandCenter() {
-  const { jobs = [], extras = [] } = useData()
+  const { jobs = [], extras = [], subs = [] } = useData()
   const qb = useQuickBooksStatus()
 
   // ── Derived data ────────────────────────────────────────────────────────────
@@ -226,6 +226,29 @@ export default function CommandCenter() {
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 8)
   }, [jobs])
+
+  // Subcontractor compliance — flag subs with insurance or license expiring
+  // within the next 60 days (already expired = urgent). Read-only; doesn't
+  // block scheduling. Sort by soonest expiry.
+  const complianceAlerts = useMemo(() => {
+    const now = new Date()
+    const horizon = new Date(now.getTime() + 60 * 86400000)
+    const out = []
+    subs.forEach(s => {
+      ;[
+        { kind: 'Insurance', date: s.insExp },
+        { kind: 'License',   date: s.licExp },
+      ].forEach(({ kind, date }) => {
+        if (!date) return
+        const d = new Date(date + 'T00:00:00')
+        if (isNaN(d.getTime())) return
+        if (d > horizon) return
+        const days = Math.ceil((d - now) / 86400000)
+        out.push({ subId: s.id, name: s.name, co: s.co, trade: s.trade, kind, date, days })
+      })
+    })
+    return out.sort((a, b) => a.days - b.days).slice(0, 6)
+  }, [subs])
 
   // PM Workload — count active jobs per PM, weighted by issues
   const pmWorkload = useMemo(() => {
@@ -477,6 +500,51 @@ export default function CommandCenter() {
                         <p className="text-[11px] text-zinc-500">{meta.label}</p>
                       </div>
                       <span className="text-[11px] font-semibold text-zinc-400 tabular-nums shrink-0">{dateLbl}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </DataPanel>
+
+        <DataPanel
+          title="Subcontractor Compliance"
+          description={complianceAlerts.length === 0 ? 'All insurance & licenses in good standing for the next 60 days.' : `${complianceAlerts.length} document${complianceAlerts.length === 1 ? '' : 's'} expiring soon.`}
+          Icon={ShieldAlertIcon}
+          padding="none"
+          actions={
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'subs' } }))}
+              className="text-[11px] font-semibold text-zinc-300 hover:text-white inline-flex items-center gap-1"
+            >
+              Manage subs <ArrowRightIcon size={11} />
+            </button>
+          }
+        >
+          {complianceAlerts.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-zinc-500 text-center">No compliance flags.</p>
+          ) : (
+            <ul className="divide-y divide-white/5">
+              {complianceAlerts.map((a, i) => {
+                const expired = a.days < 0
+                const urgent  = a.days >= 0 && a.days <= 14
+                const color   = expired ? '#ef4444' : urgent ? '#eab308' : '#9ca3af'
+                const label   = expired ? `${Math.abs(a.days)}d ago` : a.days === 0 ? 'Today' : `in ${a.days}d`
+                return (
+                  <li key={`${a.subId}-${a.kind}-${i}`}>
+                    <button
+                      type="button"
+                      onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'subs' } }))}
+                      className="w-full text-left flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.025] transition-colors"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-zinc-100 truncate">{a.name}{a.co ? ` · ${a.co}` : ''}</p>
+                        <p className="text-[11px] text-zinc-500">{a.kind} {a.trade ? `· ${a.trade}` : ''}</p>
+                      </div>
+                      <span className="text-[11px] font-semibold tabular-nums shrink-0" style={{ color }}>{label}</span>
                     </button>
                   </li>
                 )
