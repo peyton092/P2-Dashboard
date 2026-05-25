@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../DataContext'
 import { useJobFiles } from '../hooks/useFirestore'
+import { MessageSquareIcon } from 'lucide-react'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
@@ -71,7 +72,7 @@ function TradeInspections({ trade, data }) {
 }
 
 export default function JobDetail({ jobId, onBack }) {
-  const { jobs = [], extras = [], materials = [], dailyReports = [] } = useData()
+  const { jobs = [], extras = [], materials = [], dailyReports = [], submits = [] } = useData()
   const job = useMemo(() => jobs.find(j => j.id === jobId), [jobs, jobId])
   const { files } = useJobFiles(job?._docId)
 
@@ -80,6 +81,10 @@ export default function JobDetail({ jobId, onBack }) {
   const jobReports = useMemo(
     () => dailyReports.filter(r => (r.jobId || r.job) === jobId).slice(0, 6),
     [dailyReports, jobId],
+  )
+  const jobSubmits = useMemo(
+    () => submits.filter(s => s.jobId === jobId).slice(0, 6),
+    [submits, jobId],
   )
   const [lightboxIdx, setLightboxIdx] = useState(-1)
 
@@ -219,6 +224,44 @@ export default function JobDetail({ jobId, onBack }) {
                 <span className="text-xs text-zinc-400 shrink-0">{m.status}{m.vendor ? ` · ${m.vendor}` : ''}</span>
               </li>
             ))}
+          </ul>
+        </DataPanel>
+      )}
+
+      {/* Messages & RFIs */}
+      {jobSubmits.length > 0 && (
+        <DataPanel
+          title="Messages & RFIs"
+          description={`${jobSubmits.length} most recent`}
+          Icon={MessageSquareIcon}
+          padding="none"
+          actions={
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'submit' } }))}
+              className="text-[11px] font-semibold text-zinc-300 hover:text-white"
+            >
+              Open inbox →
+            </button>
+          }
+        >
+          <ul className="divide-y divide-white/5">
+            {jobSubmits.map(s => {
+              const tone = s.status === 'Resolved' ? 'success' : s.status === 'In Progress' ? 'warning' : 'critical'
+              const when = s.createdAt?.toDate?.()?.toLocaleDateString?.() || ''
+              return (
+                <li key={s._docId} className="px-4 py-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-zinc-100 truncate">{s.subject || '(no subject)'}</span>
+                    <Pill tone={tone} size="xs">{s.status || 'Open'}</Pill>
+                    {s.priority && <span className="text-[10px] text-zinc-500">· {s.priority}</span>}
+                    {s.category && <span className="text-[10px] text-zinc-500">· {s.category}</span>}
+                  </div>
+                  {s.body && <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{s.body}</p>}
+                  {when && <p className="text-[10px] text-zinc-500 mt-1">{when}</p>}
+                </li>
+              )
+            })}
           </ul>
         </DataPanel>
       )}
