@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef } from 'react'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { storage } from '../firebase'
 import { useData } from '../DataContext'
-import { useJobFiles } from '../hooks/useFirestore'
-import { MessageSquareIcon } from 'lucide-react'
+import { useJobFiles, addJobFile } from '../hooks/useFirestore'
+import { MessageSquareIcon, UploadIcon } from 'lucide-react'
 import JobTasks from './JobTasks'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
@@ -88,6 +90,34 @@ export default function JobDetail({ jobId, onBack }) {
     [submits, jobId],
   )
   const [lightboxIdx, setLightboxIdx] = useState(-1)
+  const fileInputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadErr, setUploadErr] = useState('')
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !job?._docId) return
+    setUploading(true); setUploadErr('')
+    try {
+      const path = `jobs/${job._docId}/uploads/${Date.now()}-${file.name}`
+      const sref = storageRef(storage, path)
+      await uploadBytes(sref, file)
+      const url = await getDownloadURL(sref)
+      await addJobFile(job._docId, {
+        name: file.name,
+        url,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        source: 'staff-upload',
+      })
+    } catch (err) {
+      console.error('[JobDetail] Upload failed:', err)
+      setUploadErr('Upload failed — check file size or Storage rules.')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   if (!job) {
     return (
@@ -271,7 +301,25 @@ export default function JobDetail({ jobId, onBack }) {
       )}
 
       {/* Documents & photos */}
-      <DataPanel title="Documents & Photos" description={files.length === 0 ? 'No files yet.' : `${photos.length} photo${photos.length === 1 ? '' : 's'} · ${docs.length} document${docs.length === 1 ? '' : 's'}`} Icon={ImageIcon}>
+      <DataPanel
+        title="Documents & Photos"
+        description={files.length === 0 ? 'No files yet.' : `${photos.length} photo${photos.length === 1 ? '' : 's'} · ${docs.length} document${docs.length === 1 ? '' : 's'}`}
+        Icon={ImageIcon}
+        actions={
+          <>
+            <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || !job?._docId}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-50 disabled:cursor-wait transition-colors"
+            >
+              <UploadIcon size={12} /> {uploading ? 'Uploading…' : 'Upload'}
+            </button>
+          </>
+        }
+      >
+        {uploadErr && <p className="text-xs text-red-400 mb-2">{uploadErr}</p>}
         {files.length === 0 ? (
           <p className="text-sm text-zinc-400">CompanyCam photos and uploaded documents appear here.</p>
         ) : (
