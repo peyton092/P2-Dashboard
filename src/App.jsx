@@ -3541,7 +3541,7 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     'daily-report':  wrap(<CrewReport />),
     'analytics':     wrap(<AnalyticsComponent />),
     'team':           wrap(<TeamLeaderboardComponent />),
-    'invoice-auditor': wrap(<Suspense fallback={<div className="p-8 text-muted-foreground text-sm">Loading…</div>}><InvoiceAuditorComponent /></Suspense>),
+    'invoice-auditor': wrap(<Suspense fallback={<PageSkeleton />}><InvoiceAuditorComponent /></Suspense>),
     'settings':       wrap(<SettingsPageComponent onLogout={onLogout} />),
     'job-detail':     wrap(<JobDetail jobId={selectedJobId} onBack={() => setActiveTab('jobs')} />),
     'calendar':       wrap(<CalendarComponent />),

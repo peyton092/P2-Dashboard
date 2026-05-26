@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useData } from '../DataContext'
 import { useJobFiles, addJobFile } from '../hooks/useFirestore'
+import { LoadingState } from './shared'
 import { storage } from '../firebase'
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { Button } from '@/components/ui/button'
@@ -154,7 +155,7 @@ export default function ProjectFolders() {
           </CardHeader>
           <CardContent>
             {filesLoading ? (
-              <p className="text-center text-muted-foreground py-8 text-sm">Loading…</p>
+              <LoadingState label="Loading files…" />
             ) : files.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <FolderIcon size={32} className="mx-auto mb-3 opacity-30" />
