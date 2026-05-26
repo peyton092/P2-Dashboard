@@ -6,6 +6,7 @@ import { useJobFiles, addJobFile, useJobTasks } from '../hooks/useFirestore'
 import { MessageSquareIcon, UploadIcon, CheckSquareIcon } from 'lucide-react'
 import JobTasks from './JobTasks'
 import { pushRecentJob } from '../lib/recentJobs'
+import { useToast } from '@/components/ui/toast'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
@@ -84,6 +85,8 @@ export default function JobDetail({ jobId, onBack }) {
 
   useEffect(() => { if (jobId) pushRecentJob(jobId) }, [jobId])
 
+  const toast = useToast()
+
   const jobExtras = useMemo(() => extras.filter(e => e.job === jobId), [extras, jobId])
   const jobMaterials = useMemo(() => materials.filter(m => (m.job || m.jobId) === jobId), [materials, jobId])
   const jobReports = useMemo(
@@ -115,9 +118,11 @@ export default function JobDetail({ jobId, onBack }) {
         size: file.size,
         source: 'staff-upload',
       })
+      toast({ tone: 'success', title: 'Uploaded', description: file.name })
     } catch (err) {
       console.error('[JobDetail] Upload failed:', err)
       setUploadErr('Upload failed — check file size or Storage rules.')
+      toast({ tone: 'error', title: 'Upload failed', description: err.message || 'Unknown error' })
     } finally {
       setUploading(false)
     }
