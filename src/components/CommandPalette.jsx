@@ -3,7 +3,9 @@ import { useData } from '../DataContext'
 import {
   SearchIcon, GaugeIcon, HardHatIcon, UsersRoundIcon, FilePenLineIcon,
   ClipboardSignatureIcon, BoxesIcon, DollarSignIcon, CornerDownLeftIcon,
+  ClockIcon,
 } from 'lucide-react'
+import { getRecentJobs } from '../lib/recentJobs'
 
 const O = '#F47920'
 
@@ -76,6 +78,27 @@ export default function CommandPalette() {
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     const groups = []
+
+    // When the palette opens fresh (no query), surface recently-viewed jobs.
+    if (!q) {
+      const recentIds = getRecentJobs()
+      const recentJobs = recentIds
+        .map(id => jobs.find(j => j.id === id))
+        .filter(Boolean)
+        .slice(0, 5)
+      if (recentJobs.length) {
+        groups.push({
+          heading: 'Recent jobs',
+          Icon: ClockIcon,
+          items: recentJobs.map(j => ({
+            key: `recent_${j.id}`,
+            title: `${j.id} — ${j.name || j.client || ''}`.trim(),
+            sub: j.address || j.pm || '',
+            job: j.id,
+          })),
+        })
+      }
+    }
 
     const pageHits = PAGES.filter(p => !q || p.label.toLowerCase().includes(q)).slice(0, q ? 6 : 8)
     if (pageHits.length) groups.push({ heading: 'Pages', Icon: GaugeIcon, items: pageHits.map(p => ({ key: `page_${p.id}`, title: p.label, sub: 'Go to page', tab: p.id })) })

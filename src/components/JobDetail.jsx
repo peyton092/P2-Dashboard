@@ -1,10 +1,11 @@
-import { useMemo, useState, useRef } from 'react'
+import { useMemo, useState, useRef, useEffect } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { useData } from '../DataContext'
 import { useJobFiles, addJobFile, useJobTasks } from '../hooks/useFirestore'
 import { MessageSquareIcon, UploadIcon, CheckSquareIcon } from 'lucide-react'
 import JobTasks from './JobTasks'
+import { pushRecentJob } from '../lib/recentJobs'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
@@ -80,6 +81,8 @@ export default function JobDetail({ jobId, onBack }) {
   const { files } = useJobFiles(job?._docId)
   const { tasks } = useJobTasks(jobId)
   const openTasks = tasks.filter(t => !t.done).length
+
+  useEffect(() => { if (jobId) pushRecentJob(jobId) }, [jobId])
 
   const jobExtras = useMemo(() => extras.filter(e => e.job === jobId), [extras, jobId])
   const jobMaterials = useMemo(() => materials.filter(m => (m.job || m.jobId) === jobId), [materials, jobId])
