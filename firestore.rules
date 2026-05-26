@@ -73,6 +73,7 @@ service cloud.firestore {
     match /urgent_items/{doc}       { allow read, write: if signedIn(); }
     match /history/{doc}            { allow read, write: if signedIn(); }
     match /supplier_invoices/{doc}  { allow read, write: if signedIn(); }
+    match /job_tasks/{doc}          { allow read, write: if signedIn(); }
 
     // Default deny: any path not matched above is inaccessible.
   }

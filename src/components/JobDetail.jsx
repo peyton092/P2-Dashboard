@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../DataContext'
 import { useJobFiles } from '../hooks/useFirestore'
 import { MessageSquareIcon } from 'lucide-react'
+import JobTasks from './JobTasks'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
@@ -191,6 +192,9 @@ export default function JobDetail({ jobId, onBack }) {
           </div>
         )}
       </DataPanel>
+
+      {/* Tasks / punch list */}
+      <JobTasks jobId={jobId} />
 
       {/* Change orders */}
       <DataPanel title="Change Orders" description={jobExtras.length === 0 ? 'No change orders on this job.' : `${approvedCO.length} approved · ${pendingCO.length} pending`} Icon={FilePenLineIcon} padding="none">

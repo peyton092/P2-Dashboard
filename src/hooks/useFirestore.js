@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
-  collection, doc, onSnapshot, addDoc, updateDoc, setDoc,
+  collection, doc, onSnapshot, addDoc, updateDoc, setDoc, deleteDoc,
   query, orderBy, limit, serverTimestamp,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
@@ -185,6 +185,52 @@ export function useSubmitReplies(submitDocId) {
 
   // No doc id → nothing to load; derive rather than reset state in the effect.
   return submitDocId ? { replies, loading } : { replies: [], loading: false }
+}
+
+// ── Per-job task list (punch-list style) ──────────────────────────────────────
+// All tasks for one jobId, sorted: pending first (by createdAt asc), then
+// completed (by doneAt desc). No setState in effect body — the empty case
+// is derived from jobId on the return.
+export function useJobTasks(jobId) {
+  const [tasks, setTasks] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!jobId) return
+    const q = query(collection(db, 'job_tasks'), orderBy('createdAt', 'asc'))
+    const unsub = onSnapshot(q, snap => {
+      setTasks(
+        snap.docs
+          .map(d => ({ ...d.data(), _docId: d.id }))
+          .filter(t => t.jobId === jobId),
+      )
+      setLoading(false)
+    }, () => setLoading(false))
+    return unsub
+  }, [jobId])
+
+  return jobId ? { tasks, loading } : { tasks: [], loading: false }
+}
+
+export async function addJobTask(jobId, text) {
+  return addDoc(collection(db, 'job_tasks'), {
+    jobId,
+    text: String(text || '').trim(),
+    done: false,
+    doneAt: null,
+    createdAt: serverTimestamp(),
+  })
+}
+
+export async function toggleJobTask(docId, done) {
+  return updateDoc(doc(db, 'job_tasks', docId), {
+    done,
+    doneAt: done ? serverTimestamp() : null,
+  })
+}
+
+export async function deleteJobTask(docId) {
+  return deleteDoc(doc(db, 'job_tasks', docId))
 }
 
 // ── Basic Mutations ───────────────────────────────────────────────────────────
