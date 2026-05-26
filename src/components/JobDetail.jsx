@@ -2,8 +2,8 @@ import { useMemo, useState, useRef } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { useData } from '../DataContext'
-import { useJobFiles, addJobFile } from '../hooks/useFirestore'
-import { MessageSquareIcon, UploadIcon } from 'lucide-react'
+import { useJobFiles, addJobFile, useJobTasks } from '../hooks/useFirestore'
+import { MessageSquareIcon, UploadIcon, CheckSquareIcon } from 'lucide-react'
 import JobTasks from './JobTasks'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
@@ -78,6 +78,8 @@ export default function JobDetail({ jobId, onBack }) {
   const { jobs = [], extras = [], materials = [], dailyReports = [], submits = [] } = useData()
   const job = useMemo(() => jobs.find(j => j.id === jobId), [jobs, jobId])
   const { files } = useJobFiles(job?._docId)
+  const { tasks } = useJobTasks(jobId)
+  const openTasks = tasks.filter(t => !t.done).length
 
   const jobExtras = useMemo(() => extras.filter(e => e.job === jobId), [extras, jobId])
   const jobMaterials = useMemo(() => materials.filter(m => (m.job || m.jobId) === jobId), [materials, jobId])
@@ -93,10 +95,9 @@ export default function JobDetail({ jobId, onBack }) {
   const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [uploadErr, setUploadErr] = useState('')
+  const [dragOver, setDragOver] = useState(false)
 
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
+  const uploadOne = async (file) => {
     if (!file || !job?._docId) return
     setUploading(true); setUploadErr('')
     try {
@@ -117,6 +118,19 @@ export default function JobDetail({ jobId, onBack }) {
     } finally {
       setUploading(false)
     }
+  }
+
+  const handleUpload = async (e) => {
+    const list = Array.from(e.target.files || [])
+    e.target.value = ''
+    for (const f of list) await uploadOne(f)
+  }
+
+  const handleDrop = async (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const list = Array.from(e.dataTransfer?.files || [])
+    for (const f of list) await uploadOne(f)
   }
 
   if (!job) {
@@ -210,6 +224,7 @@ export default function JobDetail({ jobId, onBack }) {
         <MetricTile label="Open Change Orders" value={pendingCO.length} Icon={FilePenLineIcon} emphasis={pendingCO.length > 0 ? 'warning' : 'success'} sub={pendingCO.length > 0 ? fmt$(pendingCO.reduce((s, e) => s + (e.amount || 0), 0)) : 'None pending'} />
         <MetricTile label="Materials" value={jobMaterials.length} Icon={BoxesIcon} sub={`${jobMaterials.filter(m => m.status === 'delivered').length} delivered`} />
         <MetricTile label="Inspections" value={failed ? 'Failed' : complete ? 'Complete' : 'In progress'} Icon={BadgeCheckIcon} emphasis={failed ? 'critical' : complete ? 'success' : 'mute'} />
+        <MetricTile label="Open Tasks" value={openTasks} Icon={CheckSquareIcon} emphasis={openTasks > 0 ? 'warning' : 'success'} sub={tasks.length > 0 ? `${tasks.length - openTasks} done` : 'No tasks yet'} />
       </section>
 
       {/* Inspections */}
@@ -307,7 +322,7 @@ export default function JobDetail({ jobId, onBack }) {
         Icon={ImageIcon}
         actions={
           <>
-            <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" />
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleUpload} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -320,8 +335,16 @@ export default function JobDetail({ jobId, onBack }) {
         }
       >
         {uploadErr && <p className="text-xs text-red-400 mb-2">{uploadErr}</p>}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          className={`rounded-xl transition-colors ${dragOver ? 'ring-2 ring-orange-400/60 bg-orange-400/[0.04]' : ''}`}
+        >
         {files.length === 0 ? (
-          <p className="text-sm text-zinc-400">CompanyCam photos and uploaded documents appear here.</p>
+          <p className="text-sm text-zinc-400 py-2">
+            {dragOver ? 'Drop to upload.' : 'CompanyCam photos and uploaded documents appear here. Drag files in to upload.'}
+          </p>
         ) : (
           <div className="space-y-3">
             {photos.length > 0 && (
@@ -348,6 +371,7 @@ export default function JobDetail({ jobId, onBack }) {
             ))}
           </div>
         )}
+        </div>
       </DataPanel>
 
       <PhotoLightbox
