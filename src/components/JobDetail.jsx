@@ -180,7 +180,18 @@ export default function JobDetail({ jobId, onBack }) {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-2xl font-semibold text-white">{jobLabel(job)}</h1>
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">{job.id}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(job.id)
+                        .then(() => toast({ tone: 'success', title: 'Copied', description: job.id }))
+                        .catch(() => {})
+                    }}
+                    title="Copy job ID"
+                    className="text-xs font-medium px-2 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 hover:bg-white/[0.12] hover:text-white transition-colors"
+                  >
+                    {job.id}
+                  </button>
                   {complete
                     ? <Pill tone="success" size="xs">Complete</Pill>
                     : <Pill tone={risk?.level === 'critical' || failed ? 'critical' : risk?.level === 'warning' ? 'warning' : 'success'} size="xs">{job.status || 'active'}</Pill>}
