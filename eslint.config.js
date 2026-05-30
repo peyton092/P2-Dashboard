@@ -39,4 +39,10 @@ export default defineConfig([
       'react-refresh/only-export-components': 'off',
     },
   },
+  // Cloud Functions run in Node — add the Node globals so process / Buffer
+  // aren't flagged as undefined.
+  {
+    files: ['functions/**/*.js'],
+    languageOptions: { globals: { ...globals.node } },
+  },
 ])

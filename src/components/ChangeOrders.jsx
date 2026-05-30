@@ -55,7 +55,7 @@ function todayStr() {
 }
 
 function newLine() {
-  return { _id: Math.random(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
+  return { _id: crypto.randomUUID(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
 }
 
 function genCONumber(extras) {
@@ -422,7 +422,7 @@ export default function ChangeOrders() {
     if (!co.lineItems) return
     setForm({
       ...co,
-      lineItems: co.lineItems.map(li => ({ ...li, _id: Math.random() })),
+      lineItems: co.lineItems.map(li => ({ ...li, _id: crypto.randomUUID() })),
     })
     setEditingCO(co)
     setView('form')

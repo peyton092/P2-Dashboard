@@ -305,7 +305,7 @@ export default function JobDetail({ jobId, onBack }) {
       {/* Inspections */}
       <DataPanel title="Inspections" description="Status by trade and phase." Icon={BadgeCheckIcon}>
         {trades.length === 0 ? (
-          <p className="text-sm text-zinc-400">No inspection data for this job.</p>
+          <EmptyState Icon={BadgeCheckIcon} title="No inspections logged" description="Inspections for this job will appear once they're scheduled or recorded." />
         ) : (
           <div className="grid gap-3 sm:grid-cols-3">
             {trades.map(t => (

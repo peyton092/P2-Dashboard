@@ -34,7 +34,7 @@ const fmt$ = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFracti
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 
 function newLine() {
-  return { _id: Math.random(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
+  return { _id: crypto.randomUUID(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
 }
 
 // ── Audit Engine ──────────────────────────────────────────────────────────────

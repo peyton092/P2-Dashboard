@@ -705,6 +705,22 @@ export const backfillScoping = onCall(callableOpts, async (req) => {
   const defaultTenant = req.data?.defaultTenantId || 'p2-core'
   const dryRun = !!req.data?.dryRun
 
+  // Build a reverse map: jobId → [clientUid, ...]. Source of truth is each
+  // user doc's clientJobIds (the existing client-provisioning model). This
+  // lets us populate `clientUids` on the job docs so the scoped client
+  // portal query (`array-contains` uid) returns the right set when Phase 2
+  // of the rollout flips on.
+  const jobIdToClients = new Map()
+  const usersSnap = await db.collection('users').get()
+  usersSnap.docs.forEach(u => {
+    const data = u.data() || {}
+    if (!Array.isArray(data.clientJobIds)) return
+    data.clientJobIds.forEach(jobId => {
+      if (!jobIdToClients.has(jobId)) jobIdToClients.set(jobId, new Set())
+      jobIdToClients.get(jobId).add(u.id)
+    })
+  })
+
   const summary = {}
   for (const col of SCOPED_COLLECTIONS) {
     const snap = await db.collection(col).get()
@@ -719,8 +735,19 @@ export const backfillScoping = onCall(callableOpts, async (req) => {
       if (data.tenantId === undefined || data.tenantId === null || data.tenantId === '') {
         update.tenantId = defaultTenant
       }
-      if (data.clientUids === undefined || data.clientUids === null) {
-        update.clientUids = []
+      // For jobs: derive clientUids from the user-doc reverse map. For other
+      // collections, link by jobId if present, otherwise default to [].
+      const clientUidsExisting = Array.isArray(data.clientUids) ? data.clientUids : null
+      if (clientUidsExisting === null) {
+        let derived = []
+        if (col === 'jobs' && jobIdToClients.has(data.id)) {
+          derived = [...jobIdToClients.get(data.id)]
+        } else if (data.jobId && jobIdToClients.has(data.jobId)) {
+          derived = [...jobIdToClients.get(data.jobId)]
+        } else if (data.job && jobIdToClients.has(data.job)) {
+          derived = [...jobIdToClients.get(data.job)]
+        }
+        update.clientUids = derived
       }
       if (Object.keys(update).length === 0) {
         skipped++
