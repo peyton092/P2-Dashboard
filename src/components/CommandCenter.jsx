@@ -581,7 +581,7 @@ export default function CommandCenter() {
                 <li key={job._docId || job.id}>
                   <button
                     type="button"
-                    onClick={() => navigate('war-room')}
+                    onClick={() => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: job.id } }))}
                     className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15 transition-colors text-left"
                   >
                     <div className="flex-1 min-w-0">
