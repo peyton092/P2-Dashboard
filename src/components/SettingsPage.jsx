@@ -256,6 +256,27 @@ export default function SettingsPage({ onLogout }) {
     await setDoc(doc(db, 'config', 'settings'), { [key]: value }, { merge: true })
   }
 
+  const [backfillBusy, setBackfillBusy] = useState(false)
+  const runBackfill = async (dryRun) => {
+    setBackfillBusy(true)
+    try {
+      const { data } = await httpsCallable(functions, 'backfillScoping')({ dryRun })
+      const lines = Object.entries(data?.summary || {})
+        .map(([col, s]) => `${col}: ${s.touched}/${s.total} ${dryRun ? 'would update' : 'updated'}`)
+        .join(' · ')
+      toast({
+        tone: 'success',
+        title: dryRun ? 'Backfill preview' : 'Backfill complete',
+        description: lines || 'No documents touched.',
+      })
+    } catch (e) {
+      console.error('backfillScoping error:', e)
+      toast({ tone: 'error', title: 'Backfill failed', description: e?.message || 'See console.' })
+    } finally {
+      setBackfillBusy(false)
+    }
+  }
+
   const handleChangePw = async () => {
     if (!user || !curPw || !newPw) return
     setSaving(true)
@@ -526,6 +547,36 @@ export default function SettingsPage({ onLogout }) {
             ))}
           </ul>
         </DataPanel>
+
+      {/* ── Security migration ───────────────────────────────────────── */}
+      <DataPanel
+        title="Security backfill"
+        description="Phase 1 of the operational-data scoping rollout (audit C-1). Adds tenantId / clientUids to legacy docs. Idempotent. Staff only."
+        Icon={ShieldIcon}
+      >
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            variant="outline"
+            disabled={backfillBusy}
+            onClick={() => runBackfill(true)}
+            className="border-white/15 text-zinc-200"
+          >
+            {backfillBusy ? 'Working…' : 'Dry run (count only)'}
+          </Button>
+          <Button
+            disabled={backfillBusy}
+            onClick={() => runBackfill(false)}
+            className="text-white"
+            style={{ backgroundColor: O }}
+          >
+            {backfillBusy ? 'Working…' : 'Run backfill'}
+          </Button>
+        </div>
+        <p className="text-[11px] text-zinc-400 mt-2.5">
+          Run dry-run first to see what would change. See SECURITY_ROLLOUT.md
+          for the full staged plan.
+        </p>
+      </DataPanel>
 
       {/* ── System Info ──────────────────────────────────────────────── */}
       <DataPanel title="System" Icon={ServerIcon}>
