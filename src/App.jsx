@@ -1383,14 +1383,24 @@ function JobStatusRow({
         <div className="flex items-start gap-3 sm:gap-4">
           {/* Body */}
           <div className="flex-1 min-w-0">
-            {/* Header row — id pill, name, status select, phase select */}
+            {/* Header row — id pill, name (clickable → JobDetail), status select, phase select */}
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: job.id } })) }}
+                title="Open job detail"
+                className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0 hover:bg-white/[0.12] hover:text-white transition-colors"
+              >
                 {job.id}
-              </span>
-              <span className="text-base font-bold text-white truncate min-w-0">
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: job.id } })) }}
+                title="Open job detail"
+                className="text-base font-bold text-white truncate min-w-0 text-left hover:underline underline-offset-4 decoration-white/30"
+              >
                 {jobName(job)}
-              </span>
+              </button>
               <InlineStatusSelect job={job} />
               <InlinePhaseSelect job={job} />
             </div>
