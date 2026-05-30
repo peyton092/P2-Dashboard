@@ -5,6 +5,7 @@ import { useData } from '../DataContext'
 import {
   approveExtra, updateExtra, addNotification, useJobFiles,
   addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile, addHistory,
+  useHistory,
 } from '../hooks/useFirestore'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { useToast } from '@/components/ui/toast'
@@ -216,7 +217,80 @@ function ProjectCard({ job, extras }) {
         <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-2.5">Inspection Timeline</p>
         <InspectionTimeline job={job} />
       </section>
+
+      <ProjectActivity jobId={job.id} />
     </article>
+  )
+}
+
+function relTime(now, ms) {
+  if (!ms) return ''
+  const diff = now - ms
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  return d < 7 ? `${d}d ago` : new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// Per-project "what's new" feed. Merges audit-history entries (CO approvals,
+// rejections, etc.) and notifications scoped to this job. The client only
+// sees what's already legitimately associated with their project.
+function ProjectActivity({ jobId }) {
+  const { notifs = [] } = useData()
+  const { history } = useHistory()
+
+  const items = useMemo(() => {
+    const out = []
+    history.forEach(h => {
+      if (h.jobId !== jobId) return
+      out.push({
+        key: `h_${h._docId}`,
+        ts: h.createdAt?.toMillis?.() ?? (h.createdAt ? new Date(h.createdAt).getTime() : 0),
+        text: h.summary || h.desc || `${h.entity || ''} ${h.action || 'updated'}`.trim(),
+        actor: h.actor || null,
+      })
+    })
+    notifs.forEach(n => {
+      if (!n.msg || !n.msg.includes(jobId)) return
+      out.push({
+        key: `n_${n._docId || n.id}`,
+        ts: n.createdAt?.toMillis?.() ?? (n.createdAt ? new Date(n.createdAt).getTime() : 0),
+        text: n.msg,
+        actor: null,
+      })
+    })
+    return out
+      .filter(i => i.text)
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, 5)
+      // relTime captures `new Date()` at render time so the inputs stay pure
+      // from the linter's perspective (no Date.now() at the top of useMemo).
+      .map(i => ({ ...i, rel: relTime(new Date().getTime(), i.ts) }))
+  }, [history, notifs, jobId])
+
+  if (items.length === 0) return null
+
+  return (
+    <section className="px-4 sm:px-5 py-4 border-t border-white/5">
+      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-2.5">Recent activity</p>
+      <ul className="space-y-2">
+        {items.map(item => (
+          <li key={item.key} className="flex items-start gap-2.5">
+            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-white/30 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-zinc-200 leading-snug">{item.text}</p>
+              <p className="text-[10px] text-zinc-400 mt-0.5">
+                {item.actor && <span className="mr-1.5">{item.actor}</span>}
+                {item.rel}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
