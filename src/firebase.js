@@ -6,7 +6,8 @@ import {
 import { getAuth } from 'firebase/auth'
 import { getStorage } from 'firebase/storage'
 import { getFunctions } from 'firebase/functions'
-import { getMessaging, isSupported as messagingIsSupported } from 'firebase/messaging'
+// firebase/messaging is dynamically imported in getMessagingIfSupported below
+// so the messaging SDK stays out of the initial bundle.
 
 const firebaseConfig = {
   apiKey: 'AIzaSyDm5I5iCbe3_0IZdtabw4WYTMW1YTaL9R4',
@@ -39,9 +40,12 @@ export const functions = getFunctions(app)
 
 // Cloud Messaging is only available in browsers with service-worker + push
 // support; resolve to null elsewhere so callers can no-op gracefully.
+// The SDK is dynamically imported on first call to keep it out of the
+// initial bundle (push is opt-in via Settings).
 export async function getMessagingIfSupported() {
   try {
-    return (await messagingIsSupported()) ? getMessaging(app) : null
+    const { getMessaging, isSupported } = await import('firebase/messaging')
+    return (await isSupported()) ? getMessaging(app) : null
   } catch {
     return null
   }
