@@ -2,21 +2,21 @@ import { useMemo, useState } from 'react'
 import { useData } from '../DataContext'
 import { useHistory } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
-import { PageHeader, DataPanel, Pill, EmptyState } from './shared'
+import { PageHeader, DataPanel, Pill, EmptyState, STATUS_COLORS } from './shared'
 import {
   ActivityIcon, FilePenLineIcon, BadgeCheckIcon, DollarSignIcon,
   BellIcon, HardHatIcon, InfoIcon, DownloadIcon,
 } from 'lucide-react'
 
-const O = '#F47920'
+const O = STATUS_COLORS.brand
 
 const TYPE_META = {
-  'change-order': { Icon: FilePenLineIcon, color: O },
-  inspection:     { Icon: BadgeCheckIcon,  color: '#22c55e' },
-  billing:        { Icon: DollarSignIcon,  color: '#3b82f6' },
-  job:            { Icon: HardHatIcon,     color: '#eab308' },
-  notification:   { Icon: BellIcon,        color: '#9ca3af' },
-  default:        { Icon: InfoIcon,        color: '#9ca3af' },
+  'change-order': { Icon: FilePenLineIcon, color: STATUS_COLORS.brand },
+  inspection:     { Icon: BadgeCheckIcon,  color: STATUS_COLORS.success },
+  billing:        { Icon: DollarSignIcon,  color: STATUS_COLORS.info },
+  job:            { Icon: HardHatIcon,     color: STATUS_COLORS.warning },
+  notification:   { Icon: BellIcon,        color: STATUS_COLORS.neutral },
+  default:        { Icon: InfoIcon,        color: STATUS_COLORS.neutral },
 }
 
 function toMs(v) {

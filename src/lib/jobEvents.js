@@ -7,14 +7,14 @@
 //   pass/fail — recorded inspection outcome on a trade phase
 //   scheduled — inspection booked for a future date but not yet completed
 
-const O = '#F47920'
+import { STATUS_COLORS } from '../components/shared'
 
 export const EVENT_META = {
-  target:    { color: O,         label: 'Target completion' },
-  start:     { color: '#3b82f6', label: 'Job start' },
-  scheduled: { color: '#a855f7', label: 'Inspection scheduled' },
-  pass:      { color: '#22c55e', label: 'Inspection passed' },
-  fail:      { color: '#ef4444', label: 'Inspection failed' },
+  target:    { color: STATUS_COLORS.brand,    label: 'Target completion' },
+  start:     { color: STATUS_COLORS.info,     label: 'Job start' },
+  scheduled: { color: '#a855f7',              label: 'Inspection scheduled' },
+  pass:      { color: STATUS_COLORS.success,  label: 'Inspection passed' },
+  fail:      { color: STATUS_COLORS.critical, label: 'Inspection failed' },
 }
 
 export const jobLabel = (j) => j?.name || j?.client || j?.id || ''

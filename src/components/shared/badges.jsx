@@ -2,7 +2,24 @@ import { cn } from '@/lib/utils'
 
 const O = '#F47920'
 
+// Canonical status color palette — single source of truth. Anywhere in the
+// app that needs a "success / warning / critical / info" color should
+// reference these rather than redeclaring hex literals. Pair with TONE below
+// when you need bg + border variants too.
+export const STATUS_COLORS = {
+  brand:    O,
+  success:  '#22c55e',
+  warning:  '#eab308',
+  critical: '#ef4444',
+  info:     '#3b82f6',
+  cyan:     '#06b6d4',
+  neutral:  '#9ca3af',
+  mute:     '#6b7280',
+}
+
 // Existing-palette tones only. Do NOT introduce new colors.
+// Exposed externally as STATUS_TONES (the local name is kept as TONE for
+// brevity in this file).
 const TONE = {
   brand:    { fg: O,         bg: O + '22',         bd: O + '55' },
   success:  { fg: '#22c55e', bg: '#22c55e22',      bd: '#22c55e55' },
@@ -13,6 +30,7 @@ const TONE = {
   neutral:  { fg: '#9ca3af', bg: 'rgba(255,255,255,0.06)', bd: 'rgba(255,255,255,0.12)' },
   mute:     { fg: '#6b7280', bg: 'rgba(255,255,255,0.04)', bd: 'rgba(255,255,255,0.08)' },
 }
+export { TONE as STATUS_TONES }
 
 const SIZE = {
   xs: 'text-[9px] px-1.5 py-0.5 tracking-wide',

@@ -8,7 +8,7 @@ import JobTasks from './JobTasks'
 import { pushRecentJob } from '../lib/recentJobs'
 import { useToast } from '@/components/ui/toast'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
-import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
+import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState, STATUS_COLORS } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
 import { classifyRisk, hasFailedInspection } from '../agent/scoring'
 import PhotoLightbox from './PhotoLightbox'
@@ -25,14 +25,14 @@ const jobLabel = (j) => j.name || j.client || j.id
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 
 const ISTATUS = {
-  passed:                 { c: '#22c55e', l: 'Passed' },
-  failed:                 { c: '#ef4444', l: 'Failed' },
-  scheduled:              { c: '#3b82f6', l: 'Scheduled' },
-  pending:                { c: '#eab308', l: 'Pending' },
-  'pending-verification': { c: '#eab308', l: 'Pending' },
-  blocked:                { c: '#ef4444', l: 'Blocked' },
-  'not-started':          { c: '#6b7280', l: 'Not started' },
-  'n/a':                  { c: '#6b7280', l: 'N/A' },
+  passed:                 { c: STATUS_COLORS.success,  l: 'Passed' },
+  failed:                 { c: STATUS_COLORS.critical, l: 'Failed' },
+  scheduled:              { c: STATUS_COLORS.info,     l: 'Scheduled' },
+  pending:                { c: STATUS_COLORS.warning,  l: 'Pending' },
+  'pending-verification': { c: STATUS_COLORS.warning,  l: 'Pending' },
+  blocked:                { c: STATUS_COLORS.critical, l: 'Blocked' },
+  'not-started':          { c: STATUS_COLORS.mute,     l: 'Not started' },
+  'n/a':                  { c: STATUS_COLORS.mute,     l: 'N/A' },
 }
 
 const PHASE_LABEL = { roughIn: 'Rough-In', trim: 'Trim', final: 'Final' }
