@@ -2,6 +2,7 @@ import { useState, useRef, useMemo } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { addDailyReport } from '../hooks/useFirestore'
+import { generateDailyReportPdf } from '../lib/generateDailyReportPdf'
 import { useData } from '../DataContext'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,7 +19,7 @@ import {
   CheckCircleIcon, CheckIcon, CameraIcon, XIcon, ImageIcon, LoaderIcon,
   HardHatIcon, ClipboardListIcon, NotebookPenIcon, PackageIcon,
   ShieldAlertIcon, FilePenLineIcon, BadgeCheckIcon,
-  AlertTriangleIcon, ArrowRightIcon, CalendarDaysIcon,
+  AlertTriangleIcon, ArrowRightIcon, CalendarDaysIcon, DownloadIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -661,6 +662,15 @@ function RecentReportRow({ report }) {
           {report.jobName || report.jobId || '—'}
         </span>
         <Pill tone={status.tone} size="xs">{status.label}</Pill>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); generateDailyReportPdf(report) }}
+          title="Download as PDF"
+          aria-label="Download daily report as PDF"
+          className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          <DownloadIcon size={13} />
+        </button>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-400">
         <span className="text-zinc-300 font-semibold">{report.crewMember || '—'}</span>
