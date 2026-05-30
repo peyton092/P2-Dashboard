@@ -14,6 +14,7 @@ import {
   DollarSignIcon, FileTextIcon, ChevronDownIcon, ChevronUpIcon,
   ShieldAlertIcon, ReceiptIcon, SearchIcon, PencilIcon, DownloadIcon,
 } from 'lucide-react'
+import { PageHeader } from './shared'
 
 const O = '#F47920'
 
@@ -527,36 +528,34 @@ export default function InvoiceAuditor() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold" style={{ color: O }}>Supplier Invoice Auditor</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Audit supplier invoices against POs · flag price variances, duplicates &amp; discrepancies
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            disabled={filtered.length === 0}
-            onClick={() => exportToCsv('p2-supplier-invoices', [
-              { label: 'Vendor',      key: 'vendor' },
-              { label: 'Invoice #',   key: 'invoiceNum' },
-              { label: 'Date',        get: i => i.invoiceDate || '' },
-              { label: 'Job',         get: i => i.jobId || '' },
-              { label: 'Total',       get: i => Number(i.total || 0) },
-              { label: 'Status',      get: i => i.status || '' },
-              { label: 'Flags',       get: i => (i.flags || []).length },
-            ], filtered)}
-            className="border-white/15 gap-2 text-zinc-200"
-          >
-            <DownloadIcon size={14} /> Export CSV
-          </Button>
-          <Button className="text-white gap-2" style={{ backgroundColor: O }} onClick={() => setShowForm(true)}>
-            <PlusIcon size={14} /> New Invoice
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Cash Flow"
+        title="Supplier Invoice Auditor"
+        subtitle="Audit supplier invoices against POs — flag price variances, duplicates, and discrepancies."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              disabled={filtered.length === 0}
+              onClick={() => exportToCsv('p2-supplier-invoices', [
+                { label: 'Vendor',      key: 'vendor' },
+                { label: 'Invoice #',   key: 'invoiceNum' },
+                { label: 'Date',        get: i => i.invoiceDate || '' },
+                { label: 'Job',         get: i => i.jobId || '' },
+                { label: 'Total',       get: i => Number(i.total || 0) },
+                { label: 'Status',      get: i => i.status || '' },
+                { label: 'Flags',       get: i => (i.flags || []).length },
+              ], filtered)}
+              className="border-white/15 gap-2 text-zinc-200"
+            >
+              <DownloadIcon size={14} /> Export CSV
+            </Button>
+            <Button className="text-white gap-2" style={{ backgroundColor: O }} onClick={() => setShowForm(true)}>
+              <PlusIcon size={14} /> New Invoice
+            </Button>
+          </>
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

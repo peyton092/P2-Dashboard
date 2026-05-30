@@ -9,7 +9,7 @@ import { auth, db, functions } from '../firebase'
 import { enablePushNotifications } from '../lib/push'
 import { useData } from '../DataContext'
 import { useToast } from '@/components/ui/toast'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { PageHeader, DataPanel } from './shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -279,20 +279,15 @@ export default function SettingsPage({ onLogout }) {
   }
 
   return (
-    <div className="space-y-8 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-semibold" style={{ color: O }}>Settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">Feature configuration, account, and system info</p>
-      </div>
+    <div className="space-y-6 max-w-2xl">
+      <PageHeader
+        eyebrow="System"
+        title="Settings"
+        subtitle="Feature configuration, account, and system info"
+      />
 
       {/* ── Feature Toggles ──────────────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <SettingsIcon size={15} style={{ color: O }} /> Feature Toggles
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y divide-white/5 px-6">
+      <DataPanel title="Feature Toggles" Icon={SettingsIcon}>
           {TOGGLE_DEFS.map(({ key, label, desc, Icon, def }) => (
             <div key={key} className="flex items-center justify-between py-3.5 gap-4">
               <div className="flex items-start gap-3 min-w-0">
@@ -307,17 +302,10 @@ export default function SettingsPage({ onLogout }) {
               <Toggle enabled={getVal(key, def)} onChange={v => handleToggle(key, v)} />
             </div>
           ))}
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── QuickBooks Integration ───────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <LinkIcon size={15} style={{ color: O }} /> QuickBooks Integration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-5 space-y-3">
+      <DataPanel title="QuickBooks Integration" Icon={LinkIcon}>
           <div className="flex items-center gap-2">
             {qbConnected
               ? <CheckCircleIcon size={14} className="text-green-400 shrink-0" />
@@ -357,17 +345,10 @@ export default function SettingsPage({ onLogout }) {
           </div>
           {qbError && <p className="text-xs text-red-400 mt-2">{qbError}</p>}
           {qbInfo  && <p className="text-xs text-green-400 mt-2">{qbInfo}</p>}
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── CompanyCam Integration ───────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <CameraIcon size={15} style={{ color: O }} /> CompanyCam Integration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-5 space-y-3">
+      <DataPanel title="CompanyCam Integration" Icon={CameraIcon}>
           <div className="flex items-center gap-2">
             {ccConnected
               ? <CheckCircleIcon size={14} className="text-green-400 shrink-0" />
@@ -433,17 +414,10 @@ export default function SettingsPage({ onLogout }) {
           </p>
           {ccError && <p className="text-xs text-red-400 mt-2">{ccError}</p>}
           {ccInfo  && <p className="text-xs text-green-400 mt-2">{ccInfo}</p>}
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── Push Notifications ───────────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <BellIcon size={15} style={{ color: O }} /> Push Notifications
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-5 space-y-3">
+      <DataPanel title="Push Notifications" Icon={BellIcon}>
           <p className="text-xs text-muted-foreground">
             Get alerts on this device for inspection results, change-order approvals, and billing updates.
           </p>
@@ -456,17 +430,10 @@ export default function SettingsPage({ onLogout }) {
           >
             {pushBusy ? 'Enabling…' : 'Enable on this device'}
           </Button>
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── Account ──────────────────────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <ShieldIcon size={15} style={{ color: O }} /> Account
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 px-6 pb-5">
+      <DataPanel title="Account" Icon={ShieldIcon}>
           <div className="flex items-center gap-2 text-sm">
             <MailIcon size={13} className="text-muted-foreground shrink-0" />
             <span className="font-medium">{user?.email || '—'}</span>
@@ -532,17 +499,10 @@ export default function SettingsPage({ onLogout }) {
               <LogOutIcon size={13} /> Sign out
             </button>
           </div>
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── Keyboard shortcuts ───────────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <KeyboardIcon size={15} style={{ color: O }} /> Keyboard shortcuts
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-5">
+      <DataPanel title="Keyboard shortcuts" Icon={KeyboardIcon}>
           <ul className="divide-y divide-white/5">
             {[
               { keys: ['⌘', 'K'],    label: 'Open command palette' },
@@ -565,17 +525,10 @@ export default function SettingsPage({ onLogout }) {
               </li>
             ))}
           </ul>
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── System Info ──────────────────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <ServerIcon size={15} style={{ color: O }} /> System
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-5">
+      <DataPanel title="System" Icon={ServerIcon}>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[
               { label: 'App Version',      value: __APP_VERSION__         },
@@ -592,8 +545,7 @@ export default function SettingsPage({ onLogout }) {
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </DataPanel>
     </div>
   )
 }
