@@ -6,6 +6,7 @@ import {
 } from '../hooks/useFirestore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { useToast } from '@/components/ui/toast'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -401,6 +402,7 @@ function ExtraRow({ co, compact = false }) {
   const [rejectNotes, setRejectNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [errMsg, setErrMsg] = useState('')
+  const toast = useToast()
 
   const status = co.status || 'pending'
   const isPending = status === 'pending'
@@ -419,9 +421,11 @@ function ExtraRow({ co, compact = false }) {
         msg: `${co.id || 'CO'} approved by QBS — ${fmt$(co.amount)} (${co.job})`,
       })
       await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: 'QBS Coordinator', jobId: co.job })
+      toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
     } catch (err) {
       console.error('[QBS] Approve failed:', err)
       setErrMsg('Could not save approval. Check your connection and try again.')
+      toast({ tone: 'error', title: 'Approval failed', description: err.message || 'Check your connection and try again.' })
     } finally {
       setBusy(false)
     }
@@ -443,11 +447,13 @@ function ExtraRow({ co, compact = false }) {
         msg: `${co.id || 'CO'} rejected by QBS — ${co.job}: ${rejectNotes.trim().slice(0, 80)}`,
       })
       await addHistory({ type: 'change-order', action: 'rejected', summary: `${co.id || 'CO'} revision requested — ${rejectNotes.trim().slice(0, 60)}`, actor: 'QBS Coordinator', jobId: co.job })
+      toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
       setShowReject(false)
       setRejectNotes('')
     } catch (err) {
       console.error('[QBS] Reject failed:', err)
       setErrMsg('Could not save rejection. Check your connection and try again.')
+      toast({ tone: 'error', title: 'Rejection failed', description: err.message || 'Check your connection and try again.' })
     } finally {
       setBusy(false)
     }
