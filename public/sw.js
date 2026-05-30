@@ -41,10 +41,17 @@ self.addEventListener('fetch', (e) => {
       e.respondWith(
         fetch(request.clone()).catch(async () => {
           const body = await request.text().catch(() => '')
+          // Strip auth-sensitive headers before persisting. The page re-mints
+          // a fresh ID token on replay (see main.jsx FLUSH_QUEUE handler) so
+          // bearer tokens never sit in localStorage.
+          const SENSITIVE = /^(authorization|cookie|x-firebase|x-goog-firebase)/i
+          const headers = Object.fromEntries(
+            [...request.headers.entries()].filter(([k]) => !SENSITIVE.test(k)),
+          )
           const entry = {
             url: request.url,
             method: request.method,
-            headers: Object.fromEntries(request.headers.entries()),
+            headers,
             body,
             timestamp: Date.now(),
           }

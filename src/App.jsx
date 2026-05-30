@@ -3780,9 +3780,12 @@ export default function P2DashboardV4() {
     )
   }
 
-  // ?portal=qbs URL bypass — ALWAYS forces builder portal, even if logged in as internal.
-  // This is what gets shared with QBS coordinators — they should never see internal P2 data.
-  if (forcedPortal === 'qbs') {
+  // ?portal=qbs URL bypass — honors the flag only when (a) there's no signed-in
+  // user (anonymous demo / shared link), or (b) the signed-in user actually
+  // has the builder role. Otherwise an internal staff member opening the link
+  // while logged in would have their mutations recorded as 'QBS Coordinator'
+  // (hardcoded actor in QBSBuilderPortal) — breaks audit-trail integrity.
+  if (forcedPortal === 'qbs' && (!user || role === 'builder')) {
     return (
       <DataProvider tenantId="qbs" role="builder">
         <Suspense fallback={<PortalLoading />}>

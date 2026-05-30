@@ -4,6 +4,12 @@ import './index.css'
 import App from './App.jsx'
 import { ToastProvider } from './components/ui/toast'
 import { initErrorLogger } from './lib/errorLogger'
+import { auth } from './firebase'
+
+// Drop queued writes older than this on replay — a stale write that's been
+// sitting for hours is more likely to overwrite valid intervening edits than
+// to be the user's intent. Matches Firestore's ID-token lifetime.
+const QUEUE_TTL_MS = 60 * 60 * 1000
 
 initErrorLogger()
 
@@ -29,12 +35,20 @@ if ('serviceWorker' in navigator) {
       try {
         const pending = JSON.parse(localStorage.getItem('p2_offline_queue') || '[]')
         if (pending.length === 0) return
+        const now = Date.now()
+        // Re-mint a fresh ID token; the persisted entries no longer carry
+        // their original Authorization header (sw.js strips it).
+        const idToken = await auth.currentUser?.getIdToken?.().catch(() => null)
         const failed = []
         for (const entry of pending) {
+          if (entry.timestamp && now - entry.timestamp > QUEUE_TTL_MS) continue
           try {
+            const headers = idToken
+              ? { ...entry.headers, Authorization: `Bearer ${idToken}` }
+              : entry.headers
             await fetch(entry.url, {
               method: entry.method,
-              headers: entry.headers,
+              headers,
               body: entry.body || undefined,
             })
           } catch {
