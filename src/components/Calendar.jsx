@@ -91,7 +91,7 @@ export default function Calendar() {
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
         <div className="grid grid-cols-7 border-b border-white/10">
           {WEEKDAYS.map(d => (
-            <div key={d} className="px-2 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500 text-center">{d}</div>
+            <div key={d} className="px-2 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400 text-center">{d}</div>
           ))}
         </div>
         <div className="grid grid-cols-7">
@@ -108,7 +108,7 @@ export default function Calendar() {
                 >
                   {c.day}
                 </span>
-                {c.events.length > 3 && <span className="text-[9px] text-zinc-500">+{c.events.length - 3}</span>}
+                {c.events.length > 3 && <span className="text-[9px] text-zinc-400">+{c.events.length - 3}</span>}
               </div>
               <div className="space-y-1">
                 {c.events.slice(0, 3).map((e, idx) => {
@@ -134,7 +134,7 @@ export default function Calendar() {
       </div>
 
       {monthEventCount === 0 && (
-        <div className="flex items-center gap-2 text-sm text-zinc-500">
+        <div className="flex items-center gap-2 text-sm text-zinc-400">
           <CalendarClockIcon size={15} /> No scheduled events this month.
           <Pill tone="neutral" size="xs">Try another month</Pill>
         </div>

@@ -171,21 +171,21 @@ export default function CommandPalette() {
             onChange={e => { setQuery(e.target.value); setActive(0) }}
             onKeyDown={onInputKey}
             placeholder="Search jobs, subs, change orders, permits, pages…"
-            className="flex-1 bg-transparent py-3.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+            className="flex-1 bg-transparent py-3.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none"
             aria-label="Search query"
           />
-          <kbd className="hidden sm:inline text-[10px] font-semibold text-zinc-500 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>
+          <kbd className="hidden sm:inline text-[10px] font-semibold text-zinc-400 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>
         </div>
 
         <div ref={listRef} className="max-h-[60vh] overflow-y-auto py-2">
           {flat.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-zinc-500">
+            <p className="px-4 py-8 text-center text-sm text-zinc-400">
               {query ? 'No matches.' : 'Type to search across the workspace.'}
             </p>
           ) : (
             results.map(group => (
               <div key={group.heading} className="mb-1">
-                <p className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                <p className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   <group.Icon size={11} aria-hidden="true" /> {group.heading}
                 </p>
                 {group.items.map(item => {
@@ -206,7 +206,7 @@ export default function CommandPalette() {
                         <p className="text-sm text-white truncate">{item.title}</p>
                         {item.sub && <p className="text-[11px] text-zinc-400 truncate">{item.sub}</p>}
                       </div>
-                      {isActive && <CornerDownLeftIcon size={13} className="text-zinc-500 shrink-0" aria-hidden="true" />}
+                      {isActive && <CornerDownLeftIcon size={13} className="text-zinc-400 shrink-0" aria-hidden="true" />}
                     </button>
                   )
                 })}
@@ -215,7 +215,7 @@ export default function CommandPalette() {
           )}
         </div>
 
-        <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-t border-white/10 text-[10px] text-zinc-500">
+        <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-t border-white/10 text-[10px] text-zinc-400">
           <span className="flex items-center gap-1"><DollarSignIcon size={11} /> Tip:</span>
           <span>↑↓ to navigate · ↵ to open · ⌘K to toggle</span>
         </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   collection, doc, onSnapshot, addDoc, updateDoc, setDoc, deleteDoc,
-  query, orderBy, limit, serverTimestamp,
+  query, orderBy, limit, serverTimestamp, where,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db } from '../firebase'
@@ -197,13 +197,16 @@ export function useJobTasks(jobId) {
 
   useEffect(() => {
     if (!jobId) return
-    const q = query(collection(db, 'job_tasks'), orderBy('createdAt', 'asc'))
+    // Filter at the query layer so we only download this job's tasks rather
+    // than the entire collection. Requires the auto-created composite index
+    // (jobId asc, createdAt asc) — Firestore prompts for it on first run.
+    const q = query(
+      collection(db, 'job_tasks'),
+      where('jobId', '==', jobId),
+      orderBy('createdAt', 'asc'),
+    )
     const unsub = onSnapshot(q, snap => {
-      setTasks(
-        snap.docs
-          .map(d => ({ ...d.data(), _docId: d.id }))
-          .filter(t => t.jobId === jobId),
-      )
+      setTasks(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
     }, () => setLoading(false))
     return unsub

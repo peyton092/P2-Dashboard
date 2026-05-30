@@ -142,7 +142,7 @@ function Chip({ color, icon: Icon, children }) {
 function Stat({ label, value, sub, color }) {
   return (
     <div>
-      <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">{label}</p>
+      <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-0.5">{label}</p>
       <p className="text-lg font-semibold" style={{ color }}>{value}</p>
       {sub && <p className="text-[10px] text-zinc-600">{sub}</p>}
     </div>
@@ -164,7 +164,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
     <div className="mx-4 mb-3 p-3 rounded-lg border text-xs text-zinc-400"
       style={{ borderColor: '#ffffff15', backgroundColor: '#ffffff08' }}>
       No Google Review URL set. Configure it in the link settings above.
-      <button onClick={onClose} className="ml-3 underline text-zinc-500">Close</button>
+      <button onClick={onClose} className="ml-3 underline text-zinc-400">Close</button>
     </div>
   )
 
@@ -236,7 +236,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm text-white">{name}</p>
           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-            <span className="text-xs text-zinc-500">{ROLES[name]}</span>
+            <span className="text-xs text-zinc-400">{ROLES[name]}</span>
             {auto.reportCount > 0 && <Chip color={O} icon={ClipboardListIcon}>{auto.reportCount} rpts</Chip>}
             {auto.inspReadyCount > 0 && <Chip color="#22c55e" icon={ShieldCheckIcon}>{auto.inspReadyCount} insp</Chip>}
           </div>
@@ -250,7 +250,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
 
         <div className="text-right shrink-0 mr-1" onClick={e => e.stopPropagation()}>
           <p className="font-semibold text-base" style={{ color: isLeader ? O : '#e5e7eb' }}>{totalPts}</p>
-          <p className="text-[10px] text-zinc-500">pts</p>
+          <p className="text-[10px] text-zinc-400">pts</p>
         </div>
 
         {/* Action buttons — stop propagation so they don't toggle expand */}
@@ -333,7 +333,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
             <Stat label="Total" value={totalPts} sub="this month" color={isLeader ? O : '#e5e7eb'} />
           </div>
 
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-zinc-500">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-zinc-400">
             <span className="inline-flex items-center gap-1"><ClipboardListIcon size={11} /> {auto.reportCount} reports submitted (+{auto.reportCount * PTS.report})</span>
             <span className="inline-flex items-center gap-1"><CheckCircleIcon size={11} /> {auto.taskCount} tasks completed (+{auto.taskCount * PTS.task})</span>
             {auto.inspReadyCount > 0 && <span className="inline-flex items-center gap-1 text-green-600"><BadgeCheckIcon size={11} /> {auto.inspReadyCount} inspection-ready flags (+{auto.inspReadyCount * PTS.inspReady})</span>}
@@ -367,9 +367,9 @@ function PodiumCard({ name, pts, rank }) {
         {name[0]}
       </div>
       <p className="text-xs font-bold text-white">{name}</p>
-      <p className="text-[10px] text-zinc-500">{ROLES[name]}</p>
+      <p className="text-[10px] text-zinc-400">{ROLES[name]}</p>
       <p className="font-semibold text-base mt-0.5" style={{ color: isFirst ? O : '#9ca3af' }}>{pts}</p>
-      <p className="text-[10px] text-zinc-500">pts</p>
+      <p className="text-[10px] text-zinc-400">pts</p>
     </div>
   )
 }
@@ -523,7 +523,7 @@ export default function TeamLeaderboard() {
                 <span className="text-xs text-zinc-400">{s.label}</span>
               </div>
               <p className="text-2xl font-semibold" style={{ color: s.color }}>{s.value}</p>
-              {s.pts != null && <p className="text-xs text-zinc-500 mt-0.5">{s.pts.toLocaleString()} pts earned</p>}
+              {s.pts != null && <p className="text-xs text-zinc-400 mt-0.5">{s.pts.toLocaleString()} pts earned</p>}
             </CardContent>
           </Card>
         ))}

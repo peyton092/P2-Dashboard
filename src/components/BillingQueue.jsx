@@ -634,7 +634,7 @@ function InvoiceNumberInput({ job }) {
         onChange={e => setVal(e.target.value)}
         onBlur={handleBlur}
         placeholder="Inv #"
-        className="bg-white/[0.04] border border-white/10 rounded-md text-xs text-zinc-100 px-2 py-1 w-20 placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+        className="bg-white/[0.04] border border-white/10 rounded-md text-xs text-zinc-100 px-2 py-1 w-20 placeholder:text-zinc-400 focus:outline-none focus:border-white/30"
       />
       {saving && <span className="text-[10px] text-zinc-400">saving…</span>}
     </div>
@@ -710,7 +710,7 @@ function AgingPill({ row }) {
   const { job, agingDays, readySince, isReady } = row
   // Invoiced — show how long since invoiceDate
   if (job.billingStatus === 'invoiced' || job.billingStatus === 'partial-pay') {
-    if (agingDays == null) return <span className="text-zinc-500 text-xs">—</span>
+    if (agingDays == null) return <span className="text-zinc-400 text-xs">—</span>
     const tone = agingDays >= 60 ? 'critical' : agingDays >= 30 ? 'warning' : 'info'
     return <Pill tone={tone} size="xs">{agingDays}d</Pill>
   }
@@ -722,7 +722,7 @@ function AgingPill({ row }) {
     const tone = readySince >= 7 ? 'critical' : readySince >= 3 ? 'warning' : 'info'
     return <Pill tone={tone} size="xs">{readySince}d ready</Pill>
   }
-  return <span className="text-zinc-500 text-xs">—</span>
+  return <span className="text-zinc-400 text-xs">—</span>
 }
 
 // ── Mobile card ──────────────────────────────────────────────────────────────

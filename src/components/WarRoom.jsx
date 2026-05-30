@@ -514,7 +514,7 @@ function StatusPill({ status, size = 'xs' }) {
 }
 
 function RiskPill({ risk, size = 'xs' }) {
-  if (!risk) return <span className="text-zinc-500 text-xs">—</span>
+  if (!risk) return <span className="text-zinc-400 text-xs">—</span>
   const tone =
     risk.level === 'critical' ? 'critical' :
     risk.level === 'warning'  ? 'warning'  :
@@ -529,7 +529,7 @@ function RiskPill({ risk, size = 'xs' }) {
 function InspectionPills({ job }) {
   const pills = buildInspectionPills(job)
   if (pills.length === 0) {
-    return <span className="text-zinc-500 text-xs">—</span>
+    return <span className="text-zinc-400 text-xs">—</span>
   }
   return (
     <div className="flex items-center gap-1">

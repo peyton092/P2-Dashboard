@@ -1174,16 +1174,16 @@ function JobStatus() {
         >
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <JobFormField label="Job ID *">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
             </JobFormField>
             <JobFormField label="Street address *">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="123 Main St" value={jobForm.address} onChange={e => setJobForm(f => ({ ...f, address: e.target.value }))} />
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="123 Main St" value={jobForm.address} onChange={e => setJobForm(f => ({ ...f, address: e.target.value }))} />
             </JobFormField>
             <JobFormField label="City, state ZIP">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Brentwood, TN 37027" value={jobForm.city} onChange={e => setJobForm(f => ({ ...f, city: e.target.value }))} />
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="Brentwood, TN 37027" value={jobForm.city} onChange={e => setJobForm(f => ({ ...f, city: e.target.value }))} />
             </JobFormField>
             <JobFormField label="Client *">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
             </JobFormField>
             <JobFormField label="Project type">
               <Input className="bg-white/[0.04] border-white/10 text-white" value={jobForm.type} onChange={e => setJobForm(f => ({ ...f, type: e.target.value }))} />
@@ -1202,7 +1202,7 @@ function JobStatus() {
               <Input className="bg-white/[0.04] border-white/10 text-white" type="date" value={jobForm.target} onChange={e => setJobForm(f => ({ ...f, target: e.target.value }))} />
             </JobFormField>
             <JobFormField label="Permit number">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
             </JobFormField>
             <JobFormField label="Electrical sub">
               <Select value={jobForm.subElectrical} onValueChange={v => setJobForm(f => ({ ...f, subElectrical: v }))}>
@@ -1513,7 +1513,7 @@ function JobStatusDetail({ job }) {
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-zinc-500">No subs assigned</p>
+          <p className="text-[11px] text-zinc-400">No subs assigned</p>
         )}
       </div>
 
@@ -1529,7 +1529,7 @@ function JobStatusDetail({ job }) {
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-zinc-500">No permits on file</p>
+          <p className="text-[11px] text-zinc-400">No permits on file</p>
         )}
       </div>
 
@@ -2454,7 +2454,7 @@ function ComplianceCell({ label, valueLabel, colorOverride, stateNote }) {
       <p className="text-sm font-semibold tabular-nums truncate" style={{ color: colorOverride || '#fff' }}>
         {valueLabel}
       </p>
-      {stateNote && <p className="text-[10px] text-zinc-500 truncate">{stateNote}</p>}
+      {stateNote && <p className="text-[10px] text-zinc-400 truncate">{stateNote}</p>}
     </div>
   )
 }
@@ -2524,7 +2524,7 @@ function SubAssignmentRow({ job: j }) {
         </div>
       </div>
       <Textarea
-        className="bg-white/[0.04] border-white/10 text-[12px] resize-none min-h-14 placeholder:text-zinc-500"
+        className="bg-white/[0.04] border-white/10 text-[12px] resize-none min-h-14 placeholder:text-zinc-400"
         placeholder="Loose ends — incomplete work, punch list items, notes…"
         value={looseEnds}
         onClick={e => e.stopPropagation()}
@@ -3018,13 +3018,13 @@ function MaterialHistoryRow({ entry }) {
     : '—'
   return (
     <li className="flex items-start gap-2 text-[11px] text-zinc-400">
-      <span className="w-16 shrink-0 text-zinc-500">{ts}</span>
+      <span className="w-16 shrink-0 text-zinc-400">{ts}</span>
       {entry.type === 'status_change' ? (
         <span className="min-w-0">
           <span style={{ color: MAT_STATUS_COLOR[entry.fromStatus] || '#9ca3af' }}>
             {entry.fromStatus || '—'}
           </span>
-          <span className="text-zinc-500 mx-1">to</span>
+          <span className="text-zinc-400 mx-1">to</span>
           <span style={{ color: MAT_STATUS_COLOR[entry.toStatus] || '#9ca3af' }}>
             {entry.toStatus || '—'}
           </span>
@@ -3049,7 +3049,7 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
         <div className="md:col-span-2">
           <FormFieldLabel>Item name *</FormFieldLabel>
           <Input
-            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
+            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400"
             placeholder="e.g. 200A Main Panel — Square D"
             value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
@@ -3101,7 +3101,7 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
         <div>
           <FormFieldLabel>Vendor</FormFieldLabel>
           <Input
-            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
+            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400"
             placeholder="Graybar, Ferguson…"
             value={form.vendor}
             onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))}
@@ -3128,7 +3128,7 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
         <div className="md:col-span-2">
           <FormFieldLabel>Notes</FormFieldLabel>
           <Input
-            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
+            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400"
             placeholder="Optional — sub assignments, location on site, etc."
             value={form.notes}
             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -3427,14 +3427,14 @@ function NotificationCard({ n, onRead, onDismiss }) {
         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
           <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
           <Pill tone="neutral" size="xs" Icon={CatIcon}>{NOTIF_CATEGORY_LABEL[cat]}</Pill>
-          <span className="text-[10px] text-zinc-500">·</span>
+          <span className="text-[10px] text-zinc-400">·</span>
           <span className="text-[10px] text-zinc-400">{notifAgeLabel(n)}</span>
         </div>
         <p className={`text-sm leading-snug ${n.read ? 'text-zinc-300' : 'font-semibold text-white'}`}>
           {n.msg}
         </p>
         {fmtNotifTime(n) && (
-          <p className="text-[11px] text-zinc-500 mt-0.5">{fmtNotifTime(n)}</p>
+          <p className="text-[11px] text-zinc-400 mt-0.5">{fmtNotifTime(n)}</p>
         )}
       </div>
 

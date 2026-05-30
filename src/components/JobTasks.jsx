@@ -68,7 +68,7 @@ export default function JobTasks({ jobId }) {
           value={draft}
           onChange={e => setDraft(e.target.value)}
           placeholder="Add a task and press Enter…"
-          className="flex-1 bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/25"
+          className="flex-1 bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:border-white/25"
           aria-label="New task"
         />
         <button
@@ -130,7 +130,7 @@ function TaskRow({ task, onDelete }) {
       >
         {done ? <CheckSquareIcon size={16} /> : <SquareIcon size={16} />}
       </button>
-      <p className={`flex-1 text-sm min-w-0 truncate ${done ? 'line-through text-zinc-500' : 'text-zinc-100'}`}>
+      <p className={`flex-1 text-sm min-w-0 truncate ${done ? 'line-through text-zinc-400' : 'text-zinc-100'}`}>
         {task.text}
       </p>
       <button
@@ -138,7 +138,7 @@ function TaskRow({ task, onDelete }) {
         onClick={() => onDelete(task)}
         aria-label="Delete task"
         title="Delete task"
-        className="shrink-0 p-1 rounded text-zinc-500 hover:text-red-400 hover:bg-white/5 transition-colors"
+        className="shrink-0 p-1 rounded text-zinc-400 hover:text-red-400 hover:bg-white/5 transition-colors"
       >
         <Trash2Icon size={14} />
       </button>

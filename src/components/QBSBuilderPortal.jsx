@@ -558,7 +558,7 @@ function ExtraRow({ co, compact = false }) {
               Tell P2 what needs to change
             </p>
             <Textarea
-              className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
+              className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-400"
               placeholder="What should be revised? (required)"
               value={rejectNotes}
               onChange={e => setRejectNotes(e.target.value)}

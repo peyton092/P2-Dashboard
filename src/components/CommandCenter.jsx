@@ -480,7 +480,7 @@ export default function CommandCenter() {
           }
         >
           {upcoming.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-zinc-500 text-center">Nothing scheduled.</p>
+            <p className="px-4 py-6 text-sm text-zinc-400 text-center">Nothing scheduled.</p>
           ) : (
             <ul className="divide-y divide-white/5">
               {upcoming.map((e, i) => {
@@ -497,7 +497,7 @@ export default function CommandCenter() {
                       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: meta.color }} />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-zinc-100 truncate">{e.label}</p>
-                        <p className="text-[11px] text-zinc-500">{meta.label}</p>
+                        <p className="text-[11px] text-zinc-400">{meta.label}</p>
                       </div>
                       <span className="text-[11px] font-semibold text-zinc-400 tabular-nums shrink-0">{dateLbl}</span>
                     </button>
@@ -524,7 +524,7 @@ export default function CommandCenter() {
           }
         >
           {complianceAlerts.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-zinc-500 text-center">No compliance flags.</p>
+            <p className="px-4 py-6 text-sm text-zinc-400 text-center">No compliance flags.</p>
           ) : (
             <ul className="divide-y divide-white/5">
               {complianceAlerts.map((a, i) => {
@@ -542,7 +542,7 @@ export default function CommandCenter() {
                       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-zinc-100 truncate">{a.name}{a.co ? ` · ${a.co}` : ''}</p>
-                        <p className="text-[11px] text-zinc-500">{a.kind} {a.trade ? `· ${a.trade}` : ''}</p>
+                        <p className="text-[11px] text-zinc-400">{a.kind} {a.trade ? `· ${a.trade}` : ''}</p>
                       </div>
                       <span className="text-[11px] font-semibold tabular-nums shrink-0" style={{ color }}>{label}</span>
                     </button>

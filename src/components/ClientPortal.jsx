@@ -322,7 +322,7 @@ function ExtraRow({ co, clientName }) {
         {isPending && showReject && (
           <div className="mt-3 space-y-2">
             <p className="text-[10px] uppercase tracking-wide font-bold text-zinc-300">Tell P2 what needs to change</p>
-            <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
+            <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-400"
               placeholder="What should be revised? (required)" value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} />
             <div className="flex gap-2">
               <Button className="flex-1 h-10 text-xs text-white font-bold" style={{ backgroundColor: '#ef4444' }} disabled={busy || !rejectNotes.trim()} onClick={handleReject}>
@@ -453,9 +453,9 @@ function JobFiles({ job }) {
           <p className="text-xs text-zinc-400 py-2">Loading files…</p>
         ) : files.length === 0 ? (
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-4 text-center">
-            <CameraIcon size={18} className="mx-auto mb-1.5 text-zinc-500" />
+            <CameraIcon size={18} className="mx-auto mb-1.5 text-zinc-400" />
             <p className="text-xs text-zinc-400">No photos or documents shared yet.</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Jobsite photos appear here once CompanyCam sync is enabled.</p>
+            <p className="text-[10px] text-zinc-400 mt-0.5">Jobsite photos appear here once CompanyCam sync is enabled.</p>
           </div>
         ) : (
           <>

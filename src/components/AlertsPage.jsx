@@ -521,7 +521,7 @@ function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
             {zoneName}
           </span>
         )}
-        <span className="text-[10px] text-zinc-500">·</span>
+        <span className="text-[10px] text-zinc-400">·</span>
         <span className={`text-[10px] ${age >= 3 ? 'text-amber-300 font-semibold' : 'text-zinc-400'}`}>
           {ageLabel(age)}
         </span>

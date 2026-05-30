@@ -834,7 +834,7 @@ function CORow({ co, job, onEdit, onPdf }) {
       <TableCell className="text-zinc-200 truncate">{job?.pm || '—'}</TableCell>
       <TableCell>
         {age == null
-          ? <span className="text-zinc-500 text-xs">—</span>
+          ? <span className="text-zinc-400 text-xs">—</span>
           : <Pill tone={ageTone} size="xs">{age}d</Pill>}
       </TableCell>
       <TableCell last>

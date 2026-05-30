@@ -75,7 +75,7 @@ export function ToastProvider({ children }) {
                 type="button"
                 aria-label="Dismiss notification"
                 onClick={() => dismiss(t.id)}
-                className="shrink-0 text-zinc-500 hover:text-zinc-200 transition-colors"
+                className="shrink-0 text-zinc-400 hover:text-zinc-200 transition-colors"
               >
                 <XIcon size={14} aria-hidden="true" />
               </button>

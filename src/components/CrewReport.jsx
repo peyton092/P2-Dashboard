@@ -420,7 +420,7 @@ export default function CrewReport() {
                   value={matUsed}
                   onChange={e => setMatUsed(e.target.value)}
                   placeholder="e.g. 12/2 Romex 50ft, 4 boxes, 2 GFCI outlets…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 resize-none"
                   rows={2}
                 />
               </div>
@@ -431,7 +431,7 @@ export default function CrewReport() {
                   value={matNeeded}
                   onChange={e => setMatNeeded(e.target.value)}
                   placeholder="e.g. 200A panel, 10/3 wire…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 resize-none"
                   rows={2}
                 />
               </div>
@@ -442,7 +442,7 @@ export default function CrewReport() {
                   value={nextStep}
                   onChange={e => setNextStep(e.target.value)}
                   placeholder="e.g. Trim panel, schedule final inspection…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 h-11"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 h-11"
                 />
               </div>
             </div>
@@ -554,7 +554,7 @@ export default function CrewReport() {
             )}
 
             {photos.length === 0 && (
-              <p className="flex items-center gap-2 text-zinc-500 text-[11px] mt-2">
+              <p className="flex items-center gap-2 text-zinc-400 text-[11px] mt-2">
                 <ImageIcon size={12} />
                 No photos attached
               </p>
@@ -681,7 +681,7 @@ function RecentReportRow({ report }) {
         <span>{summary}</span>
       </div>
       {report.materialsNeeded && (
-        <p className="text-[11px] text-zinc-500 mt-1 truncate" title={report.materialsNeeded}>
+        <p className="text-[11px] text-zinc-400 mt-1 truncate" title={report.materialsNeeded}>
           Needs: {report.materialsNeeded}
         </p>
       )}

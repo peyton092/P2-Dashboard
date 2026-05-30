@@ -50,7 +50,7 @@ export default function PhotoLightbox({ photos = [], index = -1, onClose, onInde
       <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-3 text-zinc-200">
         <div className="text-xs">
           <span className="font-semibold">{index + 1}</span>
-          <span className="text-zinc-500"> / {total}</span>
+          <span className="text-zinc-400"> / {total}</span>
           {photo.name && <span className="ml-3 text-zinc-400 truncate max-w-[40vw] inline-block align-middle">{photo.name}</span>}
         </div>
         <div className="flex items-center gap-1">

@@ -84,7 +84,7 @@ export default class ErrorBoundary extends Component {
           <button
             type="button"
             onClick={this.copy}
-            className="mt-3 text-[11px] text-zinc-500 hover:text-zinc-300 underline-offset-2 hover:underline"
+            className="mt-3 text-[11px] text-zinc-400 hover:text-zinc-300 underline-offset-2 hover:underline"
           >
             {this.state.copied ? 'Copied error details' : 'Copy error details'}
           </button>

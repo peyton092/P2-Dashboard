@@ -69,7 +69,7 @@ function TradeInspections({ trade, data, onSchedule }) {
             <div key={phase} className="flex items-center justify-between gap-2 text-xs">
               <span className="text-zinc-400">{PHASE_LABEL[phase] || phase}</span>
               <span className="flex items-center gap-2">
-                {date && <span className="text-[10px] text-zinc-500">{fmtDate(date)}</span>}
+                {date && <span className="text-[10px] text-zinc-400">{fmtDate(date)}</span>}
                 {!completed && canSchedule && onSchedule && (
                   <input
                     type="date"
@@ -385,11 +385,11 @@ export default function JobDetail({ jobId, onBack }) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-zinc-100 truncate">{s.subject || '(no subject)'}</span>
                     <Pill tone={tone} size="xs">{s.status || 'Open'}</Pill>
-                    {s.priority && <span className="text-[10px] text-zinc-500">· {s.priority}</span>}
-                    {s.category && <span className="text-[10px] text-zinc-500">· {s.category}</span>}
+                    {s.priority && <span className="text-[10px] text-zinc-400">· {s.priority}</span>}
+                    {s.category && <span className="text-[10px] text-zinc-400">· {s.category}</span>}
                   </div>
                   {s.body && <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{s.body}</p>}
-                  {when && <p className="text-[10px] text-zinc-500 mt-1">{when}</p>}
+                  {when && <p className="text-[10px] text-zinc-400 mt-1">{when}</p>}
                 </li>
               )
             })}
@@ -401,7 +401,7 @@ export default function JobDetail({ jobId, onBack }) {
             value={msgSubject}
             onChange={(e) => setMsgSubject(e.target.value)}
             placeholder="Subject"
-            className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/25"
+            className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:border-white/25"
             aria-label="Message subject"
           />
           <textarea
@@ -409,7 +409,7 @@ export default function JobDetail({ jobId, onBack }) {
             onChange={(e) => setMsgBody(e.target.value)}
             placeholder="Type a message or RFI…"
             rows={2}
-            className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/25 resize-none"
+            className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:border-white/25 resize-none"
             aria-label="Message body"
           />
           <div className="flex items-center justify-end">
@@ -499,7 +499,7 @@ export default function JobDetail({ jobId, onBack }) {
               <li key={r._docId} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-zinc-200">{r.crewMember || r.author || 'Crew'}</span>
-                  <span className="text-[11px] text-zinc-500">{r.date || fmtDate(r.createdAt)}</span>
+                  <span className="text-[11px] text-zinc-400">{r.date || fmtDate(r.createdAt)}</span>
                 </div>
                 {r.notes && <p className="text-xs text-zinc-400 mt-1 line-clamp-3">{r.notes}</p>}
               </li>
@@ -518,7 +518,7 @@ function DetailField({ Icon, label, value, sub }) {
         {Icon && <Icon size={11} />} {label}
       </p>
       <p className="font-semibold text-zinc-100 truncate mt-0.5">{value}</p>
-      {sub && <p className="text-[10px] text-zinc-500 truncate">{sub}</p>}
+      {sub && <p className="text-[10px] text-zinc-400 truncate">{sub}</p>}
     </div>
   )
 }
