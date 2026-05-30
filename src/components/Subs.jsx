@@ -3,7 +3,7 @@ import { useData } from '../DataContext'
 import { updateJob } from '../hooks/useFirestore'
 import { daysSince } from '../agent/scoring'
 import {
-  PageHeader, MetricTile, DataPanel, Pill,
+  PageHeader, MetricTile, DataPanel, Pill, StatusBadge,
   EmptyState, AllClearState, FilterBar,
 } from './shared'
 import {
@@ -483,7 +483,7 @@ function SubAssignmentRow({ job: j }) {
               ))}
             </SelectContent>
           </Select>
-          {!isComplete && <JobBadge status={j.status} />}
+          {!isComplete && <StatusBadge status={j.status} />}
         </div>
       </div>
       <Textarea

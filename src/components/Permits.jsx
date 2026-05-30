@@ -5,7 +5,16 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useData } from '../DataContext'
 import { updatePermit } from '../hooks/useFirestore'
-import { StatCard, InspBadge, JobBadge, iMeta } from './shared'
+import { StatCard, InspectionBadge, StatusBadge, STATUS_COLORS } from './shared'
+
+const PERMIT_COLOR = {
+  pending:  STATUS_COLORS.mute,
+  applied:  STATUS_COLORS.warning,
+  approved: STATUS_COLORS.success,
+  finaled:  STATUS_COLORS.success,
+  denied:   STATUS_COLORS.critical,
+}
+const permitColor = (s) => PERMIT_COLOR[s] || STATUS_COLORS.neutral
 
 // Phase 20 — extracted from src/App.jsx. Behavior preserved exactly. The
 // local SectionHeader is intentionally inlined here (it differs from the
@@ -52,7 +61,7 @@ export default function Permits() {
             <CardHeader>
               <CardTitle className="text-sm flex items-center justify-between">
                 <span><span className="" style={{ color: O }}>{j.id}</span> — {j.address}</span>
-                <JobBadge status={j.status} />
+                <StatusBadge status={j.status} />
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -73,14 +82,14 @@ export default function Permits() {
                         value={pStatus}
                         onChange={e => updatePermit(j._docId, t, e.target.value)}
                         className="text-xs font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none"
-                        style={{ color: iMeta(pStatus).color, backgroundColor: iMeta(pStatus).color + '22', border: `1px solid ${iMeta(pStatus).color}44` }}
+                        style={{ color: permitColor(pStatus), backgroundColor: permitColor(pStatus) + '22', border: `1px solid ${permitColor(pStatus)}44` }}
                       >
                         {PERMIT_STATUSES.map(s => (
                           <option key={s} value={s} style={{ backgroundColor: '#111', color: '#fff' }}>{s.toUpperCase()}</option>
                         ))}
                       </select>
                     ) : (
-                      <InspBadge status={pStatus} />
+                      <InspectionBadge status={pStatus} />
                     )}
                   </div>
                 )

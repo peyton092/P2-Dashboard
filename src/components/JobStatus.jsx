@@ -5,7 +5,7 @@ import {
   PageHeader, MetricTile, DataPanel, Pill,
   EmptyState, AllClearState, FilterBar,
   ProgressBar,
-  InspBadge,
+  InspectionBadge,
   InlineStatusSelect, InlinePhaseSelect, BillingStatusSelect,
 } from './shared'
 import {
@@ -628,7 +628,7 @@ function JobStatusDetail({ job }) {
             {['electrical','plumbing','hvac'].map(t => job.permits?.[t] && (
               <li key={t} className="flex items-center justify-between text-[12px]">
                 <span className="capitalize text-zinc-400">{t}</span>
-                <InspBadge status={job.permits[t]} />
+                <InspectionBadge status={job.permits[t]} />
               </li>
             ))}
           </ul>

@@ -75,7 +75,6 @@ import {
   EmptyState, AllClearState, FilterBar, PageSkeleton,
   // Phase 19 — primitives extracted from App.jsx
   ProgressBar, StatCard,
-  InspBadge, JobBadge,
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,
 } from './components/shared'

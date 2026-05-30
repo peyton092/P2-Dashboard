@@ -10,7 +10,21 @@ import {
   inspectionStatusTone, inspectionStatusLabel, inspJobStatusTone,
 } from '../lib/inspections'
 import { jobName } from '../lib/jobs'
-import { iMeta } from './shared/legacy-badges'
+import { STATUS_COLORS } from './shared'
+
+// Replaces the legacy iMeta(): same shape (color + label) but pulls color
+// from the canonical STATUS_COLORS map and label from lib/inspections.
+const INSP_COLOR = {
+  passed:                 STATUS_COLORS.success,
+  failed:                 STATUS_COLORS.critical,
+  scheduled:              STATUS_COLORS.warning,
+  pending:                STATUS_COLORS.mute,
+  'pending-verification': STATUS_COLORS.mute,
+  blocked:                STATUS_COLORS.info,
+  'n/a':                  STATUS_COLORS.mute,
+  'not-started':          STATUS_COLORS.neutral,
+}
+const iMeta = (s) => ({ color: INSP_COLOR[s] || STATUS_COLORS.neutral, label: (s || '').toUpperCase() })
 import {
   AlertCircleIcon, AlertTriangleIcon, BadgeCheckIcon, CheckCircleIcon,
   CheckIcon, ClockIcon, TriangleAlertIcon,
