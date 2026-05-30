@@ -7,6 +7,7 @@ export {
   InspectionBadge,
   BillingBadge,
   PriorityBadge,
+  LiveDot,
   STATUS_COLORS,
   STATUS_TONES,
 } from './badges'

@@ -10,7 +10,7 @@ import {
   PageHeader,
   MetricTile,
   DataPanel,
-  Pill,
+  Pill, LiveDot,
   EmptyState,
   AllClearState,
   LoadingState,
@@ -321,13 +321,7 @@ export default function PMDashboard() {
         subtitle="Who is overloaded, who owns risk, and what each PM should do next."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{kpis.activePMs} of {allPMs.length} PMs with active work</span>
             <span>{kpis.totalActive} active assignments</span>
           </>

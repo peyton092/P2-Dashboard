@@ -107,6 +107,19 @@ const PRIORITY = {
   MEDIUM:   { tone: 'warning',  label: 'Medium'   },
   LOW:      { tone: 'neutral',  label: 'Low'      },
 }
+// Small "Live" indicator (green pulse + label) used in page-header `meta`
+// slots across most tabs. Extracted so a future tweak to the "live" idea
+// (e.g. swap to "Snapshot" when offline) lives in one place instead of
+// twelve duplicated literals.
+export function LiveDot({ label = 'Live', color = '#22c55e' }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />
+      <span className="tracking-wider text-[10px] uppercase" style={{ color }}>{label}</span>
+    </span>
+  )
+}
+
 export function PriorityBadge({ priority, size = 'sm', className = '' }) {
   const meta = PRIORITY[priority] || PRIORITY.MEDIUM
   return <Pill tone={meta.tone} size={size} className={className}>{meta.label}</Pill>

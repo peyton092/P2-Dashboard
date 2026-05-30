@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { createJob } from '../hooks/useFirestore'
 import {
-  PageHeader, MetricTile, DataPanel, Pill,
+  PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
   ProgressBar,
   InspectionBadge,
@@ -192,13 +192,7 @@ export default function JobStatus() {
         subtitle="Active and completed jobs across the portfolio — risk, phase, ownership, next action."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{kpis.active} active · {kpis.completed} complete</span>
             {kpis.atRisk > 0 && (
               <span className="text-amber-300">{kpis.atRisk} at risk</span>

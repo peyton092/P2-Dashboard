@@ -6,7 +6,7 @@ import {
   PageHeader,
   MetricTile,
   DataPanel,
-  Pill,
+  Pill, LiveDot,
   AllClearState,
   EmptyState,
 } from './shared'
@@ -346,10 +346,7 @@ export default function CommandCenter() {
         subtitle="Live across the active portfolio. Money, risk, inspections, approvals."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
             <span>{activeJobs.length} active jobs</span>
             <span>Middle Tennessee</span>

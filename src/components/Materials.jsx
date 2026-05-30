@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { addMaterial, updateMaterial, addHistory, useHistory } from '../hooks/useFirestore'
 import {
-  PageHeader, MetricTile, DataPanel, Pill,
+  PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
 } from './shared'
 import {
@@ -182,13 +182,7 @@ export default function Materials() {
         subtitle="Order, track, and confirm everything the field needs to keep work moving."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{kpis.open} open</span>
             {kpis.urgent > 0 && (
               <span className="text-red-300">{kpis.urgent} overdue</span>

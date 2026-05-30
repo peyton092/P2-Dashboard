@@ -3,7 +3,7 @@ import { useData } from '../DataContext'
 import { updateJob } from '../hooks/useFirestore'
 import { daysSince } from '../agent/scoring'
 import {
-  PageHeader, MetricTile, DataPanel, Pill, StatusBadge,
+  PageHeader, MetricTile, DataPanel, Pill, LiveDot, StatusBadge,
   EmptyState, AllClearState, FilterBar,
 } from './shared'
 import {
@@ -121,13 +121,7 @@ export default function SubsTab() {
         subtitle="Active subcontractors, compliance status, and live job assignments — protect against insurance lapse."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{kpis.active} subs · {kpis.approved} approved</span>
             {kpis.expired > 0 && (
               <span className="text-red-300">{kpis.expired} expired</span>

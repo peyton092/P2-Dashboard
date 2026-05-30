@@ -3,7 +3,7 @@ import { useData } from '../DataContext'
 import { updateNotification } from '../hooks/useFirestore'
 import { useToast } from '@/components/ui/toast'
 import {
-  PageHeader, MetricTile, DataPanel, Pill,
+  PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
 } from './shared'
 import {
@@ -100,13 +100,7 @@ export default function Notifications() {
         subtitle="Recent activity across active jobs — read, action, or clear from the queue."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{kpis.total} live</span>
             {kpis.unread > 0 && <span>{kpis.unread} unread</span>}
             {kpis.actionNeeded > 0 && (

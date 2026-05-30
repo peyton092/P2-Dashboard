@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { updateJob, passInspection, failInspection } from '../hooks/useFirestore'
 import {
-  PageHeader, MetricTile, DataPanel, Pill,
+  PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
 } from './shared'
 import {
@@ -239,13 +239,7 @@ export default function Inspections() {
         subtitle="Across active jobs. Surface ready-to-call, scheduled, and rework needed."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{activeJobs.length} active jobs</span>
             {kpis.failed > 0 && (
               <span className="text-red-300">

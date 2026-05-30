@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useData } from '../DataContext'
 import {
-  PageHeader, MetricTile, DataPanel, Pill, AllClearState,
+  PageHeader, MetricTile, DataPanel, Pill, LiveDot, AllClearState,
 } from './shared'
 import {
   BRIEF_CATEGORY_META, SEVERITY_RANK,
@@ -97,13 +97,7 @@ export default function MorningBriefing() {
         subtitle="What needs attention today, ranked by severity and age. Read top to bottom before the day starts."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{dateStr}</span>
             <span>Middle Tennessee</span>
             {kpis.critical > 0 && (
