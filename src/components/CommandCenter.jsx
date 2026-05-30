@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useData } from '../DataContext'
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
   PageHeader,
   MetricTile,
@@ -789,6 +788,45 @@ function BillingRow({ label, amount, count, subtitle, tone = 'neutral' }) {
   )
 }
 
+// Hand-rolled SVG donut — avoids pulling 290 kB of recharts into the
+// Command Center chunk for a single chart. Each segment is an annular sector
+// path; padding-angle leaves a small gap between adjacent slices.
+function DonutSvg({ data, size = 140, inner = 42, outer = 62, pad = 3 }) {
+  const total = data.reduce((s, d) => s + d.value, 0) || 1
+  const cx = size / 2
+  const cy = size / 2
+  // Pre-compute the starting angle of each segment (12 o'clock = -90deg).
+  const starts = data.reduce(
+    (acc, d) => [...acc, acc[acc.length - 1] + (d.value / total) * 360],
+    [-90],
+  )
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+      {data.map((d, i) => {
+        const span = starts[i + 1] - starts[i]
+        const a0 = (starts[i] + pad / 2) * Math.PI / 180
+        const a1 = (starts[i + 1] - pad / 2) * Math.PI / 180
+        const large = (span - pad) > 180 ? 1 : 0
+        const x0o = cx + Math.cos(a0) * outer
+        const y0o = cy + Math.sin(a0) * outer
+        const x1o = cx + Math.cos(a1) * outer
+        const y1o = cy + Math.sin(a1) * outer
+        const x0i = cx + Math.cos(a1) * inner
+        const y0i = cy + Math.sin(a1) * inner
+        const x1i = cx + Math.cos(a0) * inner
+        const y1i = cy + Math.sin(a0) * inner
+        return (
+          <path
+            key={i}
+            d={`M ${x0o} ${y0o} A ${outer} ${outer} 0 ${large} 1 ${x1o} ${y1o} L ${x0i} ${y0i} A ${inner} ${inner} 0 ${large} 0 ${x1i} ${y1i} Z`}
+            fill={d.color}
+          />
+        )
+      })}
+    </svg>
+  )
+}
+
 function InspectionDonut({ summary }) {
   if (summary.total === 0) {
     return (
@@ -807,23 +845,8 @@ function InspectionDonut({ summary }) {
 
   return (
     <div className="grid grid-cols-[140px_1fr] gap-4 items-center">
-      <div className="relative h-[140px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              innerRadius={42}
-              outerRadius={62}
-              paddingAngle={3}
-              dataKey="value"
-              stroke="none"
-            >
-              {data.map((d, i) => <Cell key={i} fill={d.color} />)}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
+      <div className="relative h-[140px] flex items-center justify-center">
+        <DonutSvg data={data} />
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <p className="text-2xl font-semibold tabular-nums leading-none text-white">{summary.total}</p>
           <p className="text-[10px] uppercase tracking-wider text-zinc-400 mt-0.5">Total</p>
