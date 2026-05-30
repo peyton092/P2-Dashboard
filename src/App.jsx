@@ -144,10 +144,11 @@ const NAV_SECTIONS = [
   {
     heading: 'Command',
     items: [
-      { id: 'command-center', label: 'Command Center', Icon: GaugeIcon },
-      { id: 'war-room',       label: 'War Room',       Icon: RadarIcon },
-      { id: 'pm-dashboard',   label: 'PM Dashboard',   Icon: UserRoundCogIcon },
-      { id: 'alerts',         label: 'Alerts',         Icon: TriangleAlertIcon },
+      { id: 'command-center', label: 'Command Center',   Icon: GaugeIcon },
+      { id: 'morning',        label: 'Morning Briefing', Icon: CalendarClockIcon },
+      { id: 'war-room',       label: 'War Room',         Icon: RadarIcon },
+      { id: 'pm-dashboard',   label: 'PM Dashboard',     Icon: UserRoundCogIcon },
+      { id: 'alerts',         label: 'Alerts',           Icon: TriangleAlertIcon },
     ],
   },
   {
@@ -161,14 +162,13 @@ const NAV_SECTIONS = [
   {
     heading: 'Field',
     items: [
-      { id: 'jobs',         label: 'Job Status',       Icon: HardHatIcon },
-      { id: 'calendar',     label: 'Calendar',         Icon: CalendarClockIcon },
-      { id: 'inspections',  label: 'Inspections',      Icon: BadgeCheckIcon },
-      { id: 'daily-report', label: 'Daily Report',     Icon: NotebookPenIcon },
-      { id: 'morning',      label: 'Morning Briefing', Icon: CalendarClockIcon },
-      { id: 'materials',    label: 'Materials',        Icon: BoxesIcon },
-      { id: 'permits',      label: 'Permits',          Icon: ClipboardSignatureIcon },
-      { id: 'subs',         label: 'Subs',             Icon: UsersRoundIcon },
+      { id: 'jobs',         label: 'Job Status',   Icon: HardHatIcon },
+      { id: 'calendar',     label: 'Calendar',     Icon: CalendarClockIcon },
+      { id: 'inspections',  label: 'Inspections',  Icon: BadgeCheckIcon },
+      { id: 'daily-report', label: 'Daily Report', Icon: NotebookPenIcon },
+      { id: 'materials',    label: 'Materials',    Icon: BoxesIcon },
+      { id: 'permits',      label: 'Permits',      Icon: ClipboardSignatureIcon },
+      { id: 'subs',         label: 'Subs',         Icon: UsersRoundIcon },
     ],
   },
   {
@@ -177,6 +177,7 @@ const NAV_SECTIONS = [
       { id: 'folders',       label: 'Documents',     Icon: FolderOpenIcon },
       { id: 'submit',        label: 'Submit',        Icon: SendIcon },
       { id: 'notifications', label: 'Notifications', Icon: BellIcon },
+      { id: 'activity',      label: 'Activity',      Icon: ActivityIcon },
       { id: 'analytics',     label: 'Reports',       Icon: BarChart3Icon },
       { id: 'team',          label: 'Team',          Icon: TrophyIcon },
     ],
@@ -184,7 +185,6 @@ const NAV_SECTIONS = [
   {
     heading: 'System',
     items: [
-      { id: 'activity',     label: 'Activity',     Icon: ActivityIcon },
       { id: 'architecture', label: 'Architecture', Icon: DatabaseIcon },
       { id: 'settings',     label: 'Settings',     Icon: SettingsIcon },
     ],
