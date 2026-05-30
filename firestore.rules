@@ -55,10 +55,19 @@ service cloud.firestore {
       }
     }
 
-    // ── Device push tokens. A user registers their own; staff can read all. ─
+    // ── Device push tokens (audit C-3) ──────────────────────────────────────
+    // A user registers their own token (uid must match auth). Anyone with a
+    // token id couldn't previously be stopped from deleting / overwriting
+    // another user's registration; now they have to own the doc.
     match /fcm_tokens/{token} {
       allow read:  if isStaff();
-      allow write: if signedIn();
+      allow create: if signedIn()
+                    && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn()
+                    && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn()
+                    && (isStaff() || resource.data.uid == request.auth.uid);
     }
 
     // ── Operational data: signed-in access (see KNOWN LIMITATION above). ────

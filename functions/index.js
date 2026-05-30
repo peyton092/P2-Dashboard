@@ -101,6 +101,22 @@ const requireAuth = (req) => {
   return req.auth
 }
 
+// Staff-only guard — used by the data-migration callables and any future
+// admin-scope function. Falls back to the users/{uid} doc when the role
+// custom claim isn't set (matches the rule's userRole() helper).
+const requireStaff = async (req) => {
+  const auth = requireAuth(req)
+  let role = auth.token?.role
+  if (!role) {
+    const snap = await db.collection('users').doc(auth.uid).get()
+    role = snap.exists ? snap.data().role : null
+  }
+  if (role !== 'owner' && role !== 'internal') {
+    throw new HttpsError('permission-denied', 'Staff only.')
+  }
+  return auth
+}
+
 const basicAuth = () =>
   'Basic ' + Buffer.from(`${QB_CLIENT_ID.value()}:${QB_CLIENT_SECRET.value()}`).toString('base64')
 
@@ -437,12 +453,65 @@ const NOTIF_TITLE = {
   info:    'P2 Field Control',
 }
 
+// Resolve which user docs should receive this notification (audit C-2).
+// Stops the previous "blast every fcm_token in the company on every write"
+// behavior, which let any authenticated user spam push messages to staff.
+//
+// Notification doc shape (any of these may be present):
+//   recipientUids: ['uid1', 'uid2']  — explicit list, highest priority
+//   recipientRole: 'owner' | 'internal' | 'builder' | 'client' | 'staff'
+//                                    — broadcast to a role (staff = owner|internal)
+//   tenantId:      'qbs'             — broadcast to a tenant
+//
+// If none are set, the legacy fallback is "staff only" — much narrower than
+// the previous "every device in the database." Clients can still post
+// notifications (e.g. CO approve/reject) and staff will receive them; what
+// stops is a client targeting other clients' devices.
+async function resolveNotificationRecipients(data) {
+  if (Array.isArray(data.recipientUids) && data.recipientUids.length > 0) {
+    return new Set(data.recipientUids)
+  }
+
+  const role = data.recipientRole
+  if (role === 'owner' || role === 'internal' || role === 'builder' || role === 'client') {
+    const snap = await db.collection('users').where('role', '==', role).get()
+    return new Set(snap.docs.map(d => d.id))
+  }
+  if (role === 'staff' || (!role && !data.tenantId)) {
+    const [owners, internals] = await Promise.all([
+      db.collection('users').where('role', '==', 'owner').get(),
+      db.collection('users').where('role', '==', 'internal').get(),
+    ])
+    return new Set([
+      ...owners.docs.map(d => d.id),
+      ...internals.docs.map(d => d.id),
+    ])
+  }
+
+  if (data.tenantId) {
+    const snap = await db.collection('users').where('tenantId', '==', data.tenantId).get()
+    return new Set(snap.docs.map(d => d.id))
+  }
+  return new Set()
+}
+
 export const onNotificationCreated = onDocumentCreated({ document: 'notifications/{id}', region }, async (event) => {
   const data = event.data?.data() || {}
   const body = data.msg || 'New activity on your projects.'
 
-  const tokensSnap = await db.collection('fcm_tokens').get()
-  const tokens = tokensSnap.docs.map(d => d.id).filter(Boolean)
+  const recipientUids = await resolveNotificationRecipients(data)
+  if (recipientUids.size === 0) return
+
+  // Pull only the tokens belonging to the resolved recipients.
+  // Firestore `in` clauses cap at 30 values per query, so chunk if needed.
+  const uids = [...recipientUids]
+  const tokens = []
+  const tokenDocIds = []
+  for (let i = 0; i < uids.length; i += 30) {
+    const chunk = uids.slice(i, i + 30)
+    const snap = await db.collection('fcm_tokens').where('uid', 'in', chunk).get()
+    snap.docs.forEach(d => { tokens.push(d.id); tokenDocIds.push(d.id) })
+  }
   if (tokens.length === 0) return
 
   const res = await getMessaging().sendEachForMulticast({
@@ -455,7 +524,7 @@ export const onNotificationCreated = onDocumentCreated({ document: 'notification
   res.responses.forEach((r, i) => {
     const code = r.error?.code
     if (!r.success && (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-argument')) {
-      dead.push(tokens[i])
+      dead.push(tokenDocIds[i])
     }
   })
   await Promise.all(dead.map(t => db.collection('fcm_tokens').doc(t).delete()))
@@ -601,4 +670,75 @@ export const ccDisconnect = onCall(ccCallableOpts, async (req) => {
 
   await ref.delete()
   return { ok: true }
+})
+
+// ============================================================================
+// Data migration: backfill tenantId / clientUids on operational docs
+// (audit C-1, step 1 of staged rollout)
+// ============================================================================
+//
+// Adds default scoping fields to existing operational documents so that the
+// follow-up rule tightening (rules require tenantId match) won't return
+// empty queries for legacy docs. Idempotent — skips docs that already
+// have the field. Staff-only.
+//
+// Defaults:
+//   tenantId   → 'p2-core' (internal default; matches TENANTS in App.jsx)
+//   clientUids → []        (filled in when a client is provisioned for a job)
+//
+// Operational collections covered (matches firestore.rules):
+//   jobs, extras, notifications, subs, materials, permits, submits,
+//   daily_reports, urgent_items, history, supplier_invoices, job_tasks
+//
+// Returns a per-collection summary. Run via the firebase console:
+//   firebase functions:shell  → backfillScoping({})
+// or from the app once you wire a Settings button.
+
+const SCOPED_COLLECTIONS = [
+  'jobs', 'extras', 'notifications', 'subs', 'materials', 'permits',
+  'submits', 'daily_reports', 'urgent_items', 'history', 'supplier_invoices',
+  'job_tasks',
+]
+
+export const backfillScoping = onCall(callableOpts, async (req) => {
+  await requireStaff(req)
+  const defaultTenant = req.data?.defaultTenantId || 'p2-core'
+  const dryRun = !!req.data?.dryRun
+
+  const summary = {}
+  for (const col of SCOPED_COLLECTIONS) {
+    const snap = await db.collection(col).get()
+    let touched = 0
+    let skipped = 0
+    const batch = db.batch()
+    let batchCount = 0
+
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data() || {}
+      const update = {}
+      if (data.tenantId === undefined || data.tenantId === null || data.tenantId === '') {
+        update.tenantId = defaultTenant
+      }
+      if (data.clientUids === undefined || data.clientUids === null) {
+        update.clientUids = []
+      }
+      if (Object.keys(update).length === 0) {
+        skipped++
+        continue
+      }
+      touched++
+      if (!dryRun) {
+        batch.set(docSnap.ref, update, { merge: true })
+        batchCount++
+        // Firestore batches cap at 500 ops; commit in chunks.
+        if (batchCount >= 400) {
+          await batch.commit()
+          batchCount = 0
+        }
+      }
+    }
+    if (!dryRun && batchCount > 0) await batch.commit()
+    summary[col] = { total: snap.size, touched, skipped }
+  }
+  return { ok: true, dryRun, defaultTenant, summary }
 })
