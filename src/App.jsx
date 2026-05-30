@@ -3510,12 +3510,15 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     }
   }, [])
 
-  const navCounts = {
+  // Five filters over jobs + four over other collections, recomputed every
+  // time anything in DataContext snapshots. Memoize on the actual inputs so
+  // any unrelated render (e.g. modal open) doesn't re-run.
+  const navCounts = useMemo(() => ({
     'command-center': (jobs || []).filter(j => {
-      if (['complete','completed'].includes(j.status)) return false
+      if (['complete', 'completed'].includes(j.status)) return false
       const insp = j.insp || {}
       const failed = Object.values(insp).some(t => Object.values(t || {}).some(s => s === 'failed'))
-      const stale  = ((new Date() - new Date(j.lastStatusChange || j.start)) / 86400000) >= 2
+      const stale = ((new Date() - new Date(j.lastStatusChange || j.start)) / 86400000) >= 2
       return failed || (stale && j.status !== 'pending')
     }).length,
     jobs:          (jobs    || []).filter(j => j.status === 'needs-action').length,
@@ -3527,10 +3530,10 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     inspections:   (jobs    || []).filter(j => {
       const insp = j.insp || {}
       return Object.values(insp).some(trade =>
-        Object.values(trade || {}).some(s => s === 'scheduled' || s === 'failed')
+        Object.values(trade || {}).some(s => s === 'scheduled' || s === 'failed'),
       )
     }).length,
-  }
+  }), [jobs, extras, notifs, subs, submits, agentAlerts])
 
   if (loading) {
     return (

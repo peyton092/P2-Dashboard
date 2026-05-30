@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import { collection, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase'
 import { useJobs, useAllExtras, useNotifications, useSubs, useMaterials, useSubmits, useDailyReports, useUrgentItems, useSettings, useAgentAlerts } from './hooks/useFirestore'
@@ -1003,19 +1003,28 @@ export function DataProvider({ children, tenantId = null, role = null, clientJob
   const urgentItems  = scoped ? firestoreUrgentItems.filter(matchesScopedJob)  : firestoreUrgentItems
   const submitsScoped = scoped ? submits.filter(matchesScopedJob) : submits
 
+  // Memoize the context value so consumers re-render only when an underlying
+  // slice actually changes identity. Firestore snapshots already produce new
+  // arrays per update, so this is correct; the goal is to avoid forcing every
+  // consumer to re-render on unrelated parent re-renders.
+  const value = useMemo(() => ({
+    jobs, extras, notifs,
+    subs,
+    materials,
+    submits: submitsScoped,
+    dailyReports,
+    urgentItems,
+    settings,
+    agentAlerts,
+    loading,
+    seeded,
+  }), [
+    jobs, extras, notifs, subs, materials, submitsScoped,
+    dailyReports, urgentItems, settings, agentAlerts, loading, seeded,
+  ])
+
   return (
-    <DataContext.Provider value={{
-      jobs, extras, notifs,
-      subs,
-      materials,
-      submits: submitsScoped,
-      dailyReports,
-      urgentItems,
-      settings,
-      agentAlerts,
-      loading,
-      seeded,
-    }}>
+    <DataContext.Provider value={value}>
       {children}
     </DataContext.Provider>
   )
