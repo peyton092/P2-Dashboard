@@ -2,7 +2,7 @@ import { useMemo, useState, useRef, useEffect } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { useData } from '../DataContext'
-import { useJobFiles, addJobFile, useJobTasks, updateJob } from '../hooks/useFirestore'
+import { useJobFiles, addJobFile, useJobTasks, updateJob, addSubmit } from '../hooks/useFirestore'
 import { MessageSquareIcon, UploadIcon, CheckSquareIcon } from 'lucide-react'
 import JobTasks from './JobTasks'
 import { pushRecentJob } from '../lib/recentJobs'
@@ -100,6 +100,36 @@ export default function JobDetail({ jobId, onBack }) {
   useEffect(() => { if (jobId) pushRecentJob(jobId) }, [jobId])
 
   const toast = useToast()
+
+  const [msgSubject, setMsgSubject] = useState('')
+  const [msgBody, setMsgBody] = useState('')
+  const [postingMsg, setPostingMsg] = useState(false)
+
+  async function handlePostMessage(e) {
+    e?.preventDefault?.()
+    const subject = msgSubject.trim()
+    const body    = msgBody.trim()
+    if (!subject || !body || postingMsg) return
+    setPostingMsg(true)
+    try {
+      await addSubmit({
+        subject,
+        body,
+        jobId,
+        category: 'RFI',
+        priority: 'Medium',
+        status: 'Open',
+        portal: 'Internal',
+      })
+      setMsgSubject('')
+      setMsgBody('')
+      toast({ tone: 'success', title: 'Message posted', description: subject })
+    } catch (err) {
+      toast({ tone: 'error', title: 'Post failed', description: err.message || 'Unknown error' })
+    } finally {
+      setPostingMsg(false)
+    }
+  }
 
   async function handleScheduleInspection(trade, phase, dateStr) {
     if (!job?._docId) return
@@ -330,22 +360,22 @@ export default function JobDetail({ jobId, onBack }) {
       )}
 
       {/* Messages & RFIs */}
-      {jobSubmits.length > 0 && (
-        <DataPanel
-          title="Messages & RFIs"
-          description={`${jobSubmits.length} most recent`}
-          Icon={MessageSquareIcon}
-          padding="none"
-          actions={
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'submit' } }))}
-              className="text-[11px] font-semibold text-zinc-300 hover:text-white"
-            >
-              Open inbox →
-            </button>
-          }
-        >
+      <DataPanel
+        title="Messages & RFIs"
+        description={jobSubmits.length === 0 ? 'No messages yet — post one below.' : `${jobSubmits.length} most recent`}
+        Icon={MessageSquareIcon}
+        padding="none"
+        actions={
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'submit' } }))}
+            className="text-[11px] font-semibold text-zinc-300 hover:text-white"
+          >
+            Open inbox →
+          </button>
+        }
+      >
+        {jobSubmits.length > 0 && (
           <ul className="divide-y divide-white/5">
             {jobSubmits.map(s => {
               const tone = s.status === 'Resolved' ? 'success' : s.status === 'In Progress' ? 'warning' : 'critical'
@@ -364,8 +394,36 @@ export default function JobDetail({ jobId, onBack }) {
               )
             })}
           </ul>
-        </DataPanel>
-      )}
+        )}
+        <form onSubmit={handlePostMessage} className="border-t border-white/5 p-3 space-y-2">
+          <input
+            type="text"
+            value={msgSubject}
+            onChange={(e) => setMsgSubject(e.target.value)}
+            placeholder="Subject"
+            className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/25"
+            aria-label="Message subject"
+          />
+          <textarea
+            value={msgBody}
+            onChange={(e) => setMsgBody(e.target.value)}
+            placeholder="Type a message or RFI…"
+            rows={2}
+            className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/25 resize-none"
+            aria-label="Message body"
+          />
+          <div className="flex items-center justify-end">
+            <button
+              type="submit"
+              disabled={!msgSubject.trim() || !msgBody.trim() || postingMsg}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ backgroundColor: O }}
+            >
+              {postingMsg ? 'Posting…' : 'Post'}
+            </button>
+          </div>
+        </form>
+      </DataPanel>
 
       {/* Documents & photos */}
       <DataPanel
