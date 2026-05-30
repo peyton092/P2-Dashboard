@@ -19,7 +19,7 @@ import {
   BadgeCheckIcon, NotebookPenIcon,
   FilePenLineIcon, FolderOpenIcon, BarChart3Icon,
 } from 'lucide-react'
-import { classifyRisk } from '../agent/scoring'
+import { classifyRisk, daysSince } from '../agent/scoring'
 import { jobEvents, EVENT_META, todayKey } from '../lib/jobEvents'
 
 const O = '#F47920'
@@ -54,14 +54,6 @@ function jobContract(j) {
 
 const isComplete = (j) => ['complete', 'completed'].includes(j.status)
 
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
 
 const jobLabel = (j) => j.name || j.client?.split(' ')[0] || j.id
 

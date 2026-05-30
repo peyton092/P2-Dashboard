@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { updateJob } from '../hooks/useFirestore'
+import { daysSince } from '../agent/scoring'
 import {
   PageHeader, MetricTile, DataPanel, Pill,
   EmptyState, AllClearState, FilterBar,
@@ -21,15 +22,6 @@ import {
 
 const O = '#F47920'
 const tradeColor = { HVAC: '#3b82f6', Plumbing: '#06b6d4', Electrical: O }
-
-function daysSince(date) {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((Date.now() - d.getTime()) / 86400000)
-  } catch { return null }
-}
 
 // ── Tab: Subs ─────────────────────────────────────────────────────────────────
 
