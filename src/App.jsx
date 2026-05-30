@@ -63,6 +63,7 @@ import WarRoomComponent from './components/WarRoom'
 import CommandPalette from './components/CommandPalette'
 import JobDetail from './components/JobDetail'
 import OfflineBanner from './components/OfflineBanner'
+import { useToast } from '@/components/ui/toast'
 const CalendarComponent = lazy(() => import('./components/Calendar'))
 const ActivityComponent = lazy(() => import('./components/Activity'))
 import PMDashboardComponent from './components/PMDashboard'
@@ -3190,6 +3191,7 @@ function ProjectFolders() {
 function Notifications() {
   const { notifs = [] } = useData()
   const [filter, setFilter] = useState('all')
+  const toast = useToast()
 
   // Live = not dismissed. Dismiss is the user's "clear" gesture; archived
   // notifications drop out of view (matches modern notification-center UX).
@@ -3229,7 +3231,19 @@ function Notifications() {
   }
   const dismiss = (n) => {
     if (!n._docId) return
-    updateNotification(n._docId, { dismissed: true, read: true })
+    const docId = n._docId
+    const wasRead = !!n.read
+    updateNotification(docId, { dismissed: true, read: true })
+    toast({
+      tone: 'info',
+      title: 'Notification dismissed',
+      description: (n.msg || '').slice(0, 60),
+      duration: 6000,
+      action: {
+        label: 'Undo',
+        onClick: () => updateNotification(docId, { dismissed: false, read: wasRead }),
+      },
+    })
   }
   const markAll = () => {
     live.filter(n => !n.read && n._docId).forEach(n => updateNotification(n._docId, { read: true }))

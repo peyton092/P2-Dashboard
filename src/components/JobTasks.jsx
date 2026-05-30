@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useJobTasks, addJobTask, toggleJobTask, deleteJobTask } from '../hooks/useFirestore'
 import { DataPanel, EmptyState } from './shared'
+import { useToast } from '@/components/ui/toast'
 import { CheckSquareIcon, PlusIcon, Trash2Icon, SquareIcon } from 'lucide-react'
 
 const O = '#F47920'
@@ -12,6 +13,7 @@ export default function JobTasks({ jobId }) {
   const [draft, setDraft] = useState('')
   const [showDone, setShowDone] = useState(false)
   const [busy, setBusy] = useState(false)
+  const toast = useToast()
 
   const pending = tasks.filter(t => !t.done)
   const done    = tasks.filter(t => t.done)
@@ -26,6 +28,28 @@ export default function JobTasks({ jobId }) {
       setDraft('')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleDelete(task) {
+    const snapshot = { text: task.text, done: !!task.done }
+    try {
+      await deleteJobTask(task._docId)
+      toast({
+        tone: 'info',
+        title: 'Task deleted',
+        description: snapshot.text.slice(0, 60),
+        duration: 6000,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            const ref = await addJobTask(jobId, snapshot.text)
+            if (snapshot.done) await toggleJobTask(ref.id, true)
+          },
+        },
+      })
+    } catch (err) {
+      toast({ tone: 'error', title: 'Delete failed', description: err.message || 'Unknown error' })
     }
   }
 
@@ -68,7 +92,7 @@ export default function JobTasks({ jobId }) {
       ) : (
         <>
           <ul className="divide-y divide-white/5">
-            {pending.map(t => <TaskRow key={t._docId} task={t} />)}
+            {pending.map(t => <TaskRow key={t._docId} task={t} onDelete={handleDelete} />)}
           </ul>
 
           {done.length > 0 && (
@@ -82,7 +106,7 @@ export default function JobTasks({ jobId }) {
               </button>
               {showDone && (
                 <ul className="divide-y divide-white/5">
-                  {done.map(t => <TaskRow key={t._docId} task={t} />)}
+                  {done.map(t => <TaskRow key={t._docId} task={t} onDelete={handleDelete} />)}
                 </ul>
               )}
             </div>
@@ -93,7 +117,7 @@ export default function JobTasks({ jobId }) {
   )
 }
 
-function TaskRow({ task }) {
+function TaskRow({ task, onDelete }) {
   const done = !!task.done
   return (
     <li className="flex items-center gap-2.5 px-4 py-2.5">
@@ -111,7 +135,7 @@ function TaskRow({ task }) {
       </p>
       <button
         type="button"
-        onClick={() => deleteJobTask(task._docId)}
+        onClick={() => onDelete(task)}
         aria-label="Delete task"
         title="Delete task"
         className="shrink-0 p-1 rounded text-zinc-500 hover:text-red-400 hover:bg-white/5 transition-colors"

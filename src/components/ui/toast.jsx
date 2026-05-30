@@ -12,7 +12,10 @@ const TONE = {
 
 const ToastContext = createContext(() => {})
 
-// useToast() → toast(opts | string). opts: { title, description, tone, duration }
+// useToast() → toast(opts | string).
+// opts: { title, description, tone, duration, action: { label, onClick } }
+// `action` renders an inline button (e.g. "Undo") that fires onClick and
+// dismisses the toast.
 export function useToast() {
   return useContext(ToastContext)
 }
@@ -58,6 +61,16 @@ export function ToastProvider({ children }) {
                 {t.title && <p className="text-sm font-semibold text-white leading-snug">{t.title}</p>}
                 {t.description && <p className="text-xs text-zinc-400 mt-0.5 leading-snug">{t.description}</p>}
               </div>
+              {t.action && (
+                <button
+                  type="button"
+                  onClick={() => { try { t.action.onClick?.() } finally { dismiss(t.id) } }}
+                  className="shrink-0 text-xs font-bold px-2 py-1 rounded-md transition-colors"
+                  style={{ color: O, backgroundColor: O + '1f' }}
+                >
+                  {t.action.label || 'Undo'}
+                </button>
+              )}
               <button
                 type="button"
                 aria-label="Dismiss notification"
