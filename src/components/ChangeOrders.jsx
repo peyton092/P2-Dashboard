@@ -4,6 +4,7 @@ import { db } from '../firebase'
 import { useData } from '../DataContext'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useToast } from '@/components/ui/toast'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -396,6 +397,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
 
 export default function ChangeOrders() {
   const { jobs: JOBS, extras: ALL_EXTRAS, loading } = useData()
+  const toast = useToast()
   const [view, setView] = useState('list')
   const [editingCO, setEditingCO] = useState(null)
   const [form, setForm] = useState(null)
@@ -473,6 +475,10 @@ export default function ChangeOrders() {
       setView('list')
       setForm(null)
       setEditingCO(null)
+      toast({ tone: 'success', title: sendToBuilder ? 'Sent to builder' : 'Draft saved', description: form.coNumber })
+    } catch (err) {
+      console.error('[CO] Save failed:', err)
+      toast({ tone: 'error', title: 'Save failed', description: err.message || 'Try again.' })
     } finally {
       setSaving(false)
     }

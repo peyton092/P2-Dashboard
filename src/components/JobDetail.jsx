@@ -71,14 +71,27 @@ function TradeInspections({ trade, data, onSchedule }) {
               <span className="flex items-center gap-2">
                 {date && <span className="text-[10px] text-zinc-400">{fmtDate(date)}</span>}
                 {!completed && canSchedule && onSchedule && (
-                  <input
-                    type="date"
-                    value={scheduled}
-                    onChange={(e) => onSchedule(phase, e.target.value)}
-                    className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-zinc-200 focus:outline-none focus:border-white/30"
-                    title={`Schedule ${trade} ${PHASE_LABEL[phase] || phase}`}
-                    aria-label={`Schedule ${trade} ${PHASE_LABEL[phase] || phase}`}
-                  />
+                  <span className="inline-flex items-center gap-1">
+                    <input
+                      type="date"
+                      value={scheduled}
+                      onChange={(e) => onSchedule(phase, e.target.value)}
+                      className="text-xs px-2 py-1.5 rounded-md bg-white/[0.04] border border-white/10 text-zinc-200 focus:outline-none focus:border-white/30 min-h-8 min-w-[120px]"
+                      title={`Schedule ${trade} ${PHASE_LABEL[phase] || phase}`}
+                      aria-label={`Schedule ${trade} ${PHASE_LABEL[phase] || phase}`}
+                    />
+                    {scheduled && (
+                      <button
+                        type="button"
+                        onClick={() => onSchedule(phase, '')}
+                        title="Clear scheduled date"
+                        aria-label={`Clear scheduled ${trade} ${PHASE_LABEL[phase] || phase}`}
+                        className="text-zinc-500 hover:text-red-400 p-1.5 rounded-md hover:bg-white/5 transition-colors"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
                 )}
                 <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: meta.c, backgroundColor: meta.c + '22' }}>{meta.l}</span>
               </span>

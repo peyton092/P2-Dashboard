@@ -26,6 +26,8 @@ export default function JobTasks({ jobId }) {
     try {
       await addJobTask(jobId, text)
       setDraft('')
+    } catch (err) {
+      toast({ tone: 'error', title: 'Could not add task', description: err.message || 'Try again.' })
     } finally {
       setBusy(false)
     }

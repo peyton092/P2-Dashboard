@@ -166,9 +166,10 @@
   :focus:not(:focus-visible) {
     outline: none;
   }
-  /* Heading hierarchy */
-  h1 { @apply text-2xl font-black; }
-  h2 { @apply text-xl font-bold; }
+  /* Heading hierarchy. h1 matches PageHeader's semibold/tight pairing — a
+     bare <h1> outside the component reads the same weight. */
+  h1 { @apply text-2xl font-semibold tracking-tight; }
+  h2 { @apply text-xl font-semibold tracking-tight; }
   h3 { @apply text-base font-semibold; }
 }
 
