@@ -2,7 +2,7 @@ import { useMemo, useState, useRef, useEffect } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { useData } from '../DataContext'
-import { useJobFiles, addJobFile, useJobTasks } from '../hooks/useFirestore'
+import { useJobFiles, addJobFile, useJobTasks, updateJob } from '../hooks/useFirestore'
 import { MessageSquareIcon, UploadIcon, CheckSquareIcon } from 'lucide-react'
 import JobTasks from './JobTasks'
 import { pushRecentJob } from '../lib/recentJobs'
@@ -49,23 +49,37 @@ function fmtDate(d) {
 
 const CO_TONE = { approved: 'success', rejected: 'critical', pending: 'warning' }
 
-function TradeInspections({ trade, data }) {
-  const phases = Object.keys(data || {}).filter(k => !DATE_KEYS.has(k))
+function TradeInspections({ trade, data, onSchedule }) {
+  const phases = Object.keys(data || {}).filter(k => !DATE_KEYS.has(k) && !k.endsWith('Scheduled'))
   if (phases.length === 0) return null
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
       <p className="text-xs font-bold uppercase tracking-wide text-zinc-300 mb-2 capitalize">{trade}</p>
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {phases.map(phase => {
           const status = data[phase]
           const meta = ISTATUS[status] || ISTATUS['not-started']
-          const dateKey = `${phase}Date`
-          const date = data[dateKey]
+          const date = data[`${phase}Date`]
+          const scheduled = data[`${phase}Scheduled`] || ''
+          const completed = !!date
+          // Only the rough-in and final phases get a scheduling slot; "trim"
+          // is internal work, not an inspection.
+          const canSchedule = phase === 'roughIn' || phase === 'final'
           return (
             <div key={phase} className="flex items-center justify-between gap-2 text-xs">
               <span className="text-zinc-400">{PHASE_LABEL[phase] || phase}</span>
               <span className="flex items-center gap-2">
                 {date && <span className="text-[10px] text-zinc-500">{fmtDate(date)}</span>}
+                {!completed && canSchedule && onSchedule && (
+                  <input
+                    type="date"
+                    value={scheduled}
+                    onChange={(e) => onSchedule(phase, e.target.value)}
+                    className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-zinc-200 focus:outline-none focus:border-white/30"
+                    title={`Schedule ${trade} ${PHASE_LABEL[phase] || phase}`}
+                    aria-label={`Schedule ${trade} ${PHASE_LABEL[phase] || phase}`}
+                  />
+                )}
                 <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: meta.c, backgroundColor: meta.c + '22' }}>{meta.l}</span>
               </span>
             </div>
@@ -86,6 +100,18 @@ export default function JobDetail({ jobId, onBack }) {
   useEffect(() => { if (jobId) pushRecentJob(jobId) }, [jobId])
 
   const toast = useToast()
+
+  async function handleScheduleInspection(trade, phase, dateStr) {
+    if (!job?._docId) return
+    const nextTrade = { ...(job.insp?.[trade] || {}), [`${phase}Scheduled`]: dateStr || null }
+    const nextInsp  = { ...(job.insp || {}), [trade]: nextTrade }
+    try {
+      await updateJob(job._docId, { insp: nextInsp })
+      toast({ tone: 'success', title: 'Inspection scheduled', description: `${trade} ${phase} · ${dateStr || 'cleared'}` })
+    } catch (e) {
+      toast({ tone: 'error', title: 'Save failed', description: e.message || 'Unknown error' })
+    }
+  }
 
   const jobExtras = useMemo(() => extras.filter(e => e.job === jobId), [extras, jobId])
   const jobMaterials = useMemo(() => materials.filter(m => (m.job || m.jobId) === jobId), [materials, jobId])
@@ -252,7 +278,14 @@ export default function JobDetail({ jobId, onBack }) {
           <p className="text-sm text-zinc-400">No inspection data for this job.</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-3">
-            {trades.map(t => <TradeInspections key={t} trade={t} data={job.insp[t]} />)}
+            {trades.map(t => (
+              <TradeInspections
+                key={t}
+                trade={t}
+                data={job.insp[t]}
+                onSchedule={(phase, dateStr) => handleScheduleInspection(t, phase, dateStr)}
+              />
+            ))}
           </div>
         )}
       </DataPanel>

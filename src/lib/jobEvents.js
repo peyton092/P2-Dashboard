@@ -5,14 +5,16 @@
 //   target    — job's target completion date
 //   start     — job's start date
 //   pass/fail — recorded inspection outcome on a trade phase
+//   scheduled — inspection booked for a future date but not yet completed
 
 const O = '#F47920'
 
 export const EVENT_META = {
-  target: { color: O,         label: 'Target completion' },
-  start:  { color: '#3b82f6', label: 'Job start' },
-  pass:   { color: '#22c55e', label: 'Inspection passed' },
-  fail:   { color: '#ef4444', label: 'Inspection failed' },
+  target:    { color: O,         label: 'Target completion' },
+  start:     { color: '#3b82f6', label: 'Job start' },
+  scheduled: { color: '#a855f7', label: 'Inspection scheduled' },
+  pass:      { color: '#22c55e', label: 'Inspection passed' },
+  fail:      { color: '#ef4444', label: 'Inspection failed' },
 }
 
 export const jobLabel = (j) => j?.name || j?.client || j?.id || ''
@@ -30,6 +32,14 @@ export function jobEvents(job) {
     const tr = insp[t] || {}
     if (tr.roughInDate) evs.push({ date: isoDay(tr.roughInDate), type: tr.roughIn === 'failed' ? 'fail' : 'pass', jobId: job.id, label: `${job.id} ${t} rough-in` })
     if (tr.finalDate)   evs.push({ date: isoDay(tr.finalDate),   type: tr.final   === 'failed' ? 'fail' : 'pass', jobId: job.id, label: `${job.id} ${t} final` })
+    // Forward-looking: scheduled inspections that haven't happened yet.
+    // Suppressed if an outcome (pass/fail date) already exists for the phase.
+    if (tr.roughInScheduled && !tr.roughInDate) {
+      evs.push({ date: isoDay(tr.roughInScheduled), type: 'scheduled', jobId: job.id, label: `${job.id} ${t} rough-in scheduled` })
+    }
+    if (tr.finalScheduled && !tr.finalDate) {
+      evs.push({ date: isoDay(tr.finalScheduled), type: 'scheduled', jobId: job.id, label: `${job.id} ${t} final scheduled` })
+    }
   })
   return evs
 }
