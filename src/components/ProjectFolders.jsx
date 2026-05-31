@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useData } from '../DataContext'
 import { useJobFiles, addJobFile } from '../hooks/useFirestore'
-import { LoadingState } from './shared'
+import { PageHeader, LoadingState, LiveDot } from './shared'
 import { storage } from '../firebase'
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { Button } from '@/components/ui/button'
@@ -14,17 +14,6 @@ import {
 } from 'lucide-react'
 
 const O = '#F47920'
-
-function SectionHeader({ title, sub }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  )
-}
 
 export default function ProjectFolders() {
   const { jobs } = useData()
@@ -81,7 +70,18 @@ export default function ProjectFolders() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Project Folders" sub="Per-job file management — plans, photos, PDFs, notes" />
+      <PageHeader
+        eyebrow="Documents"
+        title="Project folders"
+        subtitle="Per-job file management — plans, photos, PDFs, notes."
+        meta={
+          <>
+            <LiveDot />
+            {selectedJob ? <span>Job {selectedJob.id}</span> : <span>Choose a job to view files</span>}
+            {selectedJob && files && <span>{files.length} file{files.length === 1 ? '' : 's'}</span>}
+          </>
+        }
+      />
 
       <Card className="border-white/10">
         <CardContent className="p-4 space-y-3">
