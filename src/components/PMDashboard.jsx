@@ -7,7 +7,6 @@ import {
 } from '../agent/scoring'
 import { ZONES, PM_TO_ZONE } from '../agent/zones'
 import { updateJob } from '../hooks/useFirestore'
-import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader,
   MetricTile,
@@ -18,10 +17,11 @@ import {
   DataSkeleton,
   FilterBar,
   ClearFiltersButton,
+  ExportCsvButton,
 } from './shared'
 import {
   UserRoundCogIcon, TriangleAlertIcon, ActivityIcon,
-  DownloadIcon, FilePenLineIcon, ReceiptIcon, BadgeCheckIcon,
+  FilePenLineIcon, ReceiptIcon, BadgeCheckIcon,
   ChevronDownIcon, MapPinIcon, AlertCircleIcon, BanIcon,
   CheckCircleIcon,
 } from 'lucide-react'
@@ -330,9 +330,9 @@ export default function PMDashboard() {
           </>
         }
         actions={
-          <button
-            type="button"
-            onClick={() => exportToCsv('p2-pm-dashboard', [
+          <ExportCsvButton
+            filename="p2-pm-dashboard"
+            columns={[
               { label: 'PM',                get: s => s.pm },
               { label: 'Active Jobs',       get: s => s.activeCount },
               { label: 'At Risk',           get: s => s.atRisk },
@@ -346,13 +346,10 @@ export default function PMDashboard() {
               { label: 'Stale 7d+',         get: s => s.stale7 },
               { label: 'Pressure',          get: s => s.pressure?.label || '' },
               { label: 'Next Action',       get: s => s.nextAction || '' },
-            ], visible)}
-            disabled={visible.length === 0}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            ]}
+            rows={visible}
             title="Export the current PM list to CSV"
-          >
-            <DownloadIcon size={13} /> Export
-          </button>
+          />
         }
       />
 

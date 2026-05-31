@@ -4,12 +4,12 @@ import { updateNotification } from '../hooks/useFirestore'
 import { useToast } from '@/components/ui/toast'
 import { useDialog } from '@/components/ui/dialog'
 import { useStickyState } from '../lib/useStickyState'
-import { exportToCsv } from '../lib/exportCsv'
 import { cn } from '@/lib/utils'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
   BulkActionBar as SharedBulkActionBar,
+  ExportCsvButton,
 } from './shared'
 import {
   NOTIF_FILTERS, notifIsWithinHours, notifMatchesFilter,
@@ -19,7 +19,7 @@ import {
 } from '../lib/notifications'
 import {
   ActivityIcon, AlertCircleIcon, BellIcon, CatIcon, CheckIcon,
-  ClipboardListIcon, DownloadIcon, InfoIcon, TrashIcon, TriangleAlertIcon, TypeIcon,
+  ClipboardListIcon, InfoIcon, TrashIcon, TriangleAlertIcon, TypeIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -145,21 +145,18 @@ export default function Notifications() {
         }
         actions={
           <>
-            <button
-              type="button"
-              onClick={() => exportToCsv('p2-notifications', [
+            <ExportCsvButton
+              filename="p2-notifications"
+              columns={[
                 { label: 'When',     get: n => { const ms = notifTimestampMs(n); return ms ? new Date(ms).toISOString() : '' } },
                 { label: 'Type',     get: n => n.type || '' },
                 { label: 'Category', get: n => NOTIF_CATEGORY_LABEL[notifCategory(n)] || '' },
                 { label: 'Message',  get: n => n.msg || '' },
                 { label: 'Read',     get: n => n.read ? 'yes' : 'no' },
-              ], visible)}
-              disabled={visible.length === 0}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              ]}
+              rows={visible}
               title="Export the current notifications view to CSV"
-            >
-              <DownloadIcon size={13} /> Export
-            </button>
+            />
             {kpis.unread > 0 && (
               <button
                 type="button"

@@ -4,7 +4,6 @@ import { useData } from '../DataContext'
 import { generateAlerts, ALERT_TYPE_LABEL } from '../agent/alerts'
 import { updateAgentAlert, addAgentAlert } from '../hooks/useFirestore'
 import { ZONES } from '../agent/zones'
-import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader,
   MetricTile,
@@ -15,11 +14,12 @@ import {
   DataSkeleton,
   FilterBar,
   ClearFiltersButton,
+  ExportCsvButton,
 } from './shared'
 import {
   AlertTriangleIcon, AlertCircleIcon, InfoIcon,
   CheckCircleIcon, CheckIcon, XIcon,
-  ClockIcon, BellOffIcon, DownloadIcon, RefreshCwIcon,
+  ClockIcon, BellOffIcon, RefreshCwIcon,
   TimerIcon, ReceiptIcon, BadgeCheckIcon,
   MapPinIcon, UserRoundCogIcon, ActivityIcon,
 } from 'lucide-react'
@@ -295,9 +295,9 @@ export default function AlertsPage() {
         }
         actions={
           <>
-            <button
-              type="button"
-              onClick={() => exportToCsv('p2-alerts', [
+            <ExportCsvButton
+              filename="p2-alerts"
+              columns={[
                 { label: 'Severity',    get: a => a.severity || '' },
                 { label: 'Title',       get: a => a.title || a.text || '' },
                 { label: 'Type',        get: a => a.type || '' },
@@ -305,13 +305,10 @@ export default function AlertsPage() {
                 { label: 'Next Action', get: a => a.nextAction || '' },
                 { label: 'Created',     get: a => a.createdAt ? new Date(a.createdAt).toISOString() : '' },
                 { label: 'Age (d)',     get: a => a.ageDays ?? '' },
-              ], visible)}
-              disabled={visible.length === 0}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              ]}
+              rows={visible}
               title="Export the current alert list to CSV"
-            >
-              <DownloadIcon size={13} /> Export
-            </button>
+            />
             <button
               type="button"
               onClick={handleRescan}

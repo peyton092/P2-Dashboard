@@ -13,6 +13,7 @@ import {
   SavedViewSelect,
   BulkActionBar as SharedBulkActionBar,
   ClearFiltersButton,
+  ExportCsvButton,
 } from './shared'
 import {
   JOB_FILTERS, JOB_FORM_INITIAL,
@@ -22,10 +23,9 @@ import {
 } from '../lib/jobs'
 import { classifyRisk, hasFailedInspection, isBillingReady } from '../agent/scoring'
 import { ZONES, getZoneId } from '../agent/zones'
-import { exportToCsv } from '../lib/exportCsv'
 import {
   ActivityIcon, AlertCircleIcon, BanIcon, CalendarIcon, CheckCircleIcon,
-  ChevronRightIcon, DollarSignIcon, DownloadIcon, HardHatIcon, PlusIcon,
+  ChevronRightIcon, DollarSignIcon, HardHatIcon, PlusIcon,
   TriangleAlertIcon, UsersIcon, CheckIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -192,23 +192,21 @@ export default function JobStatus() {
     setCreating(false)
   }
 
-  const exportVisibleCsv = () => {
-    exportToCsv('p2-jobs', [
-      { label: 'Job ID',    key: 'id' },
-      { label: 'Name',      get: e => jobName(e.j) },
-      { label: 'Client',    get: e => e.j.client || '' },
-      { label: 'Address',   get: e => e.j.address || '' },
-      { label: 'City',      get: e => e.j.city || '' },
-      { label: 'PM',        get: e => e.j.pm || '' },
-      { label: 'Status',    get: e => e.j.status || '' },
-      { label: 'Phase',     get: e => e.j.phase || '' },
-      { label: 'Progress',  get: e => `${e.j.progress ?? 0}%` },
-      { label: 'Target',    get: e => e.j.target || '' },
-      { label: 'Billing',   get: e => e.j.billingStatus || '' },
-      { label: 'Permit #',  get: e => e.j.permitNumber || '' },
-      { label: 'At Risk',   get: e => (e.risk?.level === 'critical' || e.risk?.level === 'warning' || e.failed) ? 'yes' : 'no' },
-    ], visible)
-  }
+  const jobExportColumns = [
+    { label: 'Job ID',    get: e => e.j.id },
+    { label: 'Name',      get: e => jobName(e.j) },
+    { label: 'Client',    get: e => e.j.client || '' },
+    { label: 'Address',   get: e => e.j.address || '' },
+    { label: 'City',      get: e => e.j.city || '' },
+    { label: 'PM',        get: e => e.j.pm || '' },
+    { label: 'Status',    get: e => e.j.status || '' },
+    { label: 'Phase',     get: e => e.j.phase || '' },
+    { label: 'Progress',  get: e => `${e.j.progress ?? 0}%` },
+    { label: 'Target',    get: e => e.j.target || '' },
+    { label: 'Billing',   get: e => e.j.billingStatus || '' },
+    { label: 'Permit #',  get: e => e.j.permitNumber || '' },
+    { label: 'At Risk',   get: e => (e.risk?.level === 'critical' || e.risk?.level === 'warning' || e.failed) ? 'yes' : 'no' },
+  ]
 
   return (
     <div className="space-y-6">
@@ -228,13 +226,12 @@ export default function JobStatus() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => exportVisibleCsv()}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
-            >
-              <DownloadIcon size={13} /> Export CSV
-            </button>
+            <ExportCsvButton
+              filename="p2-jobs"
+              columns={jobExportColumns}
+              rows={visible}
+              label="Export CSV"
+            />
             <button
               type="button"
               onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(JOB_FORM_INITIAL) }}

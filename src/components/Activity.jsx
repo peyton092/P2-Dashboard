@@ -1,12 +1,11 @@
 import { useMemo } from 'react'
 import { useData } from '../DataContext'
 import { useHistory } from '../hooks/useFirestore'
-import { exportToCsv } from '../lib/exportCsv'
 import { useStickyState } from '../lib/useStickyState'
-import { PageHeader, DataPanel, Pill, EmptyState, STATUS_COLORS } from './shared'
+import { PageHeader, DataPanel, Pill, EmptyState, STATUS_COLORS, ExportCsvButton } from './shared'
 import {
   ActivityIcon, FilePenLineIcon, BadgeCheckIcon, DollarSignIcon,
-  BellIcon, HardHatIcon, InfoIcon, DownloadIcon,
+  BellIcon, HardHatIcon, InfoIcon,
 } from 'lucide-react'
 
 const O = STATUS_COLORS.brand
@@ -99,22 +98,20 @@ export default function Activity() {
         subtitle="Chronological feed of changes and system events across the workspace."
         meta={<><span>{feed.length} entries</span></>}
         actions={
-          <button
-            type="button"
-            onClick={() => exportToCsv('p2-activity', [
+          <ExportCsvButton
+            filename="p2-activity"
+            columns={[
               { label: 'When',   get: i => i.ts ? new Date(i.ts).toISOString() : '' },
               { label: 'Source', key: 'source' },
               { label: 'Type',   key: 'type' },
               { label: 'Detail', key: 'text' },
               { label: 'Actor',  get: i => i.actor || '' },
               { label: 'Job',    get: i => i.jobId || '' },
-            ], filtered)}
-            disabled={filtered.length === 0}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            ]}
+            rows={filtered}
             title="Export the current activity view to CSV"
-          >
-            <DownloadIcon size={13} /> Export CSV
-          </button>
+            label="Export CSV"
+          />
         }
       />
 

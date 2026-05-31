@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useData } from '../DataContext'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot, AllClearState,
+  ExportCsvButton,
 } from './shared'
 import {
   BRIEF_CATEGORY_META, SEVERITY_RANK,
@@ -11,9 +12,8 @@ import { hasFailedInspection } from '../agent/scoring'
 import {
   AlertCircleIcon, CalendarClockIcon, CatIcon, CheckIcon,
   ClipboardListIcon, DollarSignIcon, FilePenLineIcon,
-  DownloadIcon, PackageIcon, PrinterIcon, TriangleAlertIcon,
+  PackageIcon, PrinterIcon, TriangleAlertIcon,
 } from 'lucide-react'
-import { exportToCsv } from '../lib/exportCsv'
 
 const O = '#F47920'
 
@@ -107,9 +107,9 @@ export default function MorningBriefing() {
         }
         actions={
           <>
-            <button
-              type="button"
-              onClick={() => exportToCsv('p2-morning-briefing', [
+            <ExportCsvButton
+              filename="p2-morning-briefing"
+              columns={[
                 { label: 'Category',    get: i => i.category || '' },
                 { label: 'Severity',    get: i => i.severity || '' },
                 { label: 'Title',       get: i => i.title || '' },
@@ -117,13 +117,10 @@ export default function MorningBriefing() {
                 { label: 'Owner',       get: i => i.owner || '' },
                 { label: 'Next Action', get: i => i.nextAction || '' },
                 { label: 'Age (d)',     get: i => i.age ?? '' },
-              ], items)}
-              disabled={items.length === 0}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              ]}
+              rows={items}
               title="Export the briefing items to CSV"
-            >
-              <DownloadIcon size={13} /> Export
-            </button>
+            />
             <button
               type="button"
               onClick={() => window.print()}

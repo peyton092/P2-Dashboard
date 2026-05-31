@@ -2,12 +2,12 @@ import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { updateJob } from '../hooks/useFirestore'
 import { daysSince } from '../agent/scoring'
-import { exportToCsv } from '../lib/exportCsv'
 import { useStickyState } from '../lib/useStickyState'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot, StatusBadge,
   EmptyState, AllClearState, FilterBar, SavedViewSelect,
   ClearFiltersButton,
+  ExportCsvButton,
 } from './shared'
 import {
   SUB_STATUS_OPTIONS, SUB_STATUS_COLOR, SUB_FILTERS, TRADE_FILTERS,
@@ -18,7 +18,7 @@ import {
 } from '../lib/subs'
 import { jobName } from '../lib/jobs'
 import {
-  AlertCircleIcon, CheckCircleIcon, ChevronRightIcon, ClockIcon, DownloadIcon,
+  AlertCircleIcon, CheckCircleIcon, ChevronRightIcon, ClockIcon,
   FileTextIcon, PhoneIcon, ShieldCheckIcon, TriangleAlertIcon,
   UsersRoundIcon,
 } from 'lucide-react'
@@ -134,9 +134,9 @@ export default function SubsTab() {
           </>
         }
         actions={
-          <button
-            type="button"
-            onClick={() => exportToCsv('p2-subs', [
+          <ExportCsvButton
+            filename="p2-subs"
+            columns={[
               { label: 'Name',            get: item => item.s.name || '' },
               { label: 'Trade',           get: item => item.s.trade || '' },
               { label: 'Contact',         get: item => item.s.contact || '' },
@@ -148,12 +148,10 @@ export default function SubsTab() {
               { label: 'Compliance',      get: item => item.verdict?.label || '' },
               { label: 'Score',           get: item => item.s.score ?? '' },
               { label: 'Active Jobs',     get: item => item.activeJobCount ?? 0 },
-            ], visible)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            ]}
+            rows={visible}
             title="Export the current subs list to CSV"
-          >
-            <DownloadIcon size={13} /> Export
-          </button>
+          />
         }
       />
 

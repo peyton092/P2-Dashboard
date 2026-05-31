@@ -1,15 +1,14 @@
 import { useMemo } from 'react'
 import {
   ZapIcon, WrenchIcon, HammerIcon,
-  FileTextIcon, ClockIcon, CheckCircleIcon, DownloadIcon,
+  FileTextIcon, ClockIcon, CheckCircleIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useData } from '../DataContext'
 import { updatePermit } from '../hooks/useFirestore'
-import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader, MetricTile, InspectionBadge, StatusBadge,
-  STATUS_COLORS, LiveDot,
+  STATUS_COLORS, LiveDot, ExportCsvButton,
 } from './shared'
 
 const PERMIT_COLOR = {
@@ -49,20 +48,17 @@ export default function Permits() {
           </>
         }
         actions={
-          <button
-            type="button"
-            onClick={() => exportToCsv('p2-permits', [
+          <ExportCsvButton
+            filename="p2-permits"
+            columns={[
               { label: 'Job',     get: p => p.job },
               { label: 'Address', get: p => p.address || '' },
               { label: 'Trade',   get: p => p.trade },
               { label: 'Status',  get: p => p.status || '' },
-            ], allPermits)}
-            disabled={allPermits.length === 0}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            ]}
+            rows={allPermits}
             title="Export the permit list to CSV"
-          >
-            <DownloadIcon size={13} /> Export
-          </button>
+          />
         }
       />
 

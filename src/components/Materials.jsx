@@ -1,7 +1,6 @@
 import { memo, useCallback, useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { addMaterial, updateMaterial, addHistory, useHistory } from '../hooks/useFirestore'
-import { exportToCsv } from '../lib/exportCsv'
 import { useStickyState } from '../lib/useStickyState'
 import { useToast } from './ui/toast'
 import { useDialog } from './ui/dialog'
@@ -11,6 +10,7 @@ import {
   EmptyState, AllClearState, FilterBar, SavedViewSelect,
   BulkActionBar as SharedBulkActionBar,
   ClearFiltersButton,
+  ExportCsvButton,
 } from './shared'
 import {
   MAT_STATUS_OPTIONS, MAT_STATUS_COLOR, MAT_UNITS, MAT_STATUS_TONE,
@@ -21,7 +21,7 @@ import {
   matNextAction,
 } from '../lib/materials'
 import {
-  ActivityIcon, AlertTriangleIcon, CheckCircleIcon, CheckIcon, DownloadIcon, HardHatIcon,
+  ActivityIcon, AlertTriangleIcon, CheckCircleIcon, CheckIcon, HardHatIcon,
   PackageIcon, PencilIcon, PlusIcon, TriangleAlertIcon, TruckIcon,
 } from 'lucide-react'
 
@@ -206,9 +206,9 @@ export default function Materials() {
         }
         actions={
           <>
-            <button
-              type="button"
-              onClick={() => exportToCsv('p2-materials', [
+            <ExportCsvButton
+              filename="p2-materials"
+              columns={[
                 { label: 'Item',         get: r => matName(r.m) },
                 { label: 'Job',          get: r => matJobId(r.m) },
                 { label: 'Status',       get: r => r.status },
@@ -220,12 +220,10 @@ export default function Materials() {
                 { label: 'Days Until',   get: r => r.daysUntil ?? '' },
                 { label: 'Overdue',      get: r => r.overdue ? 'yes' : 'no' },
                 { label: 'PO #',         get: r => r.m.poNum || '' },
-              ], visible)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+              ]}
+              rows={visible}
               title="Export the current materials list to CSV"
-            >
-              <DownloadIcon size={13} /> Export
-            </button>
+            />
             <button
               type="button"
               onClick={openRequest}
