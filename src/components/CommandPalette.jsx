@@ -36,6 +36,26 @@ const PAGES = [
 
 const navigate = (id) => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id } }))
 
+// Bold the matched substring inside a search result. Case-insensitive, only
+// highlights the first occurrence per string (results match on a single
+// substring, so multiple highlights would be noise). Returns plain text when
+// there's no query.
+function highlight(text, q) {
+  const t = String(text ?? '')
+  const query = String(q ?? '').trim()
+  if (!query) return t
+  const i = t.toLowerCase().indexOf(query.toLowerCase())
+  if (i < 0) return t
+  const end = i + query.length
+  return (
+    <>
+      {t.slice(0, i)}
+      <mark className="bg-transparent font-semibold" style={{ color: O }}>{t.slice(i, end)}</mark>
+      {t.slice(end)}
+    </>
+  )
+}
+
 export default function CommandPalette() {
   const { jobs = [], subs = [], extras = [], materials = [], dailyReports = [] } = useData()
   const [open, setOpen] = useState(false)
@@ -256,8 +276,8 @@ export default function CommandPalette() {
                       style={{ backgroundColor: isActive ? O + '1f' : 'transparent' }}
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-white truncate">{item.title}</p>
-                        {item.sub && <p className="text-[11px] text-zinc-400 truncate">{item.sub}</p>}
+                        <p className="text-sm text-white truncate">{highlight(item.title, query)}</p>
+                        {item.sub && <p className="text-[11px] text-zinc-400 truncate">{highlight(item.sub, query)}</p>}
                       </div>
                       {isActive && <CornerDownLeftIcon size={13} className="text-zinc-400 shrink-0" aria-hidden="true" />}
                     </button>
