@@ -69,4 +69,10 @@ describe('ShortcutsHelp', () => {
     act(() => { close.click() })
     expect(h.isOpen()).toBe(false)
   })
+
+  it('opens on the p2:open-shortcuts custom event', () => {
+    h = mount()
+    act(() => { window.dispatchEvent(new CustomEvent('p2:open-shortcuts')) })
+    expect(h.isOpen()).toBe(true)
+  })
 })

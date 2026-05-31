@@ -56,8 +56,15 @@ export default function ShortcutsHelp() {
         setOpen(true)
       }
     }
+    // Also responds to a custom event so callers (Settings, etc.) can open the
+    // modal without a keypress.
+    const onOpenEvent = () => setOpen(true)
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('p2:open-shortcuts', onOpenEvent)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('p2:open-shortcuts', onOpenEvent)
+    }
   }, [open])
 
   if (!open) return null

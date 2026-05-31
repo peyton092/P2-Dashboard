@@ -546,7 +546,19 @@ export default function SettingsPage({ onLogout }) {
         </DataPanel>
 
       {/* ── Keyboard shortcuts ───────────────────────────────────────── */}
-      <DataPanel title="Keyboard shortcuts" Icon={KeyboardIcon}>
+      <DataPanel
+        title="Keyboard shortcuts"
+        Icon={KeyboardIcon}
+        actions={
+          <Button
+            variant="outline"
+            className="border-white/15 text-zinc-200 text-xs h-8"
+            onClick={() => window.dispatchEvent(new CustomEvent('p2:open-shortcuts'))}
+          >
+            View as dialog
+          </Button>
+        }
+      >
           <ul className="divide-y divide-white/5">
             {[
               { keys: ['⌘', 'K'],    label: 'Open command palette' },
