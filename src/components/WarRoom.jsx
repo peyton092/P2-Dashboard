@@ -25,10 +25,11 @@ import {
   TableCell,
 } from './shared'
 import {
-  ActivityIcon, AlertCircleIcon,
+  ActivityIcon, AlertCircleIcon, DownloadIcon,
   // Phase 3 QA — preferred lucide names
   RadarIcon, CrosshairIcon, TriangleAlertIcon, BadgeCheckIcon,
 } from 'lucide-react'
+import { exportToCsv } from '../lib/exportCsv'
 
 const O = '#F47920'
 const TODAY = new Date()
@@ -324,6 +325,26 @@ export default function WarRoom() {
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
             <span>{kpis.active} active · {completedJobs.length} completed</span>
           </>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => exportToCsv('p2-war-room', [
+              { label: 'Job ID',    get: r => r.job.id },
+              { label: 'Name',      get: r => r.job.name || r.job.client || '' },
+              { label: 'Address',   get: r => r.job.address || '' },
+              { label: 'PM',        get: r => r.job.pm || '' },
+              { label: 'Status',    get: r => r.job.status || '' },
+              { label: 'Risk',      get: r => r.risk?.level || '' },
+              { label: 'Zone',      get: r => getZoneId(r.job) },
+              { label: 'Stale (d)', get: r => r.stale ?? '' },
+            ], filtered)}
+            disabled={filtered.length === 0}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Export the current dispatch list to CSV"
+          >
+            <DownloadIcon size={13} /> Export
+          </button>
         }
       />
 
