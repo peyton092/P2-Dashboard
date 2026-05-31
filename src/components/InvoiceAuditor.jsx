@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import { useSupplierInvoices, addSupplierInvoice, updateSupplierInvoice } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
@@ -484,9 +485,9 @@ export default function InvoiceAuditor() {
   const { jobs, materials } = useData()
   const { invoices, loading } = useSupplierInvoices()
   const [showForm, setShowForm] = useState(false)
-  const [vendorFilter, setVendorFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [search, setSearch] = useState('')
+  const [vendorFilter, setVendorFilter] = useStickyState('invoice.vendor', 'all')
+  const [statusFilter, setStatusFilter] = useStickyState('invoice.status', 'all')
+  const [search, setSearch] = useStickyState('invoice.search', '')
 
   const allVendors = [...new Set(invoices.map(i => i.vendor).filter(Boolean))]
 
