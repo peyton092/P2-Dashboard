@@ -11,6 +11,12 @@ describe('jobName', () => {
   it('falls back to client first word', () => {
     expect(jobName({ client: 'Acme Holdings', id: 'J1' })).toBe('Acme')
   })
+  it('falls back to id when both name and client are missing', () => {
+    expect(jobName({ id: 'J1' })).toBe('J1')
+  })
+  it('returns em-dash for an empty object — no crash', () => {
+    expect(jobName({})).toBe('—')
+  })
 })
 
 describe('phaseLabel', () => {

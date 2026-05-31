@@ -49,8 +49,13 @@ export default function CommandPalette() {
   const reset = () => { setQuery(''); setActive(0) }
   const close = () => { setOpen(false); reset() }
 
-  // Open on Cmd/Ctrl+K, on a 'p2:open-search' event (sidebar button), close on Esc.
+  // Open on Cmd/Ctrl+K or "/", on a 'p2:open-search' event (sidebar button), close on Esc.
   useEffect(() => {
+    const isTyping = (el) => {
+      if (!el) return false
+      const tag = el.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+    }
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
@@ -58,6 +63,9 @@ export default function CommandPalette() {
           if (o) { setQuery(''); setActive(0) }
           return !o
         })
+      } else if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e.target)) {
+        e.preventDefault()
+        setOpen(true); setQuery(''); setActive(0)
       } else if (e.key === 'Escape') {
         setOpen(false); setQuery(''); setActive(0)
       }
@@ -262,7 +270,7 @@ export default function CommandPalette() {
 
         <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-t border-white/10 text-[10px] text-zinc-400">
           <span className="flex items-center gap-1"><DollarSignIcon size={11} /> Tip:</span>
-          <span>↑↓ to navigate · ↵ to open · ⌘K to toggle</span>
+          <span>↑↓ to navigate · ↵ to open · ⌘K or / to toggle</span>
         </div>
       </div>
     </div>

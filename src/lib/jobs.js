@@ -3,7 +3,7 @@ import { classifyRisk, hasFailedInspection, isBillingReady, daysSince } from '..
 // Job-level helpers. Pure data + pure derivation. No React or Firestore
 // dependency. Moved out of src/App.jsx in Phase 18.
 
-export const jobName = (j) => j.name || j.client.split(' ')[0]
+export const jobName = (j) => j.name || j.client?.split(' ')?.[0] || j.id || '—'
 
 export const phaseLabel = (p) => p >= 67 ? 'Final Phase' : p >= 34 ? 'Mid Phase' : 'Rough-In Phase'
 
