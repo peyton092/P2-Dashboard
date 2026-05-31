@@ -63,10 +63,13 @@ export function jobNextAction(j) {
   if (j.status === 'blocked')      return 'Unblock job'
   if (j.status === 'hold')         return 'Release hold'
   if (j.status === 'needs-action') return 'Resolve open item'
-  const risk = classifyRisk(j)
-  if (risk?.level === 'critical')  return 'Triage — high risk'
+  // Stale check runs before the generic critical-risk fallback so the more
+  // specific "field update needed" copy wins for jobs that are critical only
+  // because they've gone too long without an update.
   const stale = jobStaleness(j)
   if (stale !== null && stale >= 7) return 'Field update needed'
+  const risk = classifyRisk(j)
+  if (risk?.level === 'critical')  return 'Triage — high risk'
   if (stale !== null && stale >= 3) return 'Daily status check-in'
   if (isBillingReady(j))           return 'Submit invoice — milestone earned'
   return 'Continue scheduled work'

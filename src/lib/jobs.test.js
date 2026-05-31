@@ -1,8 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
   jobName, phaseLabel, isJobComplete, jobStaleness, jobMatchesFilter,
+  jobNextAction, jobRiskMeta, fmtJobDate,
   JOB_FILTERS, JOB_FORM_INITIAL,
 } from './jobs'
+
+const ago = (n) => {
+  const d = new Date(); d.setDate(d.getDate() - n)
+  return d.toISOString().slice(0, 10)
+}
 
 describe('jobName', () => {
   it('prefers name', () => {
@@ -85,8 +91,61 @@ describe('jobStaleness', () => {
     expect(jobStaleness({})).toBeNull()
   })
   it('uses lastStatusChange when present', () => {
-    const d = new Date(); d.setDate(d.getDate() - 5)
-    const s = jobStaleness({ lastStatusChange: d.toISOString().slice(0, 10) })
-    expect(s).toBeGreaterThanOrEqual(4)
+    expect(jobStaleness({ lastStatusChange: ago(5) })).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('jobNextAction', () => {
+  it('returns "Closeout" for complete jobs', () => {
+    expect(jobNextAction({ status: 'complete' })).toBe('Closeout')
+    expect(jobNextAction({ status: 'completed' })).toBe('Closeout')
+  })
+  it('flags failed inspection rework', () => {
+    expect(jobNextAction({ status: 'active', insp: { hvac: { final: 'failed' } } }))
+      .toBe('Coordinate rework — inspection failed')
+  })
+  it('flags blocked / hold / needs-action statuses', () => {
+    expect(jobNextAction({ status: 'blocked' })).toBe('Unblock job')
+    expect(jobNextAction({ status: 'hold' })).toBe('Release hold')
+    expect(jobNextAction({ status: 'needs-action' })).toBe('Resolve open item')
+  })
+  it('flags stale jobs', () => {
+    expect(jobNextAction({ status: 'active', lastStatusChange: ago(10) }))
+      .toBe('Field update needed')
+    expect(jobNextAction({ status: 'active', lastStatusChange: ago(4) }))
+      .toBe('Daily status check-in')
+  })
+  it('falls back to scheduled-work copy', () => {
+    expect(jobNextAction({ status: 'active', lastStatusChange: ago(1) }))
+      .toBe('Continue scheduled work')
+  })
+})
+
+describe('jobRiskMeta', () => {
+  it('returns null for complete jobs', () => {
+    expect(jobRiskMeta({ status: 'complete' })).toBeNull()
+  })
+  it('returns null when no risk', () => {
+    expect(jobRiskMeta({ status: 'active' })).toBeNull()
+  })
+  it('returns critical meta for failed inspections', () => {
+    const meta = jobRiskMeta({ status: 'active', insp: { hvac: { final: 'failed' } } })
+    expect(meta?.tone).toBe('critical')
+    expect(meta?.label).toBe('High risk')
+  })
+})
+
+describe('fmtJobDate', () => {
+  it('returns null for empty input', () => {
+    expect(fmtJobDate('')).toBeNull()
+    expect(fmtJobDate(null)).toBeNull()
+    expect(fmtJobDate(undefined)).toBeNull()
+  })
+  it('returns the original string when unparseable', () => {
+    expect(fmtJobDate('not-a-date')).toBe('not-a-date')
+  })
+  it('formats valid dates', () => {
+    expect(fmtJobDate('2025-05-15')).toMatch(/2025/)
+    expect(fmtJobDate('2025-05-15')).toMatch(/May/)
   })
 })
