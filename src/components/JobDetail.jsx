@@ -213,7 +213,7 @@ export default function JobDetail({ jobId, onBack }) {
   if (!job) {
     return (
       <div className="space-y-4">
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
           <ChevronLeftIcon size={15} /> Back
         </button>
         <EmptyState Icon={HardHatIcon} title="Job not found" description="This job may have been removed or isn't loaded yet." />
@@ -243,7 +243,7 @@ export default function JobDetail({ jobId, onBack }) {
         {/* Sticky-on-scroll so the back affordance stays reachable on long
             job detail pages (lots of photos/docs scroll the header off). */}
         <div className="no-print sticky top-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-2 pb-3 mb-3 bg-zinc-950/85 backdrop-blur">
-          <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
+          <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
             <ChevronLeftIcon size={15} /> Back to jobs
           </button>
         </div>
@@ -285,7 +285,7 @@ export default function JobDetail({ jobId, onBack }) {
                   <PrinterIcon size={13} /> Print
                 </button>
                 {hasInvoice && (
-                  <button onClick={() => generateInvoicePdf(job)} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
+                  <button type="button" onClick={() => generateInvoicePdf(job)} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
                     <DownloadIcon size={13} /> Invoice PDF
                   </button>
                 )}

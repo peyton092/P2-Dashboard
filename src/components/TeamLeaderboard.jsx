@@ -164,7 +164,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
     <div className="mx-4 mb-3 p-3 rounded-lg border text-xs text-zinc-400"
       style={{ borderColor: '#ffffff15', backgroundColor: '#ffffff08' }}>
       No Google Review URL set. Configure it in the link settings above.
-      <button onClick={onClose} className="ml-3 underline text-zinc-400">Close</button>
+      <button type="button" onClick={onClose} className="ml-3 underline text-zinc-400">Close</button>
     </div>
   )
 
@@ -175,13 +175,13 @@ function ReviewLinkPanel({ name, url, onClose }) {
         <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
           <StarIcon size={12} /> Google Review Link — {name}
         </span>
-        <button onClick={onClose} className="p-0.5 hover:bg-white/10 rounded">
+        <button type="button" onClick={onClose} className="p-0.5 hover:bg-white/10 rounded">
           <XIcon size={12} color="#6b7280" />
         </button>
       </div>
       <div className="flex items-center gap-2 bg-white/5 rounded p-2">
         <span className="text-xs text-zinc-400 truncate flex-1">{url}</span>
-        <button onClick={copyLink}
+        <button type="button" onClick={copyLink}
           className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors"
           style={{ backgroundColor: copied ? '#22c55e22' : '#ffffff11', color: copied ? '#22c55e' : '#9ca3af' }}>
           {copied ? <CheckIcon size={11} /> : <LinkIcon size={11} />}
@@ -191,7 +191,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
       <div className="bg-white/5 rounded p-2">
         <p className="text-[11px] text-zinc-400 mb-1.5">Pre-written text message:</p>
         <p className="text-[11px] text-zinc-300 leading-relaxed">{msg}</p>
-        <button onClick={copyMsg}
+        <button type="button" onClick={copyMsg}
           className="mt-2 text-[11px] px-2 py-1 rounded flex items-center gap-1"
           style={{ backgroundColor: '#eab30822', color: '#eab308' }}>
           <LinkIcon size={10} /> Copy full message
@@ -293,7 +293,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
           <span className="text-sm text-white flex-1">Log +1 Referral for {name} <span className="text-zinc-400">(+{PTS.referral} pts)</span></span>
           <Button size="sm" className="h-7 text-xs" style={{ backgroundColor: '#22c55e', color: '#fff' }}
             onClick={() => onLogReferral(name)}>Confirm</Button>
-          <button onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
+          <button type="button" onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
             <XIcon size={13} color="#6b7280" />
           </button>
         </div>
@@ -316,7 +316,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
             onClick={() => onLogBonus(name, isAdding.value, isAdding.note)}>
             Award Bonus
           </Button>
-          <button onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
+          <button type="button" onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
             <XIcon size={13} color="#6b7280" />
           </button>
         </div>
@@ -498,7 +498,7 @@ export default function TeamLeaderboard() {
                 disabled={savingUrl} onClick={handleSaveUrl}>
                 {savingUrl ? 'Saving…' : 'Save'}
               </Button>
-              <button onClick={() => setShowUrlEdit(false)} className="p-1.5 hover:bg-white/10 rounded">
+              <button type="button" onClick={() => setShowUrlEdit(false)} className="p-1.5 hover:bg-white/10 rounded">
                 <XIcon size={13} color="#6b7280" />
               </button>
             </div>

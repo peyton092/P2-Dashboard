@@ -167,7 +167,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={onCancel} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+        <button type="button" onClick={onCancel} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
           <ChevronLeftIcon size={18} />
         </button>
         <div className="flex-1">
