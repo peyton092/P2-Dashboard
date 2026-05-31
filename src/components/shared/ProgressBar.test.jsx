@@ -42,4 +42,23 @@ describe('ProgressBar', () => {
     h = mount({ value: 50, color: '#22c55e' })
     expect(h.fill().style.backgroundColor).toBe('rgb(34, 197, 94)')
   })
+
+  it('sets role=progressbar with aria-valuenow / min / max', () => {
+    h = mount({ value: 42 })
+    const el = h.container.firstChild
+    expect(el.getAttribute('role')).toBe('progressbar')
+    expect(el.getAttribute('aria-valuenow')).toBe('42')
+    expect(el.getAttribute('aria-valuemin')).toBe('0')
+    expect(el.getAttribute('aria-valuemax')).toBe('100')
+  })
+
+  it('rounds aria-valuenow', () => {
+    h = mount({ value: 33.7 })
+    expect(h.container.firstChild.getAttribute('aria-valuenow')).toBe('34')
+  })
+
+  it('passes label as aria-label when provided', () => {
+    h = mount({ value: 50, label: 'Job progress' })
+    expect(h.container.firstChild.getAttribute('aria-label')).toBe('Job progress')
+  })
 })
