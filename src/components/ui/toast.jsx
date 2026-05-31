@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useCallback } from 'react'
-import { CheckCircleIcon, AlertCircleIcon, InfoIcon, XIcon } from 'lucide-react'
+import { CheckCircleIcon, AlertCircleIcon, AlertTriangleIcon, InfoIcon, XIcon } from 'lucide-react'
 
 const O = '#F47920'
 
 const TONE = {
   success: { color: '#22c55e', Icon: CheckCircleIcon },
   error:   { color: '#ef4444', Icon: AlertCircleIcon },
+  warning: { color: '#eab308', Icon: AlertTriangleIcon },
   info:    { color: '#3b82f6', Icon: InfoIcon },
   brand:   { color: O,         Icon: InfoIcon },
 }
