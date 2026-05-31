@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import {
   ZapIcon, WrenchIcon, HammerIcon,
   FileTextIcon, ClockIcon, CheckCircleIcon, DownloadIcon,
@@ -6,7 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useData } from '../DataContext'
 import { updatePermit } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
-import { StatCard, InspectionBadge, StatusBadge, STATUS_COLORS } from './shared'
+import {
+  PageHeader, MetricTile, InspectionBadge, StatusBadge,
+  STATUS_COLORS, LiveDot,
+} from './shared'
 
 const PERMIT_COLOR = {
   pending:  STATUS_COLORS.mute,
@@ -17,41 +21,34 @@ const PERMIT_COLOR = {
 }
 const permitColor = (s) => PERMIT_COLOR[s] || STATUS_COLORS.neutral
 
-// Phase 20 — extracted from src/App.jsx. Behavior preserved exactly. The
-// local SectionHeader is intentionally inlined here (it differs from the
-// modern shared/headers SectionHeader and is only used by legacy tabs).
-
 const O = '#F47920'
-
-function SectionHeader({ title, sub, action }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-      {action}
-    </div>
-  )
-}
 
 export default function Permits() {
   const { jobs } = useData()
-  const allPermits = jobs.flatMap(j =>
+  const allPermits = useMemo(() => jobs.flatMap(j =>
     ['electrical', 'plumbing', 'hvac'].filter(t => j.permits[t]).map(t => ({
       job: j.id, address: j.address, trade: t, status: j.permits[t],
     }))
-  )
+  ), [jobs])
   const approved = allPermits.filter(p => ['approved','finaled'].includes(p.status)).length
   const pending  = allPermits.filter(p => p.status === 'pending').length
   const applied  = allPermits.filter(p => p.status === 'applied').length
+  const denied   = allPermits.filter(p => p.status === 'denied').length
 
   return (
     <div className="space-y-6">
-      <SectionHeader
-        title="Permits"
-        sub="Permit status across all active jobs and trades"
-        action={
+      <PageHeader
+        eyebrow="Permits"
+        title="Permit board"
+        subtitle="Permit status across all active jobs and trades — keep approvals moving so work doesn't stall."
+        meta={
+          <>
+            <LiveDot />
+            <span>{allPermits.length} permits</span>
+            {denied > 0 && <span className="text-red-300">{denied} denied</span>}
+          </>
+        }
+        actions={
           <button
             type="button"
             onClick={() => exportToCsv('p2-permits', [
@@ -60,7 +57,8 @@ export default function Permits() {
               { label: 'Trade',   get: p => p.trade },
               { label: 'Status',  get: p => p.status || '' },
             ], allPermits)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            disabled={allPermits.length === 0}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             title="Export the permit list to CSV"
           >
             <DownloadIcon size={13} /> Export
@@ -68,11 +66,31 @@ export default function Permits() {
         }
       />
 
-      <div className="grid grid-cols-3 gap-4">
-        <StatCard label="Approved / Finaled" value={approved} Icon={CheckCircleIcon} />
-        <StatCard label="Applied / Pending"  value={applied + pending} sub="awaiting approval" Icon={ClockIcon} />
-        <StatCard label="Total Permits"      value={allPermits.length} Icon={FileTextIcon} />
-      </div>
+      {/* KPI strip */}
+      <section
+        className="grid gap-2 sm:gap-3"
+        aria-label="Permit pipeline"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
+      >
+        <MetricTile
+          label="Approved / Finaled"
+          value={approved}
+          Icon={CheckCircleIcon}
+          emphasis={approved > 0 ? 'success' : 'mute'}
+        />
+        <MetricTile
+          label="Applied / Pending"
+          value={applied + pending}
+          Icon={ClockIcon}
+          emphasis={(applied + pending) > 0 ? 'warning' : 'mute'}
+          sub="awaiting approval"
+        />
+        <MetricTile
+          label="Total Permits"
+          value={allPermits.length}
+          Icon={FileTextIcon}
+        />
+      </section>
 
       <div className="grid md:grid-cols-2 gap-4">
         {jobs.map(j => (
