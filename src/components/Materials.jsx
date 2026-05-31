@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar, SavedViewSelect,
+  BulkActionBar as SharedBulkActionBar,
 } from './shared'
 import {
   MAT_STATUS_OPTIONS, MAT_STATUS_COLOR, MAT_UNITS, MAT_STATUS_TONE,
@@ -20,7 +21,7 @@ import {
 } from '../lib/materials'
 import {
   ActivityIcon, AlertTriangleIcon, CheckCircleIcon, CheckIcon, DownloadIcon, HardHatIcon,
-  PackageIcon, PencilIcon, PlusIcon, TriangleAlertIcon, TruckIcon, XIcon,
+  PackageIcon, PencilIcon, PlusIcon, TriangleAlertIcon, TruckIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -763,25 +764,15 @@ function FormFieldLabel({ children }) {
 // per-row status select uses, so history rows stay consistent.
 
 function MaterialsBulkActionBar({ count, busy, onApply, onClear, visibleIds, onSelectAllVisible }) {
-  const allVisibleSelected = visibleIds && visibleIds.length > 0 && visibleIds.length === count
   return (
-    <div
-      role="region"
-      aria-label="Bulk materials actions"
-      className="sticky top-0 z-30 flex flex-wrap items-center gap-2 rounded-lg border border-orange-400/30 bg-zinc-900/95 backdrop-blur-md px-3 py-2 shadow-md"
-      style={{ borderLeftWidth: 3, borderLeftColor: O }}
+    <SharedBulkActionBar
+      count={count}
+      busy={busy}
+      onClear={onClear}
+      visibleIds={visibleIds}
+      onSelectAllVisible={onSelectAllVisible}
+      ariaLabel="Bulk materials actions"
     >
-      <span className="text-xs font-bold text-white">{count} selected</span>
-      {visibleIds && !allVisibleSelected && (
-        <button
-          type="button"
-          onClick={onSelectAllVisible}
-          disabled={busy}
-          className="text-[11px] font-semibold text-zinc-300 hover:text-white underline-offset-2 hover:underline disabled:opacity-60"
-        >
-          Select all {visibleIds.length} visible
-        </button>
-      )}
       <select
         value=""
         disabled={busy}
@@ -792,14 +783,6 @@ function MaterialsBulkActionBar({ count, busy, onApply, onClear, visibleIds, onS
         <option value="">Set status…</option>
         {MAT_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
-      <button
-        type="button"
-        onClick={onClear}
-        disabled={busy}
-        className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-300 hover:text-white px-2 py-1.5 rounded-md hover:bg-white/5 disabled:opacity-60"
-      >
-        <XIcon size={12} /> Clear
-      </button>
-    </div>
+    </SharedBulkActionBar>
   )
 }

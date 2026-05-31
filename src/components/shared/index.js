@@ -39,3 +39,4 @@ export {
 } from './inline-edits'
 export { SavedViewSelect } from './SavedViewSelect'
 export { MasterCheckbox } from './MasterCheckbox'
+export { BulkActionBar } from './BulkActionBar'
