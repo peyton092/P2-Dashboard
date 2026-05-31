@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
-import { createJob } from '../hooks/useFirestore'
+import { createJob, updateJob } from '../hooks/useFirestore'
+import { useToast } from '@/components/ui/toast'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
@@ -21,8 +22,9 @@ import { exportToCsv } from '../lib/exportCsv'
 import {
   ActivityIcon, AlertCircleIcon, BanIcon, CalendarIcon, CheckCircleIcon,
   ChevronRightIcon, DollarSignIcon, DownloadIcon, HardHatIcon, PlusIcon,
-  TriangleAlertIcon, UsersIcon,
+  TriangleAlertIcon, UsersIcon, CheckIcon, XIcon,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 const O = '#F47920'
 
@@ -42,6 +44,15 @@ export default function JobStatus() {
   const [showNewJob, setShowNewJob] = useState(false)
   const [jobForm, setJobForm]       = useState(JOB_FORM_INITIAL)
   const [creating, setCreating]     = useState(false)
+  const [selected, setSelected]     = useState(() => new Set())
+  const [bulkBusy, setBulkBusy]     = useState(false)
+  const toast = useToast()
+  const toggleSelected = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const clearSelection = () => setSelected(new Set())
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -434,6 +445,44 @@ export default function JobStatus() {
         }
       />
 
+      {/* Bulk-action bar — appears when one or more rows are selected. Uses
+          the same updateJob mutation the inline selects use; a confirm
+          prompt sits in front of destructive bulk changes. */}
+      {selected.size > 0 && (
+        <BulkActionBar
+          count={selected.size}
+          jobs={jobs}
+          selected={selected}
+          pmOptions={pmOptions}
+          busy={bulkBusy}
+          onApplyStatus={async (status) => {
+            if (!window.confirm(`Set ${selected.size} job${selected.size === 1 ? '' : 's'} to status "${status}"?`)) return
+            setBulkBusy(true)
+            try {
+              const targets = jobs.filter(j => selected.has(j.id) && j._docId)
+              await Promise.all(targets.map(j => updateJob(j._docId, { status })))
+              toast({ tone: 'success', title: `Updated ${targets.length} job${targets.length === 1 ? '' : 's'}` })
+              clearSelection()
+            } catch (err) {
+              toast({ tone: 'error', title: 'Bulk update failed', description: err.message || 'Try again.' })
+            } finally { setBulkBusy(false) }
+          }}
+          onApplyPM={async (pm) => {
+            if (!window.confirm(`Assign ${selected.size} job${selected.size === 1 ? '' : 's'} to ${pm}?`)) return
+            setBulkBusy(true)
+            try {
+              const targets = jobs.filter(j => selected.has(j.id) && j._docId)
+              await Promise.all(targets.map(j => updateJob(j._docId, { pm })))
+              toast({ tone: 'success', title: `Reassigned ${targets.length} job${targets.length === 1 ? '' : 's'} to ${pm}` })
+              clearSelection()
+            } catch (err) {
+              toast({ tone: 'error', title: 'Bulk update failed', description: err.message || 'Try again.' })
+            } finally { setBulkBusy(false) }
+          }}
+          onClear={clearSelection}
+        />
+      )}
+
       {/* Portfolio queue */}
       <DataPanel
         title="Portfolio"
@@ -463,6 +512,8 @@ export default function JobStatus() {
                   zone={ZONES[zoneId] || null}
                   expanded={expanded === j.id}
                   onToggle={() => setExpanded(expanded === j.id ? null : j.id)}
+                  selected={selected.has(j.id)}
+                  onToggleSelect={() => toggleSelected(j.id)}
                 />
               </li>
             ))}
@@ -486,6 +537,7 @@ function JobStatusEmptyState({ filter, hasOtherFilters }) {
 function JobStatusRow({
   job, complete, risk, stale, failed, billRdy, zone,
   expanded, onToggle,
+  selected = false, onToggleSelect,
 }) {
   const riskMeta    = jobRiskMeta(job)
   const next        = jobNextAction(job)
@@ -523,6 +575,24 @@ function JobStatusRow({
         aria-expanded={expanded}
       >
         <div className="flex items-start gap-3 sm:gap-4">
+          {onToggleSelect && (
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={selected}
+              aria-label={`Select ${job.id}`}
+              onClick={(e) => { e.stopPropagation(); onToggleSelect() }}
+              className={cn(
+                'shrink-0 mt-1 w-4 h-4 rounded border transition-colors flex items-center justify-center',
+                selected
+                  ? 'bg-orange-500/80 border-orange-400 text-white'
+                  : 'bg-white/[0.04] border-white/20 text-transparent hover:border-white/40',
+              )}
+              style={selected ? { backgroundColor: O, borderColor: O } : undefined}
+            >
+              <CheckIcon size={11} strokeWidth={3} />
+            </button>
+          )}
           {/* Body */}
           <div className="flex-1 min-w-0">
             {/* Header row — id pill, name (clickable → JobDetail), status select, phase select */}
@@ -720,6 +790,62 @@ function JobFormField({ label, children }) {
         {label}
       </span>
       {children}
+    </div>
+  )
+}
+
+// ── BulkActionBar ───────────────────────────────────────────────────────────
+// Sticky bar that pins to the top of the scroll container while jobs are
+// selected. Provides bulk Status and PM updates plus a clear-selection
+// affordance. All mutations go through the same updateJob path the inline
+// row controls use, so per-doc behavior stays identical.
+
+function BulkActionBar({ count, pmOptions, busy, onApplyStatus, onApplyPM, onClear }) {
+  return (
+    <div
+      role="region"
+      aria-label="Bulk actions"
+      className="sticky top-0 z-30 flex flex-wrap items-center gap-2 rounded-lg border border-orange-400/30 bg-zinc-900/95 backdrop-blur-md px-3 py-2 shadow-md"
+      style={{ borderLeftWidth: 3, borderLeftColor: O }}
+    >
+      <span className="text-xs font-bold text-white">{count} selected</span>
+
+      <select
+        value=""
+        disabled={busy}
+        onChange={(e) => { if (e.target.value) { onApplyStatus(e.target.value); e.target.value = '' } }}
+        className="bg-white/[0.04] border border-white/15 rounded-lg text-xs px-2.5 py-1.5 text-zinc-200 focus:outline-none focus:border-white/30 disabled:opacity-60"
+        aria-label="Set status for selected jobs"
+      >
+        <option value="">Set status…</option>
+        <option value="on-track">On Track</option>
+        <option value="active">Active</option>
+        <option value="needs-action">Needs Action</option>
+        <option value="at-risk">At Risk</option>
+        <option value="blocked">Blocked</option>
+        <option value="hold">On Hold</option>
+        <option value="complete">Complete</option>
+      </select>
+
+      <select
+        value=""
+        disabled={busy || pmOptions.length === 0}
+        onChange={(e) => { if (e.target.value) { onApplyPM(e.target.value); e.target.value = '' } }}
+        className="bg-white/[0.04] border border-white/15 rounded-lg text-xs px-2.5 py-1.5 text-zinc-200 focus:outline-none focus:border-white/30 disabled:opacity-60"
+        aria-label="Assign PM to selected jobs"
+      >
+        <option value="">Assign PM…</option>
+        {pmOptions.map(pm => <option key={pm} value={pm}>{pm}</option>)}
+      </select>
+
+      <button
+        type="button"
+        onClick={onClear}
+        disabled={busy}
+        className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-300 hover:text-white px-2 py-1.5 rounded-md hover:bg-white/5 disabled:opacity-60"
+      >
+        <XIcon size={12} /> Clear
+      </button>
     </div>
   )
 }
