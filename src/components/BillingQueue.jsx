@@ -140,7 +140,9 @@ export default function BillingQueue() {
   const [search, setSearch]     = useState('')
   const [filter, setFilter]     = useState('all')
   const [pmFilter, setPmFilter] = useState('all')
-  const [sortBy, setSortBy]     = useState('amount')
+  const [sort, setSort]         = useState({ field: 'amount', direction: 'desc' })
+  const sortBy = sort.field
+  const setSortBy = (field) => setSort(s => ({ field, direction: s.field === field ? (s.direction === 'asc' ? 'desc' : 'asc') : 'desc' }))
 
   // Pending-CO map: jobId → count of extras awaiting builder approval.
   const pendingCOByJob = useMemo(() => {
@@ -253,13 +255,18 @@ export default function BillingQueue() {
       )
     }
     const sorted = [...list]
-    if (sortBy === 'amount')      sorted.sort((a, b) => b.billable - a.billable)
-    else if (sortBy === 'aging')  sorted.sort((a, b) => (b.agingDays ?? -1) - (a.agingDays ?? -1))
-    else if (sortBy === 'pm')     sorted.sort((a, b) => (a.job.pm || '').localeCompare(b.job.pm || ''))
-    else if (sortBy === 'zone')   sorted.sort((a, b) => getZoneId(a.job).localeCompare(getZoneId(b.job)))
-    else if (sortBy === 'name')   sorted.sort((a, b) => jobLabel(a.job).localeCompare(jobLabel(b.job)))
+    // Field comparator; direction is applied after.
+    const cmp =
+      sort.field === 'amount' ? (a, b) => a.billable - b.billable :
+      sort.field === 'aging'  ? (a, b) => (a.agingDays ?? -1) - (b.agingDays ?? -1) :
+      sort.field === 'pm'     ? (a, b) => (a.job.pm || '').localeCompare(b.job.pm || '') :
+      sort.field === 'zone'   ? (a, b) => getZoneId(a.job).localeCompare(getZoneId(b.job)) :
+      sort.field === 'job'    ? (a, b) => jobLabel(a.job).localeCompare(jobLabel(b.job)) :
+      sort.field === 'name'   ? (a, b) => jobLabel(a.job).localeCompare(jobLabel(b.job)) :
+      null
+    if (cmp) sorted.sort((a, b) => sort.direction === 'asc' ? cmp(a, b) : -cmp(a, b))
     return sorted
-  }, [enriched, filter, pmFilter, search, sortBy])
+  }, [enriched, filter, pmFilter, search, sort])
 
   const uniquePMs = useMemo(
     () => Array.from(new Set(enriched.map(e => e.job.pm).filter(Boolean))).sort(),
@@ -416,15 +423,17 @@ export default function BillingQueue() {
             <div className="hidden md:block px-3 sm:px-4 pb-3 pt-1">
               <ResponsiveTable>
                 <TableHeader
+                  sort={sort}
+                  onSort={setSortBy}
                   columns={[
-                    { key: 'job',     label: 'Job',          width: '14%' },
+                    { key: 'job',     label: 'Job',          width: '14%', sortable: true },
                     { key: 'builder', label: 'Customer',     width: '14%' },
-                    { key: 'amount',  label: 'Billable',     width: '10%', align: 'right' },
+                    { key: 'amount',  label: 'Billable',     width: '10%', align: 'right', sortable: true },
                     { key: 'status',  label: 'Billing',      width: '10%' },
                     { key: 'docs',    label: 'Docs',         width: '12%' },
                     { key: 'apr',     label: 'Approval',     width: '12%' },
-                    { key: 'pm',      label: 'PM',           width: '10%' },
-                    { key: 'aging',   label: 'Aging',        width: '8%' },
+                    { key: 'pm',      label: 'PM',           width: '10%', sortable: true },
+                    { key: 'aging',   label: 'Aging',        width: '8%',  sortable: true },
                     { key: 'next',    label: 'Next action',  width: '10%' },
                   ]}
                 />

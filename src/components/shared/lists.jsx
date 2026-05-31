@@ -86,24 +86,61 @@ export function ResponsiveTable({ children, className = '' }) {
   )
 }
 
-export function TableHeader({ columns }) {
+// columns: [{ key, label, align?, width?, className?, sortable? }]
+//
+// Optional sort support: pass `sort = { field, direction }` and `onSort(field)`.
+// Columns with `sortable: true` render a clickable button-style header showing
+// the current direction when active. Backwards-compatible — old call sites
+// without sort props render exactly as before.
+export function TableHeader({ columns, sort, onSort }) {
   return (
     <thead>
       <tr>
-        {columns.map(col => (
-          <th
-            key={col.key}
-            className={cn(
-              'text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400 px-3 pb-2',
-              col.align === 'right'  && 'text-right',
-              col.align === 'center' && 'text-center',
-              col.className,
-            )}
-            style={col.width ? { width: col.width } : undefined}
-          >
-            {col.label}
-          </th>
-        ))}
+        {columns.map(col => {
+          const active = sort?.field === col.key
+          const baseCls = cn(
+            'text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400 px-3 pb-2',
+            col.align === 'right'  && 'text-right',
+            col.align === 'center' && 'text-center',
+            col.className,
+          )
+          if (col.sortable && onSort) {
+            return (
+              <th
+                key={col.key}
+                scope="col"
+                aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                style={col.width ? { width: col.width } : undefined}
+                className={baseCls}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSort(col.key)}
+                  className={cn(
+                    'inline-flex items-center gap-1 transition-colors hover:text-zinc-200',
+                    active && 'text-white',
+                  )}
+                  style={active ? { color: O } : undefined}
+                >
+                  {col.label}
+                  <span aria-hidden="true" className="text-[8px] leading-none">
+                    {active ? (sort.direction === 'asc' ? '▲' : '▼') : '↕'}
+                  </span>
+                </button>
+              </th>
+            )
+          }
+          return (
+            <th
+              key={col.key}
+              scope="col"
+              className={baseCls}
+              style={col.width ? { width: col.width } : undefined}
+            >
+              {col.label}
+            </th>
+          )
+        })}
       </tr>
     </thead>
   )

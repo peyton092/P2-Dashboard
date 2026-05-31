@@ -393,6 +393,8 @@ export default function ChangeOrders() {
   const [form, setForm] = useState(null)
   const [jobFilter, setJobFilter] = useState('all')
   const [filter, setFilter]       = useState('all')
+  const [sort, setSort]           = useState({ field: 'aging', direction: 'desc' })
+  const onSort = (field) => setSort(s => ({ field, direction: s.field === field ? (s.direction === 'asc' ? 'desc' : 'asc') : 'desc' }))
   const [saving, setSaving] = useState(false)
 
   // Sort newest first (by date then by coNumber). Memoized so identity stays
@@ -543,6 +545,17 @@ export default function ChangeOrders() {
     else if (filter === 'Rejected')         list = rejected
 
     if (jobFilter !== 'all') list = list.filter(co => co.job === jobFilter)
+    // Column-header sort.
+    const cmp =
+      sort.field === 'co'     ? (a, b) => (a.coNumber || a.id || '').localeCompare(b.coNumber || b.id || '') :
+      sort.field === 'job'    ? (a, b) => (a.job || '').localeCompare(b.job || '') :
+      sort.field === 'amount' ? (a, b) => Number(a.total ?? a.amount ?? 0) - Number(b.total ?? b.amount ?? 0) :
+      sort.field === 'status' ? (a, b) => (a.status || '').localeCompare(b.status || '') :
+      sort.field === 'aging'  ? (a, b) => (coAgeDays(a) ?? -1) - (coAgeDays(b) ?? -1) :
+      null
+    if (cmp) {
+      list = [...list].sort((a, b) => sort.direction === 'asc' ? cmp(a, b) : -cmp(a, b))
+    }
     return list
   })()
 
@@ -699,14 +712,16 @@ export default function ChangeOrders() {
             <div className="hidden md:block px-3 sm:px-4 pb-3 pt-1">
               <ResponsiveTable>
                 <TableHeader
+                  sort={sort}
+                  onSort={onSort}
                   columns={[
-                    { key: 'co',     label: 'CO #',         width: '10%' },
-                    { key: 'job',    label: 'Job · Customer', width: '20%' },
-                    { key: 'desc',   label: 'Description',  width: '20%' },
-                    { key: 'amount', label: 'Amount',       align: 'right', width: '10%' },
-                    { key: 'status', label: 'Status',       width: '10%' },
-                    { key: 'pm',     label: 'PM',           width: '10%' },
-                    { key: 'aging',  label: 'Aging',        width: '8%' },
+                    { key: 'co',     label: 'CO #',           width: '10%', sortable: true },
+                    { key: 'job',    label: 'Job · Customer', width: '20%', sortable: true },
+                    { key: 'desc',   label: 'Description',    width: '20%' },
+                    { key: 'amount', label: 'Amount',         width: '10%', align: 'right', sortable: true },
+                    { key: 'status', label: 'Status',         width: '10%', sortable: true },
+                    { key: 'pm',     label: 'PM',             width: '10%' },
+                    { key: 'aging',  label: 'Aging',          width: '8%',  sortable: true },
                     { key: 'next',   label: 'Required action', width: '12%' },
                   ]}
                 />
