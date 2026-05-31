@@ -4,7 +4,7 @@ import { useFocusTrap } from '../lib/useFocusTrap'
 import {
   SearchIcon, GaugeIcon, HardHatIcon, UsersRoundIcon, FilePenLineIcon,
   ClipboardSignatureIcon, BoxesIcon, DollarSignIcon, CornerDownLeftIcon,
-  ClockIcon,
+  ClockIcon, BadgeCheckIcon, NotebookPenIcon,
 } from 'lucide-react'
 import { getRecentJobs } from '../lib/recentJobs'
 
@@ -37,7 +37,7 @@ const PAGES = [
 const navigate = (id) => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id } }))
 
 export default function CommandPalette() {
-  const { jobs = [], subs = [], extras = [], materials = [] } = useData()
+  const { jobs = [], subs = [], extras = [], materials = [], dailyReports = [] } = useData()
   const [open, setOpen] = useState(false)
   const dialogRef = useRef(null)
   useFocusTrap(dialogRef, open)
@@ -129,10 +129,50 @@ export default function CommandPalette() {
         [m.item, m.job, m.vendor].some(v => (v || '').toString().toLowerCase().includes(q)),
       ).slice(0, 5)
       if (matHits.length) groups.push({ heading: 'Materials', Icon: BoxesIcon, items: matHits.map(m => ({ key: `mat_${m._docId || m.id}`, title: m.item, sub: `${m.job || ''}${m.vendor ? ` · ${m.vendor}` : ''}`, tab: 'materials' })) })
+
+      // Search inspections by job + trade hits (the inspection statuses live on
+      // each job's `insp` map). Surfaces "anything with a failed inspection",
+      // "show me HVAC roughs", etc.
+      const inspHits = jobs.flatMap(j => {
+        const insp = j.insp || {}
+        const matches = []
+        ;['electrical', 'plumbing', 'hvac'].forEach(t => {
+          const trade = insp[t]
+          if (!trade) return
+          const tradeMatch = t.includes(q) || (j.id || '').toLowerCase().includes(q) || (j.name || '').toLowerCase().includes(q) || (j.address || '').toLowerCase().includes(q)
+          ;['roughIn', 'final'].forEach(phase => {
+            const status = trade[phase]
+            if (!status) return
+            const statusMatch = (status || '').toLowerCase().includes(q)
+            if (tradeMatch || statusMatch) {
+              matches.push({ jobId: j.id, jobName: j.name || j.client || j.id, trade: t, phase, status })
+            }
+          })
+        })
+        return matches
+      }).slice(0, 6)
+      if (inspHits.length) groups.push({ heading: 'Inspections', Icon: BadgeCheckIcon, items: inspHits.map((m, i) => ({
+        key: `insp_${m.jobId}_${m.trade}_${m.phase}_${i}`,
+        title: `${m.jobName} — ${m.trade} ${m.phase}`,
+        sub: m.status,
+        job: m.jobId,
+      })) })
+
+      // Recent daily reports — match on crew name, job id, or note text.
+      const reportHits = (dailyReports || []).filter(r =>
+        [r.crewMember, r.author, r.jobId, r.jobName, r.notes, r.nextStep]
+          .some(v => (v || '').toString().toLowerCase().includes(q)),
+      ).slice(0, 5)
+      if (reportHits.length) groups.push({ heading: 'Daily reports', Icon: NotebookPenIcon, items: reportHits.map(r => ({
+        key: `dr_${r._docId || r.id || `${r.jobId}_${r.date}`}`,
+        title: `${r.jobName || r.jobId || '—'} — ${r.date || ''}`.trim(),
+        sub: r.crewMember || r.author || (r.notes || '').slice(0, 60),
+        tab: 'daily-report',
+      })) })
     }
 
     return groups
-  }, [query, jobs, subs, extras, materials])
+  }, [query, jobs, subs, extras, materials, dailyReports])
 
   const flat = useMemo(() => results.flatMap(g => g.items), [results])
 
