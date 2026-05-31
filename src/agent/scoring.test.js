@@ -98,6 +98,23 @@ describe('classifyRisk', () => {
   it('returns null when fresh and clean', () => {
     expect(classifyRisk({ lastStatusChange: ago(0), insp: {} })).toBeNull()
   })
+  it('returns critical for HVAC startup blocked', () => {
+    const r = classifyRisk({
+      type: 'HVAC + Electrical Upgrade',
+      insp: { hvac: { roughIn: 'passed' } },
+    })
+    expect(r?.level).toBe('critical')
+    expect(r?.reason).toMatch(/HVAC/)
+  })
+  it('returns warning for needs-action status', () => {
+    const r = classifyRisk({ status: 'needs-action', lastStatusChange: ago(0) })
+    expect(r?.level).toBe('warning')
+    expect(r?.reason).toMatch(/Needs Action/)
+  })
+  it('returns info for 2-day stale', () => {
+    const r = classifyRisk({ lastStatusChange: ago(2) })
+    expect(r?.level).toBe('info')
+  })
 })
 
 describe('scoreJob', () => {
