@@ -11,8 +11,9 @@ import { hasFailedInspection } from '../agent/scoring'
 import {
   AlertCircleIcon, CalendarClockIcon, CatIcon, CheckIcon,
   ClipboardListIcon, DollarSignIcon, FilePenLineIcon,
-  PackageIcon, PrinterIcon, TriangleAlertIcon,
+  DownloadIcon, PackageIcon, PrinterIcon, TriangleAlertIcon,
 } from 'lucide-react'
+import { exportToCsv } from '../lib/exportCsv'
 
 const O = '#F47920'
 
@@ -105,14 +106,33 @@ export default function MorningBriefing() {
           </>
         }
         actions={
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
-            title="Print or save the briefing as PDF"
-          >
-            <PrinterIcon size={13} /> Print
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => exportToCsv('p2-morning-briefing', [
+                { label: 'Category',    get: i => i.category || '' },
+                { label: 'Severity',    get: i => i.severity || '' },
+                { label: 'Title',       get: i => i.title || '' },
+                { label: 'Job',         get: i => i.jobId || '' },
+                { label: 'Owner',       get: i => i.owner || '' },
+                { label: 'Next Action', get: i => i.nextAction || '' },
+                { label: 'Age (d)',     get: i => i.age ?? '' },
+              ], items)}
+              disabled={items.length === 0}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="Export the briefing items to CSV"
+            >
+              <DownloadIcon size={13} /> Export
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+              title="Print or save the briefing as PDF"
+            >
+              <PrinterIcon size={13} /> Print
+            </button>
+          </>
         }
       />
 
