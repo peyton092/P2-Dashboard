@@ -334,6 +334,8 @@ export default function Materials() {
         <MaterialsBulkActionBar
           count={selected.size}
           busy={bulkBusy}
+          visibleIds={visible.map(({ m }) => m._docId).filter(Boolean)}
+          onSelectAllVisible={() => setSelected(new Set(visible.map(({ m }) => m._docId).filter(Boolean)))}
           onApply={async (newStatus) => {
             const targets = visible
               .map(({ m }) => m)
@@ -760,7 +762,8 @@ function FormFieldLabel({ children }) {
 // change writes through the same updateMaterial + addHistory path that the
 // per-row status select uses, so history rows stay consistent.
 
-function MaterialsBulkActionBar({ count, busy, onApply, onClear }) {
+function MaterialsBulkActionBar({ count, busy, onApply, onClear, visibleIds, onSelectAllVisible }) {
+  const allVisibleSelected = visibleIds && visibleIds.length > 0 && visibleIds.length === count
   return (
     <div
       role="region"
@@ -769,6 +772,16 @@ function MaterialsBulkActionBar({ count, busy, onApply, onClear }) {
       style={{ borderLeftWidth: 3, borderLeftColor: O }}
     >
       <span className="text-xs font-bold text-white">{count} selected</span>
+      {visibleIds && !allVisibleSelected && (
+        <button
+          type="button"
+          onClick={onSelectAllVisible}
+          disabled={busy}
+          className="text-[11px] font-semibold text-zinc-300 hover:text-white underline-offset-2 hover:underline disabled:opacity-60"
+        >
+          Select all {visibleIds.length} visible
+        </button>
+      )}
       <select
         value=""
         disabled={busy}

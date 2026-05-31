@@ -429,6 +429,8 @@ export default function JobStatus() {
           count={selected.size}
           jobs={jobs}
           selected={selected}
+          visibleIds={visible.map(e => e.j.id)}
+          onSelectAllVisible={() => setSelected(new Set(visible.map(e => e.j.id)))}
           pmOptions={pmOptions}
           busy={bulkBusy}
           onApplyStatus={async (status) => {
@@ -786,7 +788,11 @@ function JobFormField({ label, children }) {
 // affordance. All mutations go through the same updateJob path the inline
 // row controls use, so per-doc behavior stays identical.
 
-function BulkActionBar({ count, pmOptions, busy, onApplyStatus, onApplyPM, onClear }) {
+function BulkActionBar({
+  count, pmOptions, busy, onApplyStatus, onApplyPM, onClear,
+  visibleIds, onSelectAllVisible,
+}) {
+  const allVisibleSelected = visibleIds && visibleIds.length > 0 && visibleIds.length === count
   return (
     <div
       role="region"
@@ -795,6 +801,16 @@ function BulkActionBar({ count, pmOptions, busy, onApplyStatus, onApplyPM, onCle
       style={{ borderLeftWidth: 3, borderLeftColor: O }}
     >
       <span className="text-xs font-bold text-white">{count} selected</span>
+      {visibleIds && !allVisibleSelected && (
+        <button
+          type="button"
+          onClick={onSelectAllVisible}
+          disabled={busy}
+          className="text-[11px] font-semibold text-zinc-300 hover:text-white underline-offset-2 hover:underline disabled:opacity-60"
+        >
+          Select all {visibleIds.length} visible
+        </button>
+      )}
 
       <select
         value=""
