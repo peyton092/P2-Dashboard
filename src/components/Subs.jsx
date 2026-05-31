@@ -5,7 +5,7 @@ import { daysSince } from '../agent/scoring'
 import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot, StatusBadge,
-  EmptyState, AllClearState, FilterBar,
+  EmptyState, AllClearState, FilterBar, SavedViewSelect,
 } from './shared'
 import {
   SUB_STATUS_OPTIONS, SUB_STATUS_COLOR, SUB_FILTERS, TRADE_FILTERS,
@@ -205,6 +205,16 @@ export default function SubsTab() {
         chips={filterChips}
         trailing={
           <>
+            <SavedViewSelect
+              scope="subs"
+              currentPayload={{ filter, tradeFilter, search: search.trim() }}
+              onApply={v => {
+                setFilter(v.filter ?? 'all')
+                setTradeFilter(v.tradeFilter ?? 'all')
+                setSearch(v.search ?? '')
+              }}
+              savePrompt='Name this subs view (e.g. "Expiring HVAC")'
+            />
             <select
               value={tradeFilter}
               onChange={e => setTradeFilter(e.target.value)}

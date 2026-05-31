@@ -37,3 +37,4 @@ export {
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,
 } from './inline-edits'
+export { SavedViewSelect } from './SavedViewSelect'

@@ -4,7 +4,7 @@ import { addMaterial, updateMaterial, addHistory, useHistory } from '../hooks/us
 import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
-  EmptyState, AllClearState, FilterBar,
+  EmptyState, AllClearState, FilterBar, SavedViewSelect,
 } from './shared'
 import {
   MAT_STATUS_OPTIONS, MAT_STATUS_COLOR, MAT_UNITS, MAT_STATUS_TONE,
@@ -269,6 +269,12 @@ export default function Materials() {
         chips={filterChips}
         trailing={
           <>
+            <SavedViewSelect
+              scope="materials"
+              currentPayload={{ filter, filterJob }}
+              onApply={v => { setFilter(v.filter ?? 'all'); setFilterJob(v.filterJob ?? 'all') }}
+              savePrompt='Name this materials view (e.g. "Overdue on J-101")'
+            />
             <select
               value={filterJob}
               onChange={e => setFilterJob(e.target.value)}

@@ -3,7 +3,7 @@ import { useData } from '../DataContext'
 import { updateJob, passInspection, failInspection } from '../hooks/useFirestore'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
-  EmptyState, AllClearState, FilterBar,
+  EmptyState, AllClearState, FilterBar, SavedViewSelect,
 } from './shared'
 import {
   INSP_STATUSES, TRADE_META, PHASE_LABEL,
@@ -312,6 +312,16 @@ export default function Inspections() {
         chips={filterChips}
         trailing={
           <>
+            <SavedViewSelect
+              scope="inspections"
+              currentPayload={{ filter, tradeFilter, search: search.trim() }}
+              onApply={v => {
+                setFilter(v.filter ?? 'all')
+                setTradeFilter(v.tradeFilter ?? 'all')
+                setSearch(v.search ?? '')
+              }}
+              savePrompt='Name this inspections view (e.g. "Scheduled HVAC")'
+            />
             <select
               value={tradeFilter}
               onChange={e => setTradeFilter(e.target.value)}
