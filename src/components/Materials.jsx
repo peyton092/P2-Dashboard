@@ -387,7 +387,12 @@ export default function Materials() {
       >
         {visible.length === 0 ? (
           <div className="p-5">
-            <MaterialsEmptyState filter={filter} hasJobFilter={filterJob !== 'all'} onRequest={openRequest} />
+            <MaterialsEmptyState
+              filter={filter}
+              hasJobFilter={filterJob !== 'all'}
+              onRequest={openRequest}
+              onClear={() => { setFilter('all'); setFilterJob('all') }}
+            />
           </div>
         ) : (
           <ul className="divide-y divide-white/5">
@@ -420,13 +425,29 @@ export default function Materials() {
   )
 }
 
-function MaterialsEmptyState({ filter, hasJobFilter, onRequest }) {
+function MaterialsEmptyState({ filter, hasJobFilter, onRequest, onClear }) {
   if (filter === 'urgent')    return <AllClearState title="No urgent materials" description="Nothing is past its needed-by date." />
   if (filter === 'blocking')  return <AllClearState title="No materials blocking work" description="No open items needed within 7 days." />
   if (filter === 'needed')    return <AllClearState title="Nothing needed" description="Every active material has been delivered or used." />
   if (filter === 'ordered')   return <EmptyState   title="No materials in 'Ordered' status" description="Items waiting on a supplier will appear here." />
   if (filter === 'delivered') return <EmptyState   title="No deliveries yet" description="Items marked Delivered or At Job Site will appear here." />
-  if (hasJobFilter)           return <EmptyState   title="No materials for that job" description="Try clearing the job filter or request a new material." />
+  if (hasJobFilter) {
+    return (
+      <EmptyState
+        title="No materials for that job"
+        description="Try clearing the job filter or request a new material."
+        action={onClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
+          >
+            Clear all filters
+          </button>
+        )}
+      />
+    )
+  }
   return (
     <EmptyState
       Icon={PackageIcon}

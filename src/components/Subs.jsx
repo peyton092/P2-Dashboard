@@ -250,7 +250,11 @@ export default function SubsTab() {
       >
         {visible.length === 0 ? (
           <div className="p-5">
-            <SubsEmptyState filter={filter} hasOtherFilters={tradeFilter !== 'all' || search.trim() !== ''} />
+            <SubsEmptyState
+              filter={filter}
+              hasOtherFilters={tradeFilter !== 'all' || search.trim() !== ''}
+              onClear={() => { setFilter('all'); setTradeFilter('all'); setSearch('') }}
+            />
           </div>
         ) : (
           <ul className="divide-y divide-white/5">
@@ -270,8 +274,25 @@ export default function SubsTab() {
   )
 }
 
-function SubsEmptyState({ filter, hasOtherFilters }) {
-  if (hasOtherFilters)              return <EmptyState   Icon={UsersRoundIcon} title="No subs match" description="Try clearing the search or trade filter." />
+function SubsEmptyState({ filter, hasOtherFilters, onClear }) {
+  if (hasOtherFilters) {
+    return (
+      <EmptyState
+        Icon={UsersRoundIcon}
+        title="No subs match"
+        description="Try clearing the search or trade filter."
+        action={onClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
+          >
+            Clear all filters
+          </button>
+        )}
+      />
+    )
+  }
   if (filter === 'approved')        return <EmptyState   title="No approved subs" description="No subcontractors are currently cleared for work." />
   if (filter === 'pending')         return <AllClearState title="No compliance reviews pending" description="No subs flagged for review." />
   if (filter === 'blocked')         return <AllClearState title="No subs blocked" description="No compliance issues are blocking assignment right now." />

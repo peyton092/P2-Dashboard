@@ -487,7 +487,11 @@ export default function JobStatus() {
       >
         {visible.length === 0 ? (
           <div className="p-5">
-            <JobStatusEmptyState filter={filter} hasOtherFilters={pmFilter !== 'all' || zoneFilter !== 'all' || search.trim() !== ''} />
+            <JobStatusEmptyState
+              filter={filter}
+              hasOtherFilters={pmFilter !== 'all' || zoneFilter !== 'all' || search.trim() !== ''}
+              onClear={() => { setFilter('all'); setPmFilter('all'); setZoneFilter('all'); setSearch('') }}
+            />
           </div>
         ) : (
           <ul className="divide-y divide-white/5">
@@ -515,8 +519,25 @@ export default function JobStatus() {
   )
 }
 
-function JobStatusEmptyState({ filter, hasOtherFilters }) {
-  if (hasOtherFilters)            return <EmptyState   Icon={HardHatIcon} title="No jobs match" description="Try clearing the search, PM, or zone filter." />
+function JobStatusEmptyState({ filter, hasOtherFilters, onClear }) {
+  if (hasOtherFilters) {
+    return (
+      <EmptyState
+        Icon={HardHatIcon}
+        title="No jobs match"
+        description="Try clearing the search, PM, or zone filter."
+        action={onClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
+          >
+            Clear all filters
+          </button>
+        )}
+      />
+    )
+  }
   if (filter === 'at-risk')       return <AllClearState title="All active jobs are on track" description="No critical or warning-level risk on any active job." />
   if (filter === 'needs-action')  return <AllClearState title="No jobs need action" description="No failed inspections or jobs flagged 'needs action'." />
   if (filter === 'blocked')       return <AllClearState title="Nothing blocked" description="No jobs are blocked, on hold, or have failed inspections." />
