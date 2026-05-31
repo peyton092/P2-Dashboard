@@ -16,6 +16,7 @@ import {
   AllClearState,
   DataSkeleton,
   FilterBar,
+  ClearFiltersButton,
 } from './shared'
 import {
   UserRoundCogIcon, TriangleAlertIcon, ActivityIcon,
@@ -434,15 +435,7 @@ function PMEmptyState({ filter, hasSearch, onClear }) {
         Icon={UserRoundCogIcon}
         title="No PMs match"
         description="Adjust the search above or clear filters to see the whole roster."
-        action={onClear && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
-          >
-            Clear all filters
-          </button>
-        )}
+        action={<ClearFiltersButton onClick={onClear} />}
       />
     )
   }

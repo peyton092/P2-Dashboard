@@ -4,7 +4,7 @@ import { updateJob, passInspection, failInspection } from '../hooks/useFirestore
 import { useStickyState } from '../lib/useStickyState'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
-  EmptyState, AllClearState, FilterBar, SavedViewSelect,
+  EmptyState, AllClearState, FilterBar, SavedViewSelect, ClearFiltersButton,
 } from './shared'
 import {
   INSP_STATUSES, TRADE_META, PHASE_LABEL,
@@ -383,15 +383,7 @@ function InspectionsEmptyState({ filter, hasSearch, onClear }) {
         Icon={BadgeCheckIcon}
         title="No jobs match"
         description="Adjust the search or clear filters to see the full queue."
-        action={onClear && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
-          >
-            Clear all filters
-          </button>
-        )}
+        action={<ClearFiltersButton onClick={onClear} />}
       />
     )
   }

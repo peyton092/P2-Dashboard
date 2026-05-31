@@ -10,6 +10,7 @@ import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar, SavedViewSelect,
   BulkActionBar as SharedBulkActionBar,
+  ClearFiltersButton,
 } from './shared'
 import {
   MAT_STATUS_OPTIONS, MAT_STATUS_COLOR, MAT_UNITS, MAT_STATUS_TONE,
@@ -436,15 +437,7 @@ function MaterialsEmptyState({ filter, hasJobFilter, onRequest, onClear }) {
       <EmptyState
         title="No materials for that job"
         description="Try clearing the job filter or request a new material."
-        action={onClear && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
-          >
-            Clear all filters
-          </button>
-        )}
+        action={<ClearFiltersButton onClick={onClear} />}
       />
     )
   }

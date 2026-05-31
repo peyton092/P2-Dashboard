@@ -7,6 +7,7 @@ import { useStickyState } from '../lib/useStickyState'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot, StatusBadge,
   EmptyState, AllClearState, FilterBar, SavedViewSelect,
+  ClearFiltersButton,
 } from './shared'
 import {
   SUB_STATUS_OPTIONS, SUB_STATUS_COLOR, SUB_FILTERS, TRADE_FILTERS,
@@ -281,15 +282,7 @@ function SubsEmptyState({ filter, hasOtherFilters, onClear }) {
         Icon={UsersRoundIcon}
         title="No subs match"
         description="Try clearing the search or trade filter."
-        action={onClear && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
-          >
-            Clear all filters
-          </button>
-        )}
+        action={<ClearFiltersButton onClick={onClear} />}
       />
     )
   }

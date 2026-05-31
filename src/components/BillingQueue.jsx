@@ -24,6 +24,7 @@ import {
   SavedViewSelect,
   MasterCheckbox,
   BulkActionBar as SharedBulkActionBar,
+  ClearFiltersButton,
 } from './shared'
 import {
   DollarSignIcon, CheckCircleIcon, ClockIcon,
@@ -587,15 +588,7 @@ function EmptyStateForFilter({ filter, hasSearch, onClear }) {
         Icon={DollarSignIcon}
         title="No jobs match those filters"
         description="Adjust or clear the search and filters above."
-        action={onClear && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
-          >
-            Clear all filters
-          </button>
-        )}
+        action={<ClearFiltersButton onClick={onClear} />}
       />
     )
   }

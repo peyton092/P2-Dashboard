@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { EmptyState, AllClearState, LoadingState, ErrorState } from './states'
+import { EmptyState, AllClearState, LoadingState, ErrorState, ClearFiltersButton } from './states'
 
 function mount(El, props = {}) {
   const container = document.createElement('div')
@@ -93,5 +93,32 @@ describe('ErrorState', () => {
     h = mount(ErrorState, {})
     const retry = Array.from(h.container.querySelectorAll('button')).find(b => /Retry/i.test(b.textContent))
     expect(retry).toBeFalsy()
+  })
+})
+
+describe('ClearFiltersButton', () => {
+  let h
+  beforeEach(() => { h?.unmount?.() })
+
+  it('renders nothing when onClick is missing', () => {
+    h = mount(ClearFiltersButton, {})
+    expect(h.container.querySelector('button')).toBeFalsy()
+  })
+
+  it('renders the default label when onClick is provided', () => {
+    h = mount(ClearFiltersButton, { onClick: () => {} })
+    expect(h.container.querySelector('button')?.textContent).toBe('Clear all filters')
+  })
+
+  it('renders a custom label', () => {
+    h = mount(ClearFiltersButton, { onClick: () => {}, label: 'Reset' })
+    expect(h.container.querySelector('button')?.textContent).toBe('Reset')
+  })
+
+  it('fires onClick when clicked', () => {
+    let clicks = 0
+    h = mount(ClearFiltersButton, { onClick: () => { clicks++ } })
+    act(() => { h.container.querySelector('button').click() })
+    expect(clicks).toBe(1)
   })
 })
