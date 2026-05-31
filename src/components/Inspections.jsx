@@ -354,7 +354,11 @@ export default function Inspections() {
           Icon={BadgeCheckIcon}
           description="No jobs match the current filters."
         >
-          <InspectionsEmptyState filter={filter} hasSearch={Boolean(search.trim() || tradeFilter !== 'all')} />
+          <InspectionsEmptyState
+            filter={filter}
+            hasSearch={Boolean(search.trim() || tradeFilter !== 'all')}
+            onClear={() => { setFilter('all'); setTradeFilter('all'); setSearch('') }}
+          />
         </DataPanel>
       ) : (
         <div className="space-y-4">
@@ -372,9 +376,24 @@ export default function Inspections() {
   )
 }
 
-function InspectionsEmptyState({ filter, hasSearch }) {
+function InspectionsEmptyState({ filter, hasSearch, onClear }) {
   if (hasSearch) {
-    return <EmptyState Icon={BadgeCheckIcon} title="No jobs match" description="Adjust the search or clear filters to see the full queue." />
+    return (
+      <EmptyState
+        Icon={BadgeCheckIcon}
+        title="No jobs match"
+        description="Adjust the search or clear filters to see the full queue."
+        action={onClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
+          >
+            Clear all filters
+          </button>
+        )}
+      />
+    )
   }
   if (filter === 'ready')     return <AllClearState title="Nothing ready to call in" description="The readiness gate hasn't cleared on any active job yet." />
   if (filter === 'scheduled') return <EmptyState   title="No inspections scheduled" description="Mark a phase 'Scheduled' once an inspector is booked." />
