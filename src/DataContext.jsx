@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import { collection, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore'
-import { db } from './firebase'
+import { db, auth } from './firebase'
 import { useJobs, useAllExtras, useNotifications, useSubs, useMaterials, useSubmits, useDailyReports, useUrgentItems, useSettings, useAgentAlerts } from './hooks/useFirestore'
 
 // ── Seed / migrate Firestore — NEVER overwrites user-edited fields ────────────
@@ -51,12 +51,22 @@ async function seedFirestore() {
 const DataContext = createContext(null)
 
 export function DataProvider({ children, tenantId = null, role = null, clientJobIds = null }) {
-  const { jobs: firestoreJobs, loading: jobsLoading }               = useJobs()
-  const { extras: firestoreExtras, loading: extrasLoading }         = useAllExtras()
-  const { notifs: firestoreNotifs, loading: notifsLoading }         = useNotifications()
+  // Per-role Firestore-side scoping (audit C-1, phase 2). Builders see only
+  // their tenant's docs; clients see only docs that array-contain their uid in
+  // clientUids (populated by the backfillScoping Cloud Function). Internal
+  // staff stays unscoped — rules + JS still cover them.
+  const scope = useMemo(() => {
+    if (role === 'builder' && tenantId) return { tenantId }
+    if (role === 'client'  && auth.currentUser?.uid) return { clientUid: auth.currentUser.uid }
+    return null
+  }, [role, tenantId])
+
+  const { jobs: firestoreJobs, loading: jobsLoading }               = useJobs(scope)
+  const { extras: firestoreExtras, loading: extrasLoading }         = useAllExtras(scope)
+  const { notifs: firestoreNotifs, loading: notifsLoading }         = useNotifications(scope)
   const { subs: firestoreSubs, loading: subsLoading }               = useSubs()
   const { materials: firestoreMaterials, loading: matsLoading }     = useMaterials()
-  const { submits: firestoreSubmits, loading: submitsLoading }       = useSubmits()
+  const { submits: firestoreSubmits, loading: submitsLoading }       = useSubmits(scope)
   const { dailyReports: firestoreDailyReports, loading: drLoading } = useDailyReports()
   const { urgentItems: firestoreUrgentItems, loading: uiLoading }   = useUrgentItems()
   const { settings }                                                 = useSettings()

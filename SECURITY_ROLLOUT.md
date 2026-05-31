@@ -18,11 +18,17 @@ The code changes are already in this branch:
   caller. Push registration via `src/lib/push.js` already sets `uid`, so
   this is safe to deploy.
 
-What's **not** yet in this branch (deliberately, because it requires the
-backfill to run first):
+What's also in this branch (shipped after Phase 1 deploy + backfill):
 
-- Per-doc tenant scoping on operational collection rules.
-- Scoped queries in the client & builder portals.
+- **Scoped reads** at the Firestore-query layer for the builder and client
+  portals (DataContext threads scope into `useJobs` / `useAllExtras` /
+  `useNotifications` / `useSubmits` / `useHistory`). Internal staff stays
+  unscoped.
+- **Tightened rules** on the 11 operational collections — reads require
+  `ownsRecord(resource.data)`. The rule allows access via tenantId match,
+  clientUids contains, *or* the legacy fallback when the doc carries
+  neither field. Writes stay `signedIn()` so existing CO-approval /
+  notification flows keep working unchanged.
 
 ## The staged rollout
 

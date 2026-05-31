@@ -7,18 +7,45 @@ import { httpsCallable } from 'firebase/functions'
 import { db } from '../firebase'
 import { functions } from '../firebase'
 
-export function useJobs() {
+// Build a scoped Firestore query for an operational collection.
+//
+// `scope` shape (from DataContext, derived from the signed-in user's role):
+//   null                    → no scope (internal staff)
+//   { tenantId: 'qbs' }     → builder portal — restrict to their tenant
+//   { clientUid: '<uid>' }  → client portal — restrict to docs that array-
+//                             contain the user's uid in clientUids
+//
+// Falls back to the unscoped collection ref when scope is null. The
+// caller is responsible for orderBy / limit; we avoid combining where +
+// orderBy here so the queries don't require composite Firestore indexes —
+// portal payloads are small (<200 docs) and we sort client-side.
+function scopedCollection(name, scope) {
+  const col = collection(db, name)
+  if (!scope) return col
+  if (scope.tenantId) return query(col, where('tenantId', '==', scope.tenantId))
+  if (scope.clientUid) return query(col, where('clientUids', 'array-contains', scope.clientUid))
+  return col
+}
+
+export function useJobs(scope = null) {
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
+  const tenantId = scope?.tenantId || null
+  const clientUid = scope?.clientUid || null
 
   useEffect(() => {
-    const q = query(collection(db, 'jobs'), orderBy('id'), limit(200))
+    const q = scope
+      ? scopedCollection('jobs', scope)
+      : query(collection(db, 'jobs'), orderBy('id'), limit(200))
     const unsub = onSnapshot(q, snap => {
-      setJobs(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
+      const docs = snap.docs.map(d => ({ ...d.data(), _docId: d.id }))
+      if (scope) docs.sort((a, b) => (a.id || '').localeCompare(b.id || ''))
+      setJobs(docs)
       setLoading(false)
     }, () => setLoading(false))
     return unsub
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, clientUid])
 
   return { jobs, loading }
 }
@@ -37,34 +64,52 @@ export function useExtras(jobId) {
   return extras
 }
 
-export function useAllExtras() {
+export function useAllExtras(scope = null) {
   const [extras, setExtras] = useState([])
   const [loading, setLoading] = useState(true)
+  const tenantId = scope?.tenantId || null
+  const clientUid = scope?.clientUid || null
 
   useEffect(() => {
-    const q = query(collection(db, 'extras'), orderBy('date'), limit(500))
+    const q = scope
+      ? scopedCollection('extras', scope)
+      : query(collection(db, 'extras'), orderBy('date'), limit(500))
     const unsub = onSnapshot(q, snap => {
-      setExtras(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
+      const docs = snap.docs.map(d => ({ ...d.data(), _docId: d.id }))
+      if (scope) docs.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+      setExtras(docs)
       setLoading(false)
     }, () => setLoading(false))
     return unsub
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, clientUid])
 
   return { extras, loading }
 }
 
-export function useNotifications() {
+export function useNotifications(scope = null) {
   const [notifs, setNotifs] = useState([])
   const [loading, setLoading] = useState(true)
+  const tenantId = scope?.tenantId || null
+  const clientUid = scope?.clientUid || null
 
   useEffect(() => {
-    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(100))
+    const q = scope
+      ? scopedCollection('notifications', scope)
+      : query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(100))
     const unsub = onSnapshot(q, snap => {
-      setNotifs(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
+      const docs = snap.docs.map(d => ({ ...d.data(), _docId: d.id }))
+      if (scope) docs.sort((a, b) => {
+        const ats = a.createdAt?.toMillis?.() ?? 0
+        const bts = b.createdAt?.toMillis?.() ?? 0
+        return bts - ats
+      })
+      setNotifs(docs)
       setLoading(false)
     }, () => setLoading(false))
     return unsub
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, clientUid])
 
   return { notifs, loading }
 }
@@ -135,18 +180,29 @@ export function usePermits() {
   return { permits, loading }
 }
 
-export function useSubmits() {
+export function useSubmits(scope = null) {
   const [submits, setSubmits] = useState([])
   const [loading, setLoading] = useState(true)
+  const tenantId = scope?.tenantId || null
+  const clientUid = scope?.clientUid || null
 
   useEffect(() => {
-    const q = query(collection(db, 'submits'), orderBy('createdAt', 'desc'), limit(100))
+    const q = scope
+      ? scopedCollection('submits', scope)
+      : query(collection(db, 'submits'), orderBy('createdAt', 'desc'), limit(100))
     const unsub = onSnapshot(q, snap => {
-      setSubmits(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
+      const docs = snap.docs.map(d => ({ ...d.data(), _docId: d.id }))
+      if (scope) docs.sort((a, b) => {
+        const ats = a.createdAt?.toMillis?.() ?? 0
+        const bts = b.createdAt?.toMillis?.() ?? 0
+        return bts - ats
+      })
+      setSubmits(docs)
       setLoading(false)
     }, () => setLoading(false))
     return unsub
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, clientUid])
 
   return { submits, loading }
 }
@@ -428,17 +484,28 @@ export async function addDailyReport(data) {
   })
 }
 
-export function useHistory() {
+export function useHistory(scope = null) {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
+  const tenantId = scope?.tenantId || null
+  const clientUid = scope?.clientUid || null
   useEffect(() => {
-    const q = query(collection(db, 'history'), orderBy('createdAt', 'desc'), limit(200))
+    const q = scope
+      ? scopedCollection('history', scope)
+      : query(collection(db, 'history'), orderBy('createdAt', 'desc'), limit(200))
     const unsub = onSnapshot(q, snap => {
-      setHistory(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
+      const docs = snap.docs.map(d => ({ ...d.data(), _docId: d.id }))
+      if (scope) docs.sort((a, b) => {
+        const ats = a.createdAt?.toMillis?.() ?? 0
+        const bts = b.createdAt?.toMillis?.() ?? 0
+        return bts - ats
+      })
+      setHistory(docs)
       setLoading(false)
     }, () => setLoading(false))
     return unsub
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, clientUid])
   return { history, loading }
 }
 
