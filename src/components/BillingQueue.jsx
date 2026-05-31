@@ -496,7 +496,28 @@ export default function BillingQueue() {
                   sort={sort}
                   onSort={setSortBy}
                   columns={[
-                    { key: 'sel',     label: '',             width: '3%'  },
+                    {
+                      key: 'sel',
+                      width: '3%',
+                      label: (
+                        <MasterCheckbox
+                          state={
+                            display.every(r => selected.has(r.job.id)) && display.length > 0 ? 'all'
+                            : display.some(r => selected.has(r.job.id)) ? 'some'
+                            : 'none'
+                          }
+                          onClick={() => {
+                            const allSelected = display.every(r => selected.has(r.job.id))
+                            if (allSelected) {
+                              clearSelection()
+                            } else {
+                              setSelected(new Set(display.map(r => r.job.id)))
+                            }
+                          }}
+                          ariaLabel="Select all visible jobs"
+                        />
+                      ),
+                    },
                     { key: 'job',     label: 'Job',          width: '13%', sortable: true },
                     { key: 'builder', label: 'Customer',     width: '13%' },
                     { key: 'amount',  label: 'Billable',     width: '10%', align: 'right', sortable: true },
@@ -955,5 +976,30 @@ function BulkBillingActionBar({ count, busy, onApply, onClear }) {
         <XIcon size={12} /> Clear
       </button>
     </div>
+  )
+}
+
+// MasterCheckbox — tri-state header checkbox: filled / partial / empty.
+// state: 'all' | 'some' | 'none'
+function MasterCheckbox({ state, onClick, ariaLabel }) {
+  const checked = state === 'all'
+  const partial = state === 'some'
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked ? true : partial ? 'mixed' : false}
+      aria-label={ariaLabel}
+      onClick={onClick}
+      className={cn(
+        'w-4 h-4 rounded border transition-colors inline-flex items-center justify-center',
+        checked || partial ? 'text-white' : 'bg-white/[0.04] border-white/20 text-transparent hover:border-white/40',
+      )}
+      style={checked || partial ? { backgroundColor: O, borderColor: O } : undefined}
+    >
+      {partial
+        ? <span className="w-2 h-[1.5px] bg-white rounded" />
+        : <CheckIcon size={11} strokeWidth={3} />}
+    </button>
   )
 }
