@@ -30,6 +30,7 @@ import {
   AllClearState,
   DataSkeleton,
   FilterBar,
+  MasterCheckbox,
   ResponsiveTable,
   TableHeader,
   TableRow,
@@ -764,7 +765,28 @@ export default function ChangeOrders() {
                   sort={sort}
                   onSort={onSort}
                   columns={[
-                    { key: 'sel',    label: '',               width: '3%'  },
+                    {
+                      key: 'sel',
+                      width: '3%',
+                      label: (
+                        <MasterCheckbox
+                          state={
+                            display.every(co => co._docId && selected.has(co._docId)) && display.length > 0 ? 'all'
+                            : display.some(co => co._docId && selected.has(co._docId)) ? 'some'
+                            : 'none'
+                          }
+                          onClick={() => {
+                            const allSelected = display.every(co => co._docId && selected.has(co._docId))
+                            if (allSelected) {
+                              clearSelection()
+                            } else {
+                              setSelected(new Set(display.filter(co => co._docId).map(co => co._docId)))
+                            }
+                          }}
+                          ariaLabel="Select all visible change orders"
+                        />
+                      ),
+                    },
                     { key: 'co',     label: 'CO #',           width: '9%',  sortable: true },
                     { key: 'job',    label: 'Job · Customer', width: '19%', sortable: true },
                     { key: 'desc',   label: 'Description',    width: '19%' },
@@ -1101,3 +1123,4 @@ function COBulkActionBar({ count, busy, onApply, onClear }) {
     </div>
   )
 }
+
