@@ -2,25 +2,9 @@ import {
   DatabaseIcon, ServerIcon, ShieldIcon, CloudIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { StatCard } from './shared'
-
-// Phase 20 — extracted from src/App.jsx. Behavior preserved exactly. The
-// local SectionHeader is intentionally inlined here (it differs from the
-// modern shared/headers SectionHeader and is only used by legacy tabs).
+import { PageHeader, StatCard } from './shared'
 
 const O = '#F47920'
-
-function SectionHeader({ title, sub, action }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-      {action}
-    </div>
-  )
-}
 
 export default function Architecture() {
   const collections = [
@@ -99,7 +83,11 @@ service cloud.firestore {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Architecture" sub="Firestore blueprint · Cloud Functions · Security rules" />
+      <PageHeader
+        eyebrow="System"
+        title="Architecture"
+        subtitle="Firestore blueprint · Cloud Functions · Security rules"
+      />
 
       <div className="grid lg:grid-cols-3 gap-4 mb-6">
         <StatCard label="Collections"    value={collections.length}  Icon={DatabaseIcon} />
