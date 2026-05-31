@@ -79,7 +79,7 @@ function PhaseRow({ label, status, note, docId, field }) {
               onClick={() => passInspection(docId, trade, phase)}
               title="Mark passed"
               aria-label={`Mark ${label} passed`}
-              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors"
+              className="h-9 w-9 sm:h-7 sm:w-7 inline-flex items-center justify-center rounded-md transition-colors"
               style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}
             >
               <CheckIcon size={13} strokeWidth={2.5} />
@@ -89,7 +89,7 @@ function PhaseRow({ label, status, note, docId, field }) {
               onClick={() => failInspection(docId, trade, phase)}
               title="Mark failed"
               aria-label={`Mark ${label} failed`}
-              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors"
+              className="h-9 w-9 sm:h-7 sm:w-7 inline-flex items-center justify-center rounded-md transition-colors"
               style={{ backgroundColor: '#ef444422', color: '#ef4444', border: '1px solid #ef444444' }}
             >
               <XIcon size={13} strokeWidth={2.5} />
