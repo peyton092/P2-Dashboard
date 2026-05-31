@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { SearchIcon, ChevronRightIcon } from 'lucide-react'
+import { SearchIcon, ChevronRightIcon, XIcon } from 'lucide-react'
 import { StatusBadge, BillingBadge, PriorityBadge } from './badges'
 
 const O = '#F47920'
@@ -39,8 +39,18 @@ export function FilterBar({
             value={search}
             onChange={e => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full bg-white/[0.04] border border-white/10 rounded-lg text-sm text-zinc-100 pl-8 pr-3 py-2 placeholder:text-zinc-400 focus:outline-none focus:border-white/30 transition-colors"
+            className="w-full bg-white/[0.04] border border-white/10 rounded-lg text-sm text-zinc-100 pl-8 pr-8 py-2 placeholder:text-zinc-400 focus:outline-none focus:border-white/30 transition-colors"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => onSearchChange('')}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06] transition-colors"
+            >
+              <XIcon size={12} />
+            </button>
+          )}
         </label>
       )}
       {chips && (
