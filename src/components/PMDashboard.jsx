@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import {
   scoreJob, classifyRisk, daysSince,
@@ -228,8 +229,8 @@ const TONE_COLOR = {
 
 export default function PMDashboard() {
   const { jobs = [], extras = [], loading } = useData()
-  const [filter, setFilter]     = useState('all')
-  const [search, setSearch]     = useState('')
+  const [filter, setFilter]     = useStickyState('pm.filter', 'all')
+  const [search, setSearch]     = useStickyState('pm.search', '')
   const [expanded, setExpanded] = useState({})
 
   // Roster + any other PM that owns active work, so nothing disappears when

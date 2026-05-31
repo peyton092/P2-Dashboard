@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import {
   scoreJob,
@@ -163,9 +164,9 @@ const SORTS = [
 
 export default function WarRoom() {
   const { jobs = [], extras = [], loading } = useData()
-  const [search, setSearch]       = useState('')
-  const [filter, setFilter]       = useState('all')
-  const [zoneFilter, setZoneFilter] = useState('all')
+  const [search, setSearch]       = useStickyState('war.search', '')
+  const [filter, setFilter]       = useStickyState('war.filter', 'all')
+  const [zoneFilter, setZoneFilter] = useStickyState('war.zone', 'all')
   const [sortBy, setSortBy]       = useState('priority')
 
   // ── Derived ─────────────────────────────────────────────────────────────────

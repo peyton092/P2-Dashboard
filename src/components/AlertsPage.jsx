@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import { generateAlerts, ALERT_TYPE_LABEL } from '../agent/alerts'
 import { updateAgentAlert, addAgentAlert } from '../hooks/useFirestore'
@@ -150,8 +151,8 @@ function alertMatchesFilter(a, filter) {
 
 export default function AlertsPage() {
   const { jobs = [], extras = [], agentAlerts = [], loading } = useData()
-  const [filter, setFilter] = useState('all')
-  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useStickyState('alerts.filter', 'all')
+  const [search, setSearch] = useStickyState('alerts.search', '')
   const [rescanning, setRescanning] = useState(false)
 
   // Merge Firestore alerts + client-generated alerts. Firestore is
