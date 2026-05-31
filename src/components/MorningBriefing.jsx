@@ -29,7 +29,6 @@ const YESTERDAY_STR = _yd.toISOString().slice(0, 10)
 // reports. No write paths — only read derivations from useData().
 
 // BRIEF_CATEGORY_META, SEVERITY_RANK, severityTone, severityColor, and
-// buildBriefingItems moved to src/lib/briefing.js (Phase 18).
 
 
 export default function MorningBriefing() {

@@ -299,15 +299,20 @@ function normAddr(s) {
     .trim()
 }
 
-// Tolerant address match: exact normalized equality, prefix containment, or
-// matching "<number> <first street word>" core.
+// Strict address match — exact normalized equality OR full-prefix containment
+// of one fully inside the other (e.g. "123 Maple St" vs "123 Maple St Apt 4").
+//
+// The earlier "<number> + first street word" fallback was too loose: two
+// jobs at "100 Main St" and "100 Main Ave" (different streets, possibly
+// different tenants) would both attract the same CompanyCam project's
+// photos. Audit S-12 (cross-tenant photo leakage). Photos are uniquely
+// identified upstream by CompanyCam project_id anyway — a stricter match
+// here just trades a few false negatives for zero cross-tenant leaks.
 function addrMatches(jobAddr, ccAddr) {
   const a = normAddr(jobAddr)
   const b = normAddr(ccAddr)
   if (!a || !b) return false
-  if (a === b || a.startsWith(b) || b.startsWith(a)) return true
-  const core = (s) => s.split(' ').slice(0, 2).join(' ')
-  return core(a) === core(b) && /\d/.test(core(a))
+  return a === b || a.startsWith(b + ' ') || b.startsWith(a + ' ')
 }
 
 // Refresh the CompanyCam access token if it's expired; returns a valid token.

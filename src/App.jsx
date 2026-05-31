@@ -57,7 +57,6 @@ const SettingsPageComponent    = lazy(() => import('./components/SettingsPage'))
 const AnalyticsComponent       = lazy(() => import('./components/Analytics'))
 const TeamLeaderboardComponent = lazy(() => import('./components/TeamLeaderboard'))
 const InvoiceAuditorComponent  = lazy(() => import('./components/InvoiceAuditor'))
-// Phase 20 — Architecture + Permits extracted from this file.
 const ArchitectureComponent    = lazy(() => import('./components/Architecture'))
 const PermitsComponent         = lazy(() => import('./components/Permits'))
 import WarRoomComponent from './components/WarRoom'
@@ -73,15 +72,10 @@ import ErrorBoundary from './components/ErrorBoundary'
 import {
   PageHeader, MetricTile, DataPanel, Pill,
   EmptyState, AllClearState, FilterBar, PageSkeleton,
-  // Phase 19 — primitives extracted from App.jsx
   ProgressBar, StatCard,
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,
 } from './components/shared'
-// daysSince is defined locally in this file with identical semantics, so we
-// Helpers and pure functions are imported by each extracted tab component;
-// the only ones still referenced from App.jsx itself are inside the auth /
-// shell / nav scaffolding.
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
 import MobileNav from './components/shell/MobileNav'
@@ -179,31 +173,10 @@ const MOBILE_MORE = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// jobName moved to src/lib/jobs.js (Phase 18).
-// BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR moved to
-// src/lib/billing.js (Phase 18).
-
-// inspMeta, iMeta, statusMeta, sMeta moved to
-// src/components/shared/legacy-badges.jsx (Phase 19) and re-exported here
-// via the named imports at the top of this file.
-
-
 const CREW_LIST = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 const TODAY = new Date()
 const _yd = new Date(TODAY); _yd.setDate(_yd.getDate() - 1)
 const YESTERDAY_STR = _yd.toISOString().slice(0, 10)
-
-// phaseLabel moved to src/lib/jobs.js (Phase 18).
-
-// ── Reusable components ───────────────────────────────────────────────────────
-//
-// ProgressBar, StatCard, InspBadge, JobBadge, BillingStatusSelect,
-// InlineStatusSelect, InlinePhaseSelect (and their JOB_STATUS_OPTIONS /
-// PHASE_OPTIONS data) moved to src/components/shared/* (Phase 19) and
-// re-imported via the named-imports block at the top of this file.
-// The legacy local SectionHeader (used by Architecture + Permits) moved
-// alongside those tabs in Phase 20 — see src/components/Architecture.jsx
-// and src/components/Permits.jsx.
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
 

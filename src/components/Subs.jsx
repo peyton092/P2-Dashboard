@@ -25,7 +25,6 @@ const tradeColor = { HVAC: '#3b82f6', Plumbing: '#06b6d4', Electrical: O }
 
 // ── Tab: Subs ─────────────────────────────────────────────────────────────────
 
-// Subs helpers + TRADE_FILTERS moved to src/lib/subs.js (Phase 18).
 
 export default function SubsTab() {
   const { subs: SUBS = [], jobs = [] } = useData()

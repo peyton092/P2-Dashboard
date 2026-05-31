@@ -21,7 +21,6 @@ const O = '#F47920'
 
 // ── Tab: Notifications ────────────────────────────────────────────────────────
 
-// Notification helpers moved to src/lib/notifications.js (Phase 18).
 
 export default function Notifications() {
   const { notifs = [] } = useData()

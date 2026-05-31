@@ -22,9 +22,6 @@ const O = '#F47920'
 
 // ── Tab: Materials ────────────────────────────────────────────────────────────
 
-// MAT_STATUS_OPTIONS / MAT_STATUS_COLOR moved to src/lib/materials.js (Phase 18).
-// MatStatusBadge moved to src/components/shared/inline-edits.jsx (Phase 19).
-// Materials helpers moved to src/lib/materials.js (Phase 18).
 
 // ── Materials tab ────────────────────────────────────────────────────────────
 
