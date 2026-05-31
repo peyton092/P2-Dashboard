@@ -75,4 +75,39 @@ describe('SavedViewSelect', () => {
     expect(getSavedViews('empty-scope')).toEqual({})
     h.unmount()
   })
+
+  it('marks the loaded view "(modified)" when the user drifts', () => {
+    saveView('test-scope', 'Saved', { filter: 'X' })
+    // Initial render with currentPayload === Saved view's payload.
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    let currentPayload = { filter: 'X' }
+    const onApply = (p) => { currentPayload = p }
+    function render() {
+      act(() => {
+        root.render(
+          createElement(DialogProvider, null,
+            createElement(SavedViewSelect, { scope: 'test-scope', currentPayload, onApply }),
+          ),
+        )
+      })
+    }
+    render()
+    let select = container.querySelector('select')
+    // Simulate applying the saved view (sets loadedName under the hood).
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
+    act(() => {
+      setter.call(select, 'Saved')
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    // Drift the current payload — re-render.
+    currentPayload = { filter: 'DRIFTED' }
+    render()
+    // The option text now includes "(modified)" and the Update-view button is rendered.
+    const text = container.textContent
+    expect(text).toMatch(/Saved \(modified\)/)
+    expect(text).toMatch(/Update view/)
+    act(() => { root.unmount() }); container.remove()
+  })
 })
