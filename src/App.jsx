@@ -62,6 +62,7 @@ const ArchitectureComponent    = lazy(() => import('./components/Architecture'))
 const PermitsComponent         = lazy(() => import('./components/Permits'))
 import WarRoomComponent from './components/WarRoom'
 import CommandPalette from './components/CommandPalette'
+import ShortcutsHelp from './components/ShortcutsHelp'
 import JobDetail from './components/JobDetail'
 import OfflineBanner from './components/OfflineBanner'
 const CalendarComponent = lazy(() => import('./components/Calendar'))
@@ -728,6 +729,7 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     <AppShell sidebar={sidebar} mobileNav={mobileNav}>
       <OfflineBanner />
       <CommandPalette />
+      <ShortcutsHelp />
       <Suspense fallback={<PageSkeleton />}>
         <div key={activeTab} className="p2-page-enter">
           {TAB_COMPONENTS[activeTab]}
