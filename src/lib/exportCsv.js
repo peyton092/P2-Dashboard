@@ -7,6 +7,17 @@ function escapeCell(v) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
+// Stamp the filename with today's date so repeated exports stack in the
+// Downloads folder instead of overwriting each other. Caller-supplied .csv
+// extensions and pre-stamped names are respected as-is.
+function stampedFilename(filename) {
+  if (filename.endsWith('.csv')) return filename
+  if (/_\d{4}-\d{2}-\d{2}$/.test(filename)) return `${filename}.csv`
+  const d = new Date()
+  const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${filename}_${ymd}.csv`
+}
+
 export function exportToCsv(filename, columns, rows) {
   const header = columns.map(c => escapeCell(c.label)).join(',')
   const body = (rows || []).map(row =>
@@ -18,7 +29,7 @@ export function exportToCsv(filename, columns, rows) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = filename.endsWith('.csv') ? filename : `${filename}.csv`
+  a.download = stampedFilename(filename)
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
