@@ -63,14 +63,21 @@ describe('exportToIcs', () => {
     expect(text).toMatch(/SUMMARY:Hello\\, world\\; \\\\path/)
   })
 
-  it('appends .ics extension when missing', async () => {
+  it('stamps the filename with today\'s date when no extension', async () => {
     exportToIcs('schedule', [{ uid: '1', date: '2025-05-15', summary: 'X' }])
+    const d = new Date()
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect(lastAnchor.getAttribute('download')).toBe(`schedule_${ymd}.ics`)
+  })
+
+  it('preserves an existing .ics extension verbatim', async () => {
+    exportToIcs('schedule.ics', [{ uid: '1', date: '2025-05-15', summary: 'X' }])
     expect(lastAnchor.getAttribute('download')).toBe('schedule.ics')
   })
 
-  it('preserves an existing .ics extension', async () => {
-    exportToIcs('schedule.ics', [{ uid: '1', date: '2025-05-15', summary: 'X' }])
-    expect(lastAnchor.getAttribute('download')).toBe('schedule.ics')
+  it('does not re-stamp a name that already has a date suffix', async () => {
+    exportToIcs('schedule_2025-01-01', [{ uid: '1', date: '2025-05-15', summary: 'X' }])
+    expect(lastAnchor.getAttribute('download')).toBe('schedule_2025-01-01.ics')
   })
 
   it('triggers the download and cleans up the object URL', async () => {

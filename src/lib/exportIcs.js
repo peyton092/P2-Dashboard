@@ -51,9 +51,19 @@ export function exportToIcs(filename, events) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = filename.endsWith('.ics') ? filename : `${filename}.ics`
+  a.download = stampedFilename(filename)
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+// Match the convention exportCsv uses — stamp the filename with today's date
+// so repeated exports stack in Downloads instead of overwriting.
+function stampedFilename(filename) {
+  if (filename.endsWith('.ics')) return filename
+  if (/_\d{4}-\d{2}-\d{2}$/.test(filename)) return `${filename}.ics`
+  const d = new Date()
+  const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${filename}_${ymd}.ics`
 }
