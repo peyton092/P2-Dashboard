@@ -1,7 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useData } from '../DataContext'
 import { updateNotification } from '../hooks/useFirestore'
 import { useToast } from '@/components/ui/toast'
+import { useStickyState } from '../lib/useStickyState'
+import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
@@ -14,7 +16,7 @@ import {
 } from '../lib/notifications'
 import {
   ActivityIcon, AlertCircleIcon, BellIcon, CatIcon, CheckIcon,
-  ClipboardListIcon, InfoIcon, TriangleAlertIcon, TypeIcon,
+  ClipboardListIcon, DownloadIcon, InfoIcon, TrashIcon, TriangleAlertIcon, TypeIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -24,7 +26,7 @@ const O = '#F47920'
 
 export default function Notifications() {
   const { notifs = [] } = useData()
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useStickyState('notifications.filter', 'all')
   const toast = useToast()
 
   // Live = not dismissed. Dismiss is the user's "clear" gesture; archived
@@ -82,6 +84,23 @@ export default function Notifications() {
   const markAll = () => {
     live.filter(n => !n.read && n._docId).forEach(n => updateNotification(n._docId, { read: true }))
   }
+  const dismissAll = () => {
+    const targets = visible.filter(n => n._docId)
+    if (targets.length === 0) return
+    if (!window.confirm(`Dismiss ${targets.length} notification${targets.length === 1 ? '' : 's'}?`)) return
+    // Snapshot read state per-doc so Undo restores exactly what was there.
+    const snapshot = targets.map(n => ({ docId: n._docId, wasRead: !!n.read }))
+    snapshot.forEach(s => updateNotification(s.docId, { dismissed: true, read: true }))
+    toast({
+      tone: 'info',
+      title: `Dismissed ${targets.length} notification${targets.length === 1 ? '' : 's'}`,
+      duration: 6000,
+      action: {
+        label: 'Undo',
+        onClick: () => snapshot.forEach(s => updateNotification(s.docId, { dismissed: false, read: s.wasRead })),
+      },
+    })
+  }
 
   const filterChips = NOTIF_FILTERS.map(f => ({
     value: f.id,
@@ -108,15 +127,42 @@ export default function Notifications() {
           </>
         }
         actions={
-          kpis.unread > 0 && (
+          <>
             <button
               type="button"
-              onClick={markAll}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+              onClick={() => exportToCsv('p2-notifications', [
+                { label: 'When',     get: n => { const ms = notifTimestampMs(n); return ms ? new Date(ms).toISOString() : '' } },
+                { label: 'Type',     get: n => n.type || '' },
+                { label: 'Category', get: n => NOTIF_CATEGORY_LABEL[notifCategory(n)] || '' },
+                { label: 'Message',  get: n => n.msg || '' },
+                { label: 'Read',     get: n => n.read ? 'yes' : 'no' },
+              ], visible)}
+              disabled={visible.length === 0}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="Export the current notifications view to CSV"
             >
-              <CheckIcon size={13} /> Mark all read
+              <DownloadIcon size={13} /> Export
             </button>
-          )
+            {kpis.unread > 0 && (
+              <button
+                type="button"
+                onClick={markAll}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+              >
+                <CheckIcon size={13} /> Mark all read
+              </button>
+            )}
+            {visible.length > 0 && (
+              <button
+                type="button"
+                onClick={dismissAll}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:border-red-400/40 transition-colors"
+                title="Dismiss every notification in the current view"
+              >
+                <TrashIcon size={13} /> Dismiss all
+              </button>
+            )}
+          </>
         }
       />
 

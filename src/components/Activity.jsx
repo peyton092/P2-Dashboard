@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useData } from '../DataContext'
 import { useHistory } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
+import { useStickyState } from '../lib/useStickyState'
 import { PageHeader, DataPanel, Pill, EmptyState, STATUS_COLORS } from './shared'
 import {
   ActivityIcon, FilePenLineIcon, BadgeCheckIcon, DollarSignIcon,
@@ -57,7 +58,7 @@ function dayBucket(ts) {
 export default function Activity() {
   const { notifs = [] } = useData()
   const { history } = useHistory()
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useStickyState('activity.filter', 'all')
 
   const feed = useMemo(() => {
     const items = []
