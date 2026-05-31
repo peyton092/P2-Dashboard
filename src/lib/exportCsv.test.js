@@ -6,7 +6,7 @@ let lastBlobText = ''
 beforeEach(() => {
   lastBlobText = ''
   // Capture the CSV text by stubbing Blob to remember its parts.
-  globalThis.Blob = function Blob(parts) { lastBlobText = parts.join('') } /* eslint-disable-line no-global-assign */
+  globalThis.Blob = function Blob(parts) { lastBlobText = parts.join('') }
   globalThis.URL.createObjectURL = vi.fn(() => 'blob://stub')
   globalThis.URL.revokeObjectURL = vi.fn()
   // jsdom provides document.createElement; we also need .click() to no-op.

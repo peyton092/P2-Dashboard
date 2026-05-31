@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react'
 import { useFocusTrap } from './lib/useFocusTrap'
+import { useStickyState } from './lib/useStickyState'
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
   createUserWithEmailAndPassword, sendPasswordResetEmail,
@@ -587,7 +588,14 @@ function Architecture() {
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
 function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange, onLogout, onCreateUser, initialTab }) {
-  const [activeTab, setActiveTab] = useState(initialTab || 'command-center')
+  // Persist the user's last-viewed tab so the next visit lands where they
+  // left off. initialTab (set after an OAuth callback) takes precedence —
+  // we want the user dropped back on Settings after a Quickbooks/CompanyCam
+  // round-trip, not on whatever was open before.
+  const [activeTab, setActiveTab] = useStickyState('app.lastTab', initialTab || 'command-center')
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab)
+  }, [initialTab, setActiveTab])
   const [collapsed, setCollapsed] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState(null)
   const { loading, jobs, extras, notifs, subs, submits, agentAlerts } = useData()
@@ -612,6 +620,9 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
       window.removeEventListener('p2:navigate', handler)
       window.removeEventListener('p2:open-job', openJob)
     }
+    // setActiveTab is stable (useState/useStickyState setter); listeners
+    // intentionally registered once at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Five filters over jobs + four over other collections, recomputed every
