@@ -2,9 +2,28 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { readFileSync, writeFileSync } from 'node:fs'
 
 const buildDate = new Date().toISOString().slice(0, 10)
 const appVersion = 'V5.2'
+const swCacheVersion = `${buildDate.replace(/-/g, '')}-${Math.floor(Date.now() / 1000).toString(36).slice(-5)}`
+
+// Rewrite dist/sw.js so the static-cache name carries this build's identifier.
+// Without this every release ships the same `p2-control-<token>` cache name
+// and the activate handler can never sweep prior caches cleanly.
+function swCacheVersionPlugin() {
+  return {
+    name: 'p2-sw-cache-version',
+    apply: 'build',
+    closeBundle() {
+      const swPath = path.resolve('dist/sw.js')
+      try {
+        const src = readFileSync(swPath, 'utf8')
+        writeFileSync(swPath, src.replace(/__P2_CACHE_VERSION__/g, swCacheVersion))
+      } catch { /* sw.js missing — non-PWA build */ }
+    },
+  }
+}
 
 // Manual chunk groups. Default Vite bundling rolls React + Firebase + the
 // entry into one ~900 kB blob that ships before first paint. Splitting them
@@ -29,7 +48,7 @@ function manualChunks(id) {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), swCacheVersionPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __BUILD_DATE__:  JSON.stringify(buildDate),

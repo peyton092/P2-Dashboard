@@ -1,10 +1,17 @@
-const CACHE_NAME = 'p2-control-v8'
+// CACHE_NAME is rewritten at build time (see vite.config.js → swCacheVersion
+// plugin) so every release ships a fresh static cache and the activate
+// handler can sweep the old ones. The literal token below is what gets
+// replaced; leave it intact for non-Vite serve paths (the SW still works,
+// you just get the dev-mode cache name).
+const CACHE_NAME = 'p2-control-__P2_CACHE_VERSION__'
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.svg',
   '/icons.svg',
+  '/p2-logo.svg',
+  '/p2-mark.svg',
 ]
 
 // In-memory write queue — survives until SW is terminated
@@ -91,7 +98,13 @@ self.addEventListener('fetch', (e) => {
     return
   }
 
-  // Cache-first: static assets
+  // Cache-first: static assets. Skip caching non-GETs, opaque responses,
+  // anything outside our origin, and any response that opts out via Cache-
+  // Control (Firestore + auth APIs already returned above, but extra belt).
+  if (request.method !== 'GET' || url.origin !== self.location.origin) {
+    e.respondWith(fetch(request))
+    return
+  }
   e.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached
@@ -99,6 +112,8 @@ self.addEventListener('fetch', (e) => {
         if (!response || response.status !== 200 || response.type === 'opaque') {
           return response
         }
+        const cc = response.headers.get('cache-control') || ''
+        if (/no-store|private/i.test(cc)) return response
         const clone = response.clone()
         caches.open(CACHE_NAME).then((cache) => cache.put(request, clone))
         return response
