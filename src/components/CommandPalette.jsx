@@ -270,7 +270,7 @@ export default function CommandPalette() {
 
         <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-t border-white/10 text-[10px] text-zinc-400">
           <span className="flex items-center gap-1"><DollarSignIcon size={11} /> Tip:</span>
-          <span>↑↓ to navigate · ↵ to open · ⌘K or / to toggle</span>
+          <span>↑↓ to navigate · ↵ to open · ⌘K or / to toggle · ? for shortcuts</span>
         </div>
       </div>
     </div>
