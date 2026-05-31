@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import { ToastProvider } from './components/ui/toast'
 import { initErrorLogger } from './lib/errorLogger'
+import { captureInstallPrompt } from './lib/installPrompt'
 import { auth } from './firebase'
 
 // Drop queued writes older than this on replay — a stale write that's been
@@ -12,6 +13,7 @@ import { auth } from './firebase'
 const QUEUE_TTL_MS = 60 * 60 * 1000
 
 initErrorLogger()
+captureInstallPrompt()
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

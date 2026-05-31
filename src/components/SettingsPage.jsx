@@ -17,7 +17,9 @@ import {
   BellIcon, MailIcon, BrainCircuitIcon, CameraIcon, MapPinIcon,
   ClipboardListIcon, DollarSignIcon, ZapIcon, Building2Icon,
   LogOutIcon, CheckCircleIcon, LinkIcon, KeyboardIcon,
+  DownloadCloudIcon,
 } from 'lucide-react'
+import { useInstallPrompt } from '../lib/installPrompt'
 
 const O = '#F47920'
 
@@ -257,6 +259,13 @@ export default function SettingsPage({ onLogout }) {
   }
 
   const [backfillBusy, setBackfillBusy] = useState(false)
+  const { available: canInstall, install } = useInstallPrompt()
+  const handleInstall = async () => {
+    const outcome = await install()
+    if (outcome === 'accepted')      toast({ tone: 'success', title: 'Installed', description: 'Look for P2 on your home screen.' })
+    else if (outcome === 'dismissed') toast({ tone: 'info',    title: 'Install dismissed' })
+    else                              toast({ tone: 'info',    title: 'Install not available on this device' })
+  }
   const runBackfill = async (dryRun) => {
     setBackfillBusy(true)
     try {
@@ -547,6 +556,19 @@ export default function SettingsPage({ onLogout }) {
             ))}
           </ul>
         </DataPanel>
+
+      {/* ── Install this app ─────────────────────────────────────────── */}
+      {canInstall && (
+        <DataPanel
+          title="Install on this device"
+          description="Add P2 to your home screen for a native-feeling launch and offline access."
+          Icon={DownloadCloudIcon}
+        >
+          <Button onClick={handleInstall} className="text-white" style={{ backgroundColor: O }}>
+            <DownloadCloudIcon size={14} /> Install
+          </Button>
+        </DataPanel>
+      )}
 
       {/* ── Security migration ───────────────────────────────────────── */}
       <DataPanel
