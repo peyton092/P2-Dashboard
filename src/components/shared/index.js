@@ -30,7 +30,7 @@ export {
 
 // Phase 19 — primitives extracted from src/App.jsx. Pure UI; behavior
 // preserved exactly.
-export { Skeleton, PageSkeleton } from './Skeleton'
+export { Skeleton, PageSkeleton, DataSkeleton } from './Skeleton'
 export { ProgressBar } from './ProgressBar'
 export { StatCard } from './StatCard'
 export {

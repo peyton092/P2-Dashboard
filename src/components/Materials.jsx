@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { memo, useCallback, useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { addMaterial, updateMaterial, addHistory, useHistory } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
@@ -42,12 +42,13 @@ export default function Materials() {
   const [selected, setSelected]           = useState(() => new Set())
   const [bulkBusy, setBulkBusy]           = useState(false)
   const toast = useToast()
-  const toggleSelected = (id) => setSelected(prev => {
+  const toggleSelected = useCallback((id) => setSelected(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
-  })
-  const clearSelection = () => setSelected(new Set())
+  }), [])
+  const clearSelection = useCallback(() => setSelected(new Set()), [])
+  const toggleHistory = useCallback((docKey) => setExpandedHistory(curr => curr === docKey ? null : docKey), [])
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ export default function Materials() {
 
   // ── Mutations (preserved verbatim from prior implementation) ───────────────
 
-  const handleStatusChange = async (docId, newStatus) => {
+  const handleStatusChange = useCallback(async (docId, newStatus) => {
     const m = MATERIALS.find(x => x._docId === docId)
     if (!m) return
     const oldStatus = normalizeMatStatus(m.status)
@@ -123,7 +124,7 @@ export default function Materials() {
       toStatus:      newStatus,
       type:          'status_change',
     })
-  }
+  }, [MATERIALS])
 
   const handleSave = async () => {
     if (!form.name.trim()) return
@@ -162,7 +163,7 @@ export default function Materials() {
     setShowForm(true)
   }
 
-  const openEdit = (m) => {
+  const openEdit = useCallback((m) => {
     setForm({
       name:        matName(m),
       qty:         m.qty || 1,
@@ -176,7 +177,7 @@ export default function Materials() {
     })
     setEditId(m._docId)
     setShowForm(true)
-  }
+  }, [])
 
   const cancelForm = () => { setShowForm(false); setEditId(null); setForm(MAT_FORM_INITIAL) }
 
@@ -392,11 +393,11 @@ export default function Materials() {
                     daysUntil={daysUntil}
                     history={hist}
                     showHistory={showHist}
-                    onToggleHistory={() => setExpandedHistory(showHist ? null : docKey)}
-                    onEdit={() => openEdit(m)}
+                    onToggleHistory={toggleHistory}
+                    onEdit={openEdit}
                     onStatusChange={handleStatusChange}
                     selected={m._docId ? selected.has(m._docId) : false}
-                    onToggleSelect={m._docId ? () => toggleSelected(m._docId) : null}
+                    onToggleSelect={m._docId ? toggleSelected : null}
                   />
                 </li>
               )
@@ -434,7 +435,7 @@ function MaterialsEmptyState({ filter, hasJobFilter, onRequest }) {
   )
 }
 
-function MaterialCard({
+const MaterialCard = memo(function MaterialCard({
   m, status, overdue, daysUntil,
   history, showHistory, onToggleHistory,
   onEdit, onStatusChange,
@@ -477,7 +478,7 @@ function MaterialCard({
             role="checkbox"
             aria-checked={selected}
             aria-label={`Select ${matName(m)}`}
-            onClick={onToggleSelect}
+            onClick={() => onToggleSelect(m._docId)}
             className={cn(
               'shrink-0 mt-0.5 w-4 h-4 rounded border transition-colors flex items-center justify-center',
               selected
@@ -547,7 +548,7 @@ function MaterialCard({
           <MatStatusBadge status={status} docId={m._docId} onUpdate={onStatusChange} />
           <button
             type="button"
-            onClick={onEdit}
+            onClick={() => onEdit(m)}
             className="h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
             title="Edit material"
             aria-label="Edit material"
@@ -557,7 +558,7 @@ function MaterialCard({
           {history.length > 0 && (
             <button
               type="button"
-              onClick={onToggleHistory}
+              onClick={() => onToggleHistory(m._docId || m.id)}
               className="h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
               title={showHistory ? 'Hide history' : 'View history'}
               aria-label={showHistory ? 'Hide history' : 'View history'}
@@ -585,7 +586,7 @@ function MaterialCard({
       )}
     </div>
   )
-}
+})
 
 function MaterialHistoryRow({ entry }) {
   const ts = entry.createdAt?.toDate

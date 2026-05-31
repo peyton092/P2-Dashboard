@@ -19,7 +19,7 @@ import {
   TableCell,
   EmptyState,
   AllClearState,
-  LoadingState,
+  DataSkeleton,
   SavedViewSelect,
 } from './shared'
 import {
@@ -305,7 +305,7 @@ export default function BillingQueue() {
           title="Cash control"
           subtitle="Cash flow, every job. Real-time."
         />
-        <LoadingState label="Loading billing queue…" />
+        <DataSkeleton tiles={5} rows={6} />
       </div>
     )
   }

@@ -15,7 +15,7 @@ import {
   DataPanel,
   Pill, LiveDot,
   EmptyState,
-  LoadingState,
+  DataSkeleton,
   FilterBar,
   ResponsiveTable,
   TableHeader,
@@ -303,7 +303,7 @@ export default function WarRoom() {
           title="Field-status & dispatch"
           subtitle="Live field operations across the active portfolio."
         />
-        <LoadingState label="Loading dispatch board…" />
+        <DataSkeleton tiles={4} rows={6} />
       </div>
     )
   }

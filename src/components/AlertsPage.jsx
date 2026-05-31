@@ -10,7 +10,7 @@ import {
   Pill, LiveDot,
   EmptyState,
   AllClearState,
-  LoadingState,
+  DataSkeleton,
   FilterBar,
 } from './shared'
 import {
@@ -270,7 +270,7 @@ export default function AlertsPage() {
           title="Action queue"
           subtitle="Loading agent alerts…"
         />
-        <LoadingState label="Loading alerts…" />
+        <DataSkeleton tiles={5} rows={6} />
       </div>
     )
   }

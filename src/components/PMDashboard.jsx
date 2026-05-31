@@ -13,7 +13,7 @@ import {
   Pill, LiveDot,
   EmptyState,
   AllClearState,
-  LoadingState,
+  DataSkeleton,
   FilterBar,
 } from './shared'
 import {
@@ -308,7 +308,7 @@ export default function PMDashboard() {
           title="Manager accountability & workload control"
           subtitle="Loading PM workload board…"
         />
-        <LoadingState label="Loading PM workload…" />
+        <DataSkeleton tiles={5} rows={6} />
       </div>
     )
   }

@@ -27,7 +27,7 @@ import {
   Pill, LiveDot,
   EmptyState,
   AllClearState,
-  LoadingState,
+  DataSkeleton,
   FilterBar,
   ResponsiveTable,
   TableHeader,
@@ -499,7 +499,7 @@ export default function ChangeOrders() {
           title="Approval control & revenue protection"
           subtitle="Loading change order pipeline…"
         />
-        <LoadingState label="Loading change orders…" />
+        <DataSkeleton tiles={5} rows={6} />
       </div>
     )
   }
