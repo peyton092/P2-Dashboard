@@ -240,9 +240,13 @@ export default function JobDetail({ jobId, onBack }) {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <button onClick={onBack} className="no-print inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white mb-3">
-          <ChevronLeftIcon size={15} /> Back to jobs
-        </button>
+        {/* Sticky-on-scroll so the back affordance stays reachable on long
+            job detail pages (lots of photos/docs scroll the header off). */}
+        <div className="no-print sticky top-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-2 pb-3 mb-3 bg-zinc-950/85 backdrop-blur">
+          <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
+            <ChevronLeftIcon size={15} /> Back to jobs
+          </button>
+        </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] overflow-hidden" style={{ borderLeftWidth: 3, borderLeftColor: railColor }}>
           <div className="p-5">
             <div className="flex items-start justify-between gap-3 flex-wrap">
