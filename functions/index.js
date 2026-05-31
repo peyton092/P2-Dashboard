@@ -127,8 +127,24 @@ export const qbAuth = onCall(callableOpts, async (req) => {
   const auth = requireAuth(req)
 
   const state = randomBytes(24).toString('hex')
-  await db.collection('qb_config').doc('oauth_states').set(
-    { [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
+  const ref = db.collection('qb_config').doc('oauth_states')
+
+  // Sweep expired state nonces before writing the new one so the doc can't
+  // accumulate forever (Firestore caps a single doc at 1 MiB). States are
+  // valid for STATE_TTL_MS — anything older is dead and safe to drop.
+  const existing = await ref.get()
+  const cutoff = Date.now() - STATE_TTL_MS
+  const cleanup = {}
+  if (existing.exists) {
+    const data = existing.data() || {}
+    for (const [key, rec] of Object.entries(data)) {
+      const ts = rec?.createdAt?.toMillis?.() ?? 0
+      if (ts && ts < cutoff) cleanup[key] = FieldValue.delete()
+    }
+  }
+
+  await ref.set(
+    { ...cleanup, [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
     { merge: true },
   )
 
@@ -191,8 +207,10 @@ export const qbCallback = onCall(callableOpts, async (req) => {
   })
 
   if (!tokenRes.ok) {
+    // Don't log the full error body — Intuit error responses can echo the
+    // submitted `code` back, which would land in Cloud Logging (audit low).
     const errText = await tokenRes.text().catch(() => '')
-    console.error('[qbCallback] Token exchange failed:', tokenRes.status, errText)
+    console.error('[qbCallback] Token exchange failed: HTTP', tokenRes.status, '(', errText.length, 'bytes)')
     throw new HttpsError('internal', 'Intuit token exchange failed. Try again.')
   }
   const tokens = await tokenRes.json()
@@ -542,8 +560,22 @@ export const ccAuth = onCall(ccCallableOpts, async (req) => {
   const auth = requireAuth(req)
 
   const state = randomBytes(24).toString('hex')
-  await db.collection('cc_config').doc('oauth_states').set(
-    { [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
+  const ref = db.collection('cc_config').doc('oauth_states')
+
+  // Same TTL sweep as qbAuth — see comment there.
+  const existing = await ref.get()
+  const cutoff = Date.now() - STATE_TTL_MS
+  const cleanup = {}
+  if (existing.exists) {
+    const data = existing.data() || {}
+    for (const [key, rec] of Object.entries(data)) {
+      const ts = rec?.createdAt?.toMillis?.() ?? 0
+      if (ts && ts < cutoff) cleanup[key] = FieldValue.delete()
+    }
+  }
+
+  await ref.set(
+    { ...cleanup, [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
     { merge: true },
   )
 
@@ -610,7 +642,7 @@ export const ccCallback = onCall(ccCallableOpts, async (req) => {
 
   if (!tokenRes.ok) {
     const errText = await tokenRes.text().catch(() => '')
-    console.error('[ccCallback] Token exchange failed:', tokenRes.status, errText)
+    console.error('[ccCallback] Token exchange failed: HTTP', tokenRes.status, '(', errText.length, 'bytes)')
     throw new HttpsError('internal', 'CompanyCam token exchange failed. Try again.')
   }
   const tokens = await tokenRes.json()

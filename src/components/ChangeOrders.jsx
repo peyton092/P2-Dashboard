@@ -37,16 +37,6 @@ const O = '#F47920'
 const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS']
 const CO_STATUSES = ['Draft', 'Sent to Builder', 'Approved', 'Rejected']
 
-const STATUS_COLOR = {
-  'Draft':           '#6b7280',
-  'Sent to Builder': '#3b82f6',
-  'Approved':        '#22c55e',
-  'Rejected':        '#ef4444',
-  'pending':         '#eab308',
-  'approved':        '#22c55e',
-  'rejected':        '#ef4444',
-}
-
 function fmt$(n) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }

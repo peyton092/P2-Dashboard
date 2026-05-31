@@ -14,7 +14,7 @@ import {
   DollarSignIcon, FileTextIcon, ChevronDownIcon, ChevronUpIcon,
   ShieldAlertIcon, ReceiptIcon, SearchIcon, PencilIcon, DownloadIcon,
 } from 'lucide-react'
-import { PageHeader } from './shared'
+import { PageHeader, STATUS_COLORS } from './shared'
 
 const O = '#F47920'
 
@@ -23,10 +23,10 @@ const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS', 'BOX', 'ROLL', 'STICK']
 const STATUS_OPTIONS = ['pending-review', 'approved', 'disputed', 'paid']
 
 const STATUS_META = {
-  'pending-review': { label: 'Pending Review', color: '#eab308' },
-  'approved':       { label: 'Approved',        color: '#22c55e' },
-  'disputed':       { label: 'Disputed',         color: '#ef4444' },
-  'paid':           { label: 'Paid',             color: '#6b7280' },
+  'pending-review': { label: 'Pending Review', color: STATUS_COLORS.warning  },
+  'approved':       { label: 'Approved',       color: STATUS_COLORS.success  },
+  'disputed':       { label: 'Disputed',       color: STATUS_COLORS.critical },
+  'paid':           { label: 'Paid',           color: STATUS_COLORS.mute     },
 }
 
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

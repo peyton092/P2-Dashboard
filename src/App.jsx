@@ -820,21 +820,24 @@ export default function P2DashboardV4() {
 
       // Always consult the users doc when claims are incomplete (client scoping
       // and tenant/role are commonly stored there rather than as custom claims).
+      // Audit C-10: do NOT default unknown users to 'internal' — that would
+      // optimistically render the staff dashboard. Rules block staff-only
+      // reads either way, but the UI should match reality. null role flows
+      // through to the "no access" branch in MainDashboard.
       if (!r || cJobs === null) {
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid))
           if (snap.exists()) {
             const u = snap.data()
-            r   = r   || u.role     || 'internal'
+            r   = r   || u.role     || null
             tid = u.tenantId || tid
             dn  = u.displayName || dn
             cName = cName || u.clientName || u.displayName || ''
             if (cJobs === null) cJobs = Array.isArray(u.clientJobIds) ? u.clientJobIds : []
-          } else if (!r) {
-            r = 'internal'
           }
         } catch {
-          if (!r) r = 'internal'
+          // Network/permissions error — leave role unresolved rather than
+          // assuming staff access.
         }
       }
 
@@ -953,6 +956,33 @@ export default function P2DashboardV4() {
           />
         </Suspense>
       </DataProvider>
+    )
+  }
+
+  // Authenticated but no role resolved — render a clear no-access screen
+  // rather than optimistically dropping into the staff dashboard.
+  if (user && !role) {
+    return (
+      <div className="dark min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="w-full max-w-md text-center rounded-2xl border border-white/10 bg-white/[0.025] p-6">
+          <div className="mx-auto mb-3 flex items-center justify-center rounded-2xl"
+               style={{ width: 44, height: 44, backgroundColor: O + '22' }}>
+            <ShieldIcon size={20} style={{ color: O }} />
+          </div>
+          <h2 className="text-base font-semibold text-white">Account not provisioned</h2>
+          <p className="text-xs text-zinc-400 mt-1.5">
+            You're signed in, but no role has been assigned to your account yet. Ask a P2
+            administrator to grant access.
+          </p>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="mt-5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
     )
   }
 
