@@ -5,6 +5,8 @@ import {
   notifTimestampMs,
   notifIsWithinHours,
   notifCategory,
+  notifAgeLabel,
+  fmtNotifTime,
 } from './notifications'
 
 const mkNotif = (over = {}) => ({
@@ -62,5 +64,41 @@ describe('notifIsWithinHours', () => {
 describe('notifCategory', () => {
   it('returns a string for any notification', () => {
     expect(typeof notifCategory(mkNotif())).toBe('string')
+  })
+})
+
+describe('notifAgeLabel', () => {
+  const at = (msAgo) => ({ createdAt: { seconds: Math.floor((Date.now() - msAgo) / 1000) } })
+  it('returns empty for missing timestamp', () => {
+    expect(notifAgeLabel({})).toBe('')
+  })
+  it('"just now" under a minute', () => {
+    expect(notifAgeLabel(at(10_000))).toBe('just now')
+  })
+  it('minutes within an hour', () => {
+    expect(notifAgeLabel(at(15 * 60_000))).toBe('15m ago')
+  })
+  it('hours within a day', () => {
+    expect(notifAgeLabel(at(5 * 60 * 60_000))).toBe('5h ago')
+  })
+  it('"1d ago" exactly one day', () => {
+    expect(notifAgeLabel(at(24 * 60 * 60_000))).toBe('1d ago')
+  })
+  it('days beyond one', () => {
+    expect(notifAgeLabel(at(72 * 60 * 60_000))).toBe('3d ago')
+  })
+})
+
+describe('fmtNotifTime', () => {
+  it('returns empty string when nothing parseable', () => {
+    expect(fmtNotifTime({})).toBe('')
+  })
+  it('falls back to n.time when no createdAt', () => {
+    expect(fmtNotifTime({ time: '3:42 PM' })).toBe('3:42 PM')
+  })
+  it('formats from a Firestore-like timestamp', () => {
+    const out = fmtNotifTime({ createdAt: { seconds: Math.floor(Date.parse('2025-05-15T14:30:00Z') / 1000) } })
+    expect(typeof out).toBe('string')
+    expect(out).toMatch(/May/)
   })
 })

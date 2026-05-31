@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { ToastProvider } from './components/ui/toast'
+import { ServiceWorkerUpdateNotifier } from './components/ui/ServiceWorkerUpdateNotifier'
 import { initErrorLogger } from './lib/errorLogger'
 import { captureInstallPrompt } from './lib/installPrompt'
 import { auth } from './firebase'
@@ -17,7 +18,21 @@ captureInstallPrompt()
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {})
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      // Watch for an updated build. sw.js calls skipWaiting on install, so the
+      // newly-found worker transitions installing → activated. Firing only when
+      // there's already a controller skips the first-ever install (no point
+      // telling the user to reload a page they just opened).
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing
+        if (!nw) return
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'activated' && navigator.serviceWorker.controller) {
+            window.dispatchEvent(new CustomEvent('p2:sw-update'))
+          }
+        })
+      })
+    }).catch(() => {})
   })
 
   window.addEventListener('online', () => {
@@ -66,6 +81,7 @@ if ('serviceWorker' in navigator) {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ToastProvider>
+      <ServiceWorkerUpdateNotifier />
       <App />
     </ToastProvider>
   </StrictMode>,
