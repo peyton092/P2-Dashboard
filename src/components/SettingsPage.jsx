@@ -551,6 +551,8 @@ export default function SettingsPage({ onLogout }) {
             {[
               { keys: ['⌘', 'K'],    label: 'Open command palette' },
               { keys: ['Ctrl', 'K'], label: 'Open command palette (Windows / Linux)' },
+              { keys: ['/'],         label: 'Open command palette (anywhere outside an input)' },
+              { keys: ['?'],         label: 'Open the keyboard-shortcuts dialog' },
               { keys: ['↑', '↓'],    label: 'Navigate results in the command palette' },
               { keys: ['↵'],         label: 'Open the selected result' },
               { keys: ['←', '→'],    label: 'Previous / next photo in the lightbox' },
@@ -583,6 +585,39 @@ export default function SettingsPage({ onLogout }) {
           </Button>
         </DataPanel>
       )}
+
+      {/* ── Reset stored preferences ─────────────────────────────────── */}
+      <DataPanel
+        title="Reset preferences"
+        description="Clear remembered filters, saved views, and last-visited tab. Useful when filters get into a stuck state or before handing the device to someone else."
+        Icon={KeyboardIcon}
+      >
+        <Button
+          variant="outline"
+          className="border-white/15 text-zinc-200"
+          onClick={async () => {
+            const ok = await confirm({
+              title: 'Reset all preferences?',
+              description: 'Removes saved filters, sort orders, the last-viewed tab, and saved views. Your account and data are not affected.',
+              confirmLabel: 'Reset',
+              tone: 'destructive',
+            })
+            if (!ok) return
+            try {
+              const prefixes = ['p2_sticky_', 'p2_views_', 'p2_recent_jobs']
+              const keys = Object.keys(localStorage)
+              keys.forEach(k => {
+                if (prefixes.some(p => k.startsWith(p))) localStorage.removeItem(k)
+              })
+              toast({ tone: 'success', title: 'Preferences reset', description: 'Reload to see the defaults.' })
+            } catch (err) {
+              toast({ tone: 'error', title: 'Reset failed', description: err.message || 'Try again.' })
+            }
+          }}
+        >
+          Reset filters &amp; saved views
+        </Button>
+      </DataPanel>
 
       {/* ── Security migration ───────────────────────────────────────── */}
       <DataPanel
