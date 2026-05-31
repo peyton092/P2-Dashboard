@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useSavedViews, saveView, deleteView } from '../../lib/savedViews'
+import { useDialog } from '../ui/dialog'
 
 // Drop-in saved-view picker for a filter/sort/search combo. Pages just hand
 // it their current payload + an apply callback — the component handles the
@@ -20,18 +21,25 @@ export function SavedViewSelect({
   selectAriaLabel = 'Saved view',
 }) {
   const savedViews = useSavedViews(scope)
+  const { confirm, prompt } = useDialog()
   const viewNames  = useMemo(() => Object.keys(savedViews).sort(), [savedViews])
   const currentSig = JSON.stringify(currentPayload || {})
   const activeName = viewNames.find(n => JSON.stringify(savedViews[n]?.payload || {}) === currentSig) || ''
 
-  const handleSave = () => {
-    const name = window.prompt(savePrompt)
-    if (!name) return
-    saveView(scope, name, currentPayload)
+  const handleSave = async () => {
+    const name = await prompt({ title: 'Save view', description: savePrompt, placeholder: 'View name', confirmLabel: 'Save' })
+    if (!name?.trim()) return
+    saveView(scope, name.trim(), currentPayload)
   }
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!activeName) return
-    if (window.confirm(`Delete saved view "${activeName}"?`)) deleteView(scope, activeName)
+    const ok = await confirm({
+      title: `Delete "${activeName}"?`,
+      description: 'This removes the saved view. Your current filters stay as they are.',
+      confirmLabel: 'Delete',
+      tone: 'destructive',
+    })
+    if (ok) deleteView(scope, activeName)
   }
   const handleChange = (e) => {
     const v = e.target.value

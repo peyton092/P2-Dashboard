@@ -9,6 +9,7 @@ import { auth, db, functions } from '../firebase'
 import { enablePushNotifications } from '../lib/push'
 import { useData } from '../DataContext'
 import { useToast } from '@/components/ui/toast'
+import { useDialog } from '@/components/ui/dialog'
 import { PageHeader, DataPanel } from './shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -57,6 +58,7 @@ export default function SettingsPage({ onLogout }) {
   const { jobs, settings } = useData()
   const user = auth.currentUser
   const toast = useToast()
+  const { confirm } = useDialog()
 
   const [pwMode, setPwMode]   = useState(false)
   const [curPw, setCurPw]     = useState('')
@@ -145,7 +147,13 @@ export default function SettingsPage({ onLogout }) {
 
   const handleDisconnectQB = async () => {
     if (!qbConnected) return
-    if (!window.confirm('Disconnect QuickBooks? Auto-sync of invoices will stop until you reconnect.')) return
+    const ok = await confirm({
+      title: 'Disconnect QuickBooks?',
+      description: 'Auto-sync of invoices will stop until you reconnect.',
+      confirmLabel: 'Disconnect',
+      tone: 'destructive',
+    })
+    if (!ok) return
     setQbDisconnecting(true)
     setQbError('')
     setQbInfo('')
@@ -197,7 +205,13 @@ export default function SettingsPage({ onLogout }) {
 
   const handleDisconnectCC = async () => {
     if (!ccConnected) return
-    if (!window.confirm('Disconnect CompanyCam? Photo sync will stop until you reconnect.')) return
+    const ok = await confirm({
+      title: 'Disconnect CompanyCam?',
+      description: 'Photo sync will stop until you reconnect.',
+      confirmLabel: 'Disconnect',
+      tone: 'destructive',
+    })
+    if (!ok) return
     setCcDisconnecting(true)
     setCcError('')
     setCcInfo('')

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
+import { useDialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -390,6 +391,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
 export default function ChangeOrders() {
   const { jobs: JOBS, extras: ALL_EXTRAS, loading } = useData()
   const toast = useToast()
+  const { confirm } = useDialog()
   const [view, setView] = useState('list')
   const [editingCO, setEditingCO] = useState(null)
   const [form, setForm] = useState(null)
@@ -715,7 +717,13 @@ export default function ChangeOrders() {
             if (targets.length === 0) { clearSelection(); return }
             const verbMap = { approved: 'approve', rejected: 'reject', sent: 'send to builder', draft: 'move to draft' }
             const verb = verbMap[action] || 'update'
-            if (!window.confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${targets.length} change order${targets.length === 1 ? '' : 's'}?`)) return
+            const ok = await confirm({
+              title: `${verb[0].toUpperCase() + verb.slice(1)}?`,
+              description: `This affects ${targets.length} change order${targets.length === 1 ? '' : 's'}.`,
+              confirmLabel: verb[0].toUpperCase() + verb.slice(1),
+              tone: action === 'rejected' ? 'destructive' : 'default',
+            })
+            if (!ok) return
             setBulkBusy(true)
             try {
               const statusMap = { approved: 'Approved', rejected: 'Rejected', sent: 'Sent to Builder', draft: 'Draft' }

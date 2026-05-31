@@ -4,6 +4,7 @@ import { addMaterial, updateMaterial, addHistory, useHistory } from '../hooks/us
 import { exportToCsv } from '../lib/exportCsv'
 import { useStickyState } from '../lib/useStickyState'
 import { useToast } from './ui/toast'
+import { useDialog } from './ui/dialog'
 import { cn } from '@/lib/utils'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
@@ -42,6 +43,7 @@ export default function Materials() {
   const [selected, setSelected]           = useState(() => new Set())
   const [bulkBusy, setBulkBusy]           = useState(false)
   const toast = useToast()
+  const { confirm } = useDialog()
   const toggleSelected = useCallback((id) => setSelected(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
@@ -337,7 +339,13 @@ export default function Materials() {
               .map(({ m }) => m)
               .filter(m => selected.has(m._docId || m.id) && m._docId)
             if (targets.length === 0) { clearSelection(); return }
-            if (!window.confirm(`Set ${targets.length} material${targets.length === 1 ? '' : 's'} to "${newStatus}"?`)) return
+            const ok = await confirm({
+              title: `Set status to "${newStatus}"?`,
+              description: `This updates ${targets.length} material${targets.length === 1 ? '' : 's'}.`,
+              confirmLabel: 'Update',
+              tone: newStatus === 'Cancelled' ? 'destructive' : 'default',
+            })
+            if (!ok) return
             setBulkBusy(true)
             try {
               await Promise.all(targets.map(async m => {

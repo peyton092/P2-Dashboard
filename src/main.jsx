@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import { ToastProvider } from './components/ui/toast'
+import { DialogProvider } from './components/ui/dialog'
 import { ServiceWorkerUpdateNotifier } from './components/ui/ServiceWorkerUpdateNotifier'
 import { initErrorLogger } from './lib/errorLogger'
 import { captureInstallPrompt } from './lib/installPrompt'
@@ -81,8 +82,10 @@ if ('serviceWorker' in navigator) {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ToastProvider>
-      <ServiceWorkerUpdateNotifier />
-      <App />
+      <DialogProvider>
+        <ServiceWorkerUpdateNotifier />
+        <App />
+      </DialogProvider>
     </ToastProvider>
   </StrictMode>,
 )

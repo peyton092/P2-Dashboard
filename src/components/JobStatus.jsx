@@ -3,6 +3,7 @@ import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import { createJob, updateJob } from '../hooks/useFirestore'
 import { useToast } from '@/components/ui/toast'
+import { useDialog } from '@/components/ui/dialog'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
@@ -48,6 +49,7 @@ export default function JobStatus() {
   const [selected, setSelected]     = useState(() => new Set())
   const [bulkBusy, setBulkBusy]     = useState(false)
   const toast = useToast()
+  const { confirm } = useDialog()
   const toggleSelected = useCallback((id) => setSelected(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
@@ -430,7 +432,12 @@ export default function JobStatus() {
           pmOptions={pmOptions}
           busy={bulkBusy}
           onApplyStatus={async (status) => {
-            if (!window.confirm(`Set ${selected.size} job${selected.size === 1 ? '' : 's'} to status "${status}"?`)) return
+            const ok = await confirm({
+              title: `Set status to "${status}"?`,
+              description: `This updates ${selected.size} job${selected.size === 1 ? '' : 's'}.`,
+              confirmLabel: 'Update',
+            })
+            if (!ok) return
             setBulkBusy(true)
             try {
               const targets = jobs.filter(j => selected.has(j.id) && j._docId)
@@ -442,7 +449,12 @@ export default function JobStatus() {
             } finally { setBulkBusy(false) }
           }}
           onApplyPM={async (pm) => {
-            if (!window.confirm(`Assign ${selected.size} job${selected.size === 1 ? '' : 's'} to ${pm}?`)) return
+            const ok = await confirm({
+              title: `Assign to ${pm}?`,
+              description: `This reassigns ${selected.size} job${selected.size === 1 ? '' : 's'}.`,
+              confirmLabel: 'Reassign',
+            })
+            if (!ok) return
             setBulkBusy(true)
             try {
               const targets = jobs.filter(j => selected.has(j.id) && j._docId)

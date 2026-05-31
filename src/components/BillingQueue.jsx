@@ -5,6 +5,7 @@ import { updateJob } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
 import { ZONES, getZoneId } from '../agent/zones'
 import { useToast } from './ui/toast'
+import { useDialog } from './ui/dialog'
 import { cn } from '@/lib/utils'
 import {
   PageHeader,
@@ -142,6 +143,7 @@ const SORTS = [
 export default function BillingQueue() {
   const { jobs = [], extras = [], loading } = useData()
   const toast = useToast()
+  const { confirm } = useDialog()
   const [search, setSearch]     = useStickyState('billing.search', '')
   const [filter, setFilter]     = useStickyState('billing.filter', 'all')
   const [pmFilter, setPmFilter] = useStickyState('billing.pm', 'all')
@@ -446,7 +448,13 @@ export default function BillingQueue() {
               action === 'hold'     ? 'place on hold' :
               action === 'release'  ? 'release hold on' :
               'update'
-            if (!window.confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${targets.length} job${targets.length === 1 ? '' : 's'}?`)) return
+            const ok = await confirm({
+              title: `${verb[0].toUpperCase() + verb.slice(1)}?`,
+              description: `This affects ${targets.length} job${targets.length === 1 ? '' : 's'}.`,
+              confirmLabel: verb[0].toUpperCase() + verb.slice(1),
+              tone: action === 'hold' ? 'destructive' : 'default',
+            })
+            if (!ok) return
             setBulkBusy(true)
             try {
               const patch =

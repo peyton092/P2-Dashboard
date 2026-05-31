@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useData } from '../DataContext'
 import { updateNotification } from '../hooks/useFirestore'
 import { useToast } from '@/components/ui/toast'
+import { useDialog } from '@/components/ui/dialog'
 import { useStickyState } from '../lib/useStickyState'
 import { exportToCsv } from '../lib/exportCsv'
 import {
@@ -28,6 +29,7 @@ export default function Notifications() {
   const { notifs = [] } = useData()
   const [filter, setFilter] = useStickyState('notifications.filter', 'all')
   const toast = useToast()
+  const { confirm } = useDialog()
 
   // Live = not dismissed. Dismiss is the user's "clear" gesture; archived
   // notifications drop out of view (matches modern notification-center UX).
@@ -84,10 +86,16 @@ export default function Notifications() {
   const markAll = () => {
     live.filter(n => !n.read && n._docId).forEach(n => updateNotification(n._docId, { read: true }))
   }
-  const dismissAll = () => {
+  const dismissAll = async () => {
     const targets = visible.filter(n => n._docId)
     if (targets.length === 0) return
-    if (!window.confirm(`Dismiss ${targets.length} notification${targets.length === 1 ? '' : 's'}?`)) return
+    const ok = await confirm({
+      title: `Dismiss ${targets.length} notification${targets.length === 1 ? '' : 's'}?`,
+      description: 'You can undo this from the toast.',
+      confirmLabel: 'Dismiss all',
+      tone: 'destructive',
+    })
+    if (!ok) return
     // Snapshot read state per-doc so Undo restores exactly what was there.
     const snapshot = targets.map(n => ({ docId: n._docId, wasRead: !!n.read }))
     snapshot.forEach(s => updateNotification(s.docId, { dismissed: true, read: true }))
