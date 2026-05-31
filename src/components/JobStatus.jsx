@@ -435,10 +435,12 @@ export default function JobStatus() {
           pmOptions={pmOptions}
           busy={bulkBusy}
           onApplyStatus={async (status) => {
+            const isDestructive = status === 'blocked' || status === 'hold'
             const ok = await confirm({
               title: `Set status to "${status}"?`,
               description: `This updates ${selected.size} job${selected.size === 1 ? '' : 's'}.`,
               confirmLabel: 'Update',
+              tone: isDestructive ? 'destructive' : 'default',
             })
             if (!ok) return
             setBulkBusy(true)
