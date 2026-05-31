@@ -36,6 +36,20 @@ describe('notifMatchesFilter', () => {
     expect(notifMatchesFilter(mkNotif({ type: 'info',  read: false }), 'action-needed')).toBe(false)
     expect(notifMatchesFilter(mkNotif({ type: 'warn',  read: true  }), 'action-needed')).toBe(false)
   })
+  it('"read" matches read notifications only', () => {
+    expect(notifMatchesFilter(mkNotif({ read: true }),  'read')).toBe(true)
+    expect(notifMatchesFilter(mkNotif({ read: false }), 'read')).toBe(false)
+  })
+  it('category-based filters delegate to notifCategory', () => {
+    expect(notifMatchesFilter(mkNotif({ msg: 'Invoice ready' }),       'billing')).toBe(true)
+    expect(notifMatchesFilter(mkNotif({ msg: 'Inspection passed' }),   'inspections')).toBe(true)
+    expect(notifMatchesFilter(mkNotif({ msg: 'Change order approved' }),'change-orders')).toBe(true)
+    expect(notifMatchesFilter(mkNotif({ msg: 'Job J-101 stalled' }),   'billing')).toBe(false)
+    expect(notifMatchesFilter(mkNotif({ msg: 'Job J-101 stalled' }),   'system')).toBe(true)
+  })
+  it('unknown filter falls through to true', () => {
+    expect(notifMatchesFilter(mkNotif(), 'nonexistent-filter')).toBe(true)
+  })
 })
 
 describe('notifTimestampMs', () => {
