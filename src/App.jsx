@@ -592,7 +592,11 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
   // left off. initialTab (set after an OAuth callback) takes precedence —
   // we want the user dropped back on Settings after a Quickbooks/CompanyCam
   // round-trip, not on whatever was open before.
-  const [activeTab, setActiveTab] = useStickyState('app.lastTab', initialTab || 'command-center')
+  const [activeTab, setActiveTab] = useStickyState(
+    'app.lastTab',
+    initialTab || 'command-center',
+    { crossTabSync: false },
+  )
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab)
   }, [initialTab, setActiveTab])

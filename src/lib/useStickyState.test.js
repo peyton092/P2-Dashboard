@@ -92,4 +92,16 @@ describe('useStickyState', () => {
     expect(h.value).toBe('mine')
     h.unmount()
   })
+
+  it('does not cross-tab sync when crossTabSync: false', () => {
+    const h = mount(() => useStickyState('t1', 'mine', { crossTabSync: false }))
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'p2_sticky_t1',
+        newValue: JSON.stringify('from-other-tab'),
+      }))
+    })
+    expect(h.value).toBe('mine')
+    h.unmount()
+  })
 })

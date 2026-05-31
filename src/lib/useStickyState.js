@@ -31,7 +31,11 @@ function write(key, value) {
   } catch { /* storage full, blocked, or non-serializable — ignore */ }
 }
 
-export function useStickyState(key, initial) {
+// opts.crossTabSync — default true. Set false for state that's intentionally
+// per-window (e.g. the currently active tab — you don't want window B to
+// follow window A's navigation just because both write the same key).
+export function useStickyState(key, initial, opts = {}) {
+  const { crossTabSync = true } = opts
   const [value, setValue] = useState(() => read(key, initial))
   const firstRun = useRef(true)
   const valueRef = useRef(value)
@@ -43,6 +47,7 @@ export function useStickyState(key, initial) {
   // Cross-tab sync — when another tab writes the same key, mirror the change
   // here so a filter changed in tab A appears in tab B without a reload.
   useEffect(() => {
+    if (!crossTabSync) return
     const onStorage = (e) => {
       if (e.key !== PREFIX + key) return
       try {
@@ -54,7 +59,7 @@ export function useStickyState(key, initial) {
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
-  }, [key])
+  }, [key, crossTabSync])
   return [value, setValue]
 }
 
