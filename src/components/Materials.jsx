@@ -3,6 +3,8 @@ import { useData } from '../DataContext'
 import { addMaterial, updateMaterial, addHistory, useHistory } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
 import { useStickyState } from '../lib/useStickyState'
+import { useToast } from './ui/toast'
+import { cn } from '@/lib/utils'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar, SavedViewSelect,
@@ -16,8 +18,8 @@ import {
   matNextAction,
 } from '../lib/materials'
 import {
-  ActivityIcon, AlertTriangleIcon, CheckCircleIcon, DownloadIcon, HardHatIcon,
-  PackageIcon, PencilIcon, PlusIcon, TriangleAlertIcon, TruckIcon,
+  ActivityIcon, AlertTriangleIcon, CheckCircleIcon, CheckIcon, DownloadIcon, HardHatIcon,
+  PackageIcon, PencilIcon, PlusIcon, TriangleAlertIcon, TruckIcon, XIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -37,6 +39,15 @@ export default function Materials() {
   const [expandedHistory, setExpandedHistory] = useState(null)
   const [form, setForm]                   = useState(MAT_FORM_INITIAL)
   const [saving, setSaving]               = useState(false)
+  const [selected, setSelected]           = useState(() => new Set())
+  const [bulkBusy, setBulkBusy]           = useState(false)
+  const toast = useToast()
+  const toggleSelected = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const clearSelection = () => setSelected(new Set())
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -315,6 +326,42 @@ export default function Materials() {
         />
       )}
 
+      {/* Bulk-action bar — visible while one or more rows are selected. */}
+      {selected.size > 0 && (
+        <MaterialsBulkActionBar
+          count={selected.size}
+          busy={bulkBusy}
+          onApply={async (newStatus) => {
+            const targets = visible
+              .map(({ m }) => m)
+              .filter(m => selected.has(m._docId || m.id) && m._docId)
+            if (targets.length === 0) { clearSelection(); return }
+            if (!window.confirm(`Set ${targets.length} material${targets.length === 1 ? '' : 's'} to "${newStatus}"?`)) return
+            setBulkBusy(true)
+            try {
+              await Promise.all(targets.map(async m => {
+                const oldStatus = normalizeMatStatus(m.status)
+                if (oldStatus === newStatus) return
+                await updateMaterial(m._docId, { status: newStatus })
+                await addHistory({
+                  materialDocId: m._docId,
+                  materialName:  matName(m),
+                  jobId:         matJobId(m),
+                  fromStatus:    oldStatus,
+                  toStatus:      newStatus,
+                  type:          'status_change',
+                })
+              }))
+              toast({ tone: 'success', title: `Updated ${targets.length} material${targets.length === 1 ? '' : 's'}` })
+              clearSelection()
+            } catch (err) {
+              toast({ tone: 'error', title: 'Bulk update failed', description: err.message || 'Try again.' })
+            } finally { setBulkBusy(false) }
+          }}
+          onClear={clearSelection}
+        />
+      )}
+
       {/* Materials queue */}
       <DataPanel
         title="Materials Queue"
@@ -348,6 +395,8 @@ export default function Materials() {
                     onToggleHistory={() => setExpandedHistory(showHist ? null : docKey)}
                     onEdit={() => openEdit(m)}
                     onStatusChange={handleStatusChange}
+                    selected={m._docId ? selected.has(m._docId) : false}
+                    onToggleSelect={m._docId ? () => toggleSelected(m._docId) : null}
                   />
                 </li>
               )
@@ -389,6 +438,7 @@ function MaterialCard({
   m, status, overdue, daysUntil,
   history, showHistory, onToggleHistory,
   onEdit, onStatusChange,
+  selected = false, onToggleSelect,
 }) {
   const tone = MAT_STATUS_TONE[status] || 'mute'
   const railColor = overdue
@@ -419,8 +469,26 @@ function MaterialCard({
       className="px-4 py-3.5 sm:px-5 sm:py-4 transition-colors hover:bg-white/[0.015]"
       style={{ borderLeft: `3px solid ${railColor}` }}
     >
-      {/* Header row — name, job pill, urgency tag */}
+      {/* Header row — checkbox, name, job pill, urgency tag */}
       <div className="flex items-start gap-2 mb-1.5 flex-wrap">
+        {onToggleSelect && (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={selected}
+            aria-label={`Select ${matName(m)}`}
+            onClick={onToggleSelect}
+            className={cn(
+              'shrink-0 mt-0.5 w-4 h-4 rounded border transition-colors flex items-center justify-center',
+              selected
+                ? 'text-white'
+                : 'bg-white/[0.04] border-white/20 text-transparent hover:border-white/40',
+            )}
+            style={selected ? { backgroundColor: O, borderColor: O } : undefined}
+          >
+            <CheckIcon size={11} strokeWidth={3} />
+          </button>
+        )}
         {jobId && (
           <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
             {jobId}
@@ -675,5 +743,41 @@ function FormFieldLabel({ children }) {
     <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 block mb-1.5">
       {children}
     </span>
+  )
+}
+
+// ── MaterialsBulkActionBar ────────────────────────────────────────────────────
+// Sticky bar shown while one or more materials are selected. Bulk status
+// change writes through the same updateMaterial + addHistory path that the
+// per-row status select uses, so history rows stay consistent.
+
+function MaterialsBulkActionBar({ count, busy, onApply, onClear }) {
+  return (
+    <div
+      role="region"
+      aria-label="Bulk materials actions"
+      className="sticky top-0 z-30 flex flex-wrap items-center gap-2 rounded-lg border border-orange-400/30 bg-zinc-900/95 backdrop-blur-md px-3 py-2 shadow-md"
+      style={{ borderLeftWidth: 3, borderLeftColor: O }}
+    >
+      <span className="text-xs font-bold text-white">{count} selected</span>
+      <select
+        value=""
+        disabled={busy}
+        onChange={(e) => { if (e.target.value) { onApply(e.target.value); e.target.value = '' } }}
+        className="bg-white/[0.04] border border-white/15 rounded-lg text-xs px-2.5 py-1.5 text-zinc-200 focus:outline-none focus:border-white/30 disabled:opacity-60"
+        aria-label="Set material status for selected items"
+      >
+        <option value="">Set status…</option>
+        {MAT_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <button
+        type="button"
+        onClick={onClear}
+        disabled={busy}
+        className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-300 hover:text-white px-2 py-1.5 rounded-md hover:bg-white/5 disabled:opacity-60"
+      >
+        <XIcon size={12} /> Clear
+      </button>
+    </div>
   )
 }

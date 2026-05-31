@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useData } from '../DataContext'
@@ -400,12 +400,12 @@ export default function ChangeOrders() {
   const [saving, setSaving] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
-  const toggleSelected = (id) => setSelected(prev => {
+  const toggleSelected = useCallback((id) => setSelected(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
-  })
-  const clearSelection = () => setSelected(new Set())
+  }), [])
+  const clearSelection = useCallback(() => setSelected(new Set()), [])
 
   // Sort newest first (by date then by coNumber). Memoized so identity stays
   // stable across renders unless the extras feed changes.
@@ -422,7 +422,7 @@ export default function ChangeOrders() {
     setView('form')
   }
 
-  function openEdit(co) {
+  const openEdit = useCallback((co) => {
     if (!co.lineItems) return
     setForm({
       ...co,
@@ -430,7 +430,11 @@ export default function ChangeOrders() {
     })
     setEditingCO(co)
     setView('form')
-  }
+  }, [])
+
+  // Stable PDF handler so memoized rows skip re-renders when only their
+  // sibling's selection state changes.
+  const handlePdf = useCallback((co) => generateCOPdf(co, jobLabel(JOBS, co.job)), [JOBS])
 
   async function saveCO(sendToBuilder) {
     if (!form.job || !form.lineItems.some(li => li.desc.trim())) return
@@ -770,9 +774,9 @@ export default function ChangeOrders() {
                       co={co}
                       job={jobMap.get(co.job)}
                       onEdit={openEdit}
-                      onPdf={() => generateCOPdf(co, jobLabel(JOBS, co.job))}
+                      onPdf={handlePdf}
                       selected={co._docId ? selected.has(co._docId) : false}
-                      onToggleSelect={co._docId ? () => toggleSelected(co._docId) : null}
+                      onToggleSelect={co._docId ? toggleSelected : null}
                     />
                   ))}
                 </tbody>
@@ -787,7 +791,7 @@ export default function ChangeOrders() {
                     co={co}
                     job={jobMap.get(co.job)}
                     onEdit={openEdit}
-                    onPdf={() => generateCOPdf(co, jobLabel(JOBS, co.job))}
+                    onPdf={handlePdf}
                   />
                 </li>
               ))}
@@ -837,7 +841,7 @@ function tonesToColor(tone) {
   )
 }
 
-function CORow({ co, job, onEdit, onPdf, selected = false, onToggleSelect }) {
+const CORow = memo(function CORow({ co, job, onEdit, onPdf, selected = false, onToggleSelect }) {
   const isNew     = !!co.lineItems
   const coNum     = co.coNumber || co.id || '—'
   const desc      = co.desc || co.lineItems?.[0]?.desc || '—'
@@ -867,7 +871,7 @@ function CORow({ co, job, onEdit, onPdf, selected = false, onToggleSelect }) {
             role="checkbox"
             aria-checked={selected}
             aria-label={`Select ${coNum}`}
-            onClick={onToggleSelect}
+            onClick={() => onToggleSelect(co._docId)}
             className={cn(
               'w-4 h-4 rounded border transition-colors flex items-center justify-center',
               selected
@@ -923,7 +927,7 @@ function CORow({ co, job, onEdit, onPdf, selected = false, onToggleSelect }) {
             {isNew && (
               <button
                 type="button"
-                onClick={onPdf}
+                onClick={() => onPdf(co)}
                 className="p-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.08] transition-colors"
                 title="Download PDF"
               >
@@ -945,7 +949,7 @@ function CORow({ co, job, onEdit, onPdf, selected = false, onToggleSelect }) {
       </TableCell>
     </TableRow>
   )
-}
+})
 
 function COCard({ co, job, onEdit, onPdf }) {
   const isNew    = !!co.lineItems
@@ -1009,7 +1013,7 @@ function COCard({ co, job, onEdit, onPdf }) {
           {isNew && (
             <button
               type="button"
-              onClick={onPdf}
+              onClick={() => onPdf(co)}
               className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-white/10 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
               title="Download PDF"
             >

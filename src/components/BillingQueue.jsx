@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { useData } from '../DataContext'
 import { useStickyState } from '../lib/useStickyState'
 import { updateJob } from '../hooks/useFirestore'
@@ -150,12 +150,12 @@ export default function BillingQueue() {
   const setSortBy = (field) => setSort(s => ({ field, direction: s.field === field ? (s.direction === 'asc' ? 'desc' : 'asc') : 'desc' }))
   const [selected, setSelected] = useState(() => new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
-  const toggleSelected = (id) => setSelected(prev => {
+  const toggleSelected = useCallback((id) => setSelected(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
-  })
-  const clearSelection = () => setSelected(new Set())
+  }), [])
+  const clearSelection = useCallback(() => setSelected(new Set()), [])
 
   // Pending-CO map: jobId → count of extras awaiting builder approval.
   const pendingCOByJob = useMemo(() => {
@@ -506,7 +506,7 @@ export default function BillingQueue() {
                       key={row.job._docId || row.job.id}
                       row={row}
                       selected={selected.has(row.job.id)}
-                      onToggleSelect={() => toggleSelected(row.job.id)}
+                      onToggleSelect={toggleSelected}
                     />
                   ))}
                 </tbody>
@@ -520,7 +520,7 @@ export default function BillingQueue() {
                   <BillingCard
                     row={row}
                     selected={selected.has(row.job.id)}
-                    onToggleSelect={() => toggleSelected(row.job.id)}
+                    onToggleSelect={toggleSelected}
                   />
                 </li>
               ))}
@@ -721,7 +721,7 @@ function InvoiceNumberInput({ job }) {
 
 // ── Desktop row ──────────────────────────────────────────────────────────────
 
-function BillingRow({ row, selected = false, onToggleSelect }) {
+const BillingRow = memo(function BillingRow({ row, selected = false, onToggleSelect }) {
   const { job, isReady, hasDocs, hasPendingCO, agingDays, billable, milestone } = row
   const zoneId   = getZoneId(job)
   const zone     = ZONES[zoneId] || ZONES['zone-7']
@@ -749,7 +749,7 @@ function BillingRow({ row, selected = false, onToggleSelect }) {
             role="checkbox"
             aria-checked={selected}
             aria-label={`Select ${job.id}`}
-            onClick={onToggleSelect}
+            onClick={() => onToggleSelect(job.id)}
             className={cn(
               'w-4 h-4 rounded border transition-colors flex items-center justify-center',
               selected
@@ -802,7 +802,7 @@ function BillingRow({ row, selected = false, onToggleSelect }) {
       </TableCell>
     </TableRow>
   )
-}
+})
 
 function AgingPill({ row }) {
   const { job, agingDays, readySince, isReady } = row
@@ -825,7 +825,7 @@ function AgingPill({ row }) {
 
 // ── Mobile card ──────────────────────────────────────────────────────────────
 
-function BillingCard({ row, selected = false, onToggleSelect }) {
+const BillingCard = memo(function BillingCard({ row, selected = false, onToggleSelect }) {
   const { job, isReady, hasDocs, hasPendingCO, agingDays, billable, milestone } = row
   const next = nextActionFor(job, { isReady, hasDocs, hasPendingCO, agingDays })
   const accent =
@@ -848,7 +848,7 @@ function BillingCard({ row, selected = false, onToggleSelect }) {
               role="checkbox"
               aria-checked={selected}
               aria-label={`Select ${job.id}`}
-              onClick={onToggleSelect}
+              onClick={() => onToggleSelect(job.id)}
               className={cn(
                 'shrink-0 mt-1 w-4 h-4 rounded border transition-colors flex items-center justify-center',
                 selected
@@ -897,7 +897,7 @@ function BillingCard({ row, selected = false, onToggleSelect }) {
       </div>
     </article>
   )
-}
+})
 
 // ── BulkBillingActionBar ─────────────────────────────────────────────────────
 // Sticky bar shown while one or more billing rows are selected. Bulk mark
