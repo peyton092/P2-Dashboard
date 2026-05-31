@@ -73,4 +73,14 @@ describe('BulkActionBar', () => {
     h = mount({ count: 1, ariaLabel: 'Custom region label', onClear: () => {} })
     expect(h.region.getAttribute('aria-label')).toBe('Custom region label')
   })
+
+  it('renders a busy spinner when busy=true', () => {
+    h = mount({ count: 1, busy: true, onClear: () => {} })
+    expect(h.container.querySelector('[aria-label="Working…"]')).toBeTruthy()
+  })
+
+  it('does not render the spinner when not busy', () => {
+    h = mount({ count: 1, onClear: () => {} })
+    expect(h.container.querySelector('[aria-label="Working…"]')).toBeFalsy()
+  })
 })

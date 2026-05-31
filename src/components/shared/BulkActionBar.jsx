@@ -36,6 +36,14 @@ export function BulkActionBar({
       style={{ borderLeftWidth: 3, borderLeftColor: O }}
     >
       <span className="text-xs font-bold text-white">{count} {countSuffix}</span>
+      {busy && (
+        <span
+          className="w-3.5 h-3.5 rounded-full border-2 animate-spin"
+          style={{ borderColor: O + '33', borderTopColor: O }}
+          aria-label="Working…"
+          role="status"
+        />
+      )}
       {visibleIds && !allVisibleSelected && (
         <button
           type="button"
