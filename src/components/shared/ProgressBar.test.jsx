@@ -3,10 +3,6 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ProgressBar } from './ProgressBar'
 
-// React 19 wants this flag set so the act() warnings are silenced and
-// updates flush synchronously inside act blocks.
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
-
 function mount(props) {
   const container = document.createElement('div')
   document.body.appendChild(container)
