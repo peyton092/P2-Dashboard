@@ -1,13 +1,15 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useData } from '../DataContext'
 import { updateNotification } from '../hooks/useFirestore'
 import { useToast } from '@/components/ui/toast'
 import { useDialog } from '@/components/ui/dialog'
 import { useStickyState } from '../lib/useStickyState'
 import { exportToCsv } from '../lib/exportCsv'
+import { cn } from '@/lib/utils'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
+  BulkActionBar as SharedBulkActionBar,
 } from './shared'
 import {
   NOTIF_FILTERS, notifIsWithinHours, notifMatchesFilter,
@@ -30,6 +32,13 @@ export default function Notifications() {
   const [filter, setFilter] = useStickyState('notifications.filter', 'all')
   const toast = useToast()
   const { confirm } = useDialog()
+  const [selected, setSelected] = useState(() => new Set())
+  const toggleSelected = useCallback((docId) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(docId)) next.delete(docId); else next.add(docId)
+    return next
+  }), [])
+  const clearSelection = useCallback(() => setSelected(new Set()), [])
 
   // Live = not dismissed. Dismiss is the user's "clear" gesture; archived
   // notifications drop out of view (matches modern notification-center UX).
@@ -250,12 +259,69 @@ export default function Notifications() {
           <ul className="divide-y divide-white/5">
             {visible.map(n => (
               <li key={n._docId || n.id || n.msg}>
-                <NotificationCard n={n} onRead={markRead} onDismiss={dismiss} />
+                <NotificationCard
+                  n={n}
+                  onRead={markRead}
+                  onDismiss={dismiss}
+                  selected={n._docId ? selected.has(n._docId) : false}
+                  onToggleSelect={n._docId ? toggleSelected : null}
+                />
               </li>
             ))}
           </ul>
         )}
       </DataPanel>
+      {selected.size > 0 && (
+        <SharedBulkActionBar
+          count={selected.size}
+          onClear={clearSelection}
+          visibleIds={visible.map(n => n._docId).filter(Boolean)}
+          onSelectAllVisible={() => setSelected(new Set(visible.map(n => n._docId).filter(Boolean)))}
+          ariaLabel="Bulk notification actions"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              const targets = Array.from(selected)
+              targets.forEach(id => updateNotification(id, { read: true }))
+              toast({ tone: 'success', title: `Marked ${targets.length} read` })
+              clearSelection()
+            }}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-white/15 text-zinc-200 hover:text-white hover:border-white/30"
+          >
+            <CheckIcon size={11} /> Mark read
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              const ok = await confirm({
+                title: `Dismiss ${selected.size} notification${selected.size === 1 ? '' : 's'}?`,
+                description: 'You can undo this from the toast.',
+                confirmLabel: 'Dismiss',
+                tone: 'destructive',
+              })
+              if (!ok) return
+              const targets = visible.filter(n => n._docId && selected.has(n._docId))
+              const snapshot = targets.map(n => ({ docId: n._docId, wasRead: !!n.read }))
+              snapshot.forEach(s => updateNotification(s.docId, { dismissed: true, read: true }))
+              toast({
+                tone: 'info',
+                title: `Dismissed ${targets.length} notification${targets.length === 1 ? '' : 's'}`,
+                duration: 6000,
+                action: {
+                  label: 'Undo',
+                  onClick: () => snapshot.forEach(s => updateNotification(s.docId, { dismissed: false, read: s.wasRead })),
+                },
+              })
+              clearSelection()
+            }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md text-white"
+            style={{ backgroundColor: O }}
+          >
+            <TrashIcon size={11} /> Dismiss
+          </button>
+        </SharedBulkActionBar>
+      )}
     </div>
   )
 }
@@ -271,7 +337,7 @@ function NotificationsEmptyState({ filter }) {
   return <AllClearState title="No notifications" description="You're all caught up." />
 }
 
-function NotificationCard({ n, onRead, onDismiss }) {
+function NotificationCard({ n, onRead, onDismiss, selected = false, onToggleSelect }) {
   const meta = NOTIF_TYPE_META[n.type] || NOTIF_TYPE_META.info
   const cat = notifCategory(n)
   const CatIcon = NOTIF_CATEGORY_ICON[cat] || InfoIcon
@@ -296,6 +362,24 @@ function NotificationCard({ n, onRead, onDismiss }) {
       style={{ borderLeft: `3px solid ${n.read ? 'transparent' : meta.color}` }}
       aria-label={n.read ? `Notification: ${n.msg}` : `Unread notification: ${n.msg}`}
     >
+      {onToggleSelect && (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={selected}
+          aria-label={`Select notification: ${n.msg}`}
+          onClick={(e) => { e.stopPropagation(); onToggleSelect(n._docId) }}
+          className={cn(
+            'shrink-0 mt-1 w-4 h-4 rounded border transition-colors flex items-center justify-center',
+            selected
+              ? 'text-white'
+              : 'bg-white/[0.04] border-white/20 text-transparent hover:border-white/40',
+          )}
+          style={selected ? { backgroundColor: O, borderColor: O } : undefined}
+        >
+          <CheckIcon size={11} strokeWidth={3} />
+        </button>
+      )}
       {/* Type icon tile */}
       <div
         className="shrink-0 mt-0.5 flex items-center justify-center rounded-lg"
