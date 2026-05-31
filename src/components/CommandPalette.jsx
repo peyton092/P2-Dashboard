@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useData } from '../DataContext'
+import { useFocusTrap } from '../lib/useFocusTrap'
 import {
   SearchIcon, GaugeIcon, HardHatIcon, UsersRoundIcon, FilePenLineIcon,
   ClipboardSignatureIcon, BoxesIcon, DollarSignIcon, CornerDownLeftIcon,
@@ -38,6 +39,8 @@ const navigate = (id) => window.dispatchEvent(new CustomEvent('p2:navigate', { d
 export default function CommandPalette() {
   const { jobs = [], subs = [], extras = [], materials = [] } = useData()
   const [open, setOpen] = useState(false)
+  const dialogRef = useRef(null)
+  useFocusTrap(dialogRef, open)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const inputRef = useRef(null)
@@ -158,9 +161,11 @@ export default function CommandPalette() {
   return (
     <div className="dark fixed inset-0 z-[90] flex items-start justify-center p-4 sm:pt-[12vh] bg-black/60 backdrop-blur-sm" onClick={close}>
       <div
+        ref={dialogRef}
         className="w-full max-w-xl rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Search"
       >
         <div className="flex items-center gap-2.5 px-4 border-b border-white/10">

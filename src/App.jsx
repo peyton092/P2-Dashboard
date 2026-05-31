@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
+﻿import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react'
+import { useFocusTrap } from './lib/useFocusTrap'
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
   createUserWithEmailAndPassword, sendPasswordResetEmail,
@@ -320,6 +321,13 @@ function CreateUserModal({ onClose }) {
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('internal')
   const [tenantId, setTenantId] = useState('qbs')
+  const dialogRef = useRef(null)
+  useFocusTrap(dialogRef, true)
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
   const [displayName, setDisplayName] = useState('')
   const [clientJobs, setClientJobs] = useState('')
   const [loading, setLoading] = useState(false)
@@ -364,8 +372,14 @@ function CreateUserModal({ onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <Card className="w-96 border-white/10 bg-zinc-900">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose?.() }}>
+      <Card
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create user account"
+        className="w-96 border-white/10 bg-zinc-900"
+      >
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
             <UsersIcon size={14} style={{ color: O }} /> Create User Account

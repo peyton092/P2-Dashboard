@@ -1,5 +1,6 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon, XIcon, DownloadIcon, ExternalLinkIcon } from 'lucide-react'
+import { useFocusTrap } from '../lib/useFocusTrap'
 
 // Reusable image lightbox. Renders fullscreen when `index >= 0`; expects the
 // parent to own the index (so the same photo grid stays in sync). Closes on
@@ -13,6 +14,8 @@ export default function PhotoLightbox({ photos = [], index = -1, onClose, onInde
   const total = photos.length
   const open = index >= 0 && index < total
   const photo = open ? photos[index] : null
+  const dialogRef = useRef(null)
+  useFocusTrap(dialogRef, open)
 
   const go = useCallback((delta) => {
     if (!open) return
@@ -40,6 +43,7 @@ export default function PhotoLightbox({ photos = [], index = -1, onClose, onInde
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={photo.name || 'Photo'}
