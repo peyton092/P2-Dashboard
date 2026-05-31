@@ -103,7 +103,7 @@ function DialogModal({ state, onClose }) {
       />
       <div
         ref={ref}
-        role="dialog"
+        role={state.kind === 'confirm' ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-labelledby="dialog-title"
         aria-describedby={state.description ? 'dialog-desc' : undefined}

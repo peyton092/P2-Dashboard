@@ -26,7 +26,7 @@ function mount(use) {
 }
 
 function getDialog() {
-  return document.querySelector('[role="dialog"]')
+  return document.querySelector('[role="dialog"], [role="alertdialog"]')
 }
 function getButton(label) {
   const buttons = Array.from(document.querySelectorAll('button'))
@@ -114,6 +114,29 @@ describe('useDialog().prompt', () => {
     expect(input.value).toBe('preset')
     act(() => { getButton('Save').click() })
     expect(await p).toBe('preset')
+  })
+})
+
+describe('ARIA roles', () => {
+  let h
+  beforeEach(() => { h?.unmount?.(); h = mount(useDialog) })
+
+  it('confirm renders role=alertdialog', async () => {
+    let p
+    act(() => { p = h.current.confirm({ title: 'X' }) })
+    expect(document.querySelector('[role="alertdialog"]')).toBeTruthy()
+    expect(document.querySelector('[role="dialog"]')).toBeFalsy()
+    act(() => { getButton('Cancel').click() })
+    await p
+  })
+
+  it('prompt renders role=dialog', async () => {
+    let p
+    act(() => { p = h.current.prompt({ title: 'X' }) })
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy()
+    expect(document.querySelector('[role="alertdialog"]')).toBeFalsy()
+    act(() => { getButton('Cancel').click() })
+    await p
   })
 })
 
