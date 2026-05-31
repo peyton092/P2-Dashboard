@@ -1,10 +1,11 @@
 import {
   ZapIcon, WrenchIcon, HammerIcon,
-  FileTextIcon, ClockIcon, CheckCircleIcon,
+  FileTextIcon, ClockIcon, CheckCircleIcon, DownloadIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useData } from '../DataContext'
 import { updatePermit } from '../hooks/useFirestore'
+import { exportToCsv } from '../lib/exportCsv'
 import { StatCard, InspectionBadge, StatusBadge, STATUS_COLORS } from './shared'
 
 const PERMIT_COLOR = {
@@ -47,7 +48,25 @@ export default function Permits() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Permits" sub="Permit status across all active jobs and trades" />
+      <SectionHeader
+        title="Permits"
+        sub="Permit status across all active jobs and trades"
+        action={
+          <button
+            type="button"
+            onClick={() => exportToCsv('p2-permits', [
+              { label: 'Job',     get: p => p.job },
+              { label: 'Address', get: p => p.address || '' },
+              { label: 'Trade',   get: p => p.trade },
+              { label: 'Status',  get: p => p.status || '' },
+            ], allPermits)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            title="Export the permit list to CSV"
+          >
+            <DownloadIcon size={13} /> Export
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-3 gap-4">
         <StatCard label="Approved / Finaled" value={approved} Icon={CheckCircleIcon} />

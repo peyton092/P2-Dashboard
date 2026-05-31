@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { updateJob } from '../hooks/useFirestore'
 import { daysSince } from '../agent/scoring'
+import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot, StatusBadge,
   EmptyState, AllClearState, FilterBar,
@@ -15,7 +16,7 @@ import {
 } from '../lib/subs'
 import { jobName } from '../lib/jobs'
 import {
-  AlertCircleIcon, CheckCircleIcon, ChevronRightIcon, ClockIcon,
+  AlertCircleIcon, CheckCircleIcon, ChevronRightIcon, ClockIcon, DownloadIcon,
   FileTextIcon, PhoneIcon, ShieldCheckIcon, TriangleAlertIcon,
   UsersRoundIcon,
 } from 'lucide-react'
@@ -129,6 +130,28 @@ export default function SubsTab() {
               <span className="text-amber-300">{kpis.missing} missing docs</span>
             )}
           </>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => exportToCsv('p2-subs', [
+              { label: 'Name',            get: item => item.s.name || '' },
+              { label: 'Trade',           get: item => item.s.trade || '' },
+              { label: 'Contact',         get: item => item.s.contact || '' },
+              { label: 'Phone',           get: item => item.s.phone || '' },
+              { label: 'Email',           get: item => item.s.email || '' },
+              { label: 'W-9',             get: item => item.s.w9 ? 'yes' : 'no' },
+              { label: 'Insurance Exp',   get: item => item.s.insExp || '' },
+              { label: 'License Exp',     get: item => item.s.licExp || '' },
+              { label: 'Compliance',      get: item => item.verdict?.label || '' },
+              { label: 'Score',           get: item => item.s.score ?? '' },
+              { label: 'Active Jobs',     get: item => item.activeJobCount ?? 0 },
+            ], visible)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            title="Export the current subs list to CSV"
+          >
+            <DownloadIcon size={13} /> Export
+          </button>
         }
       />
 

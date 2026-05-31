@@ -3,6 +3,8 @@ import { useData } from '../DataContext'
 import { updateJob } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
 import { ZONES, getZoneId } from '../agent/zones'
+import { useToast } from './ui/toast'
+import { cn } from '@/lib/utils'
 import {
   PageHeader,
   MetricTile,
@@ -137,12 +139,21 @@ const SORTS = [
 
 export default function BillingQueue() {
   const { jobs = [], extras = [], loading } = useData()
+  const toast = useToast()
   const [search, setSearch]     = useState('')
   const [filter, setFilter]     = useState('all')
   const [pmFilter, setPmFilter] = useState('all')
   const [sort, setSort]         = useState({ field: 'amount', direction: 'desc' })
   const sortBy = sort.field
   const setSortBy = (field) => setSort(s => ({ field, direction: s.field === field ? (s.direction === 'asc' ? 'desc' : 'asc') : 'desc' }))
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const toggleSelected = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const clearSelection = () => setSelected(new Set())
 
   // Pending-CO map: jobId → count of extras awaiting builder approval.
   const pendingCOByJob = useMemo(() => {
@@ -404,6 +415,41 @@ export default function BillingQueue() {
         }
       />
 
+      {/* Bulk-action bar — same pattern as JobStatus */}
+      {selected.size > 0 && (
+        <BulkBillingActionBar
+          count={selected.size}
+          busy={bulkBusy}
+          onApply={async (action) => {
+            const targets = display
+              .map(r => r.job)
+              .filter(j => selected.has(j.id) && j._docId)
+            if (targets.length === 0) { clearSelection(); return }
+            const verb =
+              action === 'invoiced' ? 'mark invoiced' :
+              action === 'hold'     ? 'place on hold' :
+              action === 'release'  ? 'release hold on' :
+              'update'
+            if (!window.confirm(`${verb[0].toUpperCase() + verb.slice(1)} ${targets.length} job${targets.length === 1 ? '' : 's'}?`)) return
+            setBulkBusy(true)
+            try {
+              const patch =
+                action === 'invoiced' ? { billingStatus: 'invoiced' } :
+                action === 'hold'     ? { billingStatus: 'hold' } :
+                action === 'release'  ? { billingStatus: 'not-invoiced' } :
+                null
+              if (!patch) return
+              await Promise.all(targets.map(j => updateJob(j._docId, patch)))
+              toast({ tone: 'success', title: `Updated ${targets.length} job${targets.length === 1 ? '' : 's'}` })
+              clearSelection()
+            } catch (err) {
+              toast({ tone: 'error', title: 'Bulk update failed', description: err.message || 'Try again.' })
+            } finally { setBulkBusy(false) }
+          }}
+          onClear={clearSelection}
+        />
+      )}
+
       {/* Main work queue */}
       <DataPanel
         title="Billing Work Queue"
@@ -426,11 +472,12 @@ export default function BillingQueue() {
                   sort={sort}
                   onSort={setSortBy}
                   columns={[
-                    { key: 'job',     label: 'Job',          width: '14%', sortable: true },
-                    { key: 'builder', label: 'Customer',     width: '14%' },
+                    { key: 'sel',     label: '',             width: '3%'  },
+                    { key: 'job',     label: 'Job',          width: '13%', sortable: true },
+                    { key: 'builder', label: 'Customer',     width: '13%' },
                     { key: 'amount',  label: 'Billable',     width: '10%', align: 'right', sortable: true },
                     { key: 'status',  label: 'Billing',      width: '10%' },
-                    { key: 'docs',    label: 'Docs',         width: '12%' },
+                    { key: 'docs',    label: 'Docs',         width: '11%' },
                     { key: 'apr',     label: 'Approval',     width: '12%' },
                     { key: 'pm',      label: 'PM',           width: '10%', sortable: true },
                     { key: 'aging',   label: 'Aging',        width: '8%',  sortable: true },
@@ -439,7 +486,12 @@ export default function BillingQueue() {
                 />
                 <tbody>
                   {display.map(row => (
-                    <BillingRow key={row.job._docId || row.job.id} row={row} />
+                    <BillingRow
+                      key={row.job._docId || row.job.id}
+                      row={row}
+                      selected={selected.has(row.job.id)}
+                      onToggleSelect={() => toggleSelected(row.job.id)}
+                    />
                   ))}
                 </tbody>
               </ResponsiveTable>
@@ -449,7 +501,11 @@ export default function BillingQueue() {
             <ul className="md:hidden p-3 space-y-2">
               {display.map(row => (
                 <li key={row.job._docId || row.job.id}>
-                  <BillingCard row={row} />
+                  <BillingCard
+                    row={row}
+                    selected={selected.has(row.job.id)}
+                    onToggleSelect={() => toggleSelected(row.job.id)}
+                  />
                 </li>
               ))}
             </ul>
@@ -649,7 +705,7 @@ function InvoiceNumberInput({ job }) {
 
 // ── Desktop row ──────────────────────────────────────────────────────────────
 
-function BillingRow({ row }) {
+function BillingRow({ row, selected = false, onToggleSelect }) {
   const { job, isReady, hasDocs, hasPendingCO, agingDays, billable, milestone } = row
   const zoneId   = getZoneId(job)
   const zone     = ZONES[zoneId] || ZONES['zone-7']
@@ -671,6 +727,26 @@ function BillingRow({ row }) {
       }
     >
       <TableCell first>
+        {onToggleSelect && (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={selected}
+            aria-label={`Select ${job.id}`}
+            onClick={onToggleSelect}
+            className={cn(
+              'w-4 h-4 rounded border transition-colors flex items-center justify-center',
+              selected
+                ? 'text-white'
+                : 'bg-white/[0.04] border-white/20 text-transparent hover:border-white/40',
+            )}
+            style={selected ? { backgroundColor: O, borderColor: O } : undefined}
+          >
+            <CheckIcon size={11} strokeWidth={3} />
+          </button>
+        )}
+      </TableCell>
+      <TableCell>
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[11px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
             {job.id}
@@ -733,7 +809,7 @@ function AgingPill({ row }) {
 
 // ── Mobile card ──────────────────────────────────────────────────────────────
 
-function BillingCard({ row }) {
+function BillingCard({ row, selected = false, onToggleSelect }) {
   const { job, isReady, hasDocs, hasPendingCO, agingDays, billable, milestone } = row
   const next = nextActionFor(job, { isReady, hasDocs, hasPendingCO, agingDays })
   const accent =
@@ -749,14 +825,34 @@ function BillingCard({ row }) {
       style={accent ? { borderLeftWidth: 3, borderLeftColor: accent } : undefined}
     >
       <header className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0">
-          <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">
-            {job.id}
-          </span>
-          <p className="text-base font-bold text-white mt-1.5 truncate">{jobLabel(job)}</p>
-          <p className="text-[11px] text-zinc-400 truncate">
-            {jobBuilder(job)}{job.pm ? ` · PM ${job.pm}` : ''}
-          </p>
+        <div className="flex items-start gap-2 min-w-0 flex-1">
+          {onToggleSelect && (
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={selected}
+              aria-label={`Select ${job.id}`}
+              onClick={onToggleSelect}
+              className={cn(
+                'shrink-0 mt-1 w-4 h-4 rounded border transition-colors flex items-center justify-center',
+                selected
+                  ? 'text-white'
+                  : 'bg-white/[0.04] border-white/20 text-transparent hover:border-white/40',
+              )}
+              style={selected ? { backgroundColor: O, borderColor: O } : undefined}
+            >
+              <CheckIcon size={11} strokeWidth={3} />
+            </button>
+          )}
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">
+              {job.id}
+            </span>
+            <p className="text-base font-bold text-white mt-1.5 truncate">{jobLabel(job)}</p>
+            <p className="text-[11px] text-zinc-400 truncate">
+              {jobBuilder(job)}{job.pm ? ` · PM ${job.pm}` : ''}
+            </p>
+          </div>
         </div>
         <div className="text-right shrink-0">
           <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
@@ -784,5 +880,56 @@ function BillingCard({ row }) {
         </div>
       </div>
     </article>
+  )
+}
+
+// ── BulkBillingActionBar ─────────────────────────────────────────────────────
+// Sticky bar shown while one or more billing rows are selected. Bulk mark
+// invoiced, place hold, or release hold via the same updateJob path the
+// inline row actions use.
+
+function BulkBillingActionBar({ count, busy, onApply, onClear }) {
+  return (
+    <div
+      role="region"
+      aria-label="Bulk billing actions"
+      className="sticky top-0 z-30 flex flex-wrap items-center gap-2 rounded-lg border border-orange-400/30 bg-zinc-900/95 backdrop-blur-md px-3 py-2 shadow-md"
+      style={{ borderLeftWidth: 3, borderLeftColor: O }}
+    >
+      <span className="text-xs font-bold text-white">{count} selected</span>
+      <button
+        type="button"
+        onClick={() => onApply('invoiced')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md text-white disabled:opacity-60"
+        style={{ backgroundColor: O }}
+      >
+        <ReceiptIcon size={11} /> Mark invoiced
+      </button>
+      <button
+        type="button"
+        onClick={() => onApply('hold')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 disabled:opacity-60"
+      >
+        <BanIcon size={11} /> Place hold
+      </button>
+      <button
+        type="button"
+        onClick={() => onApply('release')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:border-white/25 disabled:opacity-60"
+      >
+        Release hold
+      </button>
+      <button
+        type="button"
+        onClick={onClear}
+        disabled={busy}
+        className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-300 hover:text-white px-2 py-1.5 rounded-md hover:bg-white/5 disabled:opacity-60"
+      >
+        <XIcon size={12} /> Clear
+      </button>
+    </div>
   )
 }

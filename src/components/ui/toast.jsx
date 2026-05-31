@@ -21,6 +21,7 @@ export function useToast() {
 }
 
 let nextId = 0
+const MAX_VISIBLE = 4
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
@@ -33,7 +34,10 @@ export function ToastProvider({ children }) {
     const id = ++nextId
     const base = typeof opts === 'string' ? { title: opts } : (opts || {})
     const t = { id, tone: 'info', duration: 4000, ...base }
-    setToasts(list => [...list, t])
+    setToasts(list => {
+      const next = [...list, t]
+      return next.length > MAX_VISIBLE ? next.slice(next.length - MAX_VISIBLE) : next
+    })
     if (t.duration > 0) setTimeout(() => dismiss(id), t.duration)
     return id
   }, [dismiss])

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo, useCallback } from 'react'
 import { useData } from '../DataContext'
 import { createJob, updateJob } from '../hooks/useFirestore'
 import { useToast } from '@/components/ui/toast'
@@ -47,12 +47,13 @@ export default function JobStatus() {
   const [selected, setSelected]     = useState(() => new Set())
   const [bulkBusy, setBulkBusy]     = useState(false)
   const toast = useToast()
-  const toggleSelected = (id) => setSelected(prev => {
+  const toggleSelected = useCallback((id) => setSelected(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
-  })
-  const clearSelection = () => setSelected(new Set())
+  }), [])
+  const clearSelection = useCallback(() => setSelected(new Set()), [])
+  const toggleExpanded = useCallback((id) => setExpanded(e => e === id ? null : id), [])
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -511,9 +512,9 @@ export default function JobStatus() {
                   billRdy={billRdy}
                   zone={ZONES[zoneId] || null}
                   expanded={expanded === j.id}
-                  onToggle={() => setExpanded(expanded === j.id ? null : j.id)}
+                  onToggle={toggleExpanded}
                   selected={selected.has(j.id)}
-                  onToggleSelect={() => toggleSelected(j.id)}
+                  onToggleSelect={toggleSelected}
                 />
               </li>
             ))}
@@ -534,7 +535,7 @@ function JobStatusEmptyState({ filter, hasOtherFilters }) {
   return <EmptyState Icon={HardHatIcon} title="No jobs yet" description="Create the first job to populate the portfolio." />
 }
 
-function JobStatusRow({
+const JobStatusRow = memo(function JobStatusRow({
   job, complete, risk, stale, failed, billRdy, zone,
   expanded, onToggle,
   selected = false, onToggleSelect,
@@ -556,7 +557,7 @@ function JobStatusRow({
   const handleKey = (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button') && !e.target.closest('select') && !e.target.closest('[role="combobox"]')) {
       e.preventDefault()
-      onToggle()
+      onToggle(job.id)
     }
   }
 
@@ -567,7 +568,7 @@ function JobStatusRow({
         tabIndex={0}
         onClick={(e) => {
           if (e.target.closest('button') || e.target.closest('[role="combobox"]') || e.target.closest('select')) return
-          onToggle()
+          onToggle(job.id)
         }}
         onKeyDown={handleKey}
         className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:outline-none focus:bg-white/[0.04]"
@@ -581,7 +582,7 @@ function JobStatusRow({
               role="checkbox"
               aria-checked={selected}
               aria-label={`Select ${job.id}`}
-              onClick={(e) => { e.stopPropagation(); onToggleSelect() }}
+              onClick={(e) => { e.stopPropagation(); onToggleSelect(job.id) }}
               className={cn(
                 'shrink-0 mt-1 w-4 h-4 rounded border transition-colors flex items-center justify-center',
                 selected
@@ -706,7 +707,7 @@ function JobStatusRow({
       {expanded && <JobStatusDetail job={job} />}
     </div>
   )
-}
+})
 
 function JobStatusDetail({ job }) {
   return (

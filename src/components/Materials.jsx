@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { addMaterial, updateMaterial, addHistory, useHistory } from '../hooks/useFirestore'
+import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar,
@@ -14,7 +15,7 @@ import {
   matNextAction,
 } from '../lib/materials'
 import {
-  ActivityIcon, AlertTriangleIcon, CheckCircleIcon, HardHatIcon,
+  ActivityIcon, AlertTriangleIcon, CheckCircleIcon, DownloadIcon, HardHatIcon,
   PackageIcon, PencilIcon, PlusIcon, TriangleAlertIcon, TruckIcon,
 } from 'lucide-react'
 
@@ -187,14 +188,36 @@ export default function Materials() {
           </>
         }
         actions={
-          <button
-            type="button"
-            onClick={openRequest}
-            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
-            style={{ backgroundColor: O }}
-          >
-            <PlusIcon size={13} /> Request material
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => exportToCsv('p2-materials', [
+                { label: 'Item',         get: r => matName(r.m) },
+                { label: 'Job',          get: r => matJobId(r.m) },
+                { label: 'Status',       get: r => r.status },
+                { label: 'Quantity',     get: r => r.m.qty ?? '' },
+                { label: 'Unit',         get: r => r.m.unit || '' },
+                { label: 'Vendor',       get: r => r.m.vendor || '' },
+                { label: 'Ordered',      get: r => r.m.dateOrdered || '' },
+                { label: 'Needed',       get: r => r.m.dateNeeded || '' },
+                { label: 'Days Until',   get: r => r.daysUntil ?? '' },
+                { label: 'Overdue',      get: r => r.overdue ? 'yes' : 'no' },
+                { label: 'PO #',         get: r => r.m.poNum || '' },
+              ], visible)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+              title="Export the current materials list to CSV"
+            >
+              <DownloadIcon size={13} /> Export
+            </button>
+            <button
+              type="button"
+              onClick={openRequest}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
+              style={{ backgroundColor: O }}
+            >
+              <PlusIcon size={13} /> Request material
+            </button>
+          </>
         }
       />
 
