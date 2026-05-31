@@ -371,7 +371,11 @@ export default function AlertsPage() {
           description="No alerts match the current filters."
           Icon={AlertTriangleIcon}
         >
-          <AlertsEmptyState filter={filter} hasSearch={Boolean(search.trim())} />
+          <AlertsEmptyState
+            filter={filter}
+            hasSearch={Boolean(search.trim())}
+            onClear={() => { setFilter('all'); setSearch('') }}
+          />
         </DataPanel>
       ) : (
         <div className="space-y-5">
@@ -413,13 +417,22 @@ export default function AlertsPage() {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function AlertsEmptyState({ filter, hasSearch }) {
+function AlertsEmptyState({ filter, hasSearch, onClear }) {
   if (hasSearch) {
     return (
       <EmptyState
         Icon={AlertTriangleIcon}
         title="No alerts match"
         description="Adjust the search above or clear filters to see the full queue."
+        action={onClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
+          >
+            Clear all filters
+          </button>
+        )}
       />
     )
   }
