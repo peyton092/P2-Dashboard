@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 
 const O = '#F47920'
@@ -107,13 +108,27 @@ const PRIORITY = {
   MEDIUM:   { tone: 'warning',  label: 'Medium'   },
   LOW:      { tone: 'neutral',  label: 'Low'      },
 }
-// Small "Live" indicator (green pulse + label) used in page-header `meta`
-// slots across most tabs. Extracted so a future tweak to the "live" idea
-// (e.g. swap to "Snapshot" when offline) lives in one place instead of
-// twelve duplicated literals.
-export function LiveDot({ label = 'Live', color = '#22c55e' }) {
+// Small "Live" indicator used in page-header `meta` slots. Tracks
+// navigator.onLine so the label switches to "Offline" (amber) when the
+// browser loses connectivity — pairs with the global OfflineBanner so
+// users see one consistent connectivity signal across the chrome.
+export function LiveDot({ liveLabel = 'Live', offlineLabel = 'Offline' }) {
+  const initial = typeof navigator === 'undefined' ? true : navigator.onLine
+  const [online, setOnline] = useState(initial)
+  useEffect(() => {
+    const on  = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => {
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+    }
+  }, [])
+  const color = online ? '#22c55e' : '#eab308'
+  const label = online ? liveLabel : offlineLabel
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex items-center gap-1.5" aria-live="polite">
       <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />
       <span className="tracking-wider text-[10px] uppercase" style={{ color }}>{label}</span>
     </span>
