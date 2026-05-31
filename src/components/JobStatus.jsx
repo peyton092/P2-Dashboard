@@ -14,6 +14,7 @@ import {
   jobNextAction, jobRiskMeta, fmtJobDate,
   jobName,
 } from '../lib/jobs'
+import { useSavedViews, saveView, deleteView } from '../lib/savedViews'
 import { classifyRisk, hasFailedInspection, isBillingReady } from '../agent/scoring'
 import { ZONES, getZoneId } from '../agent/zones'
 import { exportToCsv } from '../lib/exportCsv'
@@ -127,6 +128,28 @@ export default function JobStatus() {
   }))
 
   const hasActiveFilters = filter !== 'all' || pmFilter !== 'all' || zoneFilter !== 'all' || search.trim() !== ''
+
+  // ── Saved views — persist the chip + PM + zone + search combo ──────────────
+  const savedViews = useSavedViews('jobs')
+  const viewNames = Object.keys(savedViews).sort()
+  const currentSig = JSON.stringify({ filter, pmFilter, zoneFilter, search: search.trim() })
+  const activeViewName = viewNames.find(n => JSON.stringify(savedViews[n]?.payload || {}) === currentSig) || ''
+  const applyView = (name) => {
+    const v = savedViews[name]?.payload
+    if (!v) return
+    setFilter(v.filter ?? 'all')
+    setPmFilter(v.pmFilter ?? 'all')
+    setZoneFilter(v.zoneFilter ?? 'all')
+    setSearch(v.search ?? '')
+  }
+  const handleSaveView = () => {
+    const name = window.prompt('Name this view (e.g. "My critical jobs")')
+    if (!name) return
+    saveView('jobs', name, { filter, pmFilter, zoneFilter, search: search.trim() })
+  }
+  const handleDeleteView = (name) => {
+    if (window.confirm(`Delete saved view "${name}"?`)) deleteView('jobs', name)
+  }
 
   // ── New-job mutation (preserved verbatim — same createJob payload shape) ──
   const elecSubs  = (subs || []).filter(s => s.trade === 'Electrical')
@@ -360,6 +383,26 @@ export default function JobStatus() {
         chips={filterChips}
         trailing={
           <>
+            <select
+              value={activeViewName}
+              onChange={e => { if (e.target.value === '__save__') handleSaveView(); else if (e.target.value) applyView(e.target.value) }}
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[180px]"
+              aria-label="Saved view"
+            >
+              <option value="">Saved view…</option>
+              {viewNames.map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="__save__">＋ Save current as…</option>
+            </select>
+            {activeViewName && (
+              <button
+                type="button"
+                onClick={() => handleDeleteView(activeViewName)}
+                className="text-[11px] font-semibold px-2.5 py-2 rounded-lg border border-white/10 text-zinc-400 hover:text-red-300 hover:border-red-400/40"
+                title={`Delete saved view "${activeViewName}"`}
+              >
+                Delete view
+              </button>
+            )}
             <select
               value={pmFilter}
               onChange={e => setPmFilter(e.target.value)}
