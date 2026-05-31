@@ -34,10 +34,27 @@ function write(key, value) {
 export function useStickyState(key, initial) {
   const [value, setValue] = useState(() => read(key, initial))
   const firstRun = useRef(true)
+  const valueRef = useRef(value)
+  valueRef.current = value
   useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return }
     write(key, value)
   }, [key, value])
+  // Cross-tab sync — when another tab writes the same key, mirror the change
+  // here so a filter changed in tab A appears in tab B without a reload.
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key !== PREFIX + key) return
+      try {
+        const next = e.newValue == null ? null : JSON.parse(e.newValue)
+        if (JSON.stringify(next) !== JSON.stringify(valueRef.current)) {
+          setValue(next)
+        }
+      } catch { /* ignore malformed payloads from other tabs */ }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [key])
   return [value, setValue]
 }
 

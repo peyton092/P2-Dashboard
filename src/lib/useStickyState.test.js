@@ -66,4 +66,30 @@ describe('useStickyState', () => {
     expect(calls).toBe(1)
     h.unmount()
   })
+
+  it('syncs across tabs via the storage event', () => {
+    const h = mount(() => useStickyState('t1', 'start'))
+    expect(h.value).toBe('start')
+    // Simulate another tab writing the same key.
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'p2_sticky_t1',
+        newValue: JSON.stringify('from-other-tab'),
+      }))
+    })
+    expect(h.value).toBe('from-other-tab')
+    h.unmount()
+  })
+
+  it('ignores storage events for other keys', () => {
+    const h = mount(() => useStickyState('t1', 'mine'))
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'p2_sticky_other',
+        newValue: JSON.stringify('not-mine'),
+      }))
+    })
+    expect(h.value).toBe('mine')
+    h.unmount()
+  })
 })
