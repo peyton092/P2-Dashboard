@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useData } from '../DataContext'
 import { updateJob, passInspection, failInspection } from '../hooks/useFirestore'
+import { useStickyState } from '../lib/useStickyState'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar, SavedViewSelect,
@@ -106,9 +107,9 @@ function PhaseRow({ label, status, note, docId, field }) {
 
 export default function Inspections() {
   const { jobs = [], dailyReports = [] } = useData()
-  const [filter, setFilter] = useState('all')
-  const [tradeFilter, setTradeFilter] = useState('all')
-  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useStickyState('inspections.filter', 'all')
+  const [tradeFilter, setTradeFilter] = useStickyState('inspections.trade', 'all')
+  const [search, setSearch] = useStickyState('inspections.search', '')
 
   const activeJobs = useMemo(
     () => jobs.filter(j => !['complete', 'completed'].includes(j.status)),

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../DataContext'
+import { useStickyState } from '../lib/useStickyState'
 import { updateJob } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
 import { ZONES, getZoneId } from '../agent/zones'
@@ -141,10 +142,10 @@ const SORTS = [
 export default function BillingQueue() {
   const { jobs = [], extras = [], loading } = useData()
   const toast = useToast()
-  const [search, setSearch]     = useState('')
-  const [filter, setFilter]     = useState('all')
-  const [pmFilter, setPmFilter] = useState('all')
-  const [sort, setSort]         = useState({ field: 'amount', direction: 'desc' })
+  const [search, setSearch]     = useStickyState('billing.search', '')
+  const [filter, setFilter]     = useStickyState('billing.filter', 'all')
+  const [pmFilter, setPmFilter] = useStickyState('billing.pm', 'all')
+  const [sort, setSort]         = useStickyState('billing.sort', { field: 'amount', direction: 'desc' })
   const sortBy = sort.field
   const setSortBy = (field) => setSort(s => ({ field, direction: s.field === field ? (s.direction === 'asc' ? 'desc' : 'asc') : 'desc' }))
   const [selected, setSelected] = useState(() => new Set())

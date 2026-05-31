@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { addMaterial, updateMaterial, addHistory, useHistory } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
+import { useStickyState } from '../lib/useStickyState'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot,
   EmptyState, AllClearState, FilterBar, SavedViewSelect,
@@ -29,8 +30,8 @@ const O = '#F47920'
 export default function Materials() {
   const { jobs = [], materials: MATERIALS = [] } = useData()
   const { history: HISTORY = [] } = useHistory()
-  const [filter, setFilter]               = useState('all')
-  const [filterJob, setFilterJob]         = useState('all')
+  const [filter, setFilter]               = useStickyState('materials.filter', 'all')
+  const [filterJob, setFilterJob]         = useStickyState('materials.job', 'all')
   const [showForm, setShowForm]           = useState(false)
   const [editId, setEditId]               = useState(null)
   const [expandedHistory, setExpandedHistory] = useState(null)

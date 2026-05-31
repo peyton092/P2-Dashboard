@@ -3,6 +3,7 @@ import { useData } from '../DataContext'
 import { updateJob } from '../hooks/useFirestore'
 import { daysSince } from '../agent/scoring'
 import { exportToCsv } from '../lib/exportCsv'
+import { useStickyState } from '../lib/useStickyState'
 import {
   PageHeader, MetricTile, DataPanel, Pill, LiveDot, StatusBadge,
   EmptyState, AllClearState, FilterBar, SavedViewSelect,
@@ -29,9 +30,9 @@ const tradeColor = { HVAC: '#3b82f6', Plumbing: '#06b6d4', Electrical: O }
 
 export default function SubsTab() {
   const { subs: SUBS = [], jobs = [] } = useData()
-  const [filter, setFilter]           = useState('all')
-  const [tradeFilter, setTradeFilter] = useState('all')
-  const [search, setSearch]           = useState('')
+  const [filter, setFilter]           = useStickyState('subs.filter', 'all')
+  const [tradeFilter, setTradeFilter] = useStickyState('subs.trade', 'all')
+  const [search, setSearch]           = useStickyState('subs.search', '')
   const [expandedSub, setExpandedSub] = useState(null)
 
   // ── Derived ────────────────────────────────────────────────────────────────

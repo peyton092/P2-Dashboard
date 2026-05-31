@@ -1,4 +1,5 @@
 import { useState, useMemo, memo, useCallback } from 'react'
+import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import { createJob, updateJob } from '../hooks/useFirestore'
 import { useToast } from '@/components/ui/toast'
@@ -36,10 +37,10 @@ const O = '#F47920'
 
 export default function JobStatus() {
   const { jobs = [], subs = [] } = useData()
-  const [search, setSearch]         = useState('')
-  const [filter, setFilter]         = useState('all')
-  const [pmFilter, setPmFilter]     = useState('all')
-  const [zoneFilter, setZoneFilter] = useState('all')
+  const [search, setSearch]         = useStickyState('jobs.search', '')
+  const [filter, setFilter]         = useStickyState('jobs.filter', 'all')
+  const [pmFilter, setPmFilter]     = useStickyState('jobs.pm', 'all')
+  const [zoneFilter, setZoneFilter] = useStickyState('jobs.zone', 'all')
   const [expanded, setExpanded]     = useState(null)
   const [showNewJob, setShowNewJob] = useState(false)
   const [jobForm, setJobForm]       = useState(JOB_FORM_INITIAL)
