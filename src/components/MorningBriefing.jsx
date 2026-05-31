@@ -11,7 +11,7 @@ import { hasFailedInspection } from '../agent/scoring'
 import {
   AlertCircleIcon, CalendarClockIcon, CatIcon, CheckIcon,
   ClipboardListIcon, DollarSignIcon, FilePenLineIcon,
-  PackageIcon, TriangleAlertIcon,
+  PackageIcon, PrinterIcon, TriangleAlertIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -103,6 +103,16 @@ export default function MorningBriefing() {
               <span className="text-red-300">{kpis.critical} critical item{kpis.critical === 1 ? '' : 's'}</span>
             )}
           </>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            title="Print or save the briefing as PDF"
+          >
+            <PrinterIcon size={13} /> Print
+          </button>
         }
       />
 
