@@ -77,8 +77,11 @@ export function FilterBar({
 // on small screens. Use the `<TableHeader columns={[…]} />` helper for thead.
 
 export function ResponsiveTable({ children, className = '' }) {
+  // overflow-y-visible is required so the sticky <thead> can stick to the
+  // viewport rather than the wrapper. CSS makes overflow-y default to auto
+  // when overflow-x is auto, which silently breaks position: sticky.
   return (
-    <div className={cn('overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0', className)}>
+    <div className={cn('overflow-x-auto overflow-y-visible -mx-4 sm:mx-0 px-4 sm:px-0', className)}>
       <table className="w-full text-sm border-separate border-spacing-y-1.5">
         {children}
       </table>
@@ -99,7 +102,11 @@ export function TableHeader({ columns, sort, onSort }) {
         {columns.map(col => {
           const active = sort?.field === col.key
           const baseCls = cn(
-            'text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400 px-3 pb-2',
+            'text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400 px-3 pt-2 pb-2',
+            // Sticky to viewport while scrolling long queues. zinc-900/95 +
+            // backdrop-blur matches the dark surface under the panel so rows
+            // don't bleed through during the scroll.
+            'sticky top-0 z-10 bg-zinc-900/95 backdrop-blur',
             col.align === 'right'  && 'text-right',
             col.align === 'center' && 'text-center',
             col.className,
