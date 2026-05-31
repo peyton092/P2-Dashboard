@@ -115,6 +115,24 @@ describe('useDialog().prompt', () => {
     act(() => { getButton('Save').click() })
     expect(await p).toBe('preset')
   })
+
+  it('renders a textarea when multiline: true', async () => {
+    let p
+    act(() => { p = h.current.prompt({ title: 'Reason', multiline: true, defaultValue: 'a\nb' }) })
+    const ta = document.querySelector('textarea')
+    expect(ta).toBeTruthy()
+    expect(ta.value).toBe('a\nb')
+    act(() => { getButton('Cancel').click() })
+    expect(await p).toBeNull()
+  })
+
+  it('respects a custom rows prop on the multiline textarea', async () => {
+    let p
+    act(() => { p = h.current.prompt({ title: 'Reason', multiline: true, rows: 8 }) })
+    expect(document.querySelector('textarea')?.rows).toBe(8)
+    act(() => { getButton('Cancel').click() })
+    await p
+  })
 })
 
 describe('ARIA roles', () => {

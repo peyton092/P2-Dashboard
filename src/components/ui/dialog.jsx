@@ -116,7 +116,24 @@ function DialogModal({ state, onClose }) {
               {state.description}
             </p>
           )}
-          {state.kind === 'prompt' && (
+          {state.kind === 'prompt' && (state.multiline ? (
+            <textarea
+              ref={inputRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                // Cmd+Enter / Ctrl+Enter submits multiline prompts (the form's
+                // default Enter handler doesn't fire for textareas).
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  confirm()
+                }
+              }}
+              placeholder={state.placeholder || ''}
+              rows={state.rows || 4}
+              className="mt-4 w-full bg-white/[0.04] border border-white/15 rounded-lg text-sm text-zinc-100 px-3 py-2 placeholder:text-zinc-500 focus:outline-none focus:border-white/30 resize-y"
+            />
+          ) : (
             <input
               ref={inputRef}
               type="text"
@@ -125,7 +142,7 @@ function DialogModal({ state, onClose }) {
               placeholder={state.placeholder || ''}
               className="mt-4 w-full bg-white/[0.04] border border-white/15 rounded-lg text-sm text-zinc-100 px-3 py-2 placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
             />
-          )}
+          ))}
           <div className="flex justify-end gap-2 mt-5">
             <button
               type="button"
