@@ -247,6 +247,11 @@ export default function CommandPalette() {
             className="flex-1 bg-transparent py-3.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none"
             aria-label="Search query"
           />
+          {query.trim() && flat.length > 0 && (
+            <span className="hidden sm:inline text-[10px] font-semibold text-zinc-400">
+              {flat.length} result{flat.length === 1 ? '' : 's'}
+            </span>
+          )}
           <kbd className="hidden sm:inline text-[10px] font-semibold text-zinc-400 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>
         </div>
 
