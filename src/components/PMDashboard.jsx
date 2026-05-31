@@ -401,7 +401,11 @@ export default function PMDashboard() {
       >
         {visible.length === 0 ? (
           <div className="p-5">
-            <PMEmptyState filter={filter} hasSearch={Boolean(search.trim())} />
+            <PMEmptyState
+              filter={filter}
+              hasSearch={Boolean(search.trim())}
+              onClear={() => { setFilter('all'); setSearch('') }}
+            />
           </div>
         ) : (
           <ul className="divide-y divide-white/5">
@@ -423,13 +427,22 @@ export default function PMDashboard() {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function PMEmptyState({ filter, hasSearch }) {
+function PMEmptyState({ filter, hasSearch, onClear }) {
   if (hasSearch) {
     return (
       <EmptyState
         Icon={UserRoundCogIcon}
         title="No PMs match"
         description="Adjust the search above or clear filters to see the whole roster."
+        action={onClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
+          >
+            Clear all filters
+          </button>
+        )}
       />
     )
   }
