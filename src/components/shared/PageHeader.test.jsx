@@ -7,7 +7,7 @@ import { PageHeader, SectionHeader } from './headers'
 // it for the sticky compact strip — we don't need the strip to fire in tests,
 // just need the mount to not throw.
 beforeEach(() => {
-  global.IntersectionObserver = class {
+  globalThis.IntersectionObserver = class {
     observe() {}
     disconnect() {}
     unobserve() {}

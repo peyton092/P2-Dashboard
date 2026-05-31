@@ -35,7 +35,7 @@ export function useStickyState(key, initial) {
   const [value, setValue] = useState(() => read(key, initial))
   const firstRun = useRef(true)
   const valueRef = useRef(value)
-  valueRef.current = value
+  useEffect(() => { valueRef.current = value }, [value])
   useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return }
     write(key, value)
