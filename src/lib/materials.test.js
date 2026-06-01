@@ -94,6 +94,30 @@ describe('matNextAction', () => {
     expect(typeof matNextAction({ status: 'Ordered' })).toBe('string')
     expect(typeof matNextAction({ status: 'In Transit', dateNeeded: inDays(-2) })).toBe('string')
   })
+  it('flags cancelled', () => {
+    expect(matNextAction({ status: 'Cancelled' })).toMatch(/cancelled/i)
+  })
+  it('flags used / on-site / delivered', () => {
+    expect(matNextAction({ status: 'Used' })).toMatch(/used/i)
+    expect(matNextAction({ status: 'At Job Site' })).toMatch(/on site/i)
+    expect(matNextAction({ status: 'Delivered' })).toMatch(/pickup/i)
+  })
+  it('flags overdue before in-transit copy', () => {
+    expect(matNextAction({ status: 'In Transit', dateNeeded: inDays(-3) }))
+      .toMatch(/overdue/i)
+  })
+  it('flags in-transit (not overdue) as "Track delivery"', () => {
+    expect(matNextAction({ status: 'In Transit', dateNeeded: inDays(7) }))
+      .toMatch(/Track delivery/i)
+  })
+  it('flags ordered within 7 days as "Confirm with supplier"', () => {
+    expect(matNextAction({ status: 'Ordered', dateNeeded: inDays(3) }))
+      .toMatch(/Confirm/i)
+  })
+  it('flags ordered far out as "Waiting on supplier"', () => {
+    expect(matNextAction({ status: 'Ordered', dateNeeded: inDays(30) }))
+      .toMatch(/Waiting/i)
+  })
 })
 
 describe('MAT_FILTERS / MAT_STATUS_OPTIONS', () => {
