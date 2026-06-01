@@ -74,6 +74,41 @@ describe('generateAlerts', () => {
     const ids = generateAlerts(jobs).map(a => a.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
+
+  it('emits a billing_ready alert when an inspection has passed', () => {
+    const jobs = [{
+      id: 'J7', status: 'active', pm: 'X',
+      insp: { electrical: { roughIn: 'passed' } },
+      contractValue: 25000,
+    }]
+    const bill = generateAlerts(jobs).find(a => a.type === 'billing_ready')
+    expect(bill).toBeDefined()
+    expect(bill?.severity).toBe('info')
+  })
+
+  it('emits a critical pm_overload alert above 15 active jobs', () => {
+    const jobs = Array.from({ length: 16 }, (_, i) => ({
+      id: `J${i}`, status: 'active', pm: 'Blake Neblett',
+    }))
+    const overload = generateAlerts(jobs).find(a => a.type === 'pm_overload')
+    expect(overload?.severity).toBe('critical')
+  })
+
+  it('emits a warning pm_overload between 13 and 15 jobs', () => {
+    const jobs = Array.from({ length: 13 }, (_, i) => ({
+      id: `J${i}`, status: 'active', pm: 'Brendan Embry',
+    }))
+    const overload = generateAlerts(jobs).find(a => a.type === 'pm_overload')
+    expect(overload?.severity).toBe('warning')
+  })
+
+  it('does not emit pm_overload at or below 12 jobs', () => {
+    const jobs = Array.from({ length: 12 }, (_, i) => ({
+      id: `J${i}`, status: 'active', pm: 'Jeb Brooks',
+    }))
+    const overload = generateAlerts(jobs).find(a => a.type === 'pm_overload')
+    expect(overload).toBeUndefined()
+  })
 })
 
 describe('label / color maps', () => {
