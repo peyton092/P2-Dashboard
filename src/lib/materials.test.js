@@ -86,6 +86,25 @@ describe('matMatchesFilter', () => {
   })
   it('delivered matches At Job Site too', () => {
     expect(matMatchesFilter({ status: 'At Job Site' }, 'delivered')).toBe(true)
+    expect(matMatchesFilter({ status: 'Delivered' },   'delivered')).toBe(true)
+    expect(matMatchesFilter({ status: 'Ordered' },     'delivered')).toBe(false)
+  })
+  it('urgent matches overdue items', () => {
+    expect(matMatchesFilter({ status: 'Ordered', dateNeeded: inDays(-1) }, 'urgent')).toBe(true)
+    expect(matMatchesFilter({ status: 'Ordered', dateNeeded: inDays(10) }, 'urgent')).toBe(false)
+  })
+  it('blocking matches items needed within a week', () => {
+    expect(matMatchesFilter({ status: 'Ordered', dateNeeded: inDays(3) },  'blocking')).toBe(true)
+    expect(matMatchesFilter({ status: 'Ordered', dateNeeded: inDays(30) }, 'blocking')).toBe(false)
+    expect(matMatchesFilter({ status: 'Delivered', dateNeeded: inDays(3) },'blocking')).toBe(false)
+  })
+  it('needed matches open materials', () => {
+    expect(matMatchesFilter({ status: 'Ordered' },   'needed')).toBe(true)
+    expect(matMatchesFilter({ status: 'In Transit' },'needed')).toBe(true)
+    expect(matMatchesFilter({ status: 'Delivered' }, 'needed')).toBe(false)
+  })
+  it('unknown filter falls through to true', () => {
+    expect(matMatchesFilter({ status: 'Ordered' }, 'nonexistent')).toBe(true)
   })
 })
 
