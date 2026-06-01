@@ -38,10 +38,25 @@ describe('inspJobStatusTone', () => {
   it('success for completion + on-track', () => {
     expect(inspJobStatusTone('complete')).toBe('success')
     expect(inspJobStatusTone('on-track')).toBe('success')
+    expect(inspJobStatusTone('completed')).toBe('success')
   })
   it('critical for blocked/hold', () => {
     expect(inspJobStatusTone('blocked')).toBe('critical')
     expect(inspJobStatusTone('hold')).toBe('critical')
+  })
+  it('brand for needs-action / active', () => {
+    expect(inspJobStatusTone('needs-action')).toBe('brand')
+    expect(inspJobStatusTone('active')).toBe('brand')
+  })
+  it('warning for at-risk', () => {
+    expect(inspJobStatusTone('at-risk')).toBe('warning')
+  })
+  it('mute for pending', () => {
+    expect(inspJobStatusTone('pending')).toBe('mute')
+  })
+  it('neutral for unknown values', () => {
+    expect(inspJobStatusTone('whatever')).toBe('neutral')
+    expect(inspJobStatusTone(undefined)).toBe('neutral')
   })
 })
 
