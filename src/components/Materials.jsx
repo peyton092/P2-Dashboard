@@ -2,6 +2,7 @@ import { memo, useCallback, useState, useMemo } from 'react'
 import { useData } from '../DataContext'
 import { addMaterial, updateMaterial, addHistory, useHistory } from '../hooks/useFirestore'
 import { useStickyState } from '../lib/useStickyState'
+import { runBulk } from '../lib/runBulk'
 import { useToast } from './ui/toast'
 import { useDialog } from './ui/dialog'
 import { cn } from '@/lib/utils'
@@ -349,25 +350,21 @@ export default function Materials() {
             })
             if (!ok) return
             setBulkBusy(true)
-            try {
-              await Promise.all(targets.map(async m => {
-                const oldStatus = normalizeMatStatus(m.status)
-                if (oldStatus === newStatus) return
-                await updateMaterial(m._docId, { status: newStatus })
-                await addHistory({
-                  materialDocId: m._docId,
-                  materialName:  matName(m),
-                  jobId:         matJobId(m),
-                  fromStatus:    oldStatus,
-                  toStatus:      newStatus,
-                  type:          'status_change',
-                })
-              }))
-              toast({ tone: 'success', title: `Updated ${targets.length} material${targets.length === 1 ? '' : 's'}` })
-              clearSelection()
-            } catch (err) {
-              toast({ tone: 'error', title: 'Bulk update failed', description: err.message || 'Try again.' })
-            } finally { setBulkBusy(false) }
+            await runBulk(targets, async m => {
+              const oldStatus = normalizeMatStatus(m.status)
+              if (oldStatus === newStatus) return
+              await updateMaterial(m._docId, { status: newStatus })
+              await addHistory({
+                materialDocId: m._docId,
+                materialName:  matName(m),
+                jobId:         matJobId(m),
+                fromStatus:    oldStatus,
+                toStatus:      newStatus,
+                type:          'status_change',
+              })
+            }, toast, { noun: 'material' })
+            clearSelection()
+            setBulkBusy(false)
           }}
           onClear={clearSelection}
         />

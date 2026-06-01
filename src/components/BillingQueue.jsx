@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useData } from '../DataContext'
 import { useStickyState } from '../lib/useStickyState'
+import { runBulk } from '../lib/runBulk'
 import { updateJob } from '../hooks/useFirestore'
 import { ZONES, getZoneId } from '../agent/zones'
 import { useToast } from './ui/toast'
@@ -456,20 +457,16 @@ export default function BillingQueue() {
               tone: action === 'hold' ? 'destructive' : 'default',
             })
             if (!ok) return
+            const patch =
+              action === 'invoiced' ? { billingStatus: 'invoiced' } :
+              action === 'hold'     ? { billingStatus: 'hold' } :
+              action === 'release'  ? { billingStatus: 'not-invoiced' } :
+              null
+            if (!patch) return
             setBulkBusy(true)
-            try {
-              const patch =
-                action === 'invoiced' ? { billingStatus: 'invoiced' } :
-                action === 'hold'     ? { billingStatus: 'hold' } :
-                action === 'release'  ? { billingStatus: 'not-invoiced' } :
-                null
-              if (!patch) return
-              await Promise.all(targets.map(j => updateJob(j._docId, patch)))
-              toast({ tone: 'success', title: `Updated ${targets.length} job${targets.length === 1 ? '' : 's'}` })
-              clearSelection()
-            } catch (err) {
-              toast({ tone: 'error', title: 'Bulk update failed', description: err.message || 'Try again.' })
-            } finally { setBulkBusy(false) }
+            await runBulk(targets, j => updateJob(j._docId, patch), toast, { noun: 'job' })
+            clearSelection()
+            setBulkBusy(false)
           }}
           onClear={clearSelection}
         />

@@ -1,5 +1,6 @@
 import { useState, useMemo, memo, useCallback } from 'react'
 import { useStickyState } from '../lib/useStickyState'
+import { runBulk } from '../lib/runBulk'
 import { useData } from '../DataContext'
 import { createJob, updateJob } from '../hooks/useFirestore'
 import { useToast } from '@/components/ui/toast'
@@ -441,15 +442,11 @@ export default function JobStatus() {
               tone: isDestructive ? 'destructive' : 'default',
             })
             if (!ok) return
+            const targets = jobs.filter(j => selected.has(j.id) && j._docId)
             setBulkBusy(true)
-            try {
-              const targets = jobs.filter(j => selected.has(j.id) && j._docId)
-              await Promise.all(targets.map(j => updateJob(j._docId, { status })))
-              toast({ tone: 'success', title: `Updated ${targets.length} job${targets.length === 1 ? '' : 's'}` })
-              clearSelection()
-            } catch (err) {
-              toast({ tone: 'error', title: 'Bulk update failed', description: err.message || 'Try again.' })
-            } finally { setBulkBusy(false) }
+            await runBulk(targets, j => updateJob(j._docId, { status }), toast, { noun: 'job' })
+            clearSelection()
+            setBulkBusy(false)
           }}
           onApplyPM={async (pm) => {
             const ok = await confirm({
@@ -458,15 +455,14 @@ export default function JobStatus() {
               confirmLabel: 'Reassign',
             })
             if (!ok) return
+            const targets = jobs.filter(j => selected.has(j.id) && j._docId)
             setBulkBusy(true)
-            try {
-              const targets = jobs.filter(j => selected.has(j.id) && j._docId)
-              await Promise.all(targets.map(j => updateJob(j._docId, { pm })))
-              toast({ tone: 'success', title: `Reassigned ${targets.length} job${targets.length === 1 ? '' : 's'} to ${pm}` })
-              clearSelection()
-            } catch (err) {
-              toast({ tone: 'error', title: 'Bulk update failed', description: err.message || 'Try again.' })
-            } finally { setBulkBusy(false) }
+            await runBulk(targets, j => updateJob(j._docId, { pm }), toast, {
+              successTitle: `Reassigned to ${pm} —`,
+              noun: 'job',
+            })
+            clearSelection()
+            setBulkBusy(false)
           }}
           onClear={clearSelection}
         />

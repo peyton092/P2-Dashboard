@@ -3,6 +3,7 @@ import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/fi
 import { db } from '../firebase'
 import { useData } from '../DataContext'
 import { useStickyState } from '../lib/useStickyState'
+import { runBulk } from '../lib/runBulk'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -725,17 +726,18 @@ export default function ChangeOrders() {
               tone: action === 'rejected' ? 'destructive' : 'default',
             })
             if (!ok) return
+            const statusMap = { approved: 'Approved', rejected: 'Rejected', sent: 'Sent to Builder', draft: 'Draft' }
+            const status = statusMap[action]
+            if (!status) return
             setBulkBusy(true)
-            try {
-              const statusMap = { approved: 'Approved', rejected: 'Rejected', sent: 'Sent to Builder', draft: 'Draft' }
-              const status = statusMap[action]
-              if (!status) return
-              await Promise.all(targets.map(co => updateDoc(doc(db, 'extras', co._docId), { status })))
-              toast({ tone: 'success', title: `Updated ${targets.length} CO${targets.length === 1 ? '' : 's'}` })
-              clearSelection()
-            } catch (err) {
-              toast({ tone: 'error', title: 'Bulk update failed', description: err.message || 'Try again.' })
-            } finally { setBulkBusy(false) }
+            await runBulk(
+              targets,
+              co => updateDoc(doc(db, 'extras', co._docId), { status }),
+              toast,
+              { noun: 'CO' },
+            )
+            clearSelection()
+            setBulkBusy(false)
           }}
           onClear={clearSelection}
         />
