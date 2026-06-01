@@ -67,6 +67,25 @@ describe('jobMatchesFilter', () => {
   it('needs-action matches failed inspection too', () => {
     expect(jobMatchesFilter(failed, 'needs-action')).toBe(true)
   })
+  it('stale matches active jobs not updated in 7+ days', () => {
+    expect(jobMatchesFilter({ status: 'active', lastStatusChange: ago(10), insp: {} }, 'stale')).toBe(true)
+    expect(jobMatchesFilter({ status: 'active', lastStatusChange: ago(2),  insp: {} }, 'stale')).toBe(false)
+  })
+  it('stale excludes complete jobs even if old', () => {
+    expect(jobMatchesFilter({ status: 'complete', lastStatusChange: ago(30), insp: {} }, 'stale')).toBe(false)
+  })
+  it('at-risk catches critical / warning risk or status flag', () => {
+    expect(jobMatchesFilter(failed, 'at-risk')).toBe(true)
+    expect(jobMatchesFilter({ status: 'blocked', insp: {} }, 'at-risk')).toBe(true)
+    expect(jobMatchesFilter({ status: 'hold',    insp: {} }, 'at-risk')).toBe(true)
+    expect(jobMatchesFilter({ status: 'at-risk', insp: {} }, 'at-risk')).toBe(true)
+  })
+  it('at-risk excludes complete jobs', () => {
+    expect(jobMatchesFilter(complete, 'at-risk')).toBe(false)
+  })
+  it('unknown filter falls through to true', () => {
+    expect(jobMatchesFilter(fresh, 'nonexistent-filter')).toBe(true)
+  })
 })
 
 describe('JOB_FILTERS', () => {
