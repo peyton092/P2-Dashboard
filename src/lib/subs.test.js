@@ -95,6 +95,33 @@ describe('subNextAction', () => {
     expect(typeof subNextAction({ w9: false })).toBe('string')
     expect(typeof subNextAction({ w9: true, insExp: inDays(180), licExp: inDays(180), score: 95 })).toBe('string')
   })
+  it('flags missing W-9 first', () => {
+    expect(subNextAction({ w9: false })).toMatch(/W-9/)
+  })
+  it('flags expired insurance', () => {
+    expect(subNextAction({ w9: true, insExp: inDays(-1), licExp: inDays(180) }))
+      .toMatch(/Insurance expired/)
+  })
+  it('flags expired license when insurance is fine', () => {
+    expect(subNextAction({ w9: true, insExp: inDays(180), licExp: inDays(-1) }))
+      .toMatch(/License expired/)
+  })
+  it('flags insurance expiring within 30 days', () => {
+    expect(subNextAction({ w9: true, insExp: inDays(20), licExp: inDays(180) }))
+      .toMatch(/30 days/)
+  })
+  it('flags insurance expiring within 60 days (not 30)', () => {
+    expect(subNextAction({ w9: true, insExp: inDays(45), licExp: inDays(180) }))
+      .toMatch(/expiring soon/)
+  })
+  it('flags low score when compliance is otherwise clean', () => {
+    expect(subNextAction({ w9: true, insExp: inDays(180), licExp: inDays(180), score: 70 }))
+      .toMatch(/Compliance review/)
+  })
+  it('returns the ready-to-assign copy when everything checks out', () => {
+    expect(subNextAction({ w9: true, insExp: inDays(180), licExp: inDays(180), score: 95 }))
+      .toMatch(/Ready to assign/)
+  })
 })
 
 describe('fmtSubDate', () => {
