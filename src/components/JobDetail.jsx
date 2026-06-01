@@ -6,6 +6,7 @@ import { useJobFiles, addJobFile, useJobTasks, updateJob, addSubmit } from '../h
 import { MessageSquareIcon, UploadIcon, CheckSquareIcon } from 'lucide-react'
 import JobTasks from './JobTasks'
 import { pushRecentJob } from '../lib/recentJobs'
+import { copyText } from '../lib/clipboard'
 import { useToast } from '@/components/ui/toast'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState, STATUS_COLORS } from './shared'
@@ -255,10 +256,8 @@ export default function JobDetail({ jobId, onBack }) {
                   <h1 className="text-2xl font-semibold text-white">{jobLabel(job)}</h1>
                   <button
                     type="button"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(job.id)
-                        .then(() => toast({ tone: 'success', title: 'Copied', description: job.id }))
-                        .catch(() => {})
+                    onClick={async () => {
+                      if (await copyText(job.id)) toast({ tone: 'success', title: 'Copied', description: job.id })
                     }}
                     title="Copy job ID"
                     className="text-xs font-medium px-2 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 hover:bg-white/[0.12] hover:text-white transition-colors"

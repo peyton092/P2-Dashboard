@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { doc, onSnapshot, setDoc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
+import { copyText } from '../lib/clipboard'
 import { useDailyReports } from '../hooks/useFirestore'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -153,11 +154,11 @@ function ReviewLinkPanel({ name, url, onClose }) {
   const [copied, setCopied] = useState(false)
   const msg = `Hi! Could you take 30 seconds to leave us a Google review? It really helps the team. Here's the link: ${url} — Thanks, ${name} @ P2 Field Services`
 
-  function copyLink() {
-    navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  async function copyLink() {
+    if (await copyText(url)) { setCopied(true); setTimeout(() => setCopied(false), 2000) }
   }
-  function copyMsg() {
-    navigator.clipboard.writeText(msg).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  async function copyMsg() {
+    if (await copyText(msg)) { setCopied(true); setTimeout(() => setCopied(false), 2000) }
   }
 
   if (!url) return (
