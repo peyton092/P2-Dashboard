@@ -88,6 +88,18 @@ describe('subMatchesFilter', () => {
     expect(subMatchesFilter(blocked, 'missing-docs')).toBe(true)
     expect(subMatchesFilter(good,    'missing-docs')).toBe(false)
   })
+  it('pending matches the review-needed verdict', () => {
+    expect(subMatchesFilter(review, 'pending')).toBe(true)
+    expect(subMatchesFilter(good,   'pending')).toBe(false)
+  })
+  it('expired catches expired insurance or license', () => {
+    expect(subMatchesFilter({ w9: true, insExp: inDays(-1), licExp: inDays(180) }, 'expired')).toBe(true)
+    expect(subMatchesFilter({ w9: true, insExp: inDays(180), licExp: inDays(-1) }, 'expired')).toBe(true)
+    expect(subMatchesFilter(good, 'expired')).toBe(false)
+  })
+  it('unknown filter falls through to true', () => {
+    expect(subMatchesFilter(good, 'nonexistent')).toBe(true)
+  })
 })
 
 describe('subNextAction', () => {
