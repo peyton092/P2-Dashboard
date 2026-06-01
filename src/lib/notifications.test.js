@@ -64,6 +64,12 @@ describe('notifTimestampMs', () => {
   it('returns null when missing', () => {
     expect(notifTimestampMs({})).toBeNull()
   })
+  it('returns null for an unparseable string', () => {
+    expect(notifTimestampMs({ createdAt: 'not a date' })).toBeNull()
+  })
+  it('returns null for unknown shape', () => {
+    expect(notifTimestampMs({ createdAt: 42 })).toBeNull()
+  })
 })
 
 describe('notifIsWithinHours', () => {
