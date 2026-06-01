@@ -4,6 +4,8 @@ import { useData } from '../DataContext'
 import { generateAlerts, ALERT_TYPE_LABEL } from '../agent/alerts'
 import { updateAgentAlert, addAgentAlert } from '../hooks/useFirestore'
 import { ZONES } from '../agent/zones'
+import { runBulk } from '../lib/runBulk'
+import { useToast } from '@/components/ui/toast'
 import {
   PageHeader,
   MetricTile,
@@ -156,6 +158,7 @@ export default function AlertsPage() {
   const [filter, setFilter] = useStickyState('alerts.filter', 'all')
   const [search, setSearch] = useStickyState('alerts.search', '')
   const [rescanning, setRescanning] = useState(false)
+  const toast = useToast()
 
   // Merge Firestore alerts + client-generated alerts. Firestore is
   // authoritative for lifecycle; client-only alerts are added with
@@ -256,12 +259,14 @@ export default function AlertsPage() {
 
   async function handleRescan() {
     setRescanning(true)
-    try {
-      const fresh = generateAlerts(jobs, extras)
-      await Promise.all(fresh.map(a => addAgentAlert({ ...a, status: a.status || 'open' })))
-    } finally {
-      setRescanning(false)
-    }
+    const fresh = generateAlerts(jobs, extras)
+    await runBulk(
+      fresh,
+      a => addAgentAlert({ ...a, status: a.status || 'open' }),
+      toast,
+      { successTitle: 'Re-scanned —', noun: 'alert' },
+    )
+    setRescanning(false)
   }
 
   // ── Loading branch ─────────────────────────────────────────────────────────
