@@ -31,4 +31,16 @@ describe('recentJobs', () => {
     pushRecentJob('')
     expect(getRecentJobs()).toEqual(['A'])
   })
+  it('survives malformed localStorage payload', () => {
+    localStorage.setItem('p2_recent_jobs', 'not json {')
+    expect(getRecentJobs()).toEqual([])
+  })
+  it('filters non-string entries from a corrupted list', () => {
+    localStorage.setItem('p2_recent_jobs', JSON.stringify(['A', 42, null, 'B', {}]))
+    expect(getRecentJobs()).toEqual(['A', 'B'])
+  })
+  it('returns [] when the stored payload is not an array', () => {
+    localStorage.setItem('p2_recent_jobs', JSON.stringify({ id: 'A' }))
+    expect(getRecentJobs()).toEqual([])
+  })
 })
