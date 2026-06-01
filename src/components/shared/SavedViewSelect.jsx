@@ -98,14 +98,24 @@ export function SavedViewSelect({
         <option value="__save__">＋ Save current as…</option>
       </select>
       {modified && (
-        <button
-          type="button"
-          onClick={handleUpdate}
-          className="text-[11px] font-semibold px-2.5 py-2 rounded-lg border border-orange-400/40 text-orange-300 hover:text-white hover:bg-orange-500/10"
-          title={`Save the current filters back to "${loadedName}"`}
-        >
-          Update view
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={handleUpdate}
+            className="text-[11px] font-semibold px-2.5 py-2 rounded-lg border border-orange-400/40 text-orange-300 hover:text-white hover:bg-orange-500/10"
+            title={`Save the current filters back to "${loadedName}"`}
+          >
+            Update view
+          </button>
+          <button
+            type="button"
+            onClick={() => onApply(savedViews[loadedName].payload)}
+            className="text-[11px] font-semibold px-2.5 py-2 rounded-lg border border-white/10 text-zinc-400 hover:text-white hover:border-white/30"
+            title={`Discard local changes and reapply "${loadedName}"`}
+          >
+            Revert
+          </button>
+        </>
       )}
       {(activeName || (loadedName && savedViews[loadedName])) && (
         <button

@@ -104,10 +104,16 @@ describe('SavedViewSelect', () => {
     // Drift the current payload — re-render.
     currentPayload = { filter: 'DRIFTED' }
     render()
-    // The option text now includes "(modified)" and the Update-view button is rendered.
+    // The option text now includes "(modified)" and Update / Revert buttons are visible.
     const text = container.textContent
     expect(text).toMatch(/Saved \(modified\)/)
     expect(text).toMatch(/Update view/)
+    expect(text).toMatch(/Revert/)
+    // Clicking Revert reapplies the saved payload (calls onApply with original).
+    const revertBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Revert')
+    expect(revertBtn).toBeTruthy()
+    act(() => { revertBtn.click() })
+    expect(currentPayload).toEqual({ filter: 'X' })
     act(() => { root.unmount() }); container.remove()
   })
 })
