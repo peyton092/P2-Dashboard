@@ -8,6 +8,7 @@ import {
   useHistory,
 } from '../hooks/useFirestore'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
+import { logError } from '../lib/errorLogger'
 import { useToast } from '@/components/ui/toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -309,7 +310,7 @@ function ExtraRow({ co, clientName }) {
       await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: clientName || 'Client', jobId: co.job })
       toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
     } catch (err) {
-      console.error('[Client] Approve failed:', err)
+      logError('client.approveExtra', err)
       setErrMsg('Could not save approval. Check your connection and try again.')
     } finally { setBusy(false) }
   }
@@ -329,7 +330,7 @@ function ExtraRow({ co, clientName }) {
       toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
       setShowReject(false); setRejectNotes('')
     } catch (err) {
-      console.error('[Client] Reject failed:', err)
+      logError('client.rejectExtra', err)
       setErrMsg('Could not save your request. Check your connection and try again.')
     } finally { setBusy(false) }
   }
@@ -493,7 +494,7 @@ function JobFiles({ job }) {
         source: 'client-upload',
       })
     } catch (err) {
-      console.error('[Client] Upload failed:', err)
+      logError('client.uploadFile', err)
       setUploadErr('Upload failed — check the file size or contact P2.')
     } finally {
       setUploading(false)

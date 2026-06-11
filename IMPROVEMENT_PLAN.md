@@ -64,11 +64,18 @@ incremental on top. Our function code uses `getFirestore`, `FieldValue`,
 backfill + the new portal callables end-to-end; merge.
 **Rollback:** revert the package-lock commit.
 
-## 4. Storage path scoping
+## 4. Storage path scoping — **CODE READY, NOT DEPLOYED**
 **What:** `storage.rules` allows `read: if request.auth != null` for all paths — any
 authenticated user can read any uploaded file given its URL.
-**Plan:** scope reads to `jobs/{jobDocId}/...` by cross-referencing the caller's
-tenant/client ownership (needs the same scoping fields as item 1).
+**Progress this pass:** Staged stricter rules at `storage.rules.next`. Reads
++ writes under `jobs/{jobDocId}/...` require the caller to own the job
+(staff, tenant member, or in `clientUids`) via a `firestore.get()` cross-
+reference. `daily_reports/...` is locked to staff. Same 25 MiB cap retained.
+**What's still on your hands:**
+1. Run `backfillScoping` in prod (gates the cross-reference lookup).
+2. Smoke-test the rollout checklist at the top of `storage.rules.next`.
+3. Promote: `mv storage.rules.next storage.rules && firebase deploy --only storage`.
+**Rollback:** redeploy the previous `storage.rules` (instant).
 
 ## 5. Decompose `App.jsx` (1030 lines)
 **What:** auth gating, tab routing, OAuth-callback handling, terms gate, and
@@ -77,10 +84,17 @@ user-creation all live in one file.
 modules. Pure refactor, no behavior change — defer until the security items land so
 diffs don't collide.
 
-## 6. Minor UX/a11y (low risk, batchable)
-- `aria-label` on icon-only buttons flagged in the audit.
-- `preventDefault` on PhotoLightbox arrow keys to stop background scroll.
-- Route portal-handler `console.error` calls through the existing `errorLogger` sink.
+## 6. Minor UX/a11y (low risk, batchable) — **DONE**
+- `aria-label` on icon-only buttons (ChangeOrders back / line-item remove,
+  InvoiceAuditor close / line-item remove, TeamLeaderboard close, Sidebar
+  collapsed-mode Shortcuts).
+- `preventDefault` on PhotoLightbox arrow keys (audit L-4) — stops the page
+  scrolling behind the lightbox.
+- Portal-handler `console.error` calls (ClientPortal, JobDetail,
+  QBSBuilderPortal, SubmitInbox, ChangeOrders) now route through a new
+  exported `logError(source, err)` in `lib/errorLogger.js` so they land in
+  the `error_logs` Firestore sink alongside auto-captured crashes. Still
+  emits to `console.error` in dev so the debug workflow is unchanged.
 
 ## Verification gate for every item
 `npx eslint .` · `npm test` · `npm run build` · (for 1/2/4) Firestore rules emulator

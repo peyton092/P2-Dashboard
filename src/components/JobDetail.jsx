@@ -8,6 +8,7 @@ import JobTasks from './JobTasks'
 import { pushRecentJob } from '../lib/recentJobs'
 import { copyText } from '../lib/clipboard'
 import { safeHref } from '../lib/safeHref'
+import { logError } from '../lib/errorLogger'
 import { useToast } from '@/components/ui/toast'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState, STATUS_COLORS } from './shared'
@@ -191,7 +192,7 @@ export default function JobDetail({ jobId, onBack }) {
       })
       toast({ tone: 'success', title: 'Uploaded', description: file.name })
     } catch (err) {
-      console.error('[JobDetail] Upload failed:', err)
+      logError('jobDetail.uploadFile', err)
       setUploadErr('Upload failed — check file size or Storage rules.')
       toast({ tone: 'error', title: 'Upload failed', description: err.message || 'Unknown error' })
     } finally {

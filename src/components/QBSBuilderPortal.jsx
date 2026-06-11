@@ -4,6 +4,7 @@ import {
   approveExtra, updateExtra, addNotification, addSubmit, updateSubmit,
   useSubmitReplies, addSubmitReply, updateNotification, addHistory,
 } from '../hooks/useFirestore'
+import { logError } from '../lib/errorLogger'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
@@ -416,7 +417,7 @@ function ExtraRow({ co, compact = false }) {
       await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: 'QBS Coordinator', jobId: co.job })
       toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
     } catch (err) {
-      console.error('[QBS] Approve failed:', err)
+      logError('qbs.approveExtra', err)
       setErrMsg('Could not save approval. Check your connection and try again.')
       toast({ tone: 'error', title: 'Approval failed', description: err.message || 'Check your connection and try again.' })
     } finally {
@@ -444,7 +445,7 @@ function ExtraRow({ co, compact = false }) {
       setShowReject(false)
       setRejectNotes('')
     } catch (err) {
-      console.error('[QBS] Reject failed:', err)
+      logError('qbs.rejectExtra', err)
       setErrMsg('Could not save rejection. Check your connection and try again.')
       toast({ tone: 'error', title: 'Rejection failed', description: err.message || 'Check your connection and try again.' })
     } finally {

@@ -178,7 +178,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-white/10">
+        <button type="button" onClick={onClose} aria-label="Close" title="Close" className="p-2 rounded-lg hover:bg-white/10">
           <XIcon size={16} />
         </button>
         <h2 className="text-lg font-semibold" style={{ color: O }}>New Supplier Invoice</h2>
@@ -295,6 +295,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
                     <td className="px-3 py-2">
                       {form.lineItems.length > 1 && (
                         <button type="button" onClick={() => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }))}
+                          aria-label="Remove line item" title="Remove line item"
                           className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400">
                           <XIcon size={12} />
                         </button>

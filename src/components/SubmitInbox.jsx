@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useData } from '../DataContext'
 import { addSubmit, updateSubmit, useSubmitReplies, addSubmitReply } from '../hooks/useFirestore'
+import { logError } from '../lib/errorLogger'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -47,7 +48,7 @@ export default function SubmitInbox() {
       setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
       setView('inbox')
     } catch (err) {
-      console.error('[SubmitInbox] create failed:', err)
+      logError('submitInbox.create', err)
     } finally {
       // Always re-enable the button — a failed write left it spinning forever.
       setSubmitting(false)
@@ -68,7 +69,7 @@ export default function SubmitInbox() {
       }
       setReplyText('')
     } catch (err) {
-      console.error('[SubmitInbox] reply failed:', err)
+      logError('submitInbox.reply', err)
     } finally {
       setReplying(false)
     }

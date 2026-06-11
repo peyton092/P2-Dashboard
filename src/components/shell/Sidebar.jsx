@@ -217,6 +217,7 @@ export default function Sidebar({
           <button
             type="button"
             onClick={() => window.dispatchEvent(new CustomEvent('p2:open-shortcuts'))}
+            aria-label="Keyboard shortcuts"
             className={cn(
               'flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.05] transition-colors',
               collapsed ? 'mt-1' : 'w-full text-xs mt-1',

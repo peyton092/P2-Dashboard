@@ -4,6 +4,7 @@ import { db } from '../firebase'
 import { useData } from '../DataContext'
 import { useStickyState } from '../lib/useStickyState'
 import { runBulk } from '../lib/runBulk'
+import { logError } from '../lib/errorLogger'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -168,7 +169,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button type="button" onClick={onCancel} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+        <button type="button" onClick={onCancel} aria-label="Back to change orders" title="Back" className="p-2 rounded-lg hover:bg-white/10 transition-colors">
           <ChevronLeftIcon size={18} />
         </button>
         <div className="flex-1">
@@ -324,7 +325,10 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     <td className="px-3 py-2">
                       {form.lineItems.length > 1 && (
                         <button
+                          type="button"
                           onClick={() => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }))}
+                          aria-label="Remove line item"
+                          title="Remove line item"
                           className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400 transition-colors"
                         >
                           <XIcon size={12} />
@@ -488,7 +492,7 @@ export default function ChangeOrders() {
       setEditingCO(null)
       toast({ tone: 'success', title: sendToBuilder ? 'Sent to builder' : 'Draft saved', description: form.coNumber })
     } catch (err) {
-      console.error('[CO] Save failed:', err)
+      logError('changeOrders.save', err)
       toast({ tone: 'error', title: 'Save failed', description: err.message || 'Try again.' })
     } finally {
       setSaving(false)

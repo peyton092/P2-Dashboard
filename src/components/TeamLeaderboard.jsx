@@ -176,7 +176,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
         <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
           <StarIcon size={12} /> Google Review Link — {name}
         </span>
-        <button type="button" onClick={onClose} className="p-0.5 hover:bg-white/10 rounded">
+        <button type="button" onClick={onClose} aria-label="Close" title="Close" className="p-0.5 hover:bg-white/10 rounded">
           <XIcon size={12} color="#6b7280" />
         </button>
       </div>

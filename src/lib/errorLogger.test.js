@@ -13,7 +13,7 @@ vi.mock('../firebase', () => ({
   auth: { currentUser: { email: 'jesse@p2.test' } },
 }))
 
-const { initErrorLogger } = await import('./errorLogger')
+const { initErrorLogger, logError } = await import('./errorLogger')
 
 describe('initErrorLogger', () => {
   let originalHref
@@ -56,6 +56,25 @@ describe('initErrorLogger', () => {
     const lastCall = addDocMock.mock.calls[addDocMock.mock.calls.length - 1][1]
     expect(lastCall.message).toBe('Async fail')
     expect(lastCall.source).toBe('unhandledrejection')
+  })
+
+  it('logError() writes an entry tagged with the supplied source', async () => {
+    const err = new Error('upload exploded')
+    err.stack = 'at uploadOne (JobDetail.jsx:181)'
+    logError('jobDetail.uploadFile', err)
+    await Promise.resolve()
+    const payload = addDocMock.mock.calls[addDocMock.mock.calls.length - 1][1]
+    expect(payload.source).toBe('jobDetail.uploadFile')
+    expect(payload.message).toBe('upload exploded')
+    expect(payload.stack).toContain('uploadOne')
+  })
+
+  it('logError() falls back to a stringified value when err is not an Error', async () => {
+    logError('client.uploadFile', 'plain string failure')
+    await Promise.resolve()
+    const payload = addDocMock.mock.calls[addDocMock.mock.calls.length - 1][1]
+    expect(payload.source).toBe('client.uploadFile')
+    expect(payload.message).toBe('plain string failure')
   })
 
   it('truncates extremely long messages + stacks', async () => {

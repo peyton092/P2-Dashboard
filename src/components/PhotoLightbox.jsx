@@ -27,8 +27,8 @@ export default function PhotoLightbox({ photos = [], index = -1, onClose, onInde
     if (!open) return
     const onKey = (e) => {
       if (e.key === 'Escape') onClose?.()
-      else if (e.key === 'ArrowLeft') go(-1)
-      else if (e.key === 'ArrowRight') go(1)
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1) }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); go(1) }
     }
     window.addEventListener('keydown', onKey)
     const prevOverflow = document.body.style.overflow
