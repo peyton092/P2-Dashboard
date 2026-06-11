@@ -11,10 +11,12 @@ export default function OfflineBanner() {
   const [justBack, setJustBack] = useState(false)
 
   useEffect(() => {
+    let backTimer = null
     const handleOnline = () => {
       setOnline(true)
       setJustBack(true)
-      setTimeout(() => setJustBack(false), 2500)
+      if (backTimer) clearTimeout(backTimer)
+      backTimer = setTimeout(() => setJustBack(false), 2500)
     }
     const handleOffline = () => setOnline(false)
     window.addEventListener('online', handleOnline)
@@ -22,6 +24,7 @@ export default function OfflineBanner() {
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      if (backTimer) clearTimeout(backTimer)
     }
   }, [])
 

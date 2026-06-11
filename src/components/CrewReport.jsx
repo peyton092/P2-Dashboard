@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { addDailyReport } from '../hooks/useFirestore'
@@ -199,6 +199,16 @@ export default function CrewReport() {
     setPhotos(prev => [...prev, ...newPhotos])
     e.target.value = ''
   }
+
+  // Revoke any outstanding object URLs when the component unmounts, so leaving
+  // the page mid-report doesn't leak blob: URLs. A ref mirrors the latest
+  // photos (synced in an effect, not during render) so the unmount cleanup
+  // sees them without re-subscribing on every change.
+  const photosRef = useRef(photos)
+  useEffect(() => { photosRef.current = photos }, [photos])
+  useEffect(() => () => {
+    photosRef.current.forEach(p => { try { URL.revokeObjectURL(p.preview) } catch { /* already revoked */ } })
+  }, [])
 
   const removePhoto = (i) => {
     setPhotos(prev => {

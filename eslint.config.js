@@ -45,4 +45,11 @@ export default defineConfig([
     files: ['functions/**/*.js'],
     languageOptions: { globals: { ...globals.node } },
   },
+  // Build / test config files run in Node too (they reference __dirname etc.).
+  // CI lints only src/ + functions/, but `npm run lint` (eslint .) covers the
+  // whole tree, so give these files the Node globals as well.
+  {
+    files: ['*.config.js', 'vitest.setup.js'],
+    languageOptions: { globals: { ...globals.node } },
+  },
 ])

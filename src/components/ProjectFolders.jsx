@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useData } from '../DataContext'
 import { useJobFiles, addJobFile } from '../hooks/useFirestore'
+import { safeHref } from '../lib/safeHref'
 import { PageHeader, LoadingState, LiveDot } from './shared'
 import { storage } from '../firebase'
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
@@ -190,7 +191,7 @@ export default function ProjectFolders() {
                           )}
                         </div>
                       </div>
-                      <a href={f.url} target="_blank" rel="noopener noreferrer">
+                      <a href={safeHref(f.url)} target="_blank" rel="noopener noreferrer">
                         <Button variant="ghost" size="sm" className="gap-1 h-8 px-2 text-xs hover:bg-white/10">
                           <DownloadIcon size={12} /> Download
                         </Button>

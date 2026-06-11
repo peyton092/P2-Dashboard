@@ -35,32 +35,43 @@ export default function SubmitInbox() {
   const handleNewSubmit = async () => {
     if (!form.subject || !form.body) return
     setSubmitting(true)
-    await addSubmit({
-      subject: form.subject,
-      category: form.category,
-      priority: form.priority,
-      body: form.body,
-      portal: form.portal,
-      status: 'Open',
-    })
-    setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
-    setSubmitting(false)
-    setView('inbox')
+    try {
+      await addSubmit({
+        subject: form.subject,
+        category: form.category,
+        priority: form.priority,
+        body: form.body,
+        portal: form.portal,
+        status: 'Open',
+      })
+      setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
+      setView('inbox')
+    } catch (err) {
+      console.error('[SubmitInbox] create failed:', err)
+    } finally {
+      // Always re-enable the button — a failed write left it spinning forever.
+      setSubmitting(false)
+    }
   }
 
   const handleReply = async () => {
     if (!replyText.trim() || !selectedSubmit?._docId) return
     setReplying(true)
-    await addSubmitReply(selectedSubmit._docId, {
-      body: replyText,
-      author: 'P2 Team',
-      authorRole: 'internal',
-    })
-    if (selectedSubmit.status === 'Open') {
-      await updateSubmit(selectedSubmit._docId, { status: 'In Progress' })
+    try {
+      await addSubmitReply(selectedSubmit._docId, {
+        body: replyText,
+        author: 'P2 Team',
+        authorRole: 'internal',
+      })
+      if (selectedSubmit.status === 'Open') {
+        await updateSubmit(selectedSubmit._docId, { status: 'In Progress' })
+      }
+      setReplyText('')
+    } catch (err) {
+      console.error('[SubmitInbox] reply failed:', err)
+    } finally {
+      setReplying(false)
     }
-    setReplyText('')
-    setReplying(false)
   }
 
   if (view === 'thread' && selectedSubmit) {

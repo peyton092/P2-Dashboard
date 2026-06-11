@@ -28,6 +28,7 @@ import Brand from './brand/Brand'
 import { DataPanel, Pill, EmptyState, AllClearState } from './shared'
 import { daysSince } from '../agent/scoring'
 import PhotoLightbox from './PhotoLightbox'
+import { safeHref } from '../lib/safeHref'
 
 const O = '#F47920'
 
@@ -441,8 +442,8 @@ function InvoiceRow({ job }) {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
-        {job.paymentUrl && job.billingStatus !== 'paid' && (
-          <a href={job.paymentUrl} target="_blank" rel="noopener noreferrer"
+        {safeHref(job.paymentUrl) && job.billingStatus !== 'paid' && (
+          <a href={safeHref(job.paymentUrl)} target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] font-bold text-white" style={{ backgroundColor: '#22c55e' }}>
             <CreditCardIcon size={13} /> Pay now
           </a>
@@ -549,7 +550,7 @@ function JobFiles({ job }) {
                 </p>
                 <div className="space-y-1.5">
                   {docs.map(d => (
-                    <a key={d._docId} href={d.url} target="_blank" rel="noopener noreferrer"
+                    <a key={d._docId} href={safeHref(d.url)} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
                       <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
                       <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>

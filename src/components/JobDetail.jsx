@@ -7,6 +7,7 @@ import { MessageSquareIcon, UploadIcon, CheckSquareIcon } from 'lucide-react'
 import JobTasks from './JobTasks'
 import { pushRecentJob } from '../lib/recentJobs'
 import { copyText } from '../lib/clipboard'
+import { safeHref } from '../lib/safeHref'
 import { useToast } from '@/components/ui/toast'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState, STATUS_COLORS } from './shared'
@@ -489,7 +490,7 @@ export default function JobDetail({ jobId, onBack }) {
               </div>
             )}
             {docs.map(d => (
-              <a key={d._docId} href={d.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+              <a key={d._docId} href={safeHref(d.url)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
                 <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
                 <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
                 <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
