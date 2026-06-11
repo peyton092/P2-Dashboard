@@ -1,0 +1,194 @@
+rules_version = '2';
+
+// P2 Field Control — Firestore security rules. **STAGED, NOT DEPLOYED.**
+//
+// This is the planned successor to `firestore.rules`. It tightens the
+// operational collections in two ways:
+//
+//   1. Writes require `ownsRecord(request.resource.data)` — a client can no
+//      longer write to docs outside its own tenant / clientUids (closes audit
+//      H-2). Portal mutation flows route through Cloud Functions
+//      (functions/index.js → approveExtra, rejectExtra, sendExtraToBuilder,
+//      passInspection, failInspection, createJob, addHistoryEntry,
+//      addNotificationEntry) which run with the Admin SDK and stamp scoping
+//      fields server-side; that's what makes the tightened write rule satisfiable.
+//
+//   2. The legacy "no scope fields → allow" branch of `ownsRecord()` is
+//      removed. After `backfillScoping` has run in production every operational
+//      doc carries `tenantId` (+ `clientUids` for jobs / job-linked docs), so
+//      the escape hatch is no longer needed and removing it closes the
+//      "create a no-scoping doc to bypass scoping" loophole.
+//
+// ROLLOUT PRECONDITIONS — verify each before `firebase deploy --only firestore:rules`:
+//
+//   ☐  `backfillScoping` has run in prod and the returned summary shows
+//      `touched + skipped === total` for every collection (no stragglers).
+//   ☐  All Cloud Functions in functions/index.js are deployed (so the
+//      callable mutation paths exist; otherwise the client-side fallbacks
+//      that direct-write will start failing under these rules).
+//   ☐  Smoke test in a Firestore-emulator session:
+//        - staff create/edit job → ok
+//        - builder approve/reject extra (their tenant) → ok via callable
+//        - builder approve/reject extra (OTHER tenant) → permission-denied
+//        - client view own jobs → ok ; client view another client's jobs → empty
+//        - client write history/notification → ok via callable
+//        - any signed-in user direct-write to another tenant's job → DENIED
+//
+// ROLLBACK: rules are versioned at the Firebase backend — `firebase deploy
+// --only firestore:rules` again with the previous file (this current
+// `firestore.rules`) reverts in seconds. Keep that file in the tree until the
+// new rules have been stable for at least 48 h.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userRole() {
+      return request.auth.token.role != null
+        ? request.auth.token.role
+        : (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+            : null);
+    }
+
+    function isStaff() {
+      return signedIn() && (userRole() == 'owner' || userRole() == 'internal');
+    }
+
+    match /qb_config/{doc=**} { allow read, write: if isStaff(); }
+    match /cc_config/{doc=**} { allow read, write: if isStaff(); }
+
+    match /config/{doc=**}       { allow read: if signedIn(); allow write: if isStaff(); }
+    match /agent_alerts/{doc}    { allow read: if signedIn(); allow write: if isStaff(); }
+
+    match /users/{uid} {
+      allow read:  if signedIn() && (request.auth.uid == uid || isStaff());
+      allow write: if isStaff();
+      match /termsAcceptances/{version} {
+        allow read, write: if signedIn() && (request.auth.uid == uid || isStaff());
+      }
+    }
+
+    match /fcm_tokens/{token} {
+      allow read:  if isStaff();
+      allow create: if signedIn()
+                    && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn()
+                    && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn()
+                    && (isStaff() || resource.data.uid == request.auth.uid);
+    }
+
+    function userTenantId() {
+      return request.auth.token.tenantId != null
+        ? request.auth.token.tenantId
+        : (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId
+            : null);
+    }
+
+    // Same as the current ownsRecord() but with the legacy no-scope-fields
+    // fallback removed. After backfillScoping has run, every operational doc
+    // carries tenantId + (where applicable) clientUids, so the fallback is
+    // unnecessary and removing it closes the bypass.
+    function ownsRecord(data) {
+      return isStaff()
+          || (data.keys().hasAny(['tenantId']) && data.tenantId != null
+              && data.tenantId == userTenantId())
+          || (data.keys().hasAny(['clientUids']) && data.clientUids is list
+              && request.auth.uid in data.clientUids);
+    }
+
+    // Operational collections — read AND write require ownsRecord on the
+    // affected doc. `request.resource.data` is the *new* doc on writes, so
+    // callers can't escape scoping by submitting a doc with no scope fields.
+    match /jobs/{doc=**} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data)
+                                  && ownsRecord(request.resource.data);
+      allow delete: if isStaff();
+    }
+    match /extras/{doc=**} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data)
+                                  && ownsRecord(request.resource.data);
+      allow delete: if isStaff();
+    }
+    match /notifications/{doc} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data);
+      allow delete: if isStaff();
+    }
+    match /subs/{doc} {
+      // subs are cross-tenant vendor records — keep them open to all signed-
+      // in users. Staff can edit; non-staff cannot rename / reassign.
+      allow read:  if signedIn();
+      allow write: if isStaff();
+    }
+    match /materials/{doc} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data)
+                                  && ownsRecord(request.resource.data);
+      allow delete: if isStaff();
+    }
+    match /permits/{doc} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data)
+                                  && ownsRecord(request.resource.data);
+      allow delete: if isStaff();
+    }
+    match /submits/{doc=**} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data)
+                                  && ownsRecord(request.resource.data);
+      allow delete: if isStaff();
+    }
+    match /daily_reports/{doc} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data)
+                                  && ownsRecord(request.resource.data);
+      allow delete: if isStaff();
+    }
+    match /urgent_items/{doc} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data)
+                                  && ownsRecord(request.resource.data);
+      allow delete: if isStaff();
+    }
+    match /history/{doc} {
+      // History is append-only from the app's perspective; tighten to no
+      // updates / deletes by non-staff to make tampering visible.
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update, delete: if isStaff();
+    }
+    match /supplier_invoices/{doc} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data)
+                                  && ownsRecord(request.resource.data);
+      allow delete: if isStaff();
+    }
+    match /job_tasks/{doc} {
+      allow read:   if signedIn() && ownsRecord(resource.data);
+      allow create: if signedIn() && ownsRecord(request.resource.data);
+      allow update: if signedIn() && ownsRecord(resource.data)
+                                  && ownsRecord(request.resource.data);
+      allow delete: if isStaff();
+    }
+
+    // Default deny.
+  }
+}

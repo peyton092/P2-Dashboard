@@ -806,3 +806,265 @@ export const backfillScoping = onCall(callableOpts, async (req) => {
   }
   return { ok: true, dryRun, defaultTenant, summary }
 })
+
+// ============================================================================
+// Server-stamped portal mutations (audit H-2 + M-3)
+//
+// The client (src/hooks/useFirestore.js) calls these via httpsCallable with a
+// direct-write fallback in the catch block. Until these are deployed, behavior
+// is unchanged (fallback runs). Once deployed, every mutation routes through
+// here and the server stamps actor identity + tenant scoping from the
+// authenticated principal — so the audit trail cannot be forged and writes
+// always carry the correct scoping fields. That sets up the rules tightening
+// in step 3 (writes require `ownsRecord(request.resource.data)`).
+// ============================================================================
+
+// Load the caller's verified scope from the users/{uid} doc + custom claim.
+// Single Firestore read per callable invocation.
+async function loadCallerScope(req) {
+  const auth = requireAuth(req)
+  const snap = await db.collection('users').doc(auth.uid).get()
+  const userData = snap.exists ? (snap.data() || {}) : {}
+  const role = auth.token?.role || userData.role || null
+  return {
+    uid:           auth.uid,
+    email:         auth.token?.email || userData.email || null,
+    displayName:   userData.name || userData.displayName || null,
+    role,
+    tenantId:      userData.tenantId || null,
+    clientJobIds:  Array.isArray(userData.clientJobIds) ? userData.clientJobIds : [],
+    isStaff:       role === 'owner' || role === 'internal',
+  }
+}
+
+// Server-side mirror of firestore.rules's ownsRecord() — same semantics, minus
+// the legacy no-scope-fields fallback (server-side, we always have a doc to
+// inspect). Used to authorize callable mutations on an existing doc.
+function ownsRecordOnServer(scope, docData) {
+  if (scope.isStaff) return true
+  if (docData?.tenantId && scope.tenantId && docData.tenantId === scope.tenantId) return true
+  if (Array.isArray(docData?.clientUids) && docData.clientUids.includes(scope.uid)) return true
+  return false
+}
+
+// Build the actor stamp from the verified principal — closes M-3 (the client
+// used to supply `actor` as a display string, which was spoofable).
+function actorStamp(scope) {
+  return {
+    actor:      scope.displayName || scope.email || 'User',
+    actorUid:   scope.uid,
+    actorRole:  scope.role || null,
+    actorEmail: scope.email,
+  }
+}
+
+const portalCallableOpts = { region, cors: true }
+
+// ── sendExtraToBuilder ────────────────────────────────────────────────────────
+// Internal staff (or the extra's tenant owner) marks an extra as sent to the
+// builder portal. Stamps the sender so we know who pushed it across.
+export const sendExtraToBuilder = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const { extraId } = req.data || {}
+  if (!extraId || typeof extraId !== 'string') {
+    throw new HttpsError('invalid-argument', 'extraId is required.')
+  }
+  const ref = db.collection('extras').doc(extraId)
+  const snap = await ref.get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Extra not found.')
+  if (!ownsRecordOnServer(scope, snap.data() || {})) {
+    throw new HttpsError('permission-denied', 'You do not own that record.')
+  }
+  await ref.set({
+    qbs:        true,
+    qbsSentAt:  FieldValue.serverTimestamp(),
+    qbsSentBy:  scope.uid,
+  }, { merge: true })
+  return { ok: true }
+})
+
+// ── approveExtra ──────────────────────────────────────────────────────────────
+// QBS/Builder portal user (or staff) approves a CO. The `approvedBy` display
+// label is accepted from the client but is purely informational — the verified
+// identity is stamped alongside.
+export const approveExtra = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const { extraId, approvedBy } = req.data || {}
+  if (!extraId || typeof extraId !== 'string') {
+    throw new HttpsError('invalid-argument', 'extraId is required.')
+  }
+  const ref = db.collection('extras').doc(extraId)
+  const snap = await ref.get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Extra not found.')
+  if (!ownsRecordOnServer(scope, snap.data() || {})) {
+    throw new HttpsError('permission-denied', 'You do not own that record.')
+  }
+  await ref.set({
+    status:        'approved',
+    approvedBy:    typeof approvedBy === 'string' && approvedBy.length <= 200
+      ? approvedBy
+      : (scope.displayName || 'Builder'),
+    approvedByUid: scope.uid,
+    approvedAt:    FieldValue.serverTimestamp(),
+  }, { merge: true })
+  return { ok: true }
+})
+
+// ── rejectExtra ───────────────────────────────────────────────────────────────
+export const rejectExtra = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const { extraId } = req.data || {}
+  if (!extraId || typeof extraId !== 'string') {
+    throw new HttpsError('invalid-argument', 'extraId is required.')
+  }
+  const ref = db.collection('extras').doc(extraId)
+  const snap = await ref.get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Extra not found.')
+  if (!ownsRecordOnServer(scope, snap.data() || {})) {
+    throw new HttpsError('permission-denied', 'You do not own that record.')
+  }
+  await ref.set({
+    status:        'rejected',
+    rejectedAt:    FieldValue.serverTimestamp(),
+    rejectedByUid: scope.uid,
+  }, { merge: true })
+  return { ok: true }
+})
+
+// ── passInspection / failInspection ───────────────────────────────────────────
+// Staff only — the inspections grid in src/components/Inspections.jsx is staff-
+// facing. Stamps an audit sub-record so we know who marked the result and when.
+const writeInspectionResult = async (req, result) => {
+  const scope = await loadCallerScope(req)
+  if (!scope.isStaff) throw new HttpsError('permission-denied', 'Staff only.')
+  const { jobId, trade, phase } = req.data || {}
+  if (!jobId || !trade || !phase) {
+    throw new HttpsError('invalid-argument', 'jobId, trade, phase are required.')
+  }
+  const ref = db.collection('jobs').doc(jobId)
+  const snap = await ref.get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Job not found.')
+  await ref.set({
+    [`insp.${trade}.${phase}`]: result,
+    [`inspAudit.${trade}.${phase}`]: {
+      result,
+      at:    FieldValue.serverTimestamp(),
+      byUid: scope.uid,
+      by:    scope.displayName || scope.email || 'Staff',
+    },
+  }, { merge: true })
+  return { ok: true }
+}
+
+export const passInspection = onCall(portalCallableOpts, async (req) => writeInspectionResult(req, 'passed'))
+export const failInspection = onCall(portalCallableOpts, async (req) => writeInspectionResult(req, 'failed'))
+
+// ── createJob ─────────────────────────────────────────────────────────────────
+// Staff create jobs; tenantId is server-stamped from the caller's user doc
+// (staff may pass a tenantId to scope to a different tenant explicitly).
+// Strips any caller-supplied identity / timestamp fields — server is the
+// source of truth for those.
+export const createJob = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  if (!scope.isStaff && !scope.tenantId) {
+    throw new HttpsError('permission-denied', 'Sign-in scope is required to create a job.')
+  }
+  const payload = (req.data && typeof req.data === 'object') ? { ...req.data } : {}
+  const requestedTenant = typeof payload.tenantId === 'string' ? payload.tenantId : null
+  delete payload.tenantId
+  delete payload.createdAt
+  delete payload.createdByUid
+  delete payload.createdByEmail
+  delete payload.createdBy
+
+  const tenantId = scope.isStaff
+    ? (requestedTenant || scope.tenantId || 'p2-core')
+    : scope.tenantId
+  const docData = {
+    ...payload,
+    tenantId,
+    clientUids:       Array.isArray(payload.clientUids) ? payload.clientUids : [],
+    createdByUid:     scope.uid,
+    createdByEmail:   scope.email,
+    createdAt:        FieldValue.serverTimestamp(),
+  }
+  const ref = await db.collection('jobs').add(docData)
+  return { ok: true, jobId: ref.id }
+})
+
+// ── addHistoryEntry ───────────────────────────────────────────────────────────
+// Server-stamps `actor`/`actorUid` so the history audit trail can't be forged
+// (audit M-3). The client may still pass a `summary` and a free-form payload.
+// Scoping fields (tenantId/clientUids) come from the related job when a
+// `jobId` is supplied — keeps the entry visible to the correct readers under
+// the per-tenant/per-client read rules.
+export const addHistoryEntry = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const payload = (req.data && typeof req.data === 'object') ? { ...req.data } : {}
+
+  // Strip anything the server controls so a client can't lie about identity
+  // or scoping.
+  delete payload.actor
+  delete payload.actorUid
+  delete payload.actorRole
+  delete payload.actorEmail
+  delete payload.tenantId
+  delete payload.clientUids
+  delete payload.createdAt
+
+  let tenantId = scope.tenantId
+  let clientUids = []
+  if (typeof payload.jobId === 'string' && payload.jobId.length > 0) {
+    const jobSnap = await db.collection('jobs').doc(payload.jobId).get()
+    if (jobSnap.exists) {
+      const j = jobSnap.data() || {}
+      if (j.tenantId) tenantId = j.tenantId
+      if (Array.isArray(j.clientUids)) clientUids = j.clientUids
+      // Ownership check: caller must own the job to write history against it.
+      if (!ownsRecordOnServer(scope, j)) {
+        throw new HttpsError('permission-denied', 'You do not own that record.')
+      }
+    }
+  }
+
+  await db.collection('history').add({
+    ...payload,
+    ...actorStamp(scope),
+    tenantId:   tenantId || 'p2-core',
+    clientUids,
+    createdAt:  FieldValue.serverTimestamp(),
+  })
+  return { ok: true }
+})
+
+// ── addNotificationEntry ──────────────────────────────────────────────────────
+// Server-stamps the actor and the notification's tenant scope, so a client
+// can't fabricate a notification "from" another user or another tenant.
+// onNotificationCreated already fans-out push by recipientUids/recipientRole/
+// tenantId, so this stamping also tightens push targeting.
+export const addNotificationEntry = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const payload = (req.data && typeof req.data === 'object') ? { ...req.data } : {}
+
+  delete payload.actor
+  delete payload.actorUid
+  delete payload.actorRole
+  delete payload.actorEmail
+  delete payload.read
+  delete payload.createdAt
+  // Non-staff callers cannot pick which tenant a notification lands in.
+  if (!scope.isStaff) delete payload.tenantId
+
+  const tenantId = scope.isStaff
+    ? (payload.tenantId || scope.tenantId || 'p2-core')
+    : (scope.tenantId || 'p2-core')
+
+  await db.collection('notifications').add({
+    ...payload,
+    ...actorStamp(scope),
+    tenantId,
+    read:      false,
+    createdAt: FieldValue.serverTimestamp(),
+  })
+  return { ok: true }
+})

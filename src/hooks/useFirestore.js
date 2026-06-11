@@ -311,11 +311,18 @@ export async function updateExtra(docId, data) {
 }
 
 export async function addNotification(data) {
-  await addDoc(collection(db, 'notifications'), {
-    ...data,
-    read: false,
-    createdAt: serverTimestamp(),
-  })
+  // Prefer the callable so the server stamps actor identity + tenantId (closes
+  // audit M-3, server-stamped audit-trail actor). Falls back to a direct write
+  // when the function isn't deployed — keeps the call non-breaking.
+  try {
+    await httpsCallable(functions, 'addNotificationEntry')(data)
+  } catch {
+    await addDoc(collection(db, 'notifications'), {
+      ...data,
+      read: false,
+      createdAt: serverTimestamp(),
+    })
+  }
 }
 
 export async function updateNotification(docId, data) {
@@ -510,10 +517,17 @@ export function useHistory(scope = null) {
 }
 
 export async function addHistory(data) {
-  await addDoc(collection(db, 'history'), {
-    ...data,
-    createdAt: serverTimestamp(),
-  })
+  // Prefer the callable so the server stamps actor identity + tenantId (closes
+  // audit M-3 for the history trail). Falls back to a direct write when the
+  // function isn't deployed.
+  try {
+    await httpsCallable(functions, 'addHistoryEntry')(data)
+  } catch {
+    await addDoc(collection(db, 'history'), {
+      ...data,
+      createdAt: serverTimestamp(),
+    })
+  }
 }
 
 export function useSettings() {

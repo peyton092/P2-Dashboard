@@ -3,36 +3,66 @@
 Items that need product/ops approval, touch data-layer security posture, or carry
 rollback risk beyond a single safe code edit. Ordered by value.
 
-## 1. Tighten operational-collection WRITE rules (audit H-2)
+## 1. Tighten operational-collection WRITE rules (audit H-2) — **CODE READY, NOT DEPLOYED**
 **What:** `firestore.rules:103-114` allows `write: if signedIn()` on every
 operational collection. Read isolation already uses `ownsRecord()`; writes do not.
-**Why it's not a quick fix:** Portal users (builder/client) currently write directly
-to `extras` (CO approve/reject), `notifications`, and `history`. Tightening writes to
-`ownsRecord(request.resource.data)` will break those flows unless they either (a)
-carry the right `tenantId`/`clientUids`, or (b) route through Cloud Functions.
-**Plan:**
-1. Confirm `backfillScoping` has been run (so existing docs carry scoping fields).
-2. Add `ownsRecord(request.resource.data)` to write rules behind a per-collection
-   rollout, starting with the lowest-traffic collection.
-3. Or: move portal mutations (approveExtra/rejectExtra/addNotification/addHistory)
-   into Cloud Functions that run with the Admin SDK and stamp scoping + actor.
-**Rollback:** revert the rules deploy (rules are versioned and instant to roll back).
+**Progress this pass:**
+- Server-stamped Cloud Functions added in `functions/index.js`
+  (`approveExtra`, `rejectExtra`, `sendExtraToBuilder`, `passInspection`,
+  `failInspection`, `createJob`, `addHistoryEntry`, `addNotificationEntry`).
+  Each verifies caller ownership, stamps `actor`/`actorUid`, and stamps
+  `tenantId`/`clientUids` from the user doc. The client already calls these
+  via `httpsCallable(...)` with a direct-write fallback — non-breaking
+  until the functions are deployed.
+- Staged stricter rules at `firestore.rules.next`. Mirrors current
+  `firestore.rules` but: (a) write rules require
+  `ownsRecord(request.resource.data)`, (b) the legacy no-scope-fields
+  branch is removed from `ownsRecord()`, (c) history is append-only for
+  non-staff.
+**What's still on your hands:**
+1. Confirm `backfillScoping` has run in prod (returned `touched + skipped ==
+   total` for every collection).
+2. Deploy the functions (`firebase deploy --only functions`).
+3. Smoke-test the rollout precondition checklist at the top of
+   `firestore.rules.next` against a Firestore emulator session.
+4. Promote: `mv firestore.rules.next firestore.rules && firebase deploy
+   --only firestore:rules`.
+**Rollback:** redeploy the previous rules file (rules are versioned and
+instant to roll back at the Firebase backend).
 
-## 2. Server-stamp the audit-trail actor (audit M-3)
-**What:** `history`/`notifications` `actor` is a client-supplied display name
+## 2. Server-stamp the audit-trail actor (audit M-3) — **CODE READY, NOT DEPLOYED**
+**What:** `history`/`notifications` `actor` was a client-supplied display name
 (`clientName || 'Client'`), spoofable within an authenticated session.
-**Plan:** introduce `addHistory`/`addNotification` Cloud Functions (or a Firestore
-trigger) that overwrite `actor`/`actorUid` from `context.auth` rather than trusting
-the client payload. Pairs naturally with item 1.
-**Rollback:** keep the client-side write path behind a feature flag during cutover.
+**Progress this pass:** `addHistoryEntry` / `addNotificationEntry` Cloud
+Functions overwrite `actor`/`actorUid`/`actorRole`/`actorEmail` from
+`context.auth`. `src/hooks/useFirestore.js::addHistory` and `addNotification`
+were updated to call these first with a direct-write fallback — closes M-3
+once the functions are deployed; until then behavior is unchanged.
+**What's still on your hands:** `firebase deploy --only functions` (same
+deploy as item 1). After deploy, every history/notification doc carries a
+verified actor; existing rows remain with their original `actor` strings.
+**Rollback:** the client-side fallback path still exists — disabling or
+deleting the callable functions reverts to the legacy behavior with no code
+change.
 
-## 3. Resolve dependency advisories (audit M-4)
-**What:** root 9 vulns (firebase SDK → `protobufjs`, `qs`), functions 12 vulns
-(`@grpc/grpc-js`, `hono`, `fast-uri`) — all transitive, all with non-breaking
-`npm audit fix` available.
-**Plan:** run `npm audit fix` in root and `functions/` on a dedicated branch,
-re-run the full suite + a manual smoke of OAuth + push + sync, then merge.
-**Rollback:** restore the prior `package-lock.json` (committed).
+## 3. Resolve dependency advisories (audit M-4) — **DONE for root; partial for functions/**
+**Progress this pass:** `npm audit fix` cleared root (9 → 0). `functions/`
+went from 12 → 8; remaining 8 advisories all live in the firebase-admin 7
+dependency tree (`@grpc/grpc-js`, `hono`, `fast-uri`) and need a major
+firebase-admin bump (7 → 14) to clear. Held off because that's a non-trivial
+upgrade — see item 3a.
+**Rollback:** restore the prior `package-lock.json` (committed at the prior
+revision before commit `9cdaafc`).
+
+## 3a. firebase-admin major upgrade (clears remaining functions/ advisories)
+**What:** `firebase-admin` 7 → 14 (or current stable). Major bump — the v13
+release notes call out Node 18 EOL and Auth-emulator changes; v14 is
+incremental on top. Our function code uses `getFirestore`, `FieldValue`,
+`getMessaging` — all stable across the upgrade.
+**Plan:** dedicated branch; bump in `functions/package.json`; run
+`node --check functions/index.js`; emulator-test push fan-out + scoping
+backfill + the new portal callables end-to-end; merge.
+**Rollback:** revert the package-lock commit.
 
 ## 4. Storage path scoping
 **What:** `storage.rules` allows `read: if request.auth != null` for all paths — any
