@@ -53,6 +53,7 @@ import { getMessaging } from 'firebase-admin/messaging'
 import { randomBytes } from 'node:crypto'
 import { buildCallerScope, ownsRecordOnServer, actorStamp } from './lib/scope.js'
 import { findExpiredStateKeys, verifyOAuthState, VERIFY_OAUTH_STATE_MESSAGES } from './lib/oauthState.js'
+import { classifyNotificationRouting } from './lib/notifications.js'
 
 initializeApp()
 const db = getFirestore()
@@ -469,45 +470,36 @@ const NOTIF_TITLE = {
 }
 
 // Resolve which user docs should receive this notification (audit C-2).
-// Stops the previous "blast every fcm_token in the company on every write"
-// behavior, which let any authenticated user spam push messages to staff.
-//
-// Notification doc shape (any of these may be present):
-//   recipientUids: ['uid1', 'uid2']  — explicit list, highest priority
-//   recipientRole: 'owner' | 'internal' | 'builder' | 'client' | 'staff'
-//                                    — broadcast to a role (staff = owner|internal)
-//   tenantId:      'qbs'             — broadcast to a tenant
-//
-// If none are set, the legacy fallback is "staff only" — much narrower than
-// the previous "every device in the database." Clients can still post
-// notifications (e.g. CO approve/reject) and staff will receive them; what
-// stops is a client targeting other clients' devices.
+// Routing classification (pure) lives in lib/notifications.js; this wrapper
+// runs the matching Firestore query. C-2 closed the previous "blast every
+// fcm_token in the company on every write" behavior — what protects that
+// hardening from regression now is the test suite on classifyNotificationRouting.
 async function resolveNotificationRecipients(data) {
-  if (Array.isArray(data.recipientUids) && data.recipientUids.length > 0) {
-    return new Set(data.recipientUids)
+  const route = classifyNotificationRouting(data)
+  switch (route.kind) {
+    case 'uids': {
+      return new Set(route.uids)
+    }
+    case 'role': {
+      const snap = await db.collection('users').where('role', '==', route.role).get()
+      return new Set(snap.docs.map(d => d.id))
+    }
+    case 'staff': {
+      const [owners, internals] = await Promise.all([
+        db.collection('users').where('role', '==', 'owner').get(),
+        db.collection('users').where('role', '==', 'internal').get(),
+      ])
+      return new Set([
+        ...owners.docs.map(d => d.id),
+        ...internals.docs.map(d => d.id),
+      ])
+    }
+    case 'tenant': {
+      const snap = await db.collection('users').where('tenantId', '==', route.tenantId).get()
+      return new Set(snap.docs.map(d => d.id))
+    }
+    default: return new Set()
   }
-
-  const role = data.recipientRole
-  if (role === 'owner' || role === 'internal' || role === 'builder' || role === 'client') {
-    const snap = await db.collection('users').where('role', '==', role).get()
-    return new Set(snap.docs.map(d => d.id))
-  }
-  if (role === 'staff' || (!role && !data.tenantId)) {
-    const [owners, internals] = await Promise.all([
-      db.collection('users').where('role', '==', 'owner').get(),
-      db.collection('users').where('role', '==', 'internal').get(),
-    ])
-    return new Set([
-      ...owners.docs.map(d => d.id),
-      ...internals.docs.map(d => d.id),
-    ])
-  }
-
-  if (data.tenantId) {
-    const snap = await db.collection('users').where('tenantId', '==', data.tenantId).get()
-    return new Set(snap.docs.map(d => d.id))
-  }
-  return new Set()
 }
 
 export const onNotificationCreated = onDocumentCreated({ document: 'notifications/{id}', region }, async (event) => {
