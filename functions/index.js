@@ -51,6 +51,7 @@ import { initializeApp } from 'firebase-admin/app'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { getMessaging } from 'firebase-admin/messaging'
 import { randomBytes } from 'node:crypto'
+import { buildCallerScope, ownsRecordOnServer, actorStamp } from './lib/scope.js'
 
 initializeApp()
 const db = getFirestore()
@@ -820,42 +821,13 @@ export const backfillScoping = onCall(callableOpts, async (req) => {
 // ============================================================================
 
 // Load the caller's verified scope from the users/{uid} doc + custom claim.
-// Single Firestore read per callable invocation.
+// Single Firestore read per callable invocation. Pure shape logic lives in
+// ./lib/scope.js so it can be unit-tested without firebase-admin.
 async function loadCallerScope(req) {
   const auth = requireAuth(req)
   const snap = await db.collection('users').doc(auth.uid).get()
   const userData = snap.exists ? (snap.data() || {}) : {}
-  const role = auth.token?.role || userData.role || null
-  return {
-    uid:           auth.uid,
-    email:         auth.token?.email || userData.email || null,
-    displayName:   userData.name || userData.displayName || null,
-    role,
-    tenantId:      userData.tenantId || null,
-    clientJobIds:  Array.isArray(userData.clientJobIds) ? userData.clientJobIds : [],
-    isStaff:       role === 'owner' || role === 'internal',
-  }
-}
-
-// Server-side mirror of firestore.rules's ownsRecord() — same semantics, minus
-// the legacy no-scope-fields fallback (server-side, we always have a doc to
-// inspect). Used to authorize callable mutations on an existing doc.
-function ownsRecordOnServer(scope, docData) {
-  if (scope.isStaff) return true
-  if (docData?.tenantId && scope.tenantId && docData.tenantId === scope.tenantId) return true
-  if (Array.isArray(docData?.clientUids) && docData.clientUids.includes(scope.uid)) return true
-  return false
-}
-
-// Build the actor stamp from the verified principal — closes M-3 (the client
-// used to supply `actor` as a display string, which was spoofable).
-function actorStamp(scope) {
-  return {
-    actor:      scope.displayName || scope.email || 'User',
-    actorUid:   scope.uid,
-    actorRole:  scope.role || null,
-    actorEmail: scope.email,
-  }
+  return buildCallerScope({ auth, userData })
 }
 
 const portalCallableOpts = { region, cors: true }
