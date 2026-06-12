@@ -55,6 +55,7 @@ import { buildCallerScope, ownsRecordOnServer, actorStamp } from './lib/scope.js
 import { findExpiredStateKeys, verifyOAuthState, VERIFY_OAUTH_STATE_MESSAGES } from './lib/oauthState.js'
 import { classifyNotificationRouting } from './lib/notifications.js'
 import { addrMatches } from './lib/address.js'
+import { isTokenStale, buildRefreshedTokenDoc } from './lib/tokenLifecycle.js'
 
 initializeApp()
 const db = getFirestore()
@@ -284,9 +285,8 @@ async function getValidCcToken() {
   const t = snap.data() || {}
   if (!t.access_token) throw new HttpsError('failed-precondition', 'CompanyCam is not connected.')
 
-  const notExpired = !t.expires_at || t.expires_at - Date.now() > 60_000
-  if (notExpired) return t.access_token
-  if (!t.refresh_token) return t.access_token // long-lived token without expiry info
+  if (!isTokenStale(t, Date.now())) return t.access_token
+  if (!t.refresh_token) return t.access_token // stale but nothing to refresh with
 
   const body = new URLSearchParams({
     grant_type:    'refresh_token',
@@ -304,12 +304,7 @@ async function getValidCcToken() {
     return t.access_token
   }
   const fresh = await res.json()
-  const now = Date.now()
-  await ref.set({
-    access_token:  fresh.access_token,
-    refresh_token: fresh.refresh_token || t.refresh_token,
-    expires_at:    fresh.expires_in ? now + fresh.expires_in * 1000 : null,
-  }, { merge: true })
+  await ref.set(buildRefreshedTokenDoc(t, fresh, Date.now()), { merge: true })
   return fresh.access_token
 }
 
