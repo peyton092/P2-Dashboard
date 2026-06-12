@@ -1,23 +1,28 @@
 import { createContext, useContext, useState, useCallback } from 'react'
-import { CheckCircleIcon, AlertCircleIcon, InfoIcon, XIcon } from 'lucide-react'
+import { CheckCircleIcon, AlertCircleIcon, AlertTriangleIcon, InfoIcon, XIcon } from 'lucide-react'
 
 const O = '#F47920'
 
 const TONE = {
   success: { color: '#22c55e', Icon: CheckCircleIcon },
   error:   { color: '#ef4444', Icon: AlertCircleIcon },
+  warning: { color: '#eab308', Icon: AlertTriangleIcon },
   info:    { color: '#3b82f6', Icon: InfoIcon },
   brand:   { color: O,         Icon: InfoIcon },
 }
 
 const ToastContext = createContext(() => {})
 
-// useToast() → toast(opts | string). opts: { title, description, tone, duration }
+// useToast() → toast(opts | string).
+// opts: { title, description, tone, duration, action: { label, onClick } }
+// `action` renders an inline button (e.g. "Undo") that fires onClick and
+// dismisses the toast.
 export function useToast() {
   return useContext(ToastContext)
 }
 
 let nextId = 0
+const MAX_VISIBLE = 4
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
@@ -30,7 +35,10 @@ export function ToastProvider({ children }) {
     const id = ++nextId
     const base = typeof opts === 'string' ? { title: opts } : (opts || {})
     const t = { id, tone: 'info', duration: 4000, ...base }
-    setToasts(list => [...list, t])
+    setToasts(list => {
+      const next = [...list, t]
+      return next.length > MAX_VISIBLE ? next.slice(next.length - MAX_VISIBLE) : next
+    })
     if (t.duration > 0) setTimeout(() => dismiss(id), t.duration)
     return id
   }, [dismiss])
@@ -58,11 +66,21 @@ export function ToastProvider({ children }) {
                 {t.title && <p className="text-sm font-semibold text-white leading-snug">{t.title}</p>}
                 {t.description && <p className="text-xs text-zinc-400 mt-0.5 leading-snug">{t.description}</p>}
               </div>
+              {t.action && (
+                <button
+                  type="button"
+                  onClick={() => { try { t.action.onClick?.() } finally { dismiss(t.id) } }}
+                  className="shrink-0 text-xs font-bold px-2 py-1 rounded-md transition-colors"
+                  style={{ color: O, backgroundColor: O + '1f' }}
+                >
+                  {t.action.label || 'Undo'}
+                </button>
+              )}
               <button
                 type="button"
                 aria-label="Dismiss notification"
                 onClick={() => dismiss(t.id)}
-                className="shrink-0 text-zinc-500 hover:text-zinc-200 transition-colors"
+                className="shrink-0 text-zinc-400 hover:text-zinc-200 transition-colors"
               >
                 <XIcon size={14} aria-hidden="true" />
               </button>

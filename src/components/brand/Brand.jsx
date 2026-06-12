@@ -19,13 +19,27 @@ const O = '#F47920'
 const LOGO_PATH = '/p2-logo.svg'
 const MARK_PATH = '/p2-mark.svg'
 
+// Module-scope cache so we don't HEAD-fetch /p2-logo.svg and /p2-mark.svg
+// once per Sidebar render (and the sidebar mounts both Brand + BrandMark).
+const ASSET_CACHE = {}
+
 function useAssetExists(path) {
-  const [ok, setOk] = useState(null)
+  // If cached (resolved either true or false), use it synchronously.
+  const cached = ASSET_CACHE[path]
+  const [ok, setOk] = useState(cached === undefined ? null : cached)
   useEffect(() => {
+    if (ASSET_CACHE[path] !== undefined) return
     let cancelled = false
     fetch(path, { method: 'HEAD' })
-      .then(r => { if (!cancelled) setOk(r.ok && (r.headers.get('content-type') || '').includes('svg')) })
-      .catch(() => { if (!cancelled) setOk(false) })
+      .then(r => {
+        const result = r.ok && (r.headers.get('content-type') || '').includes('svg')
+        ASSET_CACHE[path] = result
+        if (!cancelled) setOk(result)
+      })
+      .catch(() => {
+        ASSET_CACHE[path] = false
+        if (!cancelled) setOk(false)
+      })
     return () => { cancelled = true }
   }, [path])
   return ok

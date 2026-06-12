@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { MoreHorizontalIcon, XIcon } from 'lucide-react'
+import { MoreHorizontalIcon, XIcon, SearchIcon } from 'lucide-react'
 
 const O = '#F47920'
 
@@ -18,6 +18,11 @@ export default function MobileNav({
   onSelect,
 }) {
   const [open, setOpen] = useState(false)
+
+  const openSearch = () => {
+    setOpen(false)
+    window.dispatchEvent(new CustomEvent('p2:open-search'))
+  }
 
   const handleSelect = (id) => {
     onSelect?.(id)
@@ -69,6 +74,17 @@ export default function MobileNav({
               </li>
             )
           })}
+          <li className="flex-1">
+            <button
+              type="button"
+              onClick={openSearch}
+              aria-label="Search the workspace"
+              className="w-full flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors text-zinc-400 hover:text-white"
+            >
+              <SearchIcon size={20} strokeWidth={2} />
+              <span className="text-[10px] font-semibold leading-none">Search</span>
+            </button>
+          </li>
           <li className="flex-1">
             <button
               type="button"

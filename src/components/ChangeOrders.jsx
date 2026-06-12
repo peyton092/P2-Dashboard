@@ -1,9 +1,15 @@
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useData } from '../DataContext'
+import { useStickyState } from '../lib/useStickyState'
+import { runBulk } from '../lib/runBulk'
+import { logError } from '../lib/errorLogger'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useToast } from '@/components/ui/toast'
+import { useDialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -11,21 +17,23 @@ import {
 } from '@/components/ui/select'
 import {
   PlusIcon, XIcon, SendIcon, SaveIcon, ChevronLeftIcon,
-  CheckCircleIcon, ClockIcon, FileTextIcon,
+  CheckCircleIcon, CheckIcon, ClockIcon, FileTextIcon,
   DollarSignIcon, PencilIcon, DownloadIcon,
   FilePenLineIcon, FileCheckIcon,
 } from 'lucide-react'
 import { generateCOPdf } from '../lib/generateCOPdf'
-import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader,
   MetricTile,
   DataPanel,
-  Pill,
+  Pill, LiveDot,
   EmptyState,
   AllClearState,
-  LoadingState,
+  DataSkeleton,
   FilterBar,
+  MasterCheckbox,
+  BulkActionBar as SharedBulkActionBar,
+  ExportCsvButton,
   ResponsiveTable,
   TableHeader,
   TableRow,
@@ -36,16 +44,6 @@ const O = '#F47920'
 const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS']
 const CO_STATUSES = ['Draft', 'Sent to Builder', 'Approved', 'Rejected']
 
-const STATUS_COLOR = {
-  'Draft':           '#6b7280',
-  'Sent to Builder': '#3b82f6',
-  'Approved':        '#22c55e',
-  'Rejected':        '#ef4444',
-  'pending':         '#eab308',
-  'approved':        '#22c55e',
-  'rejected':        '#ef4444',
-}
-
 function fmt$(n) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
@@ -55,7 +53,7 @@ function todayStr() {
 }
 
 function newLine() {
-  return { _id: Math.random(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
+  return { _id: crypto.randomUUID(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
 }
 
 function genCONumber(extras) {
@@ -171,7 +169,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={onCancel} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+        <button type="button" onClick={onCancel} aria-label="Back to change orders" title="Back" className="p-2 rounded-lg hover:bg-white/10 transition-colors">
           <ChevronLeftIcon size={18} />
         </button>
         <div className="flex-1">
@@ -327,7 +325,10 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     <td className="px-3 py-2">
                       {form.lineItems.length > 1 && (
                         <button
+                          type="button"
                           onClick={() => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }))}
+                          aria-label="Remove line item"
+                          title="Remove line item"
                           className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400 transition-colors"
                         >
                           <XIcon size={12} />
@@ -396,12 +397,24 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
 
 export default function ChangeOrders() {
   const { jobs: JOBS, extras: ALL_EXTRAS, loading } = useData()
+  const toast = useToast()
+  const { confirm } = useDialog()
   const [view, setView] = useState('list')
   const [editingCO, setEditingCO] = useState(null)
   const [form, setForm] = useState(null)
-  const [jobFilter, setJobFilter] = useState('all')
-  const [filter, setFilter]       = useState('all')
+  const [jobFilter, setJobFilter] = useStickyState('co.job', 'all')
+  const [filter, setFilter]       = useStickyState('co.filter', 'all')
+  const [sort, setSort]           = useStickyState('co.sort', { field: 'aging', direction: 'desc' })
+  const onSort = (field) => setSort(s => ({ field, direction: s.field === field ? (s.direction === 'asc' ? 'desc' : 'asc') : 'desc' }))
   const [saving, setSaving] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const toggleSelected = useCallback((id) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  }), [])
+  const clearSelection = useCallback(() => setSelected(new Set()), [])
 
   // Sort newest first (by date then by coNumber). Memoized so identity stays
   // stable across renders unless the extras feed changes.
@@ -418,15 +431,19 @@ export default function ChangeOrders() {
     setView('form')
   }
 
-  function openEdit(co) {
+  const openEdit = useCallback((co) => {
     if (!co.lineItems) return
     setForm({
       ...co,
-      lineItems: co.lineItems.map(li => ({ ...li, _id: Math.random() })),
+      lineItems: co.lineItems.map(li => ({ ...li, _id: crypto.randomUUID() })),
     })
     setEditingCO(co)
     setView('form')
-  }
+  }, [])
+
+  // Stable PDF handler so memoized rows skip re-renders when only their
+  // sibling's selection state changes.
+  const handlePdf = useCallback((co) => generateCOPdf(co, jobLabel(JOBS, co.job)), [JOBS])
 
   async function saveCO(sendToBuilder) {
     if (!form.job || !form.lineItems.some(li => li.desc.trim())) return
@@ -473,6 +490,10 @@ export default function ChangeOrders() {
       setView('list')
       setForm(null)
       setEditingCO(null)
+      toast({ tone: 'success', title: sendToBuilder ? 'Sent to builder' : 'Draft saved', description: form.coNumber })
+    } catch (err) {
+      logError('changeOrders.save', err)
+      toast({ tone: 'error', title: 'Save failed', description: err.message || 'Try again.' })
     } finally {
       setSaving(false)
     }
@@ -487,7 +508,7 @@ export default function ChangeOrders() {
           title="Approval control & revenue protection"
           subtitle="Loading change order pipeline…"
         />
-        <LoadingState label="Loading change orders…" />
+        <DataSkeleton tiles={5} rows={6} />
       </div>
     )
   }
@@ -547,6 +568,17 @@ export default function ChangeOrders() {
     else if (filter === 'Rejected')         list = rejected
 
     if (jobFilter !== 'all') list = list.filter(co => co.job === jobFilter)
+    // Column-header sort.
+    const cmp =
+      sort.field === 'co'     ? (a, b) => (a.coNumber || a.id || '').localeCompare(b.coNumber || b.id || '') :
+      sort.field === 'job'    ? (a, b) => (a.job || '').localeCompare(b.job || '') :
+      sort.field === 'amount' ? (a, b) => Number(a.total ?? a.amount ?? 0) - Number(b.total ?? b.amount ?? 0) :
+      sort.field === 'status' ? (a, b) => (a.status || '').localeCompare(b.status || '') :
+      sort.field === 'aging'  ? (a, b) => (coAgeDays(a) ?? -1) - (coAgeDays(b) ?? -1) :
+      null
+    if (cmp) {
+      list = [...list].sort((a, b) => sort.direction === 'asc' ? cmp(a, b) : -cmp(a, b))
+    }
     return list
   })()
 
@@ -561,10 +593,7 @@ export default function ChangeOrders() {
         subtitle="Track every CO from draft to approved billable. Work should not start until approved."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{EXTRAS.length} change orders total</span>
             {approvalRequired.length > 0 && (
               <span className="text-amber-300">{approvalRequired.length} need follow-up</span>
@@ -573,9 +602,9 @@ export default function ChangeOrders() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => exportToCsv('p2-change-orders', [
+            <ExportCsvButton
+              filename="p2-change-orders"
+              columns={[
                 { label: 'CO #',        get: e => e.id || e.coNumber || '' },
                 { label: 'Job',         key: 'job' },
                 { label: 'Description', get: e => e.desc || '' },
@@ -583,11 +612,10 @@ export default function ChangeOrders() {
                 { label: 'Status',      get: e => e.status || 'pending' },
                 { label: 'Date',        get: e => e.date || '' },
                 { label: 'Sent to QBS', get: e => e.qbs ? 'yes' : 'no' },
-              ], EXTRAS)}
-              className="border-white/15 gap-2 text-zinc-200"
-            >
-              <DownloadIcon size={14} /> Export CSV
-            </Button>
+              ]}
+              rows={EXTRAS}
+              label="Export CSV"
+            />
             <Button
               onClick={startNew}
               style={{ backgroundColor: O }}
@@ -685,6 +713,40 @@ export default function ChangeOrders() {
         }
       />
 
+      {/* Bulk-action bar — visible while one or more rows are selected. */}
+      {selected.size > 0 && (
+        <COBulkActionBar
+          count={selected.size}
+          busy={bulkBusy}
+          onApply={async (action) => {
+            const targets = display.filter(co => selected.has(co._docId) && co._docId)
+            if (targets.length === 0) { clearSelection(); return }
+            const verbMap = { approved: 'approve', rejected: 'reject', sent: 'send to builder', draft: 'move to draft' }
+            const verb = verbMap[action] || 'update'
+            const ok = await confirm({
+              title: `${verb[0].toUpperCase() + verb.slice(1)}?`,
+              description: `This affects ${targets.length} change order${targets.length === 1 ? '' : 's'}.`,
+              confirmLabel: verb[0].toUpperCase() + verb.slice(1),
+              tone: action === 'rejected' ? 'destructive' : 'default',
+            })
+            if (!ok) return
+            const statusMap = { approved: 'Approved', rejected: 'Rejected', sent: 'Sent to Builder', draft: 'Draft' }
+            const status = statusMap[action]
+            if (!status) return
+            setBulkBusy(true)
+            await runBulk(
+              targets,
+              co => updateDoc(doc(db, 'extras', co._docId), { status }),
+              toast,
+              { noun: 'CO' },
+            )
+            clearSelection()
+            setBulkBusy(false)
+          }}
+          onClear={clearSelection}
+        />
+      )}
+
       {/* Main queue */}
       <DataPanel
         title="Change Order Queue"
@@ -706,14 +768,38 @@ export default function ChangeOrders() {
             <div className="hidden md:block px-3 sm:px-4 pb-3 pt-1">
               <ResponsiveTable>
                 <TableHeader
+                  sort={sort}
+                  onSort={onSort}
                   columns={[
-                    { key: 'co',     label: 'CO #',         width: '10%' },
-                    { key: 'job',    label: 'Job · Customer', width: '20%' },
-                    { key: 'desc',   label: 'Description',  width: '20%' },
-                    { key: 'amount', label: 'Amount',       align: 'right', width: '10%' },
-                    { key: 'status', label: 'Status',       width: '10%' },
-                    { key: 'pm',     label: 'PM',           width: '10%' },
-                    { key: 'aging',  label: 'Aging',        width: '8%' },
+                    {
+                      key: 'sel',
+                      width: '3%',
+                      label: (
+                        <MasterCheckbox
+                          state={
+                            display.every(co => co._docId && selected.has(co._docId)) && display.length > 0 ? 'all'
+                            : display.some(co => co._docId && selected.has(co._docId)) ? 'some'
+                            : 'none'
+                          }
+                          onClick={() => {
+                            const allSelected = display.every(co => co._docId && selected.has(co._docId))
+                            if (allSelected) {
+                              clearSelection()
+                            } else {
+                              setSelected(new Set(display.filter(co => co._docId).map(co => co._docId)))
+                            }
+                          }}
+                          ariaLabel="Select all visible change orders"
+                        />
+                      ),
+                    },
+                    { key: 'co',     label: 'CO #',           width: '9%',  sortable: true },
+                    { key: 'job',    label: 'Job · Customer', width: '19%', sortable: true },
+                    { key: 'desc',   label: 'Description',    width: '19%' },
+                    { key: 'amount', label: 'Amount',         width: '10%', align: 'right', sortable: true },
+                    { key: 'status', label: 'Status',         width: '10%', sortable: true },
+                    { key: 'pm',     label: 'PM',             width: '10%' },
+                    { key: 'aging',  label: 'Aging',          width: '8%',  sortable: true },
                     { key: 'next',   label: 'Required action', width: '12%' },
                   ]}
                 />
@@ -724,7 +810,9 @@ export default function ChangeOrders() {
                       co={co}
                       job={jobMap.get(co.job)}
                       onEdit={openEdit}
-                      onPdf={() => generateCOPdf(co, jobLabel(JOBS, co.job))}
+                      onPdf={handlePdf}
+                      selected={co._docId ? selected.has(co._docId) : false}
+                      onToggleSelect={co._docId ? toggleSelected : null}
                     />
                   ))}
                 </tbody>
@@ -739,7 +827,7 @@ export default function ChangeOrders() {
                     co={co}
                     job={jobMap.get(co.job)}
                     onEdit={openEdit}
-                    onPdf={() => generateCOPdf(co, jobLabel(JOBS, co.job))}
+                    onPdf={handlePdf}
                   />
                 </li>
               ))}
@@ -789,7 +877,7 @@ function tonesToColor(tone) {
   )
 }
 
-function CORow({ co, job, onEdit, onPdf }) {
+const CORow = memo(function CORow({ co, job, onEdit, onPdf, selected = false, onToggleSelect }) {
   const isNew     = !!co.lineItems
   const coNum     = co.coNumber || co.id || '—'
   const desc      = co.desc || co.lineItems?.[0]?.desc || '—'
@@ -812,7 +900,27 @@ function CORow({ co, job, onEdit, onPdf }) {
         : ''
       }
     >
-      <TableCell first className="font-bold" style={{ color: O }}>
+      <TableCell first>
+        {onToggleSelect && (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={selected}
+            aria-label={`Select ${coNum}`}
+            onClick={() => onToggleSelect(co._docId)}
+            className={cn(
+              'w-4 h-4 rounded border transition-colors flex items-center justify-center',
+              selected
+                ? 'text-white'
+                : 'bg-white/[0.04] border-white/20 text-transparent hover:border-white/40',
+            )}
+            style={selected ? { backgroundColor: O, borderColor: O } : undefined}
+          >
+            <CheckIcon size={11} strokeWidth={3} />
+          </button>
+        )}
+      </TableCell>
+      <TableCell className="font-bold" style={{ color: O }}>
         {coNum}
       </TableCell>
       <TableCell className="min-w-0">
@@ -834,7 +942,7 @@ function CORow({ co, job, onEdit, onPdf }) {
       <TableCell className="text-zinc-200 truncate">{job?.pm || '—'}</TableCell>
       <TableCell>
         {age == null
-          ? <span className="text-zinc-500 text-xs">—</span>
+          ? <span className="text-zinc-400 text-xs">—</span>
           : <Pill tone={ageTone} size="xs">{age}d</Pill>}
       </TableCell>
       <TableCell last>
@@ -855,7 +963,7 @@ function CORow({ co, job, onEdit, onPdf }) {
             {isNew && (
               <button
                 type="button"
-                onClick={onPdf}
+                onClick={() => onPdf(co)}
                 className="p-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.08] transition-colors"
                 title="Download PDF"
               >
@@ -877,7 +985,7 @@ function CORow({ co, job, onEdit, onPdf }) {
       </TableCell>
     </TableRow>
   )
-}
+})
 
 function COCard({ co, job, onEdit, onPdf }) {
   const isNew    = !!co.lineItems
@@ -941,7 +1049,7 @@ function COCard({ co, job, onEdit, onPdf }) {
           {isNew && (
             <button
               type="button"
-              onClick={onPdf}
+              onClick={() => onPdf(co)}
               className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-white/10 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
               title="Download PDF"
             >
@@ -962,3 +1070,54 @@ function COCard({ co, job, onEdit, onPdf }) {
     </article>
   )
 }
+
+// ── COBulkActionBar ──────────────────────────────────────────────────────────
+// Bulk approve / reject / send-to-builder / move-to-draft for selected COs.
+// All paths write `status` via the same updateDoc('extras', _docId, …) shape
+// the form submit uses, so per-doc behavior stays identical.
+
+function COBulkActionBar({ count, busy, onApply, onClear }) {
+  return (
+    <SharedBulkActionBar
+      count={count}
+      busy={busy}
+      onClear={onClear}
+      ariaLabel="Bulk change-order actions"
+    >
+      <button
+        type="button"
+        onClick={() => onApply('approved')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md text-white disabled:opacity-60"
+        style={{ backgroundColor: O }}
+      >
+        <CheckCircleIcon size={11} /> Approve
+      </button>
+      <button
+        type="button"
+        onClick={() => onApply('sent')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 disabled:opacity-60"
+      >
+        <SendIcon size={11} /> Send to builder
+      </button>
+      <button
+        type="button"
+        onClick={() => onApply('rejected')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:border-white/25 disabled:opacity-60"
+      >
+        Reject
+      </button>
+      <button
+        type="button"
+        onClick={() => onApply('draft')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:border-white/25 disabled:opacity-60"
+      >
+        Move to draft
+      </button>
+    </SharedBulkActionBar>
+  )
+}
+

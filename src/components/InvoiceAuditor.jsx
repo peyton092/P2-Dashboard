@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import { useSupplierInvoices, addSupplierInvoice, updateSupplierInvoice } from '../hooks/useFirestore'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,7 @@ import {
   DollarSignIcon, FileTextIcon, ChevronDownIcon, ChevronUpIcon,
   ShieldAlertIcon, ReceiptIcon, SearchIcon, PencilIcon,
 } from 'lucide-react'
+import { PageHeader, STATUS_COLORS, ExportCsvButton } from './shared'
 
 const O = '#F47920'
 
@@ -21,10 +23,10 @@ const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS', 'BOX', 'ROLL', 'STICK']
 const STATUS_OPTIONS = ['pending-review', 'approved', 'disputed', 'paid']
 
 const STATUS_META = {
-  'pending-review': { label: 'Pending Review', color: '#eab308' },
-  'approved':       { label: 'Approved',        color: '#22c55e' },
-  'disputed':       { label: 'Disputed',         color: '#ef4444' },
-  'paid':           { label: 'Paid',             color: '#6b7280' },
+  'pending-review': { label: 'Pending Review', color: STATUS_COLORS.warning  },
+  'approved':       { label: 'Approved',       color: STATUS_COLORS.success  },
+  'disputed':       { label: 'Disputed',       color: STATUS_COLORS.critical },
+  'paid':           { label: 'Paid',           color: STATUS_COLORS.mute     },
 }
 
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -32,7 +34,7 @@ const fmt$ = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFracti
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 
 function newLine() {
-  return { _id: Math.random(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
+  return { _id: crypto.randomUUID(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
 }
 
 // ── Audit Engine ──────────────────────────────────────────────────────────────
@@ -176,7 +178,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10">
+        <button type="button" onClick={onClose} aria-label="Close" title="Close" className="p-2 rounded-lg hover:bg-white/10">
           <XIcon size={16} />
         </button>
         <h2 className="text-lg font-semibold" style={{ color: O }}>New Supplier Invoice</h2>
@@ -292,7 +294,8 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
                     </td>
                     <td className="px-3 py-2">
                       {form.lineItems.length > 1 && (
-                        <button onClick={() => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }))}
+                        <button type="button" onClick={() => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }))}
+                          aria-label="Remove line item" title="Remove line item"
                           className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400">
                           <XIcon size={12} />
                         </button>
@@ -335,12 +338,9 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
 
 function InvoiceRow({ inv, jobs, allInvoices, materials }) {
   const [expanded, setExpanded] = useState(false)
-  const [editStatus, setEditStatus] = useState(false)
 
   const meta = STATUS_META[inv.status] || STATUS_META['pending-review']
   const job = jobs.find(j => j.id === inv.jobId)
-  const criticalFlags = (inv.flags || []).filter(f => f.severity === 'critical')
-  const warningFlags  = (inv.flags || []).filter(f => f.severity === 'warning')
 
   // Re-run audit live against current materials (may have changed since save)
   const liveFlags = useMemo(
@@ -485,9 +485,9 @@ export default function InvoiceAuditor() {
   const { jobs, materials } = useData()
   const { invoices, loading } = useSupplierInvoices()
   const [showForm, setShowForm] = useState(false)
-  const [vendorFilter, setVendorFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [search, setSearch] = useState('')
+  const [vendorFilter, setVendorFilter] = useStickyState('invoice.vendor', 'all')
+  const [statusFilter, setStatusFilter] = useStickyState('invoice.status', 'all')
+  const [search, setSearch] = useStickyState('invoice.search', '')
 
   const allVendors = [...new Set(invoices.map(i => i.vendor).filter(Boolean))]
 
@@ -529,18 +529,32 @@ export default function InvoiceAuditor() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold" style={{ color: O }}>Supplier Invoice Auditor</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Audit supplier invoices against POs · flag price variances, duplicates &amp; discrepancies
-          </p>
-        </div>
-        <Button className="text-white gap-2" style={{ backgroundColor: O }} onClick={() => setShowForm(true)}>
-          <PlusIcon size={14} /> New Invoice
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Cash Flow"
+        title="Supplier Invoice Auditor"
+        subtitle="Audit supplier invoices against POs — flag price variances, duplicates, and discrepancies."
+        actions={
+          <>
+            <ExportCsvButton
+              filename="p2-supplier-invoices"
+              columns={[
+                { label: 'Vendor',      key: 'vendor' },
+                { label: 'Invoice #',   key: 'invoiceNum' },
+                { label: 'Date',        get: i => i.invoiceDate || '' },
+                { label: 'Job',         get: i => i.jobId || '' },
+                { label: 'Total',       get: i => Number(i.total || 0) },
+                { label: 'Status',      get: i => i.status || '' },
+                { label: 'Flags',       get: i => (i.flags || []).length },
+              ]}
+              rows={filtered}
+              label="Export CSV"
+            />
+            <Button className="text-white gap-2" style={{ backgroundColor: O }} onClick={() => setShowForm(true)}>
+              <PlusIcon size={14} /> New Invoice
+            </Button>
+          </>
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

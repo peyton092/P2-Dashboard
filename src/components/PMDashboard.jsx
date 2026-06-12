@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import {
   scoreJob, classifyRisk, daysSince,
@@ -10,11 +11,13 @@ import {
   PageHeader,
   MetricTile,
   DataPanel,
-  Pill,
+  Pill, LiveDot,
   EmptyState,
   AllClearState,
-  LoadingState,
+  DataSkeleton,
   FilterBar,
+  ClearFiltersButton,
+  ExportCsvButton,
 } from './shared'
 import {
   UserRoundCogIcon, TriangleAlertIcon, ActivityIcon,
@@ -228,8 +231,8 @@ const TONE_COLOR = {
 
 export default function PMDashboard() {
   const { jobs = [], extras = [], loading } = useData()
-  const [filter, setFilter]     = useState('all')
-  const [search, setSearch]     = useState('')
+  const [filter, setFilter]     = useStickyState('pm.filter', 'all')
+  const [search, setSearch]     = useStickyState('pm.search', '')
   const [expanded, setExpanded] = useState({})
 
   // Roster + any other PM that owns active work, so nothing disappears when
@@ -308,7 +311,7 @@ export default function PMDashboard() {
           title="Manager accountability & workload control"
           subtitle="Loading PM workload board…"
         />
-        <LoadingState label="Loading PM workload…" />
+        <DataSkeleton tiles={5} rows={6} />
       </div>
     )
   }
@@ -321,16 +324,32 @@ export default function PMDashboard() {
         subtitle="Who is overloaded, who owns risk, and what each PM should do next."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{kpis.activePMs} of {allPMs.length} PMs with active work</span>
             <span>{kpis.totalActive} active assignments</span>
           </>
+        }
+        actions={
+          <ExportCsvButton
+            filename="p2-pm-dashboard"
+            columns={[
+              { label: 'PM',                get: s => s.pm },
+              { label: 'Active Jobs',       get: s => s.activeCount },
+              { label: 'At Risk',           get: s => s.atRisk },
+              { label: 'Critical',          get: s => s.critical },
+              { label: 'Warning',           get: s => s.warning },
+              { label: 'Blocked',           get: s => s.blocked },
+              { label: 'Failed Insp',       get: s => s.failedInsp },
+              { label: 'Upcoming Insp',     get: s => s.upcomingInsp },
+              { label: 'Billing Blockers',  get: s => s.billingBlockers },
+              { label: 'Open COs',          get: s => s.openCOs },
+              { label: 'Stale 7d+',         get: s => s.stale7 },
+              { label: 'Pressure',          get: s => s.pressure?.label || '' },
+              { label: 'Next Action',       get: s => s.nextAction || '' },
+            ]}
+            rows={visible}
+            title="Export the current PM list to CSV"
+          />
         }
       />
 
@@ -406,7 +425,11 @@ export default function PMDashboard() {
       >
         {visible.length === 0 ? (
           <div className="p-5">
-            <PMEmptyState filter={filter} hasSearch={Boolean(search.trim())} />
+            <PMEmptyState
+              filter={filter}
+              hasSearch={Boolean(search.trim())}
+              onClear={() => { setFilter('all'); setSearch('') }}
+            />
           </div>
         ) : (
           <ul className="divide-y divide-white/5">
@@ -428,13 +451,14 @@ export default function PMDashboard() {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function PMEmptyState({ filter, hasSearch }) {
+function PMEmptyState({ filter, hasSearch, onClear }) {
   if (hasSearch) {
     return (
       <EmptyState
         Icon={UserRoundCogIcon}
         title="No PMs match"
         description="Adjust the search above or clear filters to see the whole roster."
+        action={<ClearFiltersButton onClick={onClear} />}
       />
     )
   }
@@ -738,7 +762,7 @@ function NextActionInput({ job, placeholder }) {
         onChange={e => setVal(e.target.value)}
         onBlur={handleBlur}
         placeholder={placeholder || 'Next action…'}
-        className="flex-1 min-w-0 bg-white/[0.04] border border-white/10 rounded-md text-[12px] font-semibold text-zinc-100 px-2.5 py-1.5 placeholder:text-zinc-500 placeholder:font-medium focus:outline-none focus:border-white/30 transition-colors"
+        className="flex-1 min-w-0 bg-white/[0.04] border border-white/10 rounded-md text-[12px] font-semibold text-zinc-100 px-2.5 py-1.5 placeholder:text-zinc-400 placeholder:font-medium focus:outline-none focus:border-white/30 transition-colors"
       />
       {saving && <span className="text-[10px] text-zinc-400 shrink-0">saving…</span>}
     </div>

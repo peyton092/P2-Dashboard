@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useData } from '../DataContext'
 import { addSubmit, updateSubmit, useSubmitReplies, addSubmitReply } from '../hooks/useFirestore'
+import { logError } from '../lib/errorLogger'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -11,20 +12,9 @@ import {
 import {
   ChevronLeftIcon, ChevronRightIcon, PlusIcon, SendIcon, MessageSquareIcon,
 } from 'lucide-react'
+import { PageHeader, LiveDot } from './shared'
 
 const O = '#F47920'
-
-function SectionHeader({ title, sub, action }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-      {action}
-    </div>
-  )
-}
 
 export default function SubmitInbox() {
   const { submits } = useData()
@@ -46,32 +36,43 @@ export default function SubmitInbox() {
   const handleNewSubmit = async () => {
     if (!form.subject || !form.body) return
     setSubmitting(true)
-    await addSubmit({
-      subject: form.subject,
-      category: form.category,
-      priority: form.priority,
-      body: form.body,
-      portal: form.portal,
-      status: 'Open',
-    })
-    setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
-    setSubmitting(false)
-    setView('inbox')
+    try {
+      await addSubmit({
+        subject: form.subject,
+        category: form.category,
+        priority: form.priority,
+        body: form.body,
+        portal: form.portal,
+        status: 'Open',
+      })
+      setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
+      setView('inbox')
+    } catch (err) {
+      logError('submitInbox.create', err)
+    } finally {
+      // Always re-enable the button — a failed write left it spinning forever.
+      setSubmitting(false)
+    }
   }
 
   const handleReply = async () => {
     if (!replyText.trim() || !selectedSubmit?._docId) return
     setReplying(true)
-    await addSubmitReply(selectedSubmit._docId, {
-      body: replyText,
-      author: 'P2 Team',
-      authorRole: 'internal',
-    })
-    if (selectedSubmit.status === 'Open') {
-      await updateSubmit(selectedSubmit._docId, { status: 'In Progress' })
+    try {
+      await addSubmitReply(selectedSubmit._docId, {
+        body: replyText,
+        author: 'P2 Team',
+        authorRole: 'internal',
+      })
+      if (selectedSubmit.status === 'Open') {
+        await updateSubmit(selectedSubmit._docId, { status: 'In Progress' })
+      }
+      setReplyText('')
+    } catch (err) {
+      logError('submitInbox.reply', err)
+    } finally {
+      setReplying(false)
     }
-    setReplyText('')
-    setReplying(false)
   }
 
   if (view === 'thread' && selectedSubmit) {
@@ -257,10 +258,17 @@ export default function SubmitInbox() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader
+      <PageHeader
+        eyebrow="Submit"
         title="Submit / Inbox"
-        sub={`${openCount} open · ${submits.length} total`}
-        action={
+        subtitle="Threaded conversation channel for RFIs, change requests, and field questions."
+        meta={
+          <>
+            <LiveDot />
+            <span>{openCount} open · {submits.length} total</span>
+          </>
+        }
+        actions={
           <Button style={{ backgroundColor: O }} className="text-white gap-2" onClick={() => setView('new')}>
             <PlusIcon size={14} /> New Submit
           </Button>

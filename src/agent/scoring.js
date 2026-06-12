@@ -32,7 +32,7 @@ function isHvacStartupBlocked(job) {
   return hvacRough === 'passed' && !eServiceRelease
 }
 
-function isBillingReady(job, extras) {
+function isBillingReady(job, _extras) {
   if (job.billingStatus === 'invoiced' || job.billingStatus === 'paid') return false
   const insp = job.insp || {}
   const anyFinal = ['electrical', 'plumbing', 'hvac'].some(t => insp[t]?.final === 'passed')

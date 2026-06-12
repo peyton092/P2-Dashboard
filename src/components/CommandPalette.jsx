@@ -1,9 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useData } from '../DataContext'
+import { useFocusTrap } from '../lib/useFocusTrap'
 import {
   SearchIcon, GaugeIcon, HardHatIcon, UsersRoundIcon, FilePenLineIcon,
   ClipboardSignatureIcon, BoxesIcon, DollarSignIcon, CornerDownLeftIcon,
+  ClockIcon, BadgeCheckIcon, NotebookPenIcon,
 } from 'lucide-react'
+import { getRecentJobs } from '../lib/recentJobs'
 
 const O = '#F47920'
 
@@ -33,9 +36,31 @@ const PAGES = [
 
 const navigate = (id) => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id } }))
 
+// Bold the matched substring inside a search result. Case-insensitive, only
+// highlights the first occurrence per string (results match on a single
+// substring, so multiple highlights would be noise). Returns plain text when
+// there's no query.
+function highlight(text, q) {
+  const t = String(text ?? '')
+  const query = String(q ?? '').trim()
+  if (!query) return t
+  const i = t.toLowerCase().indexOf(query.toLowerCase())
+  if (i < 0) return t
+  const end = i + query.length
+  return (
+    <>
+      {t.slice(0, i)}
+      <mark className="bg-transparent font-semibold" style={{ color: O }}>{t.slice(i, end)}</mark>
+      {t.slice(end)}
+    </>
+  )
+}
+
 export default function CommandPalette() {
-  const { jobs = [], subs = [], extras = [], materials = [] } = useData()
+  const { jobs = [], subs = [], extras = [], materials = [], dailyReports = [] } = useData()
   const [open, setOpen] = useState(false)
+  const dialogRef = useRef(null)
+  useFocusTrap(dialogRef, open)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const inputRef = useRef(null)
@@ -44,8 +69,13 @@ export default function CommandPalette() {
   const reset = () => { setQuery(''); setActive(0) }
   const close = () => { setOpen(false); reset() }
 
-  // Open on Cmd/Ctrl+K, on a 'p2:open-search' event (sidebar button), close on Esc.
+  // Open on Cmd/Ctrl+K or "/", on a 'p2:open-search' event (sidebar button), close on Esc.
   useEffect(() => {
+    const isTyping = (el) => {
+      if (!el) return false
+      const tag = el.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+    }
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
@@ -53,6 +83,9 @@ export default function CommandPalette() {
           if (o) { setQuery(''); setActive(0) }
           return !o
         })
+      } else if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e.target)) {
+        e.preventDefault()
+        setOpen(true); setQuery(''); setActive(0)
       } else if (e.key === 'Escape') {
         setOpen(false); setQuery(''); setActive(0)
       }
@@ -76,6 +109,27 @@ export default function CommandPalette() {
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     const groups = []
+
+    // When the palette opens fresh (no query), surface recently-viewed jobs.
+    if (!q) {
+      const recentIds = getRecentJobs()
+      const recentJobs = recentIds
+        .map(id => jobs.find(j => j.id === id))
+        .filter(Boolean)
+        .slice(0, 5)
+      if (recentJobs.length) {
+        groups.push({
+          heading: 'Recent jobs',
+          Icon: ClockIcon,
+          items: recentJobs.map(j => ({
+            key: `recent_${j.id}`,
+            title: `${j.id} — ${j.name || j.client || ''}`.trim(),
+            sub: j.address || j.pm || '',
+            job: j.id,
+          })),
+        })
+      }
+    }
 
     const pageHits = PAGES.filter(p => !q || p.label.toLowerCase().includes(q)).slice(0, q ? 6 : 8)
     if (pageHits.length) groups.push({ heading: 'Pages', Icon: GaugeIcon, items: pageHits.map(p => ({ key: `page_${p.id}`, title: p.label, sub: 'Go to page', tab: p.id })) })
@@ -103,10 +157,50 @@ export default function CommandPalette() {
         [m.item, m.job, m.vendor].some(v => (v || '').toString().toLowerCase().includes(q)),
       ).slice(0, 5)
       if (matHits.length) groups.push({ heading: 'Materials', Icon: BoxesIcon, items: matHits.map(m => ({ key: `mat_${m._docId || m.id}`, title: m.item, sub: `${m.job || ''}${m.vendor ? ` · ${m.vendor}` : ''}`, tab: 'materials' })) })
+
+      // Search inspections by job + trade hits (the inspection statuses live on
+      // each job's `insp` map). Surfaces "anything with a failed inspection",
+      // "show me HVAC roughs", etc.
+      const inspHits = jobs.flatMap(j => {
+        const insp = j.insp || {}
+        const matches = []
+        ;['electrical', 'plumbing', 'hvac'].forEach(t => {
+          const trade = insp[t]
+          if (!trade) return
+          const tradeMatch = t.includes(q) || (j.id || '').toLowerCase().includes(q) || (j.name || '').toLowerCase().includes(q) || (j.address || '').toLowerCase().includes(q)
+          ;['roughIn', 'final'].forEach(phase => {
+            const status = trade[phase]
+            if (!status) return
+            const statusMatch = (status || '').toLowerCase().includes(q)
+            if (tradeMatch || statusMatch) {
+              matches.push({ jobId: j.id, jobName: j.name || j.client || j.id, trade: t, phase, status })
+            }
+          })
+        })
+        return matches
+      }).slice(0, 6)
+      if (inspHits.length) groups.push({ heading: 'Inspections', Icon: BadgeCheckIcon, items: inspHits.map((m, i) => ({
+        key: `insp_${m.jobId}_${m.trade}_${m.phase}_${i}`,
+        title: `${m.jobName} — ${m.trade} ${m.phase}`,
+        sub: m.status,
+        job: m.jobId,
+      })) })
+
+      // Recent daily reports — match on crew name, job id, or note text.
+      const reportHits = (dailyReports || []).filter(r =>
+        [r.crewMember, r.author, r.jobId, r.jobName, r.notes, r.nextStep]
+          .some(v => (v || '').toString().toLowerCase().includes(q)),
+      ).slice(0, 5)
+      if (reportHits.length) groups.push({ heading: 'Daily reports', Icon: NotebookPenIcon, items: reportHits.map(r => ({
+        key: `dr_${r._docId || r.id || `${r.jobId}_${r.date}`}`,
+        title: `${r.jobName || r.jobId || '—'} — ${r.date || ''}`.trim(),
+        sub: r.crewMember || r.author || (r.notes || '').slice(0, 60),
+        tab: 'daily-report',
+      })) })
     }
 
     return groups
-  }, [query, jobs, subs, extras, materials])
+  }, [query, jobs, subs, extras, materials, dailyReports])
 
   const flat = useMemo(() => results.flatMap(g => g.items), [results])
 
@@ -135,9 +229,11 @@ export default function CommandPalette() {
   return (
     <div className="dark fixed inset-0 z-[90] flex items-start justify-center p-4 sm:pt-[12vh] bg-black/60 backdrop-blur-sm" onClick={close}>
       <div
+        ref={dialogRef}
         className="w-full max-w-xl rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Search"
       >
         <div className="flex items-center gap-2.5 px-4 border-b border-white/10">
@@ -148,21 +244,26 @@ export default function CommandPalette() {
             onChange={e => { setQuery(e.target.value); setActive(0) }}
             onKeyDown={onInputKey}
             placeholder="Search jobs, subs, change orders, permits, pages…"
-            className="flex-1 bg-transparent py-3.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+            className="flex-1 bg-transparent py-3.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none"
             aria-label="Search query"
           />
-          <kbd className="hidden sm:inline text-[10px] font-semibold text-zinc-500 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>
+          {query.trim() && flat.length > 0 && (
+            <span className="hidden sm:inline text-[10px] font-semibold text-zinc-400">
+              {flat.length} result{flat.length === 1 ? '' : 's'}
+            </span>
+          )}
+          <kbd className="hidden sm:inline text-[10px] font-semibold text-zinc-400 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>
         </div>
 
         <div ref={listRef} className="max-h-[60vh] overflow-y-auto py-2">
           {flat.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-zinc-500">
+            <p className="px-4 py-8 text-center text-sm text-zinc-400">
               {query ? 'No matches.' : 'Type to search across the workspace.'}
             </p>
           ) : (
             results.map(group => (
               <div key={group.heading} className="mb-1">
-                <p className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                <p className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   <group.Icon size={11} aria-hidden="true" /> {group.heading}
                 </p>
                 {group.items.map(item => {
@@ -180,10 +281,10 @@ export default function CommandPalette() {
                       style={{ backgroundColor: isActive ? O + '1f' : 'transparent' }}
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-white truncate">{item.title}</p>
-                        {item.sub && <p className="text-[11px] text-zinc-400 truncate">{item.sub}</p>}
+                        <p className="text-sm text-white truncate">{highlight(item.title, query)}</p>
+                        {item.sub && <p className="text-[11px] text-zinc-400 truncate">{highlight(item.sub, query)}</p>}
                       </div>
-                      {isActive && <CornerDownLeftIcon size={13} className="text-zinc-500 shrink-0" aria-hidden="true" />}
+                      {isActive && <CornerDownLeftIcon size={13} className="text-zinc-400 shrink-0" aria-hidden="true" />}
                     </button>
                   )
                 })}
@@ -192,9 +293,9 @@ export default function CommandPalette() {
           )}
         </div>
 
-        <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-t border-white/10 text-[10px] text-zinc-500">
+        <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-t border-white/10 text-[10px] text-zinc-400">
           <span className="flex items-center gap-1"><DollarSignIcon size={11} /> Tip:</span>
-          <span>↑↓ to navigate · ↵ to open · ⌘K to toggle</span>
+          <span>↑↓ to navigate · ↵ to open · ⌘K or / to toggle · ? for shortcuts</span>
         </div>
       </div>
     </div>

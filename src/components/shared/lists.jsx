@@ -1,19 +1,8 @@
 import { cn } from '@/lib/utils'
-import { SearchIcon, ChevronRightIcon } from 'lucide-react'
+import { SearchIcon, XIcon } from 'lucide-react'
 import { StatusBadge, BillingBadge, PriorityBadge } from './badges'
 
 const O = '#F47920'
-
-// ── ActionBar ─────────────────────────────────────────────────────────────────
-// Inline horizontal bar for primary actions sitting above content sections.
-
-export function ActionBar({ children, className = '' }) {
-  return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)}>
-      {children}
-    </div>
-  )
-}
 
 // ── FilterBar ─────────────────────────────────────────────────────────────────
 // Search input + filter chips. Headless-ish — pass `value`, `onChange`, `chips`.
@@ -39,8 +28,18 @@ export function FilterBar({
             value={search}
             onChange={e => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full bg-white/[0.04] border border-white/10 rounded-lg text-sm text-zinc-100 pl-8 pr-3 py-2 placeholder:text-zinc-500 focus:outline-none focus:border-white/30 transition-colors"
+            className="w-full bg-white/[0.04] border border-white/10 rounded-lg text-sm text-zinc-100 pl-8 pr-8 py-2 placeholder:text-zinc-400 focus:outline-none focus:border-white/30 transition-colors"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => onSearchChange('')}
+              aria-label="Clear search"
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 sm:w-5 sm:h-5 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06] transition-colors"
+            >
+              <XIcon size={12} />
+            </button>
+          )}
         </label>
       )}
       {chips && (
@@ -77,8 +76,11 @@ export function FilterBar({
 // on small screens. Use the `<TableHeader columns={[…]} />` helper for thead.
 
 export function ResponsiveTable({ children, className = '' }) {
+  // overflow-y-visible is required so the sticky <thead> can stick to the
+  // viewport rather than the wrapper. CSS makes overflow-y default to auto
+  // when overflow-x is auto, which silently breaks position: sticky.
   return (
-    <div className={cn('overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0', className)}>
+    <div className={cn('overflow-x-auto overflow-y-visible -mx-4 sm:mx-0 px-4 sm:px-0', className)}>
       <table className="w-full text-sm border-separate border-spacing-y-1.5">
         {children}
       </table>
@@ -86,24 +88,65 @@ export function ResponsiveTable({ children, className = '' }) {
   )
 }
 
-export function TableHeader({ columns }) {
+// columns: [{ key, label, align?, width?, className?, sortable? }]
+//
+// Optional sort support: pass `sort = { field, direction }` and `onSort(field)`.
+// Columns with `sortable: true` render a clickable button-style header showing
+// the current direction when active. Backwards-compatible — old call sites
+// without sort props render exactly as before.
+export function TableHeader({ columns, sort, onSort }) {
   return (
     <thead>
       <tr>
-        {columns.map(col => (
-          <th
-            key={col.key}
-            className={cn(
-              'text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400 px-3 pb-2',
-              col.align === 'right'  && 'text-right',
-              col.align === 'center' && 'text-center',
-              col.className,
-            )}
-            style={col.width ? { width: col.width } : undefined}
-          >
-            {col.label}
-          </th>
-        ))}
+        {columns.map(col => {
+          const active = sort?.field === col.key
+          const baseCls = cn(
+            'text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400 px-3 pt-2 pb-2',
+            // Sticky to viewport while scrolling long queues. zinc-900/95 +
+            // backdrop-blur matches the dark surface under the panel so rows
+            // don't bleed through during the scroll.
+            'sticky top-0 z-10 bg-zinc-900/95 backdrop-blur',
+            col.align === 'right'  && 'text-right',
+            col.align === 'center' && 'text-center',
+            col.className,
+          )
+          if (col.sortable && onSort) {
+            return (
+              <th
+                key={col.key}
+                scope="col"
+                aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                style={col.width ? { width: col.width } : undefined}
+                className={baseCls}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSort(col.key)}
+                  className={cn(
+                    'inline-flex items-center gap-1 transition-colors hover:text-zinc-200',
+                    active && 'text-white',
+                  )}
+                  style={active ? { color: O } : undefined}
+                >
+                  {col.label}
+                  <span aria-hidden="true" className="text-[8px] leading-none">
+                    {active ? (sort.direction === 'asc' ? '▲' : '▼') : '↕'}
+                  </span>
+                </button>
+              </th>
+            )
+          }
+          return (
+            <th
+              key={col.key}
+              scope="col"
+              className={baseCls}
+              style={col.width ? { width: col.width } : undefined}
+            >
+              {col.label}
+            </th>
+          )
+        })}
       </tr>
     </thead>
   )
@@ -140,53 +183,6 @@ export function TableCell({ children, align, className = '', first, last, onClic
     >
       {children}
     </td>
-  )
-}
-
-// ── JobRow ────────────────────────────────────────────────────────────────────
-// Compact row used inside DataPanels to list jobs that need attention.
-
-export function JobRow({
-  job,
-  onClick,
-  meta,         // optional ReactNode rendered as the right-side detail
-  badges,       // optional array of badge ReactNodes
-  action,       // optional trailing action node (e.g., "Open ›")
-  className = '',
-}) {
-  const label = job?.name || job?.client?.split?.(' ')?.[0] || job?.id || '—'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg',
-        'border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15',
-        'text-left transition-colors',
-        className,
-      )}
-    >
-      <span className="text-[11px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
-        {job?.id || '—'}
-      </span>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-zinc-100 truncate">{label}</p>
-        {meta && (
-          <p className="text-[11px] text-zinc-400 truncate mt-0.5">{meta}</p>
-        )}
-      </div>
-      {badges && badges.length > 0 && (
-        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
-          {badges}
-        </div>
-      )}
-      {action ? action : (
-        <ChevronRightIcon
-          size={16}
-          className="text-zinc-400 shrink-0 transition-transform group-hover:translate-x-0.5"
-        />
-      )}
-    </button>
   )
 }
 

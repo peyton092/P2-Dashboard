@@ -1,8 +1,26 @@
+import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 
 const O = '#F47920'
 
+// Canonical status color palette — single source of truth. Anywhere in the
+// app that needs a "success / warning / critical / info" color should
+// reference these rather than redeclaring hex literals. Pair with TONE below
+// when you need bg + border variants too.
+export const STATUS_COLORS = {
+  brand:    O,
+  success:  '#22c55e',
+  warning:  '#eab308',
+  critical: '#ef4444',
+  info:     '#3b82f6',
+  cyan:     '#06b6d4',
+  neutral:  '#9ca3af',
+  mute:     '#6b7280',
+}
+
 // Existing-palette tones only. Do NOT introduce new colors.
+// Exposed externally as STATUS_TONES (the local name is kept as TONE for
+// brevity in this file).
 const TONE = {
   brand:    { fg: O,         bg: O + '22',         bd: O + '55' },
   success:  { fg: '#22c55e', bg: '#22c55e22',      bd: '#22c55e55' },
@@ -13,6 +31,7 @@ const TONE = {
   neutral:  { fg: '#9ca3af', bg: 'rgba(255,255,255,0.06)', bd: 'rgba(255,255,255,0.12)' },
   mute:     { fg: '#6b7280', bg: 'rgba(255,255,255,0.04)', bd: 'rgba(255,255,255,0.08)' },
 }
+export { TONE as STATUS_TONES }
 
 const SIZE = {
   xs: 'text-[9px] px-1.5 py-0.5 tracking-wide',
@@ -89,6 +108,33 @@ const PRIORITY = {
   MEDIUM:   { tone: 'warning',  label: 'Medium'   },
   LOW:      { tone: 'neutral',  label: 'Low'      },
 }
+// Small "Live" indicator used in page-header `meta` slots. Tracks
+// navigator.onLine so the label switches to "Offline" (amber) when the
+// browser loses connectivity — pairs with the global OfflineBanner so
+// users see one consistent connectivity signal across the chrome.
+export function LiveDot({ liveLabel = 'Live', offlineLabel = 'Offline' }) {
+  const initial = typeof navigator === 'undefined' ? true : navigator.onLine
+  const [online, setOnline] = useState(initial)
+  useEffect(() => {
+    const on  = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => {
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+    }
+  }, [])
+  const color = online ? '#22c55e' : '#eab308'
+  const label = online ? liveLabel : offlineLabel
+  return (
+    <span className="inline-flex items-center gap-1.5" aria-live="polite">
+      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />
+      <span className="tracking-wider text-[10px] uppercase" style={{ color }}>{label}</span>
+    </span>
+  )
+}
+
 export function PriorityBadge({ priority, size = 'sm', className = '' }) {
   const meta = PRIORITY[priority] || PRIORITY.MEDIUM
   return <Pill tone={meta.tone} size={size} className={className}>{meta.label}</Pill>

@@ -1,15 +1,25 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useRef, useEffect } from 'react'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { storage } from '../firebase'
 import { useData } from '../DataContext'
-import { useJobFiles } from '../hooks/useFirestore'
+import { useJobFiles, addJobFile, useJobTasks, updateJob, addSubmit } from '../hooks/useFirestore'
+import { MessageSquareIcon, UploadIcon, CheckSquareIcon } from 'lucide-react'
+import JobTasks from './JobTasks'
+import { pushRecentJob } from '../lib/recentJobs'
+import { copyText } from '../lib/clipboard'
+import { safeHref } from '../lib/safeHref'
+import { logError } from '../lib/errorLogger'
+import { useToast } from '@/components/ui/toast'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
-import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
+import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState, STATUS_COLORS } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
 import { classifyRisk, hasFailedInspection } from '../agent/scoring'
+import PhotoLightbox from './PhotoLightbox'
 import {
   ChevronLeftIcon, MapPinIcon, UserRoundCogIcon, HardHatIcon,
   DollarSignIcon, FilePenLineIcon, BoxesIcon, BadgeCheckIcon,
   ClipboardSignatureIcon, FileTextIcon, ImageIcon, DownloadIcon,
-  NotebookPenIcon, ActivityIcon, ReceiptIcon, CalendarIcon,
+  NotebookPenIcon, ActivityIcon, ReceiptIcon, CalendarIcon, PrinterIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -18,14 +28,14 @@ const jobLabel = (j) => j.name || j.client || j.id
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 
 const ISTATUS = {
-  passed:                 { c: '#22c55e', l: 'Passed' },
-  failed:                 { c: '#ef4444', l: 'Failed' },
-  scheduled:              { c: '#3b82f6', l: 'Scheduled' },
-  pending:                { c: '#eab308', l: 'Pending' },
-  'pending-verification': { c: '#eab308', l: 'Pending' },
-  blocked:                { c: '#ef4444', l: 'Blocked' },
-  'not-started':          { c: '#6b7280', l: 'Not started' },
-  'n/a':                  { c: '#6b7280', l: 'N/A' },
+  passed:                 { c: STATUS_COLORS.success,  l: 'Passed' },
+  failed:                 { c: STATUS_COLORS.critical, l: 'Failed' },
+  scheduled:              { c: STATUS_COLORS.info,     l: 'Scheduled' },
+  pending:                { c: STATUS_COLORS.warning,  l: 'Pending' },
+  'pending-verification': { c: STATUS_COLORS.warning,  l: 'Pending' },
+  blocked:                { c: STATUS_COLORS.critical, l: 'Blocked' },
+  'not-started':          { c: STATUS_COLORS.mute,     l: 'Not started' },
+  'n/a':                  { c: STATUS_COLORS.mute,     l: 'N/A' },
 }
 
 const PHASE_LABEL = { roughIn: 'Rough-In', trim: 'Trim', final: 'Final' }
@@ -42,23 +52,50 @@ function fmtDate(d) {
 
 const CO_TONE = { approved: 'success', rejected: 'critical', pending: 'warning' }
 
-function TradeInspections({ trade, data }) {
-  const phases = Object.keys(data || {}).filter(k => !DATE_KEYS.has(k))
+function TradeInspections({ trade, data, onSchedule }) {
+  const phases = Object.keys(data || {}).filter(k => !DATE_KEYS.has(k) && !k.endsWith('Scheduled'))
   if (phases.length === 0) return null
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
       <p className="text-xs font-bold uppercase tracking-wide text-zinc-300 mb-2 capitalize">{trade}</p>
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {phases.map(phase => {
           const status = data[phase]
           const meta = ISTATUS[status] || ISTATUS['not-started']
-          const dateKey = `${phase}Date`
-          const date = data[dateKey]
+          const date = data[`${phase}Date`]
+          const scheduled = data[`${phase}Scheduled`] || ''
+          const completed = !!date
+          // Only the rough-in and final phases get a scheduling slot; "trim"
+          // is internal work, not an inspection.
+          const canSchedule = phase === 'roughIn' || phase === 'final'
           return (
             <div key={phase} className="flex items-center justify-between gap-2 text-xs">
               <span className="text-zinc-400">{PHASE_LABEL[phase] || phase}</span>
               <span className="flex items-center gap-2">
-                {date && <span className="text-[10px] text-zinc-500">{fmtDate(date)}</span>}
+                {date && <span className="text-[10px] text-zinc-400">{fmtDate(date)}</span>}
+                {!completed && canSchedule && onSchedule && (
+                  <span className="inline-flex items-center gap-1">
+                    <input
+                      type="date"
+                      value={scheduled}
+                      onChange={(e) => onSchedule(phase, e.target.value)}
+                      className="text-xs px-2 py-1.5 rounded-md bg-white/[0.04] border border-white/10 text-zinc-200 focus:outline-none focus:border-white/30 min-h-8 min-w-[120px]"
+                      title={`Schedule ${trade} ${PHASE_LABEL[phase] || phase}`}
+                      aria-label={`Schedule ${trade} ${PHASE_LABEL[phase] || phase}`}
+                    />
+                    {scheduled && (
+                      <button
+                        type="button"
+                        onClick={() => onSchedule(phase, '')}
+                        title="Clear scheduled date"
+                        aria-label={`Clear scheduled ${trade} ${PHASE_LABEL[phase] || phase}`}
+                        className="text-zinc-500 hover:text-red-400 p-1.5 rounded-md hover:bg-white/5 transition-colors"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                )}
                 <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: meta.c, backgroundColor: meta.c + '22' }}>{meta.l}</span>
               </span>
             </div>
@@ -70,9 +107,57 @@ function TradeInspections({ trade, data }) {
 }
 
 export default function JobDetail({ jobId, onBack }) {
-  const { jobs = [], extras = [], materials = [], dailyReports = [] } = useData()
+  const { jobs = [], extras = [], materials = [], dailyReports = [], submits = [] } = useData()
   const job = useMemo(() => jobs.find(j => j.id === jobId), [jobs, jobId])
   const { files } = useJobFiles(job?._docId)
+  const { tasks } = useJobTasks(jobId)
+  const openTasks = tasks.filter(t => !t.done).length
+
+  useEffect(() => { if (jobId) pushRecentJob(jobId) }, [jobId])
+
+  const toast = useToast()
+
+  const [msgSubject, setMsgSubject] = useState('')
+  const [msgBody, setMsgBody] = useState('')
+  const [postingMsg, setPostingMsg] = useState(false)
+
+  async function handlePostMessage(e) {
+    e?.preventDefault?.()
+    const subject = msgSubject.trim()
+    const body    = msgBody.trim()
+    if (!subject || !body || postingMsg) return
+    setPostingMsg(true)
+    try {
+      await addSubmit({
+        subject,
+        body,
+        jobId,
+        category: 'RFI',
+        priority: 'Medium',
+        status: 'Open',
+        portal: 'Internal',
+      })
+      setMsgSubject('')
+      setMsgBody('')
+      toast({ tone: 'success', title: 'Message posted', description: subject })
+    } catch (err) {
+      toast({ tone: 'error', title: 'Post failed', description: err.message || 'Unknown error' })
+    } finally {
+      setPostingMsg(false)
+    }
+  }
+
+  async function handleScheduleInspection(trade, phase, dateStr) {
+    if (!job?._docId) return
+    const nextTrade = { ...(job.insp?.[trade] || {}), [`${phase}Scheduled`]: dateStr || null }
+    const nextInsp  = { ...(job.insp || {}), [trade]: nextTrade }
+    try {
+      await updateJob(job._docId, { insp: nextInsp })
+      toast({ tone: 'success', title: 'Inspection scheduled', description: `${trade} ${phase} · ${dateStr || 'cleared'}` })
+    } catch (e) {
+      toast({ tone: 'error', title: 'Save failed', description: e.message || 'Unknown error' })
+    }
+  }
 
   const jobExtras = useMemo(() => extras.filter(e => e.job === jobId), [extras, jobId])
   const jobMaterials = useMemo(() => materials.filter(m => (m.job || m.jobId) === jobId), [materials, jobId])
@@ -80,11 +165,58 @@ export default function JobDetail({ jobId, onBack }) {
     () => dailyReports.filter(r => (r.jobId || r.job) === jobId).slice(0, 6),
     [dailyReports, jobId],
   )
+  const jobSubmits = useMemo(
+    () => submits.filter(s => s.jobId === jobId).slice(0, 6),
+    [submits, jobId],
+  )
+  const [lightboxIdx, setLightboxIdx] = useState(-1)
+  const fileInputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadErr, setUploadErr] = useState('')
+  const [dragOver, setDragOver] = useState(false)
+
+  const uploadOne = async (file) => {
+    if (!file || !job?._docId) return
+    setUploading(true); setUploadErr('')
+    try {
+      const path = `jobs/${job._docId}/uploads/${Date.now()}-${file.name}`
+      const sref = storageRef(storage, path)
+      await uploadBytes(sref, file)
+      const url = await getDownloadURL(sref)
+      await addJobFile(job._docId, {
+        name: file.name,
+        url,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        source: 'staff-upload',
+      })
+      toast({ tone: 'success', title: 'Uploaded', description: file.name })
+    } catch (err) {
+      logError('jobDetail.uploadFile', err)
+      setUploadErr('Upload failed — check file size or Storage rules.')
+      toast({ tone: 'error', title: 'Upload failed', description: err.message || 'Unknown error' })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleUpload = async (e) => {
+    const list = Array.from(e.target.files || [])
+    e.target.value = ''
+    for (const f of list) await uploadOne(f)
+  }
+
+  const handleDrop = async (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const list = Array.from(e.dataTransfer?.files || [])
+    for (const f of list) await uploadOne(f)
+  }
 
   if (!job) {
     return (
       <div className="space-y-4">
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
           <ChevronLeftIcon size={15} /> Back
         </button>
         <EmptyState Icon={HardHatIcon} title="Job not found" description="This job may have been removed or isn't loaded yet." />
@@ -111,16 +243,29 @@ export default function JobDetail({ jobId, onBack }) {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white mb-3">
-          <ChevronLeftIcon size={15} /> Back to jobs
-        </button>
+        {/* Sticky-on-scroll so the back affordance stays reachable on long
+            job detail pages (lots of photos/docs scroll the header off). */}
+        <div className="no-print sticky top-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-2 pb-3 mb-3 bg-zinc-950/85 backdrop-blur">
+          <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
+            <ChevronLeftIcon size={15} /> Back to jobs
+          </button>
+        </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] overflow-hidden" style={{ borderLeftWidth: 3, borderLeftColor: railColor }}>
           <div className="p-5">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-2xl font-semibold text-white">{jobLabel(job)}</h1>
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">{job.id}</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (await copyText(job.id)) toast({ tone: 'success', title: 'Copied', description: job.id })
+                    }}
+                    title="Copy job ID"
+                    className="text-xs font-medium px-2 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 hover:bg-white/[0.12] hover:text-white transition-colors"
+                  >
+                    {job.id}
+                  </button>
                   {complete
                     ? <Pill tone="success" size="xs">Complete</Pill>
                     : <Pill tone={risk?.level === 'critical' || failed ? 'critical' : risk?.level === 'warning' ? 'warning' : 'success'} size="xs">{job.status || 'active'}</Pill>}
@@ -132,11 +277,20 @@ export default function JobDetail({ jobId, onBack }) {
                 )}
                 <p className="text-sm text-zinc-400 mt-1">{job.client}{job.type ? ` · ${job.type}` : ''}</p>
               </div>
-              {hasInvoice && (
-                <button onClick={() => generateInvoicePdf(job)} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
-                  <DownloadIcon size={13} /> Invoice PDF
+              <div className="no-print flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 transition-colors"
+                  title="Print this job summary"
+                >
+                  <PrinterIcon size={13} /> Print
                 </button>
-              )}
+                {hasInvoice && (
+                  <button type="button" onClick={() => generateInvoicePdf(job)} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
+                    <DownloadIcon size={13} /> Invoice PDF
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="mt-4">
@@ -163,18 +317,29 @@ export default function JobDetail({ jobId, onBack }) {
         <MetricTile label="Open Change Orders" value={pendingCO.length} Icon={FilePenLineIcon} emphasis={pendingCO.length > 0 ? 'warning' : 'success'} sub={pendingCO.length > 0 ? fmt$(pendingCO.reduce((s, e) => s + (e.amount || 0), 0)) : 'None pending'} />
         <MetricTile label="Materials" value={jobMaterials.length} Icon={BoxesIcon} sub={`${jobMaterials.filter(m => m.status === 'delivered').length} delivered`} />
         <MetricTile label="Inspections" value={failed ? 'Failed' : complete ? 'Complete' : 'In progress'} Icon={BadgeCheckIcon} emphasis={failed ? 'critical' : complete ? 'success' : 'mute'} />
+        <MetricTile label="Open Tasks" value={openTasks} Icon={CheckSquareIcon} emphasis={openTasks > 0 ? 'warning' : 'success'} sub={tasks.length > 0 ? `${tasks.length - openTasks} done` : 'No tasks yet'} />
       </section>
 
       {/* Inspections */}
       <DataPanel title="Inspections" description="Status by trade and phase." Icon={BadgeCheckIcon}>
         {trades.length === 0 ? (
-          <p className="text-sm text-zinc-400">No inspection data for this job.</p>
+          <EmptyState Icon={BadgeCheckIcon} title="No inspections logged" description="Inspections for this job will appear once they're scheduled or recorded." />
         ) : (
           <div className="grid gap-3 sm:grid-cols-3">
-            {trades.map(t => <TradeInspections key={t} trade={t} data={job.insp[t]} />)}
+            {trades.map(t => (
+              <TradeInspections
+                key={t}
+                trade={t}
+                data={job.insp[t]}
+                onSchedule={(phase, dateStr) => handleScheduleInspection(t, phase, dateStr)}
+              />
+            ))}
           </div>
         )}
       </DataPanel>
+
+      {/* Tasks / punch list */}
+      <JobTasks jobId={jobId} />
 
       {/* Change orders */}
       <DataPanel title="Change Orders" description={jobExtras.length === 0 ? 'No change orders on this job.' : `${approvedCO.length} approved · ${pendingCO.length} pending`} Icon={FilePenLineIcon} padding="none">
@@ -212,23 +377,121 @@ export default function JobDetail({ jobId, onBack }) {
         </DataPanel>
       )}
 
+      {/* Messages & RFIs */}
+      <DataPanel
+        title="Messages & RFIs"
+        description={jobSubmits.length === 0 ? 'No messages yet — post one below.' : `${jobSubmits.length} most recent`}
+        Icon={MessageSquareIcon}
+        padding="none"
+        actions={
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'submit' } }))}
+            className="text-[11px] font-semibold text-zinc-300 hover:text-white"
+          >
+            Open inbox →
+          </button>
+        }
+      >
+        {jobSubmits.length > 0 && (
+          <ul className="divide-y divide-white/5">
+            {jobSubmits.map(s => {
+              const tone = s.status === 'Resolved' ? 'success' : s.status === 'In Progress' ? 'warning' : 'critical'
+              const when = s.createdAt?.toDate?.()?.toLocaleDateString?.() || ''
+              return (
+                <li key={s._docId} className="px-4 py-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-zinc-100 truncate">{s.subject || '(no subject)'}</span>
+                    <Pill tone={tone} size="xs">{s.status || 'Open'}</Pill>
+                    {s.priority && <span className="text-[10px] text-zinc-400">· {s.priority}</span>}
+                    {s.category && <span className="text-[10px] text-zinc-400">· {s.category}</span>}
+                  </div>
+                  {s.body && <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{s.body}</p>}
+                  {when && <p className="text-[10px] text-zinc-400 mt-1">{when}</p>}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        <form onSubmit={handlePostMessage} className="border-t border-white/5 p-3 space-y-2">
+          <input
+            type="text"
+            value={msgSubject}
+            onChange={(e) => setMsgSubject(e.target.value)}
+            placeholder="Subject"
+            className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:border-white/25"
+            aria-label="Message subject"
+          />
+          <textarea
+            value={msgBody}
+            onChange={(e) => setMsgBody(e.target.value)}
+            placeholder="Type a message or RFI…"
+            rows={2}
+            className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:border-white/25 resize-none"
+            aria-label="Message body"
+          />
+          <div className="flex items-center justify-end">
+            <button
+              type="submit"
+              disabled={!msgSubject.trim() || !msgBody.trim() || postingMsg}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ backgroundColor: O }}
+            >
+              {postingMsg ? 'Posting…' : 'Post'}
+            </button>
+          </div>
+        </form>
+      </DataPanel>
+
       {/* Documents & photos */}
-      <DataPanel title="Documents & Photos" description={files.length === 0 ? 'No files yet.' : `${photos.length} photo${photos.length === 1 ? '' : 's'} · ${docs.length} document${docs.length === 1 ? '' : 's'}`} Icon={ImageIcon}>
+      <DataPanel
+        title="Documents & Photos"
+        description={files.length === 0 ? 'No files yet.' : `${photos.length} photo${photos.length === 1 ? '' : 's'} · ${docs.length} document${docs.length === 1 ? '' : 's'}`}
+        Icon={ImageIcon}
+        actions={
+          <>
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleUpload} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || !job?._docId}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-50 disabled:cursor-wait transition-colors"
+            >
+              <UploadIcon size={12} /> {uploading ? 'Uploading…' : 'Upload'}
+            </button>
+          </>
+        }
+      >
+        {uploadErr && <p className="text-xs text-red-400 mb-2">{uploadErr}</p>}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          className={`rounded-xl transition-colors ${dragOver ? 'ring-2 ring-orange-400/60 bg-orange-400/[0.04]' : ''}`}
+        >
         {files.length === 0 ? (
-          <p className="text-sm text-zinc-400">CompanyCam photos and uploaded documents appear here.</p>
+          <p className="text-sm text-zinc-400 py-2">
+            {dragOver ? 'Drop to upload.' : 'CompanyCam photos and uploaded documents appear here. Drag files in to upload.'}
+          </p>
         ) : (
           <div className="space-y-3">
             {photos.length > 0 && (
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-                {photos.map(p => (
-                  <a key={p._docId} href={p.url} target="_blank" rel="noopener noreferrer" className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5">
-                    <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
-                  </a>
+                {photos.map((p, i) => (
+                  <button
+                    type="button"
+                    key={p._docId}
+                    onClick={() => setLightboxIdx(i)}
+                    className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 hover:border-white/25 transition-colors group"
+                    title={p.name || 'Open photo'}
+                  >
+                    <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300" loading="lazy" />
+                  </button>
                 ))}
               </div>
             )}
             {docs.map(d => (
-              <a key={d._docId} href={d.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+              <a key={d._docId} href={safeHref(d.url)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
                 <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
                 <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
                 <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
@@ -236,7 +499,15 @@ export default function JobDetail({ jobId, onBack }) {
             ))}
           </div>
         )}
+        </div>
       </DataPanel>
+
+      <PhotoLightbox
+        photos={photos}
+        index={lightboxIdx}
+        onClose={() => setLightboxIdx(-1)}
+        onIndexChange={setLightboxIdx}
+      />
 
       {/* Daily reports */}
       {jobReports.length > 0 && (
@@ -246,7 +517,7 @@ export default function JobDetail({ jobId, onBack }) {
               <li key={r._docId} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-zinc-200">{r.crewMember || r.author || 'Crew'}</span>
-                  <span className="text-[11px] text-zinc-500">{r.date || fmtDate(r.createdAt)}</span>
+                  <span className="text-[11px] text-zinc-400">{r.date || fmtDate(r.createdAt)}</span>
                 </div>
                 {r.notes && <p className="text-xs text-zinc-400 mt-1 line-clamp-3">{r.notes}</p>}
               </li>
@@ -265,7 +536,7 @@ function DetailField({ Icon, label, value, sub }) {
         {Icon && <Icon size={11} />} {label}
       </p>
       <p className="font-semibold text-zinc-100 truncate mt-0.5">{value}</p>
-      {sub && <p className="text-[10px] text-zinc-500 truncate">{sub}</p>}
+      {sub && <p className="text-[10px] text-zinc-400 truncate">{sub}</p>}
     </div>
   )
 }

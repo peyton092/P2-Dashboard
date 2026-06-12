@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react'
 import { useData } from '../DataContext'
 import { useJobFiles, addJobFile } from '../hooks/useFirestore'
+import { safeHref } from '../lib/safeHref'
+import { PageHeader, LoadingState, LiveDot } from './shared'
 import { storage } from '../firebase'
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { Button } from '@/components/ui/button'
@@ -13,17 +15,6 @@ import {
 } from 'lucide-react'
 
 const O = '#F47920'
-
-function SectionHeader({ title, sub }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  )
-}
 
 export default function ProjectFolders() {
   const { jobs } = useData()
@@ -80,7 +71,18 @@ export default function ProjectFolders() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Project Folders" sub="Per-job file management — plans, photos, PDFs, notes" />
+      <PageHeader
+        eyebrow="Documents"
+        title="Project folders"
+        subtitle="Per-job file management — plans, photos, PDFs, notes."
+        meta={
+          <>
+            <LiveDot />
+            {selectedJob ? <span>Job {selectedJob.id}</span> : <span>Choose a job to view files</span>}
+            {selectedJob && files && <span>{files.length} file{files.length === 1 ? '' : 's'}</span>}
+          </>
+        }
+      />
 
       <Card className="border-white/10">
         <CardContent className="p-4 space-y-3">
@@ -154,7 +156,7 @@ export default function ProjectFolders() {
           </CardHeader>
           <CardContent>
             {filesLoading ? (
-              <p className="text-center text-muted-foreground py-8 text-sm">Loading…</p>
+              <LoadingState label="Loading files…" />
             ) : files.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <FolderIcon size={32} className="mx-auto mb-3 opacity-30" />
@@ -189,7 +191,7 @@ export default function ProjectFolders() {
                           )}
                         </div>
                       </div>
-                      <a href={f.url} target="_blank" rel="noopener noreferrer">
+                      <a href={safeHref(f.url)} target="_blank" rel="noopener noreferrer">
                         <Button variant="ghost" size="sm" className="gap-1 h-8 px-2 text-xs hover:bg-white/10">
                           <DownloadIcon size={12} /> Download
                         </Button>

@@ -2,25 +2,25 @@ import { useEffect, useMemo, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useData } from '../DataContext'
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
   PageHeader,
   MetricTile,
   DataPanel,
-  Pill,
+  Pill, LiveDot,
   AllClearState,
   EmptyState,
 } from './shared'
 import {
   AlertCircleIcon, CheckCircleIcon,
   DollarSignIcon, ClockIcon,
-  ArrowRightIcon,
+  ArrowRightIcon, CalendarClockIcon, ShieldAlertIcon,
   // Phase 3 QA — preferred lucide names
   RadarIcon, UserRoundCogIcon, TriangleAlertIcon,
   BadgeCheckIcon, NotebookPenIcon,
   FilePenLineIcon, FolderOpenIcon, BarChart3Icon,
 } from 'lucide-react'
-import { classifyRisk } from '../agent/scoring'
+import { classifyRisk, daysSince } from '../agent/scoring'
+import { jobEvents, EVENT_META, todayKey } from '../lib/jobEvents'
 
 const O = '#F47920'
 
@@ -54,14 +54,6 @@ function jobContract(j) {
 
 const isComplete = (j) => ['complete', 'completed'].includes(j.status)
 
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
 
 const jobLabel = (j) => j.name || j.client?.split(' ')[0] || j.id
 
@@ -118,7 +110,7 @@ function useQuickBooksStatus() {
 // ── Top-level component ──────────────────────────────────────────────────────
 
 export default function CommandCenter() {
-  const { jobs = [], extras = [] } = useData()
+  const { jobs = [], extras = [], subs = [] } = useData()
   const qb = useQuickBooksStatus()
 
   // ── Derived data ────────────────────────────────────────────────────────────
@@ -214,6 +206,40 @@ export default function CommandCenter() {
       })
       .slice(0, 5)
   }, [activeJobs])
+
+  // Upcoming milestones — flat, chronological event list (today onward),
+  // sourced from the same per-job event extractor the Calendar uses.
+  const upcoming = useMemo(() => {
+    const today = todayKey()
+    return jobs
+      .flatMap(j => jobEvents(j))
+      .filter(e => e.date && e.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 8)
+  }, [jobs])
+
+  // Subcontractor compliance — flag subs with insurance or license expiring
+  // within the next 60 days (already expired = urgent). Read-only; doesn't
+  // block scheduling. Sort by soonest expiry.
+  const complianceAlerts = useMemo(() => {
+    const now = new Date()
+    const horizon = new Date(now.getTime() + 60 * 86400000)
+    const out = []
+    subs.forEach(s => {
+      ;[
+        { kind: 'Insurance', date: s.insExp },
+        { kind: 'License',   date: s.licExp },
+      ].forEach(({ kind, date }) => {
+        if (!date) return
+        const d = new Date(date + 'T00:00:00')
+        if (isNaN(d.getTime())) return
+        if (d > horizon) return
+        const days = Math.ceil((d - now) / 86400000)
+        out.push({ subId: s.id, name: s.name, co: s.co, trade: s.trade, kind, date, days })
+      })
+    })
+    return out.sort((a, b) => a.days - b.days).slice(0, 6)
+  }, [subs])
 
   // PM Workload — count active jobs per PM, weighted by issues
   const pmWorkload = useMemo(() => {
@@ -320,10 +346,7 @@ export default function CommandCenter() {
         subtitle="Live across the active portfolio. Money, risk, inspections, approvals."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
             <span>{activeJobs.length} active jobs</span>
             <span>Middle Tennessee</span>
@@ -430,6 +453,95 @@ export default function CommandCenter() {
         </DataPanel>
 
         <DataPanel
+          title="Upcoming Milestones"
+          description={upcoming.length === 0 ? 'No scheduled milestones ahead.' : 'Next ' + upcoming.length + ' target dates & inspections — newest first.'}
+          Icon={CalendarClockIcon}
+          padding="none"
+          actions={
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'calendar' } }))}
+              className="text-[11px] font-semibold text-zinc-300 hover:text-white inline-flex items-center gap-1"
+            >
+              Open calendar <ArrowRightIcon size={11} />
+            </button>
+          }
+        >
+          {upcoming.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-zinc-400 text-center">Nothing scheduled.</p>
+          ) : (
+            <ul className="divide-y divide-white/5">
+              {upcoming.map((e, i) => {
+                const meta = EVENT_META[e.type] || EVENT_META.target
+                const d = new Date(e.date + 'T00:00:00')
+                const dateLbl = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' })
+                return (
+                  <li key={`${e.jobId}-${e.type}-${i}`}>
+                    <button
+                      type="button"
+                      onClick={() => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: e.jobId } }))}
+                      className="w-full text-left flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.025] transition-colors"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: meta.color }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-zinc-100 truncate">{e.label}</p>
+                        <p className="text-[11px] text-zinc-400">{meta.label}</p>
+                      </div>
+                      <span className="text-[11px] font-semibold text-zinc-400 tabular-nums shrink-0">{dateLbl}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </DataPanel>
+
+        <DataPanel
+          title="Subcontractor Compliance"
+          description={complianceAlerts.length === 0 ? 'All insurance & licenses in good standing for the next 60 days.' : `${complianceAlerts.length} document${complianceAlerts.length === 1 ? '' : 's'} expiring soon.`}
+          Icon={ShieldAlertIcon}
+          padding="none"
+          actions={
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'subs' } }))}
+              className="text-[11px] font-semibold text-zinc-300 hover:text-white inline-flex items-center gap-1"
+            >
+              Manage subs <ArrowRightIcon size={11} />
+            </button>
+          }
+        >
+          {complianceAlerts.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-zinc-400 text-center">No compliance flags.</p>
+          ) : (
+            <ul className="divide-y divide-white/5">
+              {complianceAlerts.map((a, i) => {
+                const expired = a.days < 0
+                const urgent  = a.days >= 0 && a.days <= 14
+                const color   = expired ? '#ef4444' : urgent ? '#eab308' : '#9ca3af'
+                const label   = expired ? `${Math.abs(a.days)}d ago` : a.days === 0 ? 'Today' : `in ${a.days}d`
+                return (
+                  <li key={`${a.subId}-${a.kind}-${i}`}>
+                    <button
+                      type="button"
+                      onClick={() => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'subs' } }))}
+                      className="w-full text-left flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.025] transition-colors"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-zinc-100 truncate">{a.name}{a.co ? ` · ${a.co}` : ''}</p>
+                        <p className="text-[11px] text-zinc-400">{a.kind} {a.trade ? `· ${a.trade}` : ''}</p>
+                      </div>
+                      <span className="text-[11px] font-semibold tabular-nums shrink-0" style={{ color }}>{label}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </DataPanel>
+
+        <DataPanel
           title="Jobs At Risk"
           description="Risk-scored, top of mind."
           Icon={RadarIcon}
@@ -457,7 +569,7 @@ export default function CommandCenter() {
                 <li key={job._docId || job.id}>
                   <button
                     type="button"
-                    onClick={() => navigate('war-room')}
+                    onClick={() => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: job.id } }))}
                     className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15 transition-colors text-left"
                   >
                     <div className="flex-1 min-w-0">
@@ -665,6 +777,45 @@ function BillingRow({ label, amount, count, subtitle, tone = 'neutral' }) {
   )
 }
 
+// Hand-rolled SVG donut — avoids pulling 290 kB of recharts into the
+// Command Center chunk for a single chart. Each segment is an annular sector
+// path; padding-angle leaves a small gap between adjacent slices.
+function DonutSvg({ data, size = 140, inner = 42, outer = 62, pad = 3 }) {
+  const total = data.reduce((s, d) => s + d.value, 0) || 1
+  const cx = size / 2
+  const cy = size / 2
+  // Pre-compute the starting angle of each segment (12 o'clock = -90deg).
+  const starts = data.reduce(
+    (acc, d) => [...acc, acc[acc.length - 1] + (d.value / total) * 360],
+    [-90],
+  )
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+      {data.map((d, i) => {
+        const span = starts[i + 1] - starts[i]
+        const a0 = (starts[i] + pad / 2) * Math.PI / 180
+        const a1 = (starts[i + 1] - pad / 2) * Math.PI / 180
+        const large = (span - pad) > 180 ? 1 : 0
+        const x0o = cx + Math.cos(a0) * outer
+        const y0o = cy + Math.sin(a0) * outer
+        const x1o = cx + Math.cos(a1) * outer
+        const y1o = cy + Math.sin(a1) * outer
+        const x0i = cx + Math.cos(a1) * inner
+        const y0i = cy + Math.sin(a1) * inner
+        const x1i = cx + Math.cos(a0) * inner
+        const y1i = cy + Math.sin(a0) * inner
+        return (
+          <path
+            key={i}
+            d={`M ${x0o} ${y0o} A ${outer} ${outer} 0 ${large} 1 ${x1o} ${y1o} L ${x0i} ${y0i} A ${inner} ${inner} 0 ${large} 0 ${x1i} ${y1i} Z`}
+            fill={d.color}
+          />
+        )
+      })}
+    </svg>
+  )
+}
+
 function InspectionDonut({ summary }) {
   if (summary.total === 0) {
     return (
@@ -683,23 +834,8 @@ function InspectionDonut({ summary }) {
 
   return (
     <div className="grid grid-cols-[140px_1fr] gap-4 items-center">
-      <div className="relative h-[140px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              innerRadius={42}
-              outerRadius={62}
-              paddingAngle={3}
-              dataKey="value"
-              stroke="none"
-            >
-              {data.map((d, i) => <Cell key={i} fill={d.color} />)}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
+      <div className="relative h-[140px] flex items-center justify-center">
+        <DonutSvg data={data} />
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <p className="text-2xl font-semibold tabular-nums leading-none text-white">{summary.total}</p>
           <p className="text-[10px] uppercase tracking-wider text-zinc-400 mt-0.5">Total</p>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { doc, onSnapshot, setDoc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
+import { copyText } from '../lib/clipboard'
 import { useDailyReports } from '../hooks/useFirestore'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -107,20 +108,21 @@ async function patchScore(name, updates) {
   })
 }
 
+const reviewUrlRef = () => doc(db, 'app_settings', 'google_review')
+
 function useReviewUrl() {
   const [url, setUrl] = useState('')
   const [loaded, setLoaded] = useState(false)
-  const ref = doc(db, 'app_settings', 'google_review')
 
   useEffect(() => {
-    getDoc(ref).then(snap => {
+    getDoc(reviewUrlRef()).then(snap => {
       if (snap.exists()) setUrl(snap.data().url || '')
       setLoaded(true)
     }).catch(() => setLoaded(true))
   }, [])
 
   async function saveUrl(val) {
-    await setDoc(ref, { url: val, updatedAt: serverTimestamp() }, { merge: true })
+    await setDoc(reviewUrlRef(), { url: val, updatedAt: serverTimestamp() }, { merge: true })
     setUrl(val)
   }
 
@@ -141,7 +143,7 @@ function Chip({ color, icon: Icon, children }) {
 function Stat({ label, value, sub, color }) {
   return (
     <div>
-      <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">{label}</p>
+      <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-0.5">{label}</p>
       <p className="text-lg font-semibold" style={{ color }}>{value}</p>
       {sub && <p className="text-[10px] text-zinc-600">{sub}</p>}
     </div>
@@ -152,18 +154,18 @@ function ReviewLinkPanel({ name, url, onClose }) {
   const [copied, setCopied] = useState(false)
   const msg = `Hi! Could you take 30 seconds to leave us a Google review? It really helps the team. Here's the link: ${url} — Thanks, ${name} @ P2 Field Services`
 
-  function copyLink() {
-    navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  async function copyLink() {
+    if (await copyText(url)) { setCopied(true); setTimeout(() => setCopied(false), 2000) }
   }
-  function copyMsg() {
-    navigator.clipboard.writeText(msg).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  async function copyMsg() {
+    if (await copyText(msg)) { setCopied(true); setTimeout(() => setCopied(false), 2000) }
   }
 
   if (!url) return (
     <div className="mx-4 mb-3 p-3 rounded-lg border text-xs text-zinc-400"
       style={{ borderColor: '#ffffff15', backgroundColor: '#ffffff08' }}>
       No Google Review URL set. Configure it in the link settings above.
-      <button onClick={onClose} className="ml-3 underline text-zinc-500">Close</button>
+      <button type="button" onClick={onClose} className="ml-3 underline text-zinc-400">Close</button>
     </div>
   )
 
@@ -174,13 +176,13 @@ function ReviewLinkPanel({ name, url, onClose }) {
         <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
           <StarIcon size={12} /> Google Review Link — {name}
         </span>
-        <button onClick={onClose} className="p-0.5 hover:bg-white/10 rounded">
+        <button type="button" onClick={onClose} aria-label="Close" title="Close" className="p-0.5 hover:bg-white/10 rounded">
           <XIcon size={12} color="#6b7280" />
         </button>
       </div>
       <div className="flex items-center gap-2 bg-white/5 rounded p-2">
         <span className="text-xs text-zinc-400 truncate flex-1">{url}</span>
-        <button onClick={copyLink}
+        <button type="button" onClick={copyLink}
           className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors"
           style={{ backgroundColor: copied ? '#22c55e22' : '#ffffff11', color: copied ? '#22c55e' : '#9ca3af' }}>
           {copied ? <CheckIcon size={11} /> : <LinkIcon size={11} />}
@@ -190,7 +192,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
       <div className="bg-white/5 rounded p-2">
         <p className="text-[11px] text-zinc-400 mb-1.5">Pre-written text message:</p>
         <p className="text-[11px] text-zinc-300 leading-relaxed">{msg}</p>
-        <button onClick={copyMsg}
+        <button type="button" onClick={copyMsg}
           className="mt-2 text-[11px] px-2 py-1 rounded flex items-center gap-1"
           style={{ backgroundColor: '#eab30822', color: '#eab308' }}>
           <LinkIcon size={10} /> Copy full message
@@ -202,7 +204,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
 
 // ── Per-person expandable card ─────────────────────────────────────────────────
 
-function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, onLogReferral, onLogBonus }) {
+function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral, onLogBonus }) {
   const [expanded, setExpanded] = useState(false)
   const [showReviewLink, setShowReviewLink] = useState(false)
   const { name, auto, man, totalPts } = entry
@@ -235,7 +237,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm text-white">{name}</p>
           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-            <span className="text-xs text-zinc-500">{ROLES[name]}</span>
+            <span className="text-xs text-zinc-400">{ROLES[name]}</span>
             {auto.reportCount > 0 && <Chip color={O} icon={ClipboardListIcon}>{auto.reportCount} rpts</Chip>}
             {auto.inspReadyCount > 0 && <Chip color="#22c55e" icon={ShieldCheckIcon}>{auto.inspReadyCount} insp</Chip>}
           </div>
@@ -249,7 +251,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
 
         <div className="text-right shrink-0 mr-1" onClick={e => e.stopPropagation()}>
           <p className="font-semibold text-base" style={{ color: isLeader ? O : '#e5e7eb' }}>{totalPts}</p>
-          <p className="text-[10px] text-zinc-500">pts</p>
+          <p className="text-[10px] text-zinc-400">pts</p>
         </div>
 
         {/* Action buttons — stop propagation so they don't toggle expand */}
@@ -292,7 +294,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
           <span className="text-sm text-white flex-1">Log +1 Referral for {name} <span className="text-zinc-400">(+{PTS.referral} pts)</span></span>
           <Button size="sm" className="h-7 text-xs" style={{ backgroundColor: '#22c55e', color: '#fff' }}
             onClick={() => onLogReferral(name)}>Confirm</Button>
-          <button onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
+          <button type="button" onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
             <XIcon size={13} color="#6b7280" />
           </button>
         </div>
@@ -315,7 +317,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
             onClick={() => onLogBonus(name, isAdding.value, isAdding.note)}>
             Award Bonus
           </Button>
-          <button onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
+          <button type="button" onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
             <XIcon size={13} color="#6b7280" />
           </button>
         </div>
@@ -332,7 +334,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, o
             <Stat label="Total" value={totalPts} sub="this month" color={isLeader ? O : '#e5e7eb'} />
           </div>
 
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-zinc-500">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-zinc-400">
             <span className="inline-flex items-center gap-1"><ClipboardListIcon size={11} /> {auto.reportCount} reports submitted (+{auto.reportCount * PTS.report})</span>
             <span className="inline-flex items-center gap-1"><CheckCircleIcon size={11} /> {auto.taskCount} tasks completed (+{auto.taskCount * PTS.task})</span>
             {auto.inspReadyCount > 0 && <span className="inline-flex items-center gap-1 text-green-600"><BadgeCheckIcon size={11} /> {auto.inspReadyCount} inspection-ready flags (+{auto.inspReadyCount * PTS.inspReady})</span>}
@@ -366,9 +368,9 @@ function PodiumCard({ name, pts, rank }) {
         {name[0]}
       </div>
       <p className="text-xs font-bold text-white">{name}</p>
-      <p className="text-[10px] text-zinc-500">{ROLES[name]}</p>
+      <p className="text-[10px] text-zinc-400">{ROLES[name]}</p>
       <p className="font-semibold text-base mt-0.5" style={{ color: isFirst ? O : '#9ca3af' }}>{pts}</p>
-      <p className="text-[10px] text-zinc-500">pts</p>
+      <p className="text-[10px] text-zinc-400">pts</p>
     </div>
   )
 }
@@ -378,13 +380,11 @@ function PodiumCard({ name, pts, rank }) {
 export default function TeamLeaderboard() {
   const { dailyReports, loading: reportsLoading } = useDailyReports()
   const { scores, loading: scoresLoading } = useCrewScores()
-  const { url: reviewUrl, loaded: urlLoaded, saveUrl } = useReviewUrl()
+  const { url: reviewUrl, saveUrl } = useReviewUrl()
   const [adding, setAdding] = useState(null)
   const [showUrlEdit, setShowUrlEdit] = useState(false)
   const [urlDraft, setUrlDraft] = useState('')
   const [savingUrl, setSavingUrl] = useState(false)
-
-  useEffect(() => { if (urlLoaded) setUrlDraft(reviewUrl) }, [urlLoaded, reviewUrl])
 
   const loading = reportsLoading || scoresLoading
 
@@ -464,7 +464,7 @@ export default function TeamLeaderboard() {
         <div className="flex items-center gap-2">
           <button
             title="Configure Google Review URL"
-            onClick={() => setShowUrlEdit(v => !v)}
+            onClick={() => { if (!showUrlEdit) setUrlDraft(reviewUrl); setShowUrlEdit(v => !v) }}
             className="p-2 rounded-lg transition-colors"
             style={{ backgroundColor: showUrlEdit ? O + '22' : '#ffffff11', color: showUrlEdit ? O : '#6b7280' }}>
             <SettingsIcon size={14} />
@@ -499,7 +499,7 @@ export default function TeamLeaderboard() {
                 disabled={savingUrl} onClick={handleSaveUrl}>
                 {savingUrl ? 'Saving…' : 'Save'}
               </Button>
-              <button onClick={() => setShowUrlEdit(false)} className="p-1.5 hover:bg-white/10 rounded">
+              <button type="button" onClick={() => setShowUrlEdit(false)} className="p-1.5 hover:bg-white/10 rounded">
                 <XIcon size={13} color="#6b7280" />
               </button>
             </div>
@@ -524,7 +524,7 @@ export default function TeamLeaderboard() {
                 <span className="text-xs text-zinc-400">{s.label}</span>
               </div>
               <p className="text-2xl font-semibold" style={{ color: s.color }}>{s.value}</p>
-              {s.pts != null && <p className="text-xs text-zinc-500 mt-0.5">{s.pts.toLocaleString()} pts earned</p>}
+              {s.pts != null && <p className="text-xs text-zinc-400 mt-0.5">{s.pts.toLocaleString()} pts earned</p>}
             </CardContent>
           </Card>
         ))}

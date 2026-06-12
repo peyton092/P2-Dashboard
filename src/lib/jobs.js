@@ -3,7 +3,7 @@ import { classifyRisk, hasFailedInspection, isBillingReady, daysSince } from '..
 // Job-level helpers. Pure data + pure derivation. No React or Firestore
 // dependency. Moved out of src/App.jsx in Phase 18.
 
-export const jobName = (j) => j.name || j.client.split(' ')[0]
+export const jobName = (j) => j.name || j.client?.split(' ')?.[0] || j.id || '—'
 
 export const phaseLabel = (p) => p >= 67 ? 'Final Phase' : p >= 34 ? 'Mid Phase' : 'Rough-In Phase'
 
@@ -63,10 +63,13 @@ export function jobNextAction(j) {
   if (j.status === 'blocked')      return 'Unblock job'
   if (j.status === 'hold')         return 'Release hold'
   if (j.status === 'needs-action') return 'Resolve open item'
-  const risk = classifyRisk(j)
-  if (risk?.level === 'critical')  return 'Triage — high risk'
+  // Stale check runs before the generic critical-risk fallback so the more
+  // specific "field update needed" copy wins for jobs that are critical only
+  // because they've gone too long without an update.
   const stale = jobStaleness(j)
   if (stale !== null && stale >= 7) return 'Field update needed'
+  const risk = classifyRisk(j)
+  if (risk?.level === 'critical')  return 'Triage — high risk'
   if (stale !== null && stale >= 3) return 'Daily status check-in'
   if (isBillingReady(j))           return 'Submit invoice — milestone earned'
   return 'Continue scheduled work'

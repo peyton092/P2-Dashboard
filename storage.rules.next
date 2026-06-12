@@ -1,0 +1,81 @@
+rules_version = '2';
+
+// P2 Field Control — Cloud Storage rules. **STAGED, NOT DEPLOYED.**
+//
+// Tightens the read posture so an authenticated user can no longer fetch
+// arbitrary files by URL guess — they have to own the related job (audit
+// IMPROVEMENT_PLAN item 4 / storage path scoping).
+//
+// Upload paths in use today (see grep for `storageRef`):
+//   jobs/{jobDocId}/files/...           — staff project-folder uploads
+//   jobs/{jobDocId}/uploads/...         — staff job-detail uploads
+//   jobs/{jobDocId}/client-uploads/...  — client portal uploads
+//   daily_reports/{date}/{jobId}/...    — crew-report photos (jobId is the
+//                                         job's *business* id, not _docId)
+//
+// ROLLOUT PRECONDITIONS:
+//   ☐  `backfillScoping` has run in prod (so every job doc carries tenantId
+//      + clientUids — storage rules cross-reference those).
+//   ☐  Smoke-test in the emulator:
+//        - staff uploads a file, then reads it          → ok
+//        - client reads a file under their own job      → ok
+//        - client reads a file under someone else's job → DENIED
+//        - random signed-in user fetches the file URL   → DENIED
+//   ☐  CrewReport uploads use the job's _docId (Firestore doc id), not its
+//      business `id`. Today the path is `daily_reports/{date}/{jobIdVal}/...`
+//      where `jobIdVal` is the business id; the daily-reports clause below
+//      handles that by looking up by jobs.id rather than doc id. If you
+//      ever migrate the upload path to use _docId, switch the clause to
+//      direct doc lookup.
+//
+// ROLLBACK: redeploy the previous `storage.rules` (instant).
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Shared helpers ──────────────────────────────────────────────────────
+    function signedIn() { return request.auth != null; }
+
+    function userRole() {
+      return request.auth.token.role != null
+        ? request.auth.token.role
+        : firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isStaff() {
+      return signedIn() && (userRole() == 'owner' || userRole() == 'internal');
+    }
+    function userTenantId() {
+      return request.auth.token.tenantId != null
+        ? request.auth.token.tenantId
+        : firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.tenantId;
+    }
+
+    // True if the caller owns the job doc at jobs/{jobDocId} via the same
+    // semantics as firestore.rules' ownsRecord().
+    function ownsJob(jobDocId) {
+      let job = firestore.get(/databases/(default)/documents/jobs/$(jobDocId)).data;
+      return isStaff()
+          || (job.tenantId != null && job.tenantId == userTenantId())
+          || (job.clientUids is list && request.auth.uid in job.clientUids);
+    }
+
+    // ── jobs/{jobDocId}/... — read/write scoped to job owners ──────────────
+    match /jobs/{jobDocId}/{allPaths=**} {
+      allow read: if signedIn() && ownsJob(jobDocId);
+      allow write: if signedIn()
+                   && ownsJob(jobDocId)
+                   && request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // ── daily_reports/{date}/{jobId}/... — staff only (crew-internal) ──────
+    // Client portal never lists these, so locking them to staff is safe and
+    // avoids a Firestore lookup-by-business-id (slower path).
+    match /daily_reports/{allPaths=**} {
+      allow read:  if isStaff();
+      allow write: if isStaff()
+                   && request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // Default deny: any other path is inaccessible.
+  }
+}

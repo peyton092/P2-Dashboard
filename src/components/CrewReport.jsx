@@ -1,7 +1,8 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { addDailyReport } from '../hooks/useFirestore'
+import { generateDailyReportPdf } from '../lib/generateDailyReportPdf'
 import { useData } from '../DataContext'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,7 +19,7 @@ import {
   CheckCircleIcon, CheckIcon, CameraIcon, XIcon, ImageIcon, LoaderIcon,
   HardHatIcon, ClipboardListIcon, NotebookPenIcon, PackageIcon,
   ShieldAlertIcon, FilePenLineIcon, BadgeCheckIcon,
-  AlertTriangleIcon, ArrowRightIcon, CalendarDaysIcon,
+  AlertTriangleIcon, ArrowRightIcon, CalendarDaysIcon, DownloadIcon,
 } from 'lucide-react'
 
 const O = '#F47920'
@@ -198,6 +199,16 @@ export default function CrewReport() {
     setPhotos(prev => [...prev, ...newPhotos])
     e.target.value = ''
   }
+
+  // Revoke any outstanding object URLs when the component unmounts, so leaving
+  // the page mid-report doesn't leak blob: URLs. A ref mirrors the latest
+  // photos (synced in an effect, not during render) so the unmount cleanup
+  // sees them without re-subscribing on every change.
+  const photosRef = useRef(photos)
+  useEffect(() => { photosRef.current = photos }, [photos])
+  useEffect(() => () => {
+    photosRef.current.forEach(p => { try { URL.revokeObjectURL(p.preview) } catch { /* already revoked */ } })
+  }, [])
 
   const removePhoto = (i) => {
     setPhotos(prev => {
@@ -419,7 +430,7 @@ export default function CrewReport() {
                   value={matUsed}
                   onChange={e => setMatUsed(e.target.value)}
                   placeholder="e.g. 12/2 Romex 50ft, 4 boxes, 2 GFCI outlets…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 resize-none"
                   rows={2}
                 />
               </div>
@@ -430,7 +441,7 @@ export default function CrewReport() {
                   value={matNeeded}
                   onChange={e => setMatNeeded(e.target.value)}
                   placeholder="e.g. 200A panel, 10/3 wire…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 resize-none"
                   rows={2}
                 />
               </div>
@@ -441,7 +452,7 @@ export default function CrewReport() {
                   value={nextStep}
                   onChange={e => setNextStep(e.target.value)}
                   placeholder="e.g. Trim panel, schedule final inspection…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 h-11"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 h-11"
                 />
               </div>
             </div>
@@ -553,7 +564,7 @@ export default function CrewReport() {
             )}
 
             {photos.length === 0 && (
-              <p className="flex items-center gap-2 text-zinc-500 text-[11px] mt-2">
+              <p className="flex items-center gap-2 text-zinc-400 text-[11px] mt-2">
                 <ImageIcon size={12} />
                 No photos attached
               </p>
@@ -661,6 +672,15 @@ function RecentReportRow({ report }) {
           {report.jobName || report.jobId || '—'}
         </span>
         <Pill tone={status.tone} size="xs">{status.label}</Pill>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); generateDailyReportPdf(report) }}
+          title="Download as PDF"
+          aria-label="Download daily report as PDF"
+          className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          <DownloadIcon size={13} />
+        </button>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-400">
         <span className="text-zinc-300 font-semibold">{report.crewMember || '—'}</span>
@@ -671,7 +691,7 @@ function RecentReportRow({ report }) {
         <span>{summary}</span>
       </div>
       {report.materialsNeeded && (
-        <p className="text-[11px] text-zinc-500 mt-1 truncate" title={report.materialsNeeded}>
+        <p className="text-[11px] text-zinc-400 mt-1 truncate" title={report.materialsNeeded}>
           Needs: {report.materialsNeeded}
         </p>
       )}

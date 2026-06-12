@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import {
   scoreJob,
@@ -13,10 +14,12 @@ import {
   PageHeader,
   MetricTile,
   DataPanel,
-  Pill,
+  Pill, LiveDot,
   EmptyState,
-  LoadingState,
+  DataSkeleton,
   FilterBar,
+  ClearFiltersButton,
+  ExportCsvButton,
   ResponsiveTable,
   TableHeader,
   TableRow,
@@ -163,9 +166,9 @@ const SORTS = [
 
 export default function WarRoom() {
   const { jobs = [], extras = [], loading } = useData()
-  const [search, setSearch]       = useState('')
-  const [filter, setFilter]       = useState('all')
-  const [zoneFilter, setZoneFilter] = useState('all')
+  const [search, setSearch]       = useStickyState('war.search', '')
+  const [filter, setFilter]       = useStickyState('war.filter', 'all')
+  const [zoneFilter, setZoneFilter] = useStickyState('war.zone', 'all')
   const [sortBy, setSortBy]       = useState('priority')
 
   // ── Derived ─────────────────────────────────────────────────────────────────
@@ -303,7 +306,7 @@ export default function WarRoom() {
           title="Field-status & dispatch"
           subtitle="Live field operations across the active portfolio."
         />
-        <LoadingState label="Loading dispatch board…" />
+        <DataSkeleton tiles={4} rows={6} />
       </div>
     )
   }
@@ -318,13 +321,27 @@ export default function WarRoom() {
         subtitle="Live across active projects. Surface blockers, ready jobs, and risk by zone."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
             <span>{kpis.active} active · {completedJobs.length} completed</span>
           </>
+        }
+        actions={
+          <ExportCsvButton
+            filename="p2-war-room"
+            columns={[
+              { label: 'Job ID',    get: r => r.job.id },
+              { label: 'Name',      get: r => r.job.name || r.job.client || '' },
+              { label: 'Address',   get: r => r.job.address || '' },
+              { label: 'PM',        get: r => r.job.pm || '' },
+              { label: 'Status',    get: r => r.job.status || '' },
+              { label: 'Risk',      get: r => r.risk?.level || '' },
+              { label: 'Zone',      get: r => getZoneId(r.job) },
+              { label: 'Stale (d)', get: r => r.stale ?? '' },
+            ]}
+            rows={filtered}
+            title="Export the current dispatch list to CSV"
+          />
         }
       />
 
@@ -455,6 +472,9 @@ export default function WarRoom() {
                           : 'No active jobs.'
               }
               tone={filter === 'blocked' || filter === 'at-risk' ? 'success' : 'neutral'}
+              action={(search.trim() || zoneFilter !== 'all' || filter !== 'all') && (
+                <ClearFiltersButton onClick={() => { setFilter('all'); setZoneFilter('all'); setSearch('') }} />
+              )}
             />
           </div>
         ) : (
@@ -514,7 +534,7 @@ function StatusPill({ status, size = 'xs' }) {
 }
 
 function RiskPill({ risk, size = 'xs' }) {
-  if (!risk) return <span className="text-zinc-500 text-xs">—</span>
+  if (!risk) return <span className="text-zinc-400 text-xs">—</span>
   const tone =
     risk.level === 'critical' ? 'critical' :
     risk.level === 'warning'  ? 'warning'  :
@@ -529,7 +549,7 @@ function RiskPill({ risk, size = 'xs' }) {
 function InspectionPills({ job }) {
   const pills = buildInspectionPills(job)
   if (pills.length === 0) {
-    return <span className="text-zinc-500 text-xs">—</span>
+    return <span className="text-zinc-400 text-xs">—</span>
   }
   return (
     <div className="flex items-center gap-1">

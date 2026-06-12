@@ -1,21 +1,22 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useData } from '../DataContext'
 import { useHistory } from '../hooks/useFirestore'
-import { PageHeader, DataPanel, Pill, EmptyState } from './shared'
+import { useStickyState } from '../lib/useStickyState'
+import { PageHeader, DataPanel, Pill, EmptyState, STATUS_COLORS, ExportCsvButton } from './shared'
 import {
   ActivityIcon, FilePenLineIcon, BadgeCheckIcon, DollarSignIcon,
   BellIcon, HardHatIcon, InfoIcon,
 } from 'lucide-react'
 
-const O = '#F47920'
+const O = STATUS_COLORS.brand
 
 const TYPE_META = {
-  'change-order': { Icon: FilePenLineIcon, color: O },
-  inspection:     { Icon: BadgeCheckIcon,  color: '#22c55e' },
-  billing:        { Icon: DollarSignIcon,  color: '#3b82f6' },
-  job:            { Icon: HardHatIcon,     color: '#eab308' },
-  notification:   { Icon: BellIcon,        color: '#9ca3af' },
-  default:        { Icon: InfoIcon,        color: '#9ca3af' },
+  'change-order': { Icon: FilePenLineIcon, color: STATUS_COLORS.brand },
+  inspection:     { Icon: BadgeCheckIcon,  color: STATUS_COLORS.success },
+  billing:        { Icon: DollarSignIcon,  color: STATUS_COLORS.info },
+  job:            { Icon: HardHatIcon,     color: STATUS_COLORS.warning },
+  notification:   { Icon: BellIcon,        color: STATUS_COLORS.neutral },
+  default:        { Icon: InfoIcon,        color: STATUS_COLORS.neutral },
 }
 
 function toMs(v) {
@@ -40,10 +41,23 @@ function relTime(ms) {
 
 const NOTIF_TYPE_MAP = { success: 'inspection', warn: 'job', error: 'job', info: 'notification' }
 
+const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime() }
+function dayBucket(ts) {
+  if (!ts) return 'Earlier'
+  const today = startOfDay(Date.now())
+  const day = startOfDay(ts)
+  const diff = Math.round((today - day) / 86400000)
+  if (diff <= 0) return 'Today'
+  if (diff === 1) return 'Yesterday'
+  if (diff < 7)   return 'Earlier this week'
+  if (diff < 30)  return 'Earlier this month'
+  return 'Older'
+}
+
 export default function Activity() {
   const { notifs = [] } = useData()
   const { history } = useHistory()
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useStickyState('activity.filter', 'all')
 
   const feed = useMemo(() => {
     const items = []
@@ -83,6 +97,22 @@ export default function Activity() {
         title="Activity log"
         subtitle="Chronological feed of changes and system events across the workspace."
         meta={<><span>{feed.length} entries</span></>}
+        actions={
+          <ExportCsvButton
+            filename="p2-activity"
+            columns={[
+              { label: 'When',   get: i => i.ts ? new Date(i.ts).toISOString() : '' },
+              { label: 'Source', key: 'source' },
+              { label: 'Type',   key: 'type' },
+              { label: 'Detail', key: 'text' },
+              { label: 'Actor',  get: i => i.actor || '' },
+              { label: 'Job',    get: i => i.jobId || '' },
+            ]}
+            rows={filtered}
+            title="Export the current activity view to CSV"
+            label="Export CSV"
+          />
+        }
       />
 
       <div className="flex gap-1.5 flex-wrap">
@@ -112,35 +142,51 @@ export default function Activity() {
             <EmptyState Icon={ActivityIcon} title="No activity yet" description="Approvals, status changes, and system events will appear here as they happen." />
           </div>
         ) : (
-          <ul className="divide-y divide-white/5">
-            {filtered.slice(0, 100).map(item => {
-              const meta = TYPE_META[item.type] || TYPE_META.default
-              const Icon = meta.Icon
-              const clickable = Boolean(item.jobId)
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    disabled={!clickable}
-                    onClick={() => clickable && window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: item.jobId } }))}
-                    className="w-full text-left flex items-start gap-3 px-4 py-3 transition-colors disabled:cursor-default enabled:hover:bg-white/[0.02]"
-                  >
-                    <div className="shrink-0 flex items-center justify-center rounded-lg mt-0.5" style={{ width: 30, height: 30, backgroundColor: meta.color + '22', color: meta.color }}>
-                      <Icon size={14} aria-hidden="true" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-zinc-100 leading-snug">{item.text}</p>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {item.actor && <span className="text-[11px] text-zinc-400">{item.actor}</span>}
-                        <span className="text-[11px] text-zinc-500">{relTime(item.ts)}</span>
-                        {item.jobId && <Pill tone="neutral" size="xs">{item.jobId}</Pill>}
-                      </div>
-                    </div>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+          (() => {
+            // Group the (capped) feed by relative day so the list reads like
+            // a timeline rather than an undifferentiated stream.
+            const slice = filtered.slice(0, 100)
+            const order = ['Today', 'Yesterday', 'Earlier this week', 'Earlier this month', 'Older', 'Earlier']
+            const grouped = slice.reduce((acc, item) => {
+              const key = dayBucket(item.ts)
+              ;(acc[key] ||= []).push(item)
+              return acc
+            }, {})
+            return order.filter(k => grouped[k]).map(k => (
+              <div key={k}>
+                <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">{k}</p>
+                <ul className="divide-y divide-white/5">
+                  {grouped[k].map(item => {
+                    const meta = TYPE_META[item.type] || TYPE_META.default
+                    const Icon = meta.Icon
+                    const clickable = Boolean(item.jobId)
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          disabled={!clickable}
+                          onClick={() => clickable && window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: item.jobId } }))}
+                          className="w-full text-left flex items-start gap-3 px-4 py-3 transition-colors disabled:cursor-default enabled:hover:bg-white/[0.02]"
+                        >
+                          <div className="shrink-0 flex items-center justify-center rounded-lg mt-0.5" style={{ width: 30, height: 30, backgroundColor: meta.color + '22', color: meta.color }}>
+                            <Icon size={14} aria-hidden="true" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-zinc-100 leading-snug">{item.text}</p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              {item.actor && <span className="text-[11px] text-zinc-400">{item.actor}</span>}
+                              <span className="text-[11px] text-zinc-400">{relTime(item.ts)}</span>
+                              {item.jobId && <Pill tone="neutral" size="xs">{item.jobId}</Pill>}
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ))
+          })()
         )}
       </DataPanel>
     </div>

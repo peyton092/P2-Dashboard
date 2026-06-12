@@ -1,13 +1,17 @@
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { useData } from '../DataContext'
+import { useStickyState } from '../lib/useStickyState'
+import { runBulk } from '../lib/runBulk'
 import { updateJob } from '../hooks/useFirestore'
-import { exportToCsv } from '../lib/exportCsv'
 import { ZONES, getZoneId } from '../agent/zones'
+import { useToast } from './ui/toast'
+import { useDialog } from './ui/dialog'
+import { cn } from '@/lib/utils'
 import {
   PageHeader,
   MetricTile,
   DataPanel,
-  Pill,
+  Pill, LiveDot,
   BillingBadge,
   FilterBar,
   ResponsiveTable,
@@ -16,12 +20,17 @@ import {
   TableCell,
   EmptyState,
   AllClearState,
-  LoadingState,
+  DataSkeleton,
+  SavedViewSelect,
+  MasterCheckbox,
+  BulkActionBar as SharedBulkActionBar,
+  ClearFiltersButton,
+  ExportCsvButton,
 } from './shared'
 import {
   DollarSignIcon, CheckCircleIcon, ClockIcon,
   FileCheckIcon, FilePenLineIcon,
-  ReceiptIcon, BanIcon, DownloadIcon, CheckIcon, XIcon,
+  ReceiptIcon, BanIcon, CheckIcon, XIcon,
   TimerIcon,
 } from 'lucide-react'
 
@@ -137,10 +146,22 @@ const SORTS = [
 
 export default function BillingQueue() {
   const { jobs = [], extras = [], loading } = useData()
-  const [search, setSearch]     = useState('')
-  const [filter, setFilter]     = useState('all')
-  const [pmFilter, setPmFilter] = useState('all')
-  const [sortBy, setSortBy]     = useState('amount')
+  const toast = useToast()
+  const { confirm } = useDialog()
+  const [search, setSearch]     = useStickyState('billing.search', '')
+  const [filter, setFilter]     = useStickyState('billing.filter', 'all')
+  const [pmFilter, setPmFilter] = useStickyState('billing.pm', 'all')
+  const [sort, setSort]         = useStickyState('billing.sort', { field: 'amount', direction: 'desc' })
+  const sortBy = sort.field
+  const setSortBy = (field) => setSort(s => ({ field, direction: s.field === field ? (s.direction === 'asc' ? 'desc' : 'asc') : 'desc' }))
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const toggleSelected = useCallback((id) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  }), [])
+  const clearSelection = useCallback(() => setSelected(new Set()), [])
 
   // Pending-CO map: jobId → count of extras awaiting builder approval.
   const pendingCOByJob = useMemo(() => {
@@ -253,13 +274,18 @@ export default function BillingQueue() {
       )
     }
     const sorted = [...list]
-    if (sortBy === 'amount')      sorted.sort((a, b) => b.billable - a.billable)
-    else if (sortBy === 'aging')  sorted.sort((a, b) => (b.agingDays ?? -1) - (a.agingDays ?? -1))
-    else if (sortBy === 'pm')     sorted.sort((a, b) => (a.job.pm || '').localeCompare(b.job.pm || ''))
-    else if (sortBy === 'zone')   sorted.sort((a, b) => getZoneId(a.job).localeCompare(getZoneId(b.job)))
-    else if (sortBy === 'name')   sorted.sort((a, b) => jobLabel(a.job).localeCompare(jobLabel(b.job)))
+    // Field comparator; direction is applied after.
+    const cmp =
+      sort.field === 'amount' ? (a, b) => a.billable - b.billable :
+      sort.field === 'aging'  ? (a, b) => (a.agingDays ?? -1) - (b.agingDays ?? -1) :
+      sort.field === 'pm'     ? (a, b) => (a.job.pm || '').localeCompare(b.job.pm || '') :
+      sort.field === 'zone'   ? (a, b) => getZoneId(a.job).localeCompare(getZoneId(b.job)) :
+      sort.field === 'job'    ? (a, b) => jobLabel(a.job).localeCompare(jobLabel(b.job)) :
+      sort.field === 'name'   ? (a, b) => jobLabel(a.job).localeCompare(jobLabel(b.job)) :
+      null
+    if (cmp) sorted.sort((a, b) => sort.direction === 'asc' ? cmp(a, b) : -cmp(a, b))
     return sorted
-  }, [enriched, filter, pmFilter, search, sortBy])
+  }, [enriched, filter, pmFilter, search, sort])
 
   const uniquePMs = useMemo(
     () => Array.from(new Set(enriched.map(e => e.job.pm).filter(Boolean))).sort(),
@@ -267,6 +293,14 @@ export default function BillingQueue() {
   )
 
   const hasActiveFilters = filter !== 'all' || pmFilter !== 'all' || search.trim() !== ''
+
+  // ── Saved views — persist the chip + PM + sort + search combo ───────────────
+  const applyView = (v) => {
+    setFilter(v.filter ?? 'all')
+    setPmFilter(v.pmFilter ?? 'all')
+    if (v.sort) setSort(v.sort)
+    setSearch(v.search ?? '')
+  }
 
   // ── Loading state ───────────────────────────────────────────────────────────
   if (loading && jobs.length === 0) {
@@ -277,7 +311,7 @@ export default function BillingQueue() {
           title="Cash control"
           subtitle="Cash flow, every job. Real-time."
         />
-        <LoadingState label="Loading billing queue…" />
+        <DataSkeleton tiles={5} rows={6} />
       </div>
     )
   }
@@ -290,10 +324,7 @@ export default function BillingQueue() {
         subtitle="What is ready to invoice, what is stuck, and what needs to happen in the next 48 hours."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{kpis.ready.count} ready · {fmtCompact(kpis.ready.amount)} billable</span>
             {kpis.aging.count > 0 && (
               <span className="text-amber-300">{kpis.aging.count} aging 30+ days</span>
@@ -301,9 +332,9 @@ export default function BillingQueue() {
           </>
         }
         actions={
-          <button
-            type="button"
-            onClick={() => exportToCsv('p2-billing-queue', [
+          <ExportCsvButton
+            filename="p2-billing-queue"
+            columns={[
               { label: 'Job ID',      get: e => e.job.id },
               { label: 'Name',        get: e => jobLabel(e.job) },
               { label: 'PM',          get: e => e.job.pm || '' },
@@ -313,12 +344,10 @@ export default function BillingQueue() {
               { label: 'Invoice Date',get: e => e.job.invoiceDate || '' },
               { label: 'Aging (days)',get: e => e.agingDays ?? '' },
               { label: 'Ready',       get: e => e.isReady ? 'yes' : 'no' },
-            ], display)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
+            ]}
+            rows={display}
             title="Export the current billing list to CSV"
-          >
-            <DownloadIcon size={13} /> Export
-          </button>
+          />
         }
       />
 
@@ -372,6 +401,12 @@ export default function BillingQueue() {
         chips={filterChips}
         trailing={
           <>
+            <SavedViewSelect
+              scope="billing"
+              currentPayload={{ filter, pmFilter, sort, search: search.trim() }}
+              onApply={applyView}
+              savePrompt='Name this billing view (e.g. "Ready + aging")'
+            />
             <select
               value={pmFilter}
               onChange={e => setPmFilter(e.target.value)}
@@ -400,6 +435,43 @@ export default function BillingQueue() {
         }
       />
 
+      {/* Bulk-action bar — same pattern as JobStatus */}
+      {selected.size > 0 && (
+        <BulkBillingActionBar
+          count={selected.size}
+          busy={bulkBusy}
+          onApply={async (action) => {
+            const targets = display
+              .map(r => r.job)
+              .filter(j => selected.has(j.id) && j._docId)
+            if (targets.length === 0) { clearSelection(); return }
+            const verb =
+              action === 'invoiced' ? 'mark invoiced' :
+              action === 'hold'     ? 'place on hold' :
+              action === 'release'  ? 'release hold on' :
+              'update'
+            const ok = await confirm({
+              title: `${verb[0].toUpperCase() + verb.slice(1)}?`,
+              description: `This affects ${targets.length} job${targets.length === 1 ? '' : 's'}.`,
+              confirmLabel: verb[0].toUpperCase() + verb.slice(1),
+              tone: action === 'hold' ? 'destructive' : 'default',
+            })
+            if (!ok) return
+            const patch =
+              action === 'invoiced' ? { billingStatus: 'invoiced' } :
+              action === 'hold'     ? { billingStatus: 'hold' } :
+              action === 'release'  ? { billingStatus: 'not-invoiced' } :
+              null
+            if (!patch) return
+            setBulkBusy(true)
+            await runBulk(targets, j => updateJob(j._docId, patch), toast, { noun: 'job' })
+            clearSelection()
+            setBulkBusy(false)
+          }}
+          onClear={clearSelection}
+        />
+      )}
+
       {/* Main work queue */}
       <DataPanel
         title="Billing Work Queue"
@@ -411,7 +483,11 @@ export default function BillingQueue() {
       >
         {display.length === 0 ? (
           <div className="p-5">
-            <EmptyStateForFilter filter={filter} hasSearch={Boolean(search.trim() || pmFilter !== 'all')} />
+            <EmptyStateForFilter
+              filter={filter}
+              hasSearch={Boolean(search.trim() || pmFilter !== 'all')}
+              onClear={() => { setFilter('all'); setPmFilter('all'); setSearch('') }}
+            />
           </div>
         ) : (
           <>
@@ -419,21 +495,50 @@ export default function BillingQueue() {
             <div className="hidden md:block px-3 sm:px-4 pb-3 pt-1">
               <ResponsiveTable>
                 <TableHeader
+                  sort={sort}
+                  onSort={setSortBy}
                   columns={[
-                    { key: 'job',     label: 'Job',          width: '14%' },
-                    { key: 'builder', label: 'Customer',     width: '14%' },
-                    { key: 'amount',  label: 'Billable',     width: '10%', align: 'right' },
+                    {
+                      key: 'sel',
+                      width: '3%',
+                      label: (
+                        <MasterCheckbox
+                          state={
+                            display.every(r => selected.has(r.job.id)) && display.length > 0 ? 'all'
+                            : display.some(r => selected.has(r.job.id)) ? 'some'
+                            : 'none'
+                          }
+                          onClick={() => {
+                            const allSelected = display.every(r => selected.has(r.job.id))
+                            if (allSelected) {
+                              clearSelection()
+                            } else {
+                              setSelected(new Set(display.map(r => r.job.id)))
+                            }
+                          }}
+                          ariaLabel="Select all visible jobs"
+                        />
+                      ),
+                    },
+                    { key: 'job',     label: 'Job',          width: '13%', sortable: true },
+                    { key: 'builder', label: 'Customer',     width: '13%' },
+                    { key: 'amount',  label: 'Billable',     width: '10%', align: 'right', sortable: true },
                     { key: 'status',  label: 'Billing',      width: '10%' },
-                    { key: 'docs',    label: 'Docs',         width: '12%' },
+                    { key: 'docs',    label: 'Docs',         width: '11%' },
                     { key: 'apr',     label: 'Approval',     width: '12%' },
-                    { key: 'pm',      label: 'PM',           width: '10%' },
-                    { key: 'aging',   label: 'Aging',        width: '8%' },
+                    { key: 'pm',      label: 'PM',           width: '10%', sortable: true },
+                    { key: 'aging',   label: 'Aging',        width: '8%',  sortable: true },
                     { key: 'next',    label: 'Next action',  width: '10%' },
                   ]}
                 />
                 <tbody>
                   {display.map(row => (
-                    <BillingRow key={row.job._docId || row.job.id} row={row} />
+                    <BillingRow
+                      key={row.job._docId || row.job.id}
+                      row={row}
+                      selected={selected.has(row.job.id)}
+                      onToggleSelect={toggleSelected}
+                    />
                   ))}
                 </tbody>
               </ResponsiveTable>
@@ -443,7 +548,11 @@ export default function BillingQueue() {
             <ul className="md:hidden p-3 space-y-2">
               {display.map(row => (
                 <li key={row.job._docId || row.job.id}>
-                  <BillingCard row={row} />
+                  <BillingCard
+                    row={row}
+                    selected={selected.has(row.job.id)}
+                    onToggleSelect={toggleSelected}
+                  />
                 </li>
               ))}
             </ul>
@@ -467,13 +576,14 @@ export default function BillingQueue() {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function EmptyStateForFilter({ filter, hasSearch }) {
+function EmptyStateForFilter({ filter, hasSearch, onClear }) {
   if (hasSearch) {
     return (
       <EmptyState
         Icon={DollarSignIcon}
         title="No jobs match those filters"
         description="Adjust or clear the search and filters above."
+        action={<ClearFiltersButton onClick={onClear} />}
       />
     )
   }
@@ -634,7 +744,7 @@ function InvoiceNumberInput({ job }) {
         onChange={e => setVal(e.target.value)}
         onBlur={handleBlur}
         placeholder="Inv #"
-        className="bg-white/[0.04] border border-white/10 rounded-md text-xs text-zinc-100 px-2 py-1 w-20 placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+        className="bg-white/[0.04] border border-white/10 rounded-md text-xs text-zinc-100 px-2 py-1 w-20 placeholder:text-zinc-400 focus:outline-none focus:border-white/30"
       />
       {saving && <span className="text-[10px] text-zinc-400">saving…</span>}
     </div>
@@ -643,7 +753,7 @@ function InvoiceNumberInput({ job }) {
 
 // ── Desktop row ──────────────────────────────────────────────────────────────
 
-function BillingRow({ row }) {
+const BillingRow = memo(function BillingRow({ row, selected = false, onToggleSelect }) {
   const { job, isReady, hasDocs, hasPendingCO, agingDays, billable, milestone } = row
   const zoneId   = getZoneId(job)
   const zone     = ZONES[zoneId] || ZONES['zone-7']
@@ -665,6 +775,26 @@ function BillingRow({ row }) {
       }
     >
       <TableCell first>
+        {onToggleSelect && (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={selected}
+            aria-label={`Select ${job.id}`}
+            onClick={() => onToggleSelect(job.id)}
+            className={cn(
+              'w-4 h-4 rounded border transition-colors flex items-center justify-center',
+              selected
+                ? 'text-white'
+                : 'bg-white/[0.04] border-white/20 text-transparent hover:border-white/40',
+            )}
+            style={selected ? { backgroundColor: O, borderColor: O } : undefined}
+          >
+            <CheckIcon size={11} strokeWidth={3} />
+          </button>
+        )}
+      </TableCell>
+      <TableCell>
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[11px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
             {job.id}
@@ -704,13 +834,13 @@ function BillingRow({ row }) {
       </TableCell>
     </TableRow>
   )
-}
+})
 
 function AgingPill({ row }) {
   const { job, agingDays, readySince, isReady } = row
   // Invoiced — show how long since invoiceDate
   if (job.billingStatus === 'invoiced' || job.billingStatus === 'partial-pay') {
-    if (agingDays == null) return <span className="text-zinc-500 text-xs">—</span>
+    if (agingDays == null) return <span className="text-zinc-400 text-xs">—</span>
     const tone = agingDays >= 60 ? 'critical' : agingDays >= 30 ? 'warning' : 'info'
     return <Pill tone={tone} size="xs">{agingDays}d</Pill>
   }
@@ -722,12 +852,12 @@ function AgingPill({ row }) {
     const tone = readySince >= 7 ? 'critical' : readySince >= 3 ? 'warning' : 'info'
     return <Pill tone={tone} size="xs">{readySince}d ready</Pill>
   }
-  return <span className="text-zinc-500 text-xs">—</span>
+  return <span className="text-zinc-400 text-xs">—</span>
 }
 
 // ── Mobile card ──────────────────────────────────────────────────────────────
 
-function BillingCard({ row }) {
+const BillingCard = memo(function BillingCard({ row, selected = false, onToggleSelect }) {
   const { job, isReady, hasDocs, hasPendingCO, agingDays, billable, milestone } = row
   const next = nextActionFor(job, { isReady, hasDocs, hasPendingCO, agingDays })
   const accent =
@@ -743,14 +873,34 @@ function BillingCard({ row }) {
       style={accent ? { borderLeftWidth: 3, borderLeftColor: accent } : undefined}
     >
       <header className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0">
-          <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">
-            {job.id}
-          </span>
-          <p className="text-base font-bold text-white mt-1.5 truncate">{jobLabel(job)}</p>
-          <p className="text-[11px] text-zinc-400 truncate">
-            {jobBuilder(job)}{job.pm ? ` · PM ${job.pm}` : ''}
-          </p>
+        <div className="flex items-start gap-2 min-w-0 flex-1">
+          {onToggleSelect && (
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={selected}
+              aria-label={`Select ${job.id}`}
+              onClick={() => onToggleSelect(job.id)}
+              className={cn(
+                'shrink-0 mt-1 w-4 h-4 rounded border transition-colors flex items-center justify-center',
+                selected
+                  ? 'text-white'
+                  : 'bg-white/[0.04] border-white/20 text-transparent hover:border-white/40',
+              )}
+              style={selected ? { backgroundColor: O, borderColor: O } : undefined}
+            >
+              <CheckIcon size={11} strokeWidth={3} />
+            </button>
+          )}
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">
+              {job.id}
+            </span>
+            <p className="text-base font-bold text-white mt-1.5 truncate">{jobLabel(job)}</p>
+            <p className="text-[11px] text-zinc-400 truncate">
+              {jobBuilder(job)}{job.pm ? ` · PM ${job.pm}` : ''}
+            </p>
+          </div>
         </div>
         <div className="text-right shrink-0">
           <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
@@ -779,4 +929,47 @@ function BillingCard({ row }) {
       </div>
     </article>
   )
+})
+
+// ── BulkBillingActionBar ─────────────────────────────────────────────────────
+// Sticky bar shown while one or more billing rows are selected. Bulk mark
+// invoiced, place hold, or release hold via the same updateJob path the
+// inline row actions use.
+
+function BulkBillingActionBar({ count, busy, onApply, onClear }) {
+  return (
+    <SharedBulkActionBar
+      count={count}
+      busy={busy}
+      onClear={onClear}
+      ariaLabel="Bulk billing actions"
+    >
+      <button
+        type="button"
+        onClick={() => onApply('invoiced')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md text-white disabled:opacity-60"
+        style={{ backgroundColor: O }}
+      >
+        <ReceiptIcon size={11} /> Mark invoiced
+      </button>
+      <button
+        type="button"
+        onClick={() => onApply('hold')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-white/15 text-zinc-200 hover:text-white hover:border-white/30 disabled:opacity-60"
+      >
+        <BanIcon size={11} /> Place hold
+      </button>
+      <button
+        type="button"
+        onClick={() => onApply('release')}
+        disabled={busy}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:border-white/25 disabled:opacity-60"
+      >
+        Release hold
+      </button>
+    </SharedBulkActionBar>
+  )
 }
+

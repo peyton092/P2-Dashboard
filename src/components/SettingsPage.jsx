@@ -9,15 +9,18 @@ import { auth, db, functions } from '../firebase'
 import { enablePushNotifications } from '../lib/push'
 import { useData } from '../DataContext'
 import { useToast } from '@/components/ui/toast'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useDialog } from '@/components/ui/dialog'
+import { PageHeader, DataPanel } from './shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   SettingsIcon, ShieldIcon, ServerIcon,
   BellIcon, MailIcon, BrainCircuitIcon, CameraIcon, MapPinIcon,
   ClipboardListIcon, DollarSignIcon, ZapIcon, Building2Icon,
-  LogOutIcon, CheckCircleIcon, LinkIcon,
+  LogOutIcon, CheckCircleIcon, LinkIcon, KeyboardIcon,
+  DownloadCloudIcon,
 } from 'lucide-react'
+import { useInstallPrompt } from '../lib/installPrompt'
 
 const O = '#F47920'
 
@@ -55,6 +58,7 @@ export default function SettingsPage({ onLogout }) {
   const { jobs, settings } = useData()
   const user = auth.currentUser
   const toast = useToast()
+  const { confirm } = useDialog()
 
   const [pwMode, setPwMode]   = useState(false)
   const [curPw, setCurPw]     = useState('')
@@ -143,7 +147,13 @@ export default function SettingsPage({ onLogout }) {
 
   const handleDisconnectQB = async () => {
     if (!qbConnected) return
-    if (!window.confirm('Disconnect QuickBooks? Auto-sync of invoices will stop until you reconnect.')) return
+    const ok = await confirm({
+      title: 'Disconnect QuickBooks?',
+      description: 'Auto-sync of invoices will stop until you reconnect.',
+      confirmLabel: 'Disconnect',
+      tone: 'destructive',
+    })
+    if (!ok) return
     setQbDisconnecting(true)
     setQbError('')
     setQbInfo('')
@@ -195,7 +205,13 @@ export default function SettingsPage({ onLogout }) {
 
   const handleDisconnectCC = async () => {
     if (!ccConnected) return
-    if (!window.confirm('Disconnect CompanyCam? Photo sync will stop until you reconnect.')) return
+    const ok = await confirm({
+      title: 'Disconnect CompanyCam?',
+      description: 'Photo sync will stop until you reconnect.',
+      confirmLabel: 'Disconnect',
+      tone: 'destructive',
+    })
+    if (!ok) return
     setCcDisconnecting(true)
     setCcError('')
     setCcInfo('')
@@ -256,6 +272,34 @@ export default function SettingsPage({ onLogout }) {
     await setDoc(doc(db, 'config', 'settings'), { [key]: value }, { merge: true })
   }
 
+  const [backfillBusy, setBackfillBusy] = useState(false)
+  const { available: canInstall, install } = useInstallPrompt()
+  const handleInstall = async () => {
+    const outcome = await install()
+    if (outcome === 'accepted')      toast({ tone: 'success', title: 'Installed', description: 'Look for P2 on your home screen.' })
+    else if (outcome === 'dismissed') toast({ tone: 'info',    title: 'Install dismissed' })
+    else                              toast({ tone: 'info',    title: 'Install not available on this device' })
+  }
+  const runBackfill = async (dryRun) => {
+    setBackfillBusy(true)
+    try {
+      const { data } = await httpsCallable(functions, 'backfillScoping')({ dryRun })
+      const lines = Object.entries(data?.summary || {})
+        .map(([col, s]) => `${col}: ${s.touched}/${s.total} ${dryRun ? 'would update' : 'updated'}`)
+        .join(' · ')
+      toast({
+        tone: 'success',
+        title: dryRun ? 'Backfill preview' : 'Backfill complete',
+        description: lines || 'No documents touched.',
+      })
+    } catch (e) {
+      console.error('backfillScoping error:', e)
+      toast({ tone: 'error', title: 'Backfill failed', description: e?.message || 'See console.' })
+    } finally {
+      setBackfillBusy(false)
+    }
+  }
+
   const handleChangePw = async () => {
     if (!user || !curPw || !newPw) return
     setSaving(true)
@@ -279,20 +323,15 @@ export default function SettingsPage({ onLogout }) {
   }
 
   return (
-    <div className="space-y-8 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-semibold" style={{ color: O }}>Settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">Feature configuration, account, and system info</p>
-      </div>
+    <div className="space-y-6 max-w-2xl">
+      <PageHeader
+        eyebrow="System"
+        title="Settings"
+        subtitle="Feature configuration, account, and system info"
+      />
 
       {/* ── Feature Toggles ──────────────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <SettingsIcon size={15} style={{ color: O }} /> Feature Toggles
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y divide-white/5 px-6">
+      <DataPanel title="Feature Toggles" Icon={SettingsIcon}>
           {TOGGLE_DEFS.map(({ key, label, desc, Icon, def }) => (
             <div key={key} className="flex items-center justify-between py-3.5 gap-4">
               <div className="flex items-start gap-3 min-w-0">
@@ -307,17 +346,10 @@ export default function SettingsPage({ onLogout }) {
               <Toggle enabled={getVal(key, def)} onChange={v => handleToggle(key, v)} />
             </div>
           ))}
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── QuickBooks Integration ───────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <LinkIcon size={15} style={{ color: O }} /> QuickBooks Integration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-5 space-y-3">
+      <DataPanel title="QuickBooks Integration" Icon={LinkIcon}>
           <div className="flex items-center gap-2">
             {qbConnected
               ? <CheckCircleIcon size={14} className="text-green-400 shrink-0" />
@@ -357,17 +389,10 @@ export default function SettingsPage({ onLogout }) {
           </div>
           {qbError && <p className="text-xs text-red-400 mt-2">{qbError}</p>}
           {qbInfo  && <p className="text-xs text-green-400 mt-2">{qbInfo}</p>}
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── CompanyCam Integration ───────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <CameraIcon size={15} style={{ color: O }} /> CompanyCam Integration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-5 space-y-3">
+      <DataPanel title="CompanyCam Integration" Icon={CameraIcon}>
           <div className="flex items-center gap-2">
             {ccConnected
               ? <CheckCircleIcon size={14} className="text-green-400 shrink-0" />
@@ -433,17 +458,10 @@ export default function SettingsPage({ onLogout }) {
           </p>
           {ccError && <p className="text-xs text-red-400 mt-2">{ccError}</p>}
           {ccInfo  && <p className="text-xs text-green-400 mt-2">{ccInfo}</p>}
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── Push Notifications ───────────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <BellIcon size={15} style={{ color: O }} /> Push Notifications
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-5 space-y-3">
+      <DataPanel title="Push Notifications" Icon={BellIcon}>
           <p className="text-xs text-muted-foreground">
             Get alerts on this device for inspection results, change-order approvals, and billing updates.
           </p>
@@ -456,17 +474,10 @@ export default function SettingsPage({ onLogout }) {
           >
             {pushBusy ? 'Enabling…' : 'Enable on this device'}
           </Button>
-        </CardContent>
-      </Card>
+        </DataPanel>
 
       {/* ── Account ──────────────────────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <ShieldIcon size={15} style={{ color: O }} /> Account
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 px-6 pb-5">
+      <DataPanel title="Account" Icon={ShieldIcon}>
           <div className="flex items-center gap-2 text-sm">
             <MailIcon size={13} className="text-muted-foreground shrink-0" />
             <span className="font-medium">{user?.email || '—'}</span>
@@ -532,17 +543,126 @@ export default function SettingsPage({ onLogout }) {
               <LogOutIcon size={13} /> Sign out
             </button>
           </div>
-        </CardContent>
-      </Card>
+        </DataPanel>
+
+      {/* ── Keyboard shortcuts ───────────────────────────────────────── */}
+      <DataPanel
+        title="Keyboard shortcuts"
+        Icon={KeyboardIcon}
+        actions={
+          <Button
+            variant="outline"
+            className="border-white/15 text-zinc-200 text-xs h-8"
+            onClick={() => window.dispatchEvent(new CustomEvent('p2:open-shortcuts'))}
+          >
+            View as dialog
+          </Button>
+        }
+      >
+          <ul className="divide-y divide-white/5">
+            {[
+              { keys: ['⌘', 'K'],    label: 'Open command palette' },
+              { keys: ['Ctrl', 'K'], label: 'Open command palette (Windows / Linux)' },
+              { keys: ['/'],         label: 'Open command palette (anywhere outside an input)' },
+              { keys: ['?'],         label: 'Open the keyboard-shortcuts dialog' },
+              { keys: ['↑', '↓'],    label: 'Navigate results in the command palette' },
+              { keys: ['↵'],         label: 'Open the selected result' },
+              { keys: ['←', '→'],    label: 'Previous / next photo in the lightbox' },
+              { keys: ['Esc'],       label: 'Close the palette, lightbox, or dialog' },
+            ].map(({ keys, label }) => (
+              <li key={label} className="flex items-center justify-between gap-3 py-2">
+                <span className="text-sm text-zinc-200">{label}</span>
+                <span className="flex items-center gap-1 shrink-0">
+                  {keys.map(k => (
+                    <kbd
+                      key={k}
+                      className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-white/15 text-zinc-300 bg-white/[0.04] min-w-[18px] text-center"
+                    >{k}</kbd>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </DataPanel>
+
+      {/* ── Install this app ─────────────────────────────────────────── */}
+      {canInstall && (
+        <DataPanel
+          title="Install on this device"
+          description="Add P2 to your home screen for a native-feeling launch and offline access."
+          Icon={DownloadCloudIcon}
+        >
+          <Button onClick={handleInstall} className="text-white" style={{ backgroundColor: O }}>
+            <DownloadCloudIcon size={14} /> Install
+          </Button>
+        </DataPanel>
+      )}
+
+      {/* ── Reset stored preferences ─────────────────────────────────── */}
+      <DataPanel
+        title="Reset preferences"
+        description="Clear remembered filters, saved views, and last-visited tab. Useful when filters get into a stuck state or before handing the device to someone else."
+        Icon={KeyboardIcon}
+      >
+        <Button
+          variant="outline"
+          className="border-white/15 text-zinc-200"
+          onClick={async () => {
+            const ok = await confirm({
+              title: 'Reset all preferences?',
+              description: 'Removes saved filters, sort orders, the last-viewed tab, and saved views. Your account and data are not affected.',
+              confirmLabel: 'Reset',
+              tone: 'destructive',
+            })
+            if (!ok) return
+            try {
+              const prefixes = ['p2_sticky_', 'p2_views_', 'p2_recent_jobs']
+              const keys = Object.keys(localStorage)
+              keys.forEach(k => {
+                if (prefixes.some(p => k.startsWith(p))) localStorage.removeItem(k)
+              })
+              toast({ tone: 'success', title: 'Preferences reset', description: 'Reload to see the defaults.' })
+            } catch (err) {
+              toast({ tone: 'error', title: 'Reset failed', description: err.message || 'Try again.' })
+            }
+          }}
+        >
+          Reset filters &amp; saved views
+        </Button>
+      </DataPanel>
+
+      {/* ── Security migration ───────────────────────────────────────── */}
+      <DataPanel
+        title="Security backfill"
+        description="Phase 1 of the operational-data scoping rollout (audit C-1). Adds tenantId / clientUids to legacy docs. Idempotent. Staff only."
+        Icon={ShieldIcon}
+      >
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            variant="outline"
+            disabled={backfillBusy}
+            onClick={() => runBackfill(true)}
+            className="border-white/15 text-zinc-200"
+          >
+            {backfillBusy ? 'Working…' : 'Dry run (count only)'}
+          </Button>
+          <Button
+            disabled={backfillBusy}
+            onClick={() => runBackfill(false)}
+            className="text-white"
+            style={{ backgroundColor: O }}
+          >
+            {backfillBusy ? 'Working…' : 'Run backfill'}
+          </Button>
+        </div>
+        <p className="text-[11px] text-zinc-400 mt-2.5">
+          Run dry-run first to see what would change. See SECURITY_ROLLOUT.md
+          for the full staged plan.
+        </p>
+      </DataPanel>
 
       {/* ── System Info ──────────────────────────────────────────────── */}
-      <Card className="border-white/10 bg-white/5">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <ServerIcon size={15} style={{ color: O }} /> System
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-5">
+      <DataPanel title="System" Icon={ServerIcon}>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[
               { label: 'App Version',      value: __APP_VERSION__         },
@@ -559,8 +679,7 @@ export default function SettingsPage({ onLogout }) {
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </DataPanel>
     </div>
   )
 }

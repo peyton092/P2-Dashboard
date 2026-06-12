@@ -51,6 +51,11 @@ import { initializeApp } from 'firebase-admin/app'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { getMessaging } from 'firebase-admin/messaging'
 import { randomBytes } from 'node:crypto'
+import { buildCallerScope, ownsRecordOnServer, actorStamp } from './lib/scope.js'
+import { findExpiredStateKeys, verifyOAuthState, VERIFY_OAUTH_STATE_MESSAGES } from './lib/oauthState.js'
+import { classifyNotificationRouting } from './lib/notifications.js'
+import { addrMatches } from './lib/address.js'
+import { isTokenStale, buildRefreshedTokenDoc } from './lib/tokenLifecycle.js'
 
 initializeApp()
 const db = getFirestore()
@@ -101,6 +106,22 @@ const requireAuth = (req) => {
   return req.auth
 }
 
+// Staff-only guard — used by the data-migration callables and any future
+// admin-scope function. Falls back to the users/{uid} doc when the role
+// custom claim isn't set (matches the rule's userRole() helper).
+const requireStaff = async (req) => {
+  const auth = requireAuth(req)
+  let role = auth.token?.role
+  if (!role) {
+    const snap = await db.collection('users').doc(auth.uid).get()
+    role = snap.exists ? snap.data().role : null
+  }
+  if (role !== 'owner' && role !== 'internal') {
+    throw new HttpsError('permission-denied', 'Staff only.')
+  }
+  return auth
+}
+
 const basicAuth = () =>
   'Basic ' + Buffer.from(`${QB_CLIENT_ID.value()}:${QB_CLIENT_SECRET.value()}`).toString('base64')
 
@@ -111,8 +132,19 @@ export const qbAuth = onCall(callableOpts, async (req) => {
   const auth = requireAuth(req)
 
   const state = randomBytes(24).toString('hex')
-  await db.collection('qb_config').doc('oauth_states').set(
-    { [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
+  const ref = db.collection('qb_config').doc('oauth_states')
+
+  // Sweep expired state nonces before writing the new one so the doc can't
+  // accumulate forever (Firestore caps a single doc at 1 MiB). See
+  // lib/oauthState.js::findExpiredStateKeys for the pure expiry logic.
+  const existing = await ref.get()
+  const expired  = existing.exists
+    ? findExpiredStateKeys(existing.data() || {}, Date.now(), STATE_TTL_MS)
+    : []
+  const cleanup = Object.fromEntries(expired.map(k => [k, FieldValue.delete()]))
+
+  await ref.set(
+    { ...cleanup, [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
     { merge: true },
   )
 
@@ -142,20 +174,15 @@ export const qbCallback = onCall(callableOpts, async (req) => {
   const stateRef  = db.collection('qb_config').doc('oauth_states')
   const stateSnap = await stateRef.get()
   const stateMap  = stateSnap.exists ? (stateSnap.data() || {}) : {}
-  const stateRec  = stateMap[state]
-
-  if (!stateRec) {
-    throw new HttpsError('failed-precondition', 'OAuth state expired or invalid. Try connecting again.')
+  const verdict = verifyOAuthState({
+    stateMap, state, callerUid: auth.uid, nowMs: Date.now(), ttlMs: STATE_TTL_MS,
+  })
+  if (!verdict.ok) {
+    // Drop the expired record so it stops occupying the doc.
+    if (verdict.reason === 'expired') await stateRef.update({ [state]: FieldValue.delete() })
+    throw new HttpsError(verdict.code, VERIFY_OAUTH_STATE_MESSAGES[verdict.reason])
   }
-  const stateAge = Date.now() - (stateRec.createdAt?.toMillis?.() || 0)
-  if (stateAge > STATE_TTL_MS) {
-    await stateRef.update({ [state]: FieldValue.delete() })
-    throw new HttpsError('failed-precondition', 'OAuth state expired. Try connecting again.')
-  }
-  if (stateRec.uid && stateRec.uid !== auth.uid) {
-    throw new HttpsError('permission-denied', 'OAuth state belongs to a different user.')
-  }
-  // Burn the state so it can't be replayed
+  // Burn the state so it can't be replayed.
   await stateRef.update({ [state]: FieldValue.delete() })
 
   // ── Exchange code for tokens ──────────────────────────────────────────────
@@ -175,8 +202,10 @@ export const qbCallback = onCall(callableOpts, async (req) => {
   })
 
   if (!tokenRes.ok) {
+    // Don't log the full error body — Intuit error responses can echo the
+    // submitted `code` back, which would land in Cloud Logging (audit low).
     const errText = await tokenRes.text().catch(() => '')
-    console.error('[qbCallback] Token exchange failed:', tokenRes.status, errText)
+    console.error('[qbCallback] Token exchange failed: HTTP', tokenRes.status, '(', errText.length, 'bytes)')
     throw new HttpsError('internal', 'Intuit token exchange failed. Try again.')
   }
   const tokens = await tokenRes.json()
@@ -244,37 +273,9 @@ export const qbDisconnect = onCall(callableOpts, async (req) => {
 
 const CC_API_BASE = 'https://api.companycam.com/v2'
 
-// Street-suffix abbreviations → canonical short form, so "Drive" and "Dr"
-// (etc.) compare equal when matching CompanyCam addresses to P2 job addresses.
-const STREET_SUFFIX = {
-  street: 'st', st: 'st', avenue: 'ave', ave: 'ave', road: 'rd', rd: 'rd',
-  drive: 'dr', dr: 'dr', lane: 'ln', ln: 'ln', boulevard: 'blvd', blvd: 'blvd',
-  court: 'ct', ct: 'ct', circle: 'cir', cir: 'cir', way: 'way', place: 'pl', pl: 'pl',
-  terrace: 'ter', ter: 'ter', parkway: 'pkwy', pkwy: 'pkwy', cove: 'cv', cv: 'cv',
-  trail: 'trl', trl: 'trl', highway: 'hwy', hwy: 'hwy', crossing: 'xing', xing: 'xing',
-}
-
-function normAddr(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/[.,#]/g, ' ')
-    .split(/\s+/)
-    .map(w => STREET_SUFFIX[w] || w)
-    .filter(Boolean)
-    .join(' ')
-    .trim()
-}
-
-// Tolerant address match: exact normalized equality, prefix containment, or
-// matching "<number> <first street word>" core.
-function addrMatches(jobAddr, ccAddr) {
-  const a = normAddr(jobAddr)
-  const b = normAddr(ccAddr)
-  if (!a || !b) return false
-  if (a === b || a.startsWith(b) || b.startsWith(a)) return true
-  const core = (s) => s.split(' ').slice(0, 2).join(' ')
-  return core(a) === core(b) && /\d/.test(core(a))
-}
+// Strict address matching (audit S-12) lives in ./lib/address.js so it can be
+// unit-tested without firebase-admin. The cross-tenant photo-leakage contract
+// is pinned by the tests there.
 
 // Refresh the CompanyCam access token if it's expired; returns a valid token.
 async function getValidCcToken() {
@@ -284,9 +285,8 @@ async function getValidCcToken() {
   const t = snap.data() || {}
   if (!t.access_token) throw new HttpsError('failed-precondition', 'CompanyCam is not connected.')
 
-  const notExpired = !t.expires_at || t.expires_at - Date.now() > 60_000
-  if (notExpired) return t.access_token
-  if (!t.refresh_token) return t.access_token // long-lived token without expiry info
+  if (!isTokenStale(t, Date.now())) return t.access_token
+  if (!t.refresh_token) return t.access_token // stale but nothing to refresh with
 
   const body = new URLSearchParams({
     grant_type:    'refresh_token',
@@ -304,12 +304,7 @@ async function getValidCcToken() {
     return t.access_token
   }
   const fresh = await res.json()
-  const now = Date.now()
-  await ref.set({
-    access_token:  fresh.access_token,
-    refresh_token: fresh.refresh_token || t.refresh_token,
-    expires_at:    fresh.expires_in ? now + fresh.expires_in * 1000 : null,
-  }, { merge: true })
+  await ref.set(buildRefreshedTokenDoc(t, fresh, Date.now()), { merge: true })
   return fresh.access_token
 }
 
@@ -437,12 +432,56 @@ const NOTIF_TITLE = {
   info:    'P2 Field Control',
 }
 
+// Resolve which user docs should receive this notification (audit C-2).
+// Routing classification (pure) lives in lib/notifications.js; this wrapper
+// runs the matching Firestore query. C-2 closed the previous "blast every
+// fcm_token in the company on every write" behavior — what protects that
+// hardening from regression now is the test suite on classifyNotificationRouting.
+async function resolveNotificationRecipients(data) {
+  const route = classifyNotificationRouting(data)
+  switch (route.kind) {
+    case 'uids': {
+      return new Set(route.uids)
+    }
+    case 'role': {
+      const snap = await db.collection('users').where('role', '==', route.role).get()
+      return new Set(snap.docs.map(d => d.id))
+    }
+    case 'staff': {
+      const [owners, internals] = await Promise.all([
+        db.collection('users').where('role', '==', 'owner').get(),
+        db.collection('users').where('role', '==', 'internal').get(),
+      ])
+      return new Set([
+        ...owners.docs.map(d => d.id),
+        ...internals.docs.map(d => d.id),
+      ])
+    }
+    case 'tenant': {
+      const snap = await db.collection('users').where('tenantId', '==', route.tenantId).get()
+      return new Set(snap.docs.map(d => d.id))
+    }
+    default: return new Set()
+  }
+}
+
 export const onNotificationCreated = onDocumentCreated({ document: 'notifications/{id}', region }, async (event) => {
   const data = event.data?.data() || {}
   const body = data.msg || 'New activity on your projects.'
 
-  const tokensSnap = await db.collection('fcm_tokens').get()
-  const tokens = tokensSnap.docs.map(d => d.id).filter(Boolean)
+  const recipientUids = await resolveNotificationRecipients(data)
+  if (recipientUids.size === 0) return
+
+  // Pull only the tokens belonging to the resolved recipients.
+  // Firestore `in` clauses cap at 30 values per query, so chunk if needed.
+  const uids = [...recipientUids]
+  const tokens = []
+  const tokenDocIds = []
+  for (let i = 0; i < uids.length; i += 30) {
+    const chunk = uids.slice(i, i + 30)
+    const snap = await db.collection('fcm_tokens').where('uid', 'in', chunk).get()
+    snap.docs.forEach(d => { tokens.push(d.id); tokenDocIds.push(d.id) })
+  }
   if (tokens.length === 0) return
 
   const res = await getMessaging().sendEachForMulticast({
@@ -455,7 +494,7 @@ export const onNotificationCreated = onDocumentCreated({ document: 'notification
   res.responses.forEach((r, i) => {
     const code = r.error?.code
     if (!r.success && (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-argument')) {
-      dead.push(tokens[i])
+      dead.push(tokenDocIds[i])
     }
   })
   await Promise.all(dead.map(t => db.collection('fcm_tokens').doc(t).delete()))
@@ -473,8 +512,17 @@ export const ccAuth = onCall(ccCallableOpts, async (req) => {
   const auth = requireAuth(req)
 
   const state = randomBytes(24).toString('hex')
-  await db.collection('cc_config').doc('oauth_states').set(
-    { [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
+  const ref = db.collection('cc_config').doc('oauth_states')
+
+  // Same TTL sweep as qbAuth — see lib/oauthState.js::findExpiredStateKeys.
+  const existing = await ref.get()
+  const expired  = existing.exists
+    ? findExpiredStateKeys(existing.data() || {}, Date.now(), STATE_TTL_MS)
+    : []
+  const cleanup = Object.fromEntries(expired.map(k => [k, FieldValue.delete()]))
+
+  await ref.set(
+    { ...cleanup, [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
     { merge: true },
   )
 
@@ -505,20 +553,14 @@ export const ccCallback = onCall(ccCallableOpts, async (req) => {
   const stateRef  = db.collection('cc_config').doc('oauth_states')
   const stateSnap = await stateRef.get()
   const stateMap  = stateSnap.exists ? (stateSnap.data() || {}) : {}
-  const stateRec  = stateMap[state]
-
-  if (!stateRec) {
-    throw new HttpsError('failed-precondition', 'OAuth state expired or invalid. Try connecting again.')
+  const verdict = verifyOAuthState({
+    stateMap, state, callerUid: auth.uid, nowMs: Date.now(), ttlMs: STATE_TTL_MS,
+  })
+  if (!verdict.ok) {
+    if (verdict.reason === 'expired') await stateRef.update({ [state]: FieldValue.delete() })
+    throw new HttpsError(verdict.code, VERIFY_OAUTH_STATE_MESSAGES[verdict.reason])
   }
-  const stateAge = Date.now() - (stateRec.createdAt?.toMillis?.() || 0)
-  if (stateAge > STATE_TTL_MS) {
-    await stateRef.update({ [state]: FieldValue.delete() })
-    throw new HttpsError('failed-precondition', 'OAuth state expired. Try connecting again.')
-  }
-  if (stateRec.uid && stateRec.uid !== auth.uid) {
-    throw new HttpsError('permission-denied', 'OAuth state belongs to a different user.')
-  }
-  // Burn the state so it can't be replayed
+  // Burn the state so it can't be replayed.
   await stateRef.update({ [state]: FieldValue.delete() })
 
   // ── Exchange code for tokens ──────────────────────────────────────────────
@@ -541,7 +583,7 @@ export const ccCallback = onCall(ccCallableOpts, async (req) => {
 
   if (!tokenRes.ok) {
     const errText = await tokenRes.text().catch(() => '')
-    console.error('[ccCallback] Token exchange failed:', tokenRes.status, errText)
+    console.error('[ccCallback] Token exchange failed: HTTP', tokenRes.status, '(', errText.length, 'bytes)')
     throw new HttpsError('internal', 'CompanyCam token exchange failed. Try again.')
   }
   const tokens = await tokenRes.json()
@@ -600,5 +642,336 @@ export const ccDisconnect = onCall(ccCallableOpts, async (req) => {
   }
 
   await ref.delete()
+  return { ok: true }
+})
+
+// ============================================================================
+// Data migration: backfill tenantId / clientUids on operational docs
+// (audit C-1, step 1 of staged rollout)
+// ============================================================================
+//
+// Adds default scoping fields to existing operational documents so that the
+// follow-up rule tightening (rules require tenantId match) won't return
+// empty queries for legacy docs. Idempotent — skips docs that already
+// have the field. Staff-only.
+//
+// Defaults:
+//   tenantId   → 'p2-core' (internal default; matches TENANTS in App.jsx)
+//   clientUids → []        (filled in when a client is provisioned for a job)
+//
+// Operational collections covered (matches firestore.rules):
+//   jobs, extras, notifications, subs, materials, permits, submits,
+//   daily_reports, urgent_items, history, supplier_invoices, job_tasks
+//
+// Returns a per-collection summary. Run via the firebase console:
+//   firebase functions:shell  → backfillScoping({})
+// or from the app once you wire a Settings button.
+
+const SCOPED_COLLECTIONS = [
+  'jobs', 'extras', 'notifications', 'subs', 'materials', 'permits',
+  'submits', 'daily_reports', 'urgent_items', 'history', 'supplier_invoices',
+  'job_tasks',
+]
+
+export const backfillScoping = onCall(callableOpts, async (req) => {
+  await requireStaff(req)
+  const defaultTenant = req.data?.defaultTenantId || 'p2-core'
+  const dryRun = !!req.data?.dryRun
+
+  // Build a reverse map: jobId → [clientUid, ...]. Source of truth is each
+  // user doc's clientJobIds (the existing client-provisioning model). This
+  // lets us populate `clientUids` on the job docs so the scoped client
+  // portal query (`array-contains` uid) returns the right set when Phase 2
+  // of the rollout flips on.
+  const jobIdToClients = new Map()
+  const usersSnap = await db.collection('users').get()
+  usersSnap.docs.forEach(u => {
+    const data = u.data() || {}
+    if (!Array.isArray(data.clientJobIds)) return
+    data.clientJobIds.forEach(jobId => {
+      if (!jobIdToClients.has(jobId)) jobIdToClients.set(jobId, new Set())
+      jobIdToClients.get(jobId).add(u.id)
+    })
+  })
+
+  const summary = {}
+  for (const col of SCOPED_COLLECTIONS) {
+    const snap = await db.collection(col).get()
+    let touched = 0
+    let skipped = 0
+    const batch = db.batch()
+    let batchCount = 0
+
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data() || {}
+      const update = {}
+      if (data.tenantId === undefined || data.tenantId === null || data.tenantId === '') {
+        update.tenantId = defaultTenant
+      }
+      // For jobs: derive clientUids from the user-doc reverse map. For other
+      // collections, link by jobId if present, otherwise default to [].
+      const clientUidsExisting = Array.isArray(data.clientUids) ? data.clientUids : null
+      if (clientUidsExisting === null) {
+        let derived = []
+        if (col === 'jobs' && jobIdToClients.has(data.id)) {
+          derived = [...jobIdToClients.get(data.id)]
+        } else if (data.jobId && jobIdToClients.has(data.jobId)) {
+          derived = [...jobIdToClients.get(data.jobId)]
+        } else if (data.job && jobIdToClients.has(data.job)) {
+          derived = [...jobIdToClients.get(data.job)]
+        }
+        update.clientUids = derived
+      }
+      if (Object.keys(update).length === 0) {
+        skipped++
+        continue
+      }
+      touched++
+      if (!dryRun) {
+        batch.set(docSnap.ref, update, { merge: true })
+        batchCount++
+        // Firestore batches cap at 500 ops; commit in chunks.
+        if (batchCount >= 400) {
+          await batch.commit()
+          batchCount = 0
+        }
+      }
+    }
+    if (!dryRun && batchCount > 0) await batch.commit()
+    summary[col] = { total: snap.size, touched, skipped }
+  }
+  return { ok: true, dryRun, defaultTenant, summary }
+})
+
+// ============================================================================
+// Server-stamped portal mutations (audit H-2 + M-3)
+//
+// The client (src/hooks/useFirestore.js) calls these via httpsCallable with a
+// direct-write fallback in the catch block. Until these are deployed, behavior
+// is unchanged (fallback runs). Once deployed, every mutation routes through
+// here and the server stamps actor identity + tenant scoping from the
+// authenticated principal — so the audit trail cannot be forged and writes
+// always carry the correct scoping fields. That sets up the rules tightening
+// in step 3 (writes require `ownsRecord(request.resource.data)`).
+// ============================================================================
+
+// Load the caller's verified scope from the users/{uid} doc + custom claim.
+// Single Firestore read per callable invocation. Pure shape logic lives in
+// ./lib/scope.js so it can be unit-tested without firebase-admin.
+async function loadCallerScope(req) {
+  const auth = requireAuth(req)
+  const snap = await db.collection('users').doc(auth.uid).get()
+  const userData = snap.exists ? (snap.data() || {}) : {}
+  return buildCallerScope({ auth, userData })
+}
+
+const portalCallableOpts = { region, cors: true }
+
+// ── sendExtraToBuilder ────────────────────────────────────────────────────────
+// Internal staff (or the extra's tenant owner) marks an extra as sent to the
+// builder portal. Stamps the sender so we know who pushed it across.
+export const sendExtraToBuilder = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const { extraId } = req.data || {}
+  if (!extraId || typeof extraId !== 'string') {
+    throw new HttpsError('invalid-argument', 'extraId is required.')
+  }
+  const ref = db.collection('extras').doc(extraId)
+  const snap = await ref.get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Extra not found.')
+  if (!ownsRecordOnServer(scope, snap.data() || {})) {
+    throw new HttpsError('permission-denied', 'You do not own that record.')
+  }
+  await ref.set({
+    qbs:        true,
+    qbsSentAt:  FieldValue.serverTimestamp(),
+    qbsSentBy:  scope.uid,
+  }, { merge: true })
+  return { ok: true }
+})
+
+// ── approveExtra ──────────────────────────────────────────────────────────────
+// QBS/Builder portal user (or staff) approves a CO. The `approvedBy` display
+// label is accepted from the client but is purely informational — the verified
+// identity is stamped alongside.
+export const approveExtra = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const { extraId, approvedBy } = req.data || {}
+  if (!extraId || typeof extraId !== 'string') {
+    throw new HttpsError('invalid-argument', 'extraId is required.')
+  }
+  const ref = db.collection('extras').doc(extraId)
+  const snap = await ref.get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Extra not found.')
+  if (!ownsRecordOnServer(scope, snap.data() || {})) {
+    throw new HttpsError('permission-denied', 'You do not own that record.')
+  }
+  await ref.set({
+    status:        'approved',
+    approvedBy:    typeof approvedBy === 'string' && approvedBy.length <= 200
+      ? approvedBy
+      : (scope.displayName || 'Builder'),
+    approvedByUid: scope.uid,
+    approvedAt:    FieldValue.serverTimestamp(),
+  }, { merge: true })
+  return { ok: true }
+})
+
+// ── rejectExtra ───────────────────────────────────────────────────────────────
+export const rejectExtra = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const { extraId } = req.data || {}
+  if (!extraId || typeof extraId !== 'string') {
+    throw new HttpsError('invalid-argument', 'extraId is required.')
+  }
+  const ref = db.collection('extras').doc(extraId)
+  const snap = await ref.get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Extra not found.')
+  if (!ownsRecordOnServer(scope, snap.data() || {})) {
+    throw new HttpsError('permission-denied', 'You do not own that record.')
+  }
+  await ref.set({
+    status:        'rejected',
+    rejectedAt:    FieldValue.serverTimestamp(),
+    rejectedByUid: scope.uid,
+  }, { merge: true })
+  return { ok: true }
+})
+
+// ── passInspection / failInspection ───────────────────────────────────────────
+// Staff only — the inspections grid in src/components/Inspections.jsx is staff-
+// facing. Stamps an audit sub-record so we know who marked the result and when.
+const writeInspectionResult = async (req, result) => {
+  const scope = await loadCallerScope(req)
+  if (!scope.isStaff) throw new HttpsError('permission-denied', 'Staff only.')
+  const { jobId, trade, phase } = req.data || {}
+  if (!jobId || !trade || !phase) {
+    throw new HttpsError('invalid-argument', 'jobId, trade, phase are required.')
+  }
+  const ref = db.collection('jobs').doc(jobId)
+  const snap = await ref.get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Job not found.')
+  await ref.set({
+    [`insp.${trade}.${phase}`]: result,
+    [`inspAudit.${trade}.${phase}`]: {
+      result,
+      at:    FieldValue.serverTimestamp(),
+      byUid: scope.uid,
+      by:    scope.displayName || scope.email || 'Staff',
+    },
+  }, { merge: true })
+  return { ok: true }
+}
+
+export const passInspection = onCall(portalCallableOpts, async (req) => writeInspectionResult(req, 'passed'))
+export const failInspection = onCall(portalCallableOpts, async (req) => writeInspectionResult(req, 'failed'))
+
+// ── createJob ─────────────────────────────────────────────────────────────────
+// Staff create jobs; tenantId is server-stamped from the caller's user doc
+// (staff may pass a tenantId to scope to a different tenant explicitly).
+// Strips any caller-supplied identity / timestamp fields — server is the
+// source of truth for those.
+export const createJob = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  if (!scope.isStaff && !scope.tenantId) {
+    throw new HttpsError('permission-denied', 'Sign-in scope is required to create a job.')
+  }
+  const payload = (req.data && typeof req.data === 'object') ? { ...req.data } : {}
+  const requestedTenant = typeof payload.tenantId === 'string' ? payload.tenantId : null
+  delete payload.tenantId
+  delete payload.createdAt
+  delete payload.createdByUid
+  delete payload.createdByEmail
+  delete payload.createdBy
+
+  const tenantId = scope.isStaff
+    ? (requestedTenant || scope.tenantId || 'p2-core')
+    : scope.tenantId
+  const docData = {
+    ...payload,
+    tenantId,
+    clientUids:       Array.isArray(payload.clientUids) ? payload.clientUids : [],
+    createdByUid:     scope.uid,
+    createdByEmail:   scope.email,
+    createdAt:        FieldValue.serverTimestamp(),
+  }
+  const ref = await db.collection('jobs').add(docData)
+  return { ok: true, jobId: ref.id }
+})
+
+// ── addHistoryEntry ───────────────────────────────────────────────────────────
+// Server-stamps `actor`/`actorUid` so the history audit trail can't be forged
+// (audit M-3). The client may still pass a `summary` and a free-form payload.
+// Scoping fields (tenantId/clientUids) come from the related job when a
+// `jobId` is supplied — keeps the entry visible to the correct readers under
+// the per-tenant/per-client read rules.
+export const addHistoryEntry = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const payload = (req.data && typeof req.data === 'object') ? { ...req.data } : {}
+
+  // Strip anything the server controls so a client can't lie about identity
+  // or scoping.
+  delete payload.actor
+  delete payload.actorUid
+  delete payload.actorRole
+  delete payload.actorEmail
+  delete payload.tenantId
+  delete payload.clientUids
+  delete payload.createdAt
+
+  let tenantId = scope.tenantId
+  let clientUids = []
+  if (typeof payload.jobId === 'string' && payload.jobId.length > 0) {
+    const jobSnap = await db.collection('jobs').doc(payload.jobId).get()
+    if (jobSnap.exists) {
+      const j = jobSnap.data() || {}
+      if (j.tenantId) tenantId = j.tenantId
+      if (Array.isArray(j.clientUids)) clientUids = j.clientUids
+      // Ownership check: caller must own the job to write history against it.
+      if (!ownsRecordOnServer(scope, j)) {
+        throw new HttpsError('permission-denied', 'You do not own that record.')
+      }
+    }
+  }
+
+  await db.collection('history').add({
+    ...payload,
+    ...actorStamp(scope),
+    tenantId:   tenantId || 'p2-core',
+    clientUids,
+    createdAt:  FieldValue.serverTimestamp(),
+  })
+  return { ok: true }
+})
+
+// ── addNotificationEntry ──────────────────────────────────────────────────────
+// Server-stamps the actor and the notification's tenant scope, so a client
+// can't fabricate a notification "from" another user or another tenant.
+// onNotificationCreated already fans-out push by recipientUids/recipientRole/
+// tenantId, so this stamping also tightens push targeting.
+export const addNotificationEntry = onCall(portalCallableOpts, async (req) => {
+  const scope = await loadCallerScope(req)
+  const payload = (req.data && typeof req.data === 'object') ? { ...req.data } : {}
+
+  delete payload.actor
+  delete payload.actorUid
+  delete payload.actorRole
+  delete payload.actorEmail
+  delete payload.read
+  delete payload.createdAt
+  // Non-staff callers cannot pick which tenant a notification lands in.
+  if (!scope.isStaff) delete payload.tenantId
+
+  const tenantId = scope.isStaff
+    ? (payload.tenantId || scope.tenantId || 'p2-core')
+    : (scope.tenantId || 'p2-core')
+
+  await db.collection('notifications').add({
+    ...payload,
+    ...actorStamp(scope),
+    tenantId,
+    read:      false,
+    createdAt: FieldValue.serverTimestamp(),
+  })
   return { ok: true }
 })

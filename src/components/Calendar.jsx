@@ -1,35 +1,15 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../DataContext'
+import { exportToIcs } from '../lib/exportIcs'
+import { jobEvents, EVENT_META } from '../lib/jobEvents'
 import { PageHeader, Pill } from './shared'
-import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon } from 'lucide-react'
+import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon, DownloadIcon } from 'lucide-react'
 
 const O = '#F47920'
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
-const EVENT_META = {
-  target: { color: O,         label: 'Target completion' },
-  start:  { color: '#3b82f6', label: 'Job start' },
-  pass:   { color: '#22c55e', label: 'Inspection passed' },
-  fail:   { color: '#ef4444', label: 'Inspection failed' },
-}
-
-const jobLabel = (j) => j.name || j.client || j.id
-const isoDay = (d) => (d || '').toString().slice(0, 10)
 const openJob = (id) => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id } }))
-
-function jobEvents(job) {
-  const evs = []
-  if (job.target) evs.push({ date: isoDay(job.target), type: 'target', jobId: job.id, label: `${jobLabel(job)} — target` })
-  if (job.start)  evs.push({ date: isoDay(job.start),  type: 'start',  jobId: job.id, label: `${jobLabel(job)} — start` })
-  const insp = job.insp || {}
-  ;['electrical', 'plumbing', 'hvac'].forEach(t => {
-    const tr = insp[t] || {}
-    if (tr.roughInDate) evs.push({ date: isoDay(tr.roughInDate), type: tr.roughIn === 'failed' ? 'fail' : 'pass', jobId: job.id, label: `${job.id} ${t} rough-in` })
-    if (tr.finalDate)   evs.push({ date: isoDay(tr.finalDate),   type: tr.final === 'failed' ? 'fail' : 'pass',   jobId: job.id, label: `${job.id} ${t} final` })
-  })
-  return evs
-}
 
 export default function Calendar() {
   const { jobs = [] } = useData()
@@ -71,6 +51,16 @@ export default function Calendar() {
   })
   const goToday = () => setCursor({ year: today.getFullYear(), month: today.getMonth() })
 
+  const exportIcs = () => {
+    const events = jobs.flatMap(j => jobEvents(j).map((e, i) => ({
+      uid: `${e.jobId}-${e.type}-${e.date}-${i}`,
+      date: e.date,
+      summary: e.label,
+      description: (EVENT_META[e.type] || {}).label,
+    })))
+    exportToIcs('p2-schedule', events)
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -80,6 +70,7 @@ export default function Calendar() {
         meta={<><span>{MONTHS[cursor.month]} {cursor.year}</span><span>{monthEventCount} event{monthEventCount === 1 ? '' : 's'} this month</span></>}
         actions={
           <div className="flex items-center gap-1.5">
+            <button type="button" onClick={exportIcs} className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25" title="Download all events as a calendar file (.ics)"><DownloadIcon size={13} /> Export .ics</button>
             <button type="button" onClick={() => shift(-1)} aria-label="Previous month" className="p-2 rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:border-white/25"><ChevronLeftIcon size={14} /></button>
             <button type="button" onClick={goToday} className="text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25">Today</button>
             <button type="button" onClick={() => shift(1)} aria-label="Next month" className="p-2 rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:border-white/25"><ChevronRightIcon size={14} /></button>
@@ -100,7 +91,7 @@ export default function Calendar() {
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
         <div className="grid grid-cols-7 border-b border-white/10">
           {WEEKDAYS.map(d => (
-            <div key={d} className="px-2 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500 text-center">{d}</div>
+            <div key={d} className="px-2 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400 text-center">{d}</div>
           ))}
         </div>
         <div className="grid grid-cols-7">
@@ -117,7 +108,7 @@ export default function Calendar() {
                 >
                   {c.day}
                 </span>
-                {c.events.length > 3 && <span className="text-[9px] text-zinc-500">+{c.events.length - 3}</span>}
+                {c.events.length > 3 && <span className="text-[9px] text-zinc-400">+{c.events.length - 3}</span>}
               </div>
               <div className="space-y-1">
                 {c.events.slice(0, 3).map((e, idx) => {
@@ -143,7 +134,7 @@ export default function Calendar() {
       </div>
 
       {monthEventCount === 0 && (
-        <div className="flex items-center gap-2 text-sm text-zinc-500">
+        <div className="flex items-center gap-2 text-sm text-zinc-400">
           <CalendarClockIcon size={15} /> No scheduled events this month.
           <Pill tone="neutral" size="xs">Try another month</Pill>
         </div>

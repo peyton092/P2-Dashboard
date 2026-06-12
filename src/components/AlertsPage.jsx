@@ -1,17 +1,22 @@
 import { useState, useMemo } from 'react'
+import { useStickyState } from '../lib/useStickyState'
 import { useData } from '../DataContext'
 import { generateAlerts, ALERT_TYPE_LABEL } from '../agent/alerts'
 import { updateAgentAlert, addAgentAlert } from '../hooks/useFirestore'
 import { ZONES } from '../agent/zones'
+import { runBulk } from '../lib/runBulk'
+import { useToast } from '@/components/ui/toast'
 import {
   PageHeader,
   MetricTile,
   DataPanel,
-  Pill,
+  Pill, LiveDot,
   EmptyState,
   AllClearState,
-  LoadingState,
+  DataSkeleton,
   FilterBar,
+  ClearFiltersButton,
+  ExportCsvButton,
 } from './shared'
 import {
   AlertTriangleIcon, AlertCircleIcon, InfoIcon,
@@ -150,9 +155,10 @@ function alertMatchesFilter(a, filter) {
 
 export default function AlertsPage() {
   const { jobs = [], extras = [], agentAlerts = [], loading } = useData()
-  const [filter, setFilter] = useState('all')
-  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useStickyState('alerts.filter', 'all')
+  const [search, setSearch] = useStickyState('alerts.search', '')
   const [rescanning, setRescanning] = useState(false)
+  const toast = useToast()
 
   // Merge Firestore alerts + client-generated alerts. Firestore is
   // authoritative for lifecycle; client-only alerts are added with
@@ -253,12 +259,14 @@ export default function AlertsPage() {
 
   async function handleRescan() {
     setRescanning(true)
-    try {
-      const fresh = generateAlerts(jobs, extras)
-      await Promise.all(fresh.map(a => addAgentAlert({ ...a, status: a.status || 'open' })))
-    } finally {
-      setRescanning(false)
-    }
+    const fresh = generateAlerts(jobs, extras)
+    await runBulk(
+      fresh,
+      a => addAgentAlert({ ...a, status: a.status || 'open' }),
+      toast,
+      { successTitle: 'Re-scanned —', noun: 'alert' },
+    )
+    setRescanning(false)
   }
 
   // ── Loading branch ─────────────────────────────────────────────────────────
@@ -270,7 +278,7 @@ export default function AlertsPage() {
           title="Action queue"
           subtitle="Loading agent alerts…"
         />
-        <LoadingState label="Loading alerts…" />
+        <DataSkeleton tiles={5} rows={6} />
       </div>
     )
   }
@@ -283,13 +291,7 @@ export default function AlertsPage() {
         subtitle="What needs attention now, what is aging, and who owns it."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
+            <LiveDot />
             <span>{kpis.total} open · {kpis.critical} critical</span>
             {kpis.aging > 0 && (
               <span className="text-amber-300">{kpis.aging} aging 3+ days</span>
@@ -297,15 +299,31 @@ export default function AlertsPage() {
           </>
         }
         actions={
-          <button
-            type="button"
-            onClick={handleRescan}
-            disabled={rescanning}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-60 disabled:cursor-wait transition-colors"
-          >
-            <RefreshCwIcon size={13} className={rescanning ? 'animate-spin' : ''} />
-            {rescanning ? 'Scanning…' : 'Re-scan jobs'}
-          </button>
+          <>
+            <ExportCsvButton
+              filename="p2-alerts"
+              columns={[
+                { label: 'Severity',    get: a => a.severity || '' },
+                { label: 'Title',       get: a => a.title || a.text || '' },
+                { label: 'Type',        get: a => a.type || '' },
+                { label: 'Job',         get: a => a.jobId || '' },
+                { label: 'Next Action', get: a => a.nextAction || '' },
+                { label: 'Created',     get: a => a.createdAt ? new Date(a.createdAt).toISOString() : '' },
+                { label: 'Age (d)',     get: a => a.ageDays ?? '' },
+              ]}
+              rows={visible}
+              title="Export the current alert list to CSV"
+            />
+            <button
+              type="button"
+              onClick={handleRescan}
+              disabled={rescanning}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 disabled:opacity-60 disabled:cursor-wait transition-colors"
+            >
+              <RefreshCwIcon size={13} className={rescanning ? 'animate-spin' : ''} />
+              {rescanning ? 'Scanning…' : 'Re-scan jobs'}
+            </button>
+          </>
         }
       />
 
@@ -376,7 +394,11 @@ export default function AlertsPage() {
           description="No alerts match the current filters."
           Icon={AlertTriangleIcon}
         >
-          <AlertsEmptyState filter={filter} hasSearch={Boolean(search.trim())} />
+          <AlertsEmptyState
+            filter={filter}
+            hasSearch={Boolean(search.trim())}
+            onClear={() => { setFilter('all'); setSearch('') }}
+          />
         </DataPanel>
       ) : (
         <div className="space-y-5">
@@ -418,13 +440,14 @@ export default function AlertsPage() {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function AlertsEmptyState({ filter, hasSearch }) {
+function AlertsEmptyState({ filter, hasSearch, onClear }) {
   if (hasSearch) {
     return (
       <EmptyState
         Icon={AlertTriangleIcon}
         title="No alerts match"
         description="Adjust the search above or clear filters to see the full queue."
+        action={<ClearFiltersButton onClick={onClear} />}
       />
     )
   }
@@ -521,7 +544,7 @@ function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
             {zoneName}
           </span>
         )}
-        <span className="text-[10px] text-zinc-500">·</span>
+        <span className="text-[10px] text-zinc-400">·</span>
         <span className={`text-[10px] ${age >= 3 ? 'text-amber-300 font-semibold' : 'text-zinc-400'}`}>
           {ageLabel(age)}
         </span>

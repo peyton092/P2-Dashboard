@@ -5,8 +5,10 @@ import { useData } from '../DataContext'
 import {
   approveExtra, updateExtra, addNotification, useJobFiles,
   addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile, addHistory,
+  useHistory,
 } from '../hooks/useFirestore'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
+import { logError } from '../lib/errorLogger'
 import { useToast } from '@/components/ui/toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -25,6 +27,9 @@ import {
 } from 'lucide-react'
 import Brand from './brand/Brand'
 import { DataPanel, Pill, EmptyState, AllClearState } from './shared'
+import { daysSince } from '../agent/scoring'
+import PhotoLightbox from './PhotoLightbox'
+import { safeHref } from '../lib/safeHref'
 
 const O = '#F47920'
 
@@ -34,14 +39,6 @@ const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 const jobName = (j) => j.name || (j.client || '').split(' ')[0] || j.id
 
 const TODAY = new Date()
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
 
 const fmtDate = (d) => {
   if (!d) return ''
@@ -215,7 +212,80 @@ function ProjectCard({ job, extras }) {
         <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-2.5">Inspection Timeline</p>
         <InspectionTimeline job={job} />
       </section>
+
+      <ProjectActivity jobId={job.id} />
     </article>
+  )
+}
+
+function relTime(now, ms) {
+  if (!ms) return ''
+  const diff = now - ms
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  return d < 7 ? `${d}d ago` : new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// Per-project "what's new" feed. Merges audit-history entries (CO approvals,
+// rejections, etc.) and notifications scoped to this job. The client only
+// sees what's already legitimately associated with their project.
+function ProjectActivity({ jobId }) {
+  const { notifs = [] } = useData()
+  const { history } = useHistory()
+
+  const items = useMemo(() => {
+    const out = []
+    history.forEach(h => {
+      if (h.jobId !== jobId) return
+      out.push({
+        key: `h_${h._docId}`,
+        ts: h.createdAt?.toMillis?.() ?? (h.createdAt ? new Date(h.createdAt).getTime() : 0),
+        text: h.summary || h.desc || `${h.entity || ''} ${h.action || 'updated'}`.trim(),
+        actor: h.actor || null,
+      })
+    })
+    notifs.forEach(n => {
+      if (!n.msg || !n.msg.includes(jobId)) return
+      out.push({
+        key: `n_${n._docId || n.id}`,
+        ts: n.createdAt?.toMillis?.() ?? (n.createdAt ? new Date(n.createdAt).getTime() : 0),
+        text: n.msg,
+        actor: null,
+      })
+    })
+    return out
+      .filter(i => i.text)
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, 5)
+      // relTime captures `new Date()` at render time so the inputs stay pure
+      // from the linter's perspective (no Date.now() at the top of useMemo).
+      .map(i => ({ ...i, rel: relTime(new Date().getTime(), i.ts) }))
+  }, [history, notifs, jobId])
+
+  if (items.length === 0) return null
+
+  return (
+    <section className="px-4 sm:px-5 py-4 border-t border-white/5">
+      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-2.5">Recent activity</p>
+      <ul className="space-y-2">
+        {items.map(item => (
+          <li key={item.key} className="flex items-start gap-2.5">
+            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-white/30 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-zinc-200 leading-snug">{item.text}</p>
+              <p className="text-[10px] text-zinc-400 mt-0.5">
+                {item.actor && <span className="mr-1.5">{item.actor}</span>}
+                {item.rel}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -240,7 +310,7 @@ function ExtraRow({ co, clientName }) {
       await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: clientName || 'Client', jobId: co.job })
       toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
     } catch (err) {
-      console.error('[Client] Approve failed:', err)
+      logError('client.approveExtra', err)
       setErrMsg('Could not save approval. Check your connection and try again.')
     } finally { setBusy(false) }
   }
@@ -260,7 +330,7 @@ function ExtraRow({ co, clientName }) {
       toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
       setShowReject(false); setRejectNotes('')
     } catch (err) {
-      console.error('[Client] Reject failed:', err)
+      logError('client.rejectExtra', err)
       setErrMsg('Could not save your request. Check your connection and try again.')
     } finally { setBusy(false) }
   }
@@ -321,7 +391,7 @@ function ExtraRow({ co, clientName }) {
         {isPending && showReject && (
           <div className="mt-3 space-y-2">
             <p className="text-[10px] uppercase tracking-wide font-bold text-zinc-300">Tell P2 what needs to change</p>
-            <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
+            <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-400"
               placeholder="What should be revised? (required)" value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} />
             <div className="flex gap-2">
               <Button className="flex-1 h-10 text-xs text-white font-bold" style={{ backgroundColor: '#ef4444' }} disabled={busy || !rejectNotes.trim()} onClick={handleReject}>
@@ -373,8 +443,8 @@ function InvoiceRow({ job }) {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
-        {job.paymentUrl && job.billingStatus !== 'paid' && (
-          <a href={job.paymentUrl} target="_blank" rel="noopener noreferrer"
+        {safeHref(job.paymentUrl) && job.billingStatus !== 'paid' && (
+          <a href={safeHref(job.paymentUrl)} target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] font-bold text-white" style={{ backgroundColor: '#22c55e' }}>
             <CreditCardIcon size={13} /> Pay now
           </a>
@@ -402,6 +472,7 @@ function JobFiles({ job }) {
   const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [uploadErr, setUploadErr] = useState('')
+  const [lightboxIdx, setLightboxIdx] = useState(-1)
   const photos = files.filter(isImage)
   const docs   = files.filter(f => !isImage(f))
 
@@ -423,7 +494,7 @@ function JobFiles({ job }) {
         source: 'client-upload',
       })
     } catch (err) {
-      console.error('[Client] Upload failed:', err)
+      logError('client.uploadFile', err)
       setUploadErr('Upload failed — check the file size or contact P2.')
     } finally {
       setUploading(false)
@@ -431,6 +502,8 @@ function JobFiles({ job }) {
   }
 
   return (
+    <>
+    <PhotoLightbox photos={photos} index={lightboxIdx} onClose={() => setLightboxIdx(-1)} onIndexChange={setLightboxIdx} />
     <Card className="border-white/10 bg-white/[0.025]">
       <CardContent className="p-3 sm:p-4 space-y-3">
         <div className="flex items-center gap-2">
@@ -449,9 +522,9 @@ function JobFiles({ job }) {
           <p className="text-xs text-zinc-400 py-2">Loading files…</p>
         ) : files.length === 0 ? (
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-4 text-center">
-            <CameraIcon size={18} className="mx-auto mb-1.5 text-zinc-500" />
+            <CameraIcon size={18} className="mx-auto mb-1.5 text-zinc-400" />
             <p className="text-xs text-zinc-400">No photos or documents shared yet.</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Jobsite photos appear here once CompanyCam sync is enabled.</p>
+            <p className="text-[10px] text-zinc-400 mt-0.5">Jobsite photos appear here once CompanyCam sync is enabled.</p>
           </div>
         ) : (
           <>
@@ -461,11 +534,12 @@ function JobFiles({ job }) {
                   <ImageIcon size={11} /> Photos · {photos.length}
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                  {photos.map(p => (
-                    <a key={p._docId} href={p.url} target="_blank" rel="noopener noreferrer"
-                      className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 block">
-                      <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
-                    </a>
+                  {photos.map((p, i) => (
+                    <button type="button" key={p._docId} onClick={() => setLightboxIdx(i)}
+                      title={p.name || 'Open photo'}
+                      className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 hover:border-white/25 transition-colors group">
+                      <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300" loading="lazy" />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -477,7 +551,7 @@ function JobFiles({ job }) {
                 </p>
                 <div className="space-y-1.5">
                   {docs.map(d => (
-                    <a key={d._docId} href={d.url} target="_blank" rel="noopener noreferrer"
+                    <a key={d._docId} href={safeHref(d.url)} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
                       <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
                       <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
@@ -491,6 +565,7 @@ function JobFiles({ job }) {
         )}
       </CardContent>
     </Card>
+    </>
   )
 }
 

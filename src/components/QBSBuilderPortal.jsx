@@ -4,8 +4,10 @@ import {
   approveExtra, updateExtra, addNotification, addSubmit, updateSubmit,
   useSubmitReplies, addSubmitReply, updateNotification, addHistory,
 } from '../hooks/useFirestore'
+import { logError } from '../lib/errorLogger'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { useToast } from '@/components/ui/toast'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -21,6 +23,7 @@ import {
   TriangleAlertIcon, ReceiptIcon, UserCheckIcon,
 } from 'lucide-react'
 import Brand from './brand/Brand'
+import { daysSince } from '../agent/scoring'
 import {
   DataPanel,
   Pill,
@@ -36,14 +39,6 @@ const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 const jobName = (j) => j.name || (j.client || '').split(' ')[0] || j.id
 
 const TODAY = new Date()
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
 
 const fmtDate = (d) => {
   if (!d) return ''
@@ -401,6 +396,7 @@ function ExtraRow({ co, compact = false }) {
   const [rejectNotes, setRejectNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [errMsg, setErrMsg] = useState('')
+  const toast = useToast()
 
   const status = co.status || 'pending'
   const isPending = status === 'pending'
@@ -419,9 +415,11 @@ function ExtraRow({ co, compact = false }) {
         msg: `${co.id || 'CO'} approved by QBS — ${fmt$(co.amount)} (${co.job})`,
       })
       await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: 'QBS Coordinator', jobId: co.job })
+      toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
     } catch (err) {
-      console.error('[QBS] Approve failed:', err)
+      logError('qbs.approveExtra', err)
       setErrMsg('Could not save approval. Check your connection and try again.')
+      toast({ tone: 'error', title: 'Approval failed', description: err.message || 'Check your connection and try again.' })
     } finally {
       setBusy(false)
     }
@@ -443,11 +441,13 @@ function ExtraRow({ co, compact = false }) {
         msg: `${co.id || 'CO'} rejected by QBS — ${co.job}: ${rejectNotes.trim().slice(0, 80)}`,
       })
       await addHistory({ type: 'change-order', action: 'rejected', summary: `${co.id || 'CO'} revision requested — ${rejectNotes.trim().slice(0, 60)}`, actor: 'QBS Coordinator', jobId: co.job })
+      toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
       setShowReject(false)
       setRejectNotes('')
     } catch (err) {
-      console.error('[QBS] Reject failed:', err)
+      logError('qbs.rejectExtra', err)
       setErrMsg('Could not save rejection. Check your connection and try again.')
+      toast({ tone: 'error', title: 'Rejection failed', description: err.message || 'Check your connection and try again.' })
     } finally {
       setBusy(false)
     }
@@ -552,7 +552,7 @@ function ExtraRow({ co, compact = false }) {
               Tell P2 what needs to change
             </p>
             <Textarea
-              className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
+              className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-400"
               placeholder="What should be revised? (required)"
               value={rejectNotes}
               onChange={e => setRejectNotes(e.target.value)}

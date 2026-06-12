@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import {
-  ChevronLeftIcon, ChevronRightIcon, LogOutIcon, UsersIcon, SearchIcon,
+  ChevronLeftIcon, ChevronRightIcon, KeyboardIcon, LogOutIcon, UsersIcon, SearchIcon,
 } from 'lucide-react'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -214,6 +214,18 @@ export default function Sidebar({
               <UsersIcon size={14} /> Manage users
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('p2:open-shortcuts'))}
+            aria-label="Keyboard shortcuts"
+            className={cn(
+              'flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.05] transition-colors',
+              collapsed ? 'mt-1' : 'w-full text-xs mt-1',
+            )}
+            title="Keyboard shortcuts (?)"
+          >
+            {collapsed ? <KeyboardIcon size={16} /> : <><KeyboardIcon size={14} /> Shortcuts</>}
+          </button>
           {onLogout && (
             <button
               type="button"

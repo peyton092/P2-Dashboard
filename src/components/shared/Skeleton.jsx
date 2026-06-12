@@ -34,6 +34,28 @@ function RowSkeleton() {
   )
 }
 
+// KPI strip + data panel — for use under a PageHeader that's already
+// rendered. The title is visible immediately; only the data shimmers.
+export function DataSkeleton({ tiles = 5, rows = 6 }) {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Loading">
+      {tiles > 0 && (
+        <div className="grid gap-2 sm:gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
+          {Array.from({ length: tiles }).map((_, i) => <TileSkeleton key={i} />)}
+        </div>
+      )}
+      {rows > 0 && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/5">
+            <Skeleton className="h-3.5 w-40" />
+          </div>
+          {Array.from({ length: rows }).map((_, i) => <RowSkeleton key={i} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Full-page loading scaffold used as the route Suspense fallback. Mirrors the
 // common page shape (header + KPI strip + data panel) so transitions land
 // without a layout jump.
@@ -45,15 +67,7 @@ export function PageSkeleton({ tiles = 5, rows = 6 }) {
         <Skeleton className="h-7 w-64 mb-3" />
         <Skeleton className="h-3.5 w-96 max-w-full" />
       </div>
-      <div className="grid gap-2 sm:gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
-        {Array.from({ length: tiles }).map((_, i) => <TileSkeleton key={i} />)}
-      </div>
-      <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/5">
-          <Skeleton className="h-3.5 w-40" />
-        </div>
-        {Array.from({ length: rows }).map((_, i) => <RowSkeleton key={i} />)}
-      </div>
+      <DataSkeleton tiles={tiles} rows={rows} />
     </div>
   )
 }
