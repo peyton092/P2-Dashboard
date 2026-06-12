@@ -54,15 +54,43 @@ upgrade — see item 3a.
 **Rollback:** restore the prior `package-lock.json` (committed at the prior
 revision before commit `9cdaafc`).
 
-## 3a. firebase-admin major upgrade (clears remaining functions/ advisories)
-**What:** `firebase-admin` 7 → 14 (or current stable). Major bump — the v13
-release notes call out Node 18 EOL and Auth-emulator changes; v14 is
-incremental on top. Our function code uses `getFirestore`, `FieldValue`,
-`getMessaging` — all stable across the upgrade.
-**Plan:** dedicated branch; bump in `functions/package.json`; run
-`node --check functions/index.js`; emulator-test push fan-out + scoping
-backfill + the new portal callables end-to-end; merge.
-**Rollback:** revert the package-lock commit.
+## 3a. firebase-admin major upgrade — **INVESTIGATED, HELD OFF**
+**What:** Bump `firebase-admin` from ^12.7.0 to clear the 8 remaining
+`functions/` advisories.
+**Investigation (2026-06-12):**
+- All 8 advisories collapse to a single CVE
+  [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) —
+  uuid v3/v5/v6 "missing buffer bounds check when `buf` is provided",
+  moderate severity.
+- The vulnerable `uuid` is inside `@google-cloud/firestore` (via `google-gax`
+  → `gaxios`) and `@google-cloud/storage` (via `teeny-request`), pulled in
+  transitively by `firebase-admin`.
+- **Bumping to `firebase-admin@13.10.0`** (the highest version
+  `firebase-functions@^6.x` peer-allows) added one advisory (8 → 9) —
+  net regression.
+- **Bumping to `firebase-admin@14.0.0` with `--legacy-peer-deps`** clears
+  the firestore chain (8 → 7) but the storage chain still flags the same
+  CVE. firebase-functions 7.2.5 (latest) STILL only peer-allows
+  firebase-admin up through ^13.0.0, so shipping v14 means a sticky
+  `--legacy-peer-deps` requirement for every install. Functions imports
+  load and syntax-check cleanly under v14 (manually verified).
+- **Real-world risk on the unfixed chain:** the CVE is "missing buffer
+  bounds check **when `buf` is provided** to v3/v5/v6 generators." The
+  google-cloud SDKs use uuid to mint request IDs without passing a `buf`
+  argument — the affected code path is not exercised. No exposure to
+  user-supplied input. Treating this as "medium-low" rather than "moderate"
+  is defensible for our usage.
+**Decision:** hold the upgrade until one of these unblocks:
+1. `firebase-functions` peer-allows `firebase-admin@^14.0.0` (so no
+   `--legacy-peer-deps` flag needed).
+2. `@google-cloud/storage` releases a version with a non-vulnerable
+   `teeny-request` (so the storage chain also clears).
+Both are on the upstream release cadence; revisit quarterly.
+**If you want to ship it anyway:** bump `functions/package.json` to
+`"firebase-admin": "^14.0.0"`, add `functions/.npmrc` with
+`legacy-peer-deps=true`, smoke-test push fan-out + CompanyCam sync +
+backfillScoping in the emulator, then deploy. Net advisory reduction is
+1 of 8.
 
 ## 4. Storage path scoping — **CODE READY, NOT DEPLOYED**
 **What:** `storage.rules` allows `read: if request.auth != null` for all paths — any
