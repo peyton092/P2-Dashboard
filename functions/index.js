@@ -54,6 +54,7 @@ import { randomBytes } from 'node:crypto'
 import { buildCallerScope, ownsRecordOnServer, actorStamp } from './lib/scope.js'
 import { findExpiredStateKeys, verifyOAuthState, VERIFY_OAUTH_STATE_MESSAGES } from './lib/oauthState.js'
 import { classifyNotificationRouting } from './lib/notifications.js'
+import { addrMatches } from './lib/address.js'
 
 initializeApp()
 const db = getFirestore()
@@ -271,42 +272,9 @@ export const qbDisconnect = onCall(callableOpts, async (req) => {
 
 const CC_API_BASE = 'https://api.companycam.com/v2'
 
-// Street-suffix abbreviations → canonical short form, so "Drive" and "Dr"
-// (etc.) compare equal when matching CompanyCam addresses to P2 job addresses.
-const STREET_SUFFIX = {
-  street: 'st', st: 'st', avenue: 'ave', ave: 'ave', road: 'rd', rd: 'rd',
-  drive: 'dr', dr: 'dr', lane: 'ln', ln: 'ln', boulevard: 'blvd', blvd: 'blvd',
-  court: 'ct', ct: 'ct', circle: 'cir', cir: 'cir', way: 'way', place: 'pl', pl: 'pl',
-  terrace: 'ter', ter: 'ter', parkway: 'pkwy', pkwy: 'pkwy', cove: 'cv', cv: 'cv',
-  trail: 'trl', trl: 'trl', highway: 'hwy', hwy: 'hwy', crossing: 'xing', xing: 'xing',
-}
-
-function normAddr(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/[.,#]/g, ' ')
-    .split(/\s+/)
-    .map(w => STREET_SUFFIX[w] || w)
-    .filter(Boolean)
-    .join(' ')
-    .trim()
-}
-
-// Strict address match — exact normalized equality OR full-prefix containment
-// of one fully inside the other (e.g. "123 Maple St" vs "123 Maple St Apt 4").
-//
-// The earlier "<number> + first street word" fallback was too loose: two
-// jobs at "100 Main St" and "100 Main Ave" (different streets, possibly
-// different tenants) would both attract the same CompanyCam project's
-// photos. Audit S-12 (cross-tenant photo leakage). Photos are uniquely
-// identified upstream by CompanyCam project_id anyway — a stricter match
-// here just trades a few false negatives for zero cross-tenant leaks.
-function addrMatches(jobAddr, ccAddr) {
-  const a = normAddr(jobAddr)
-  const b = normAddr(ccAddr)
-  if (!a || !b) return false
-  return a === b || a.startsWith(b + ' ') || b.startsWith(a + ' ')
-}
+// Strict address matching (audit S-12) lives in ./lib/address.js so it can be
+// unit-tested without firebase-admin. The cross-tenant photo-leakage contract
+// is pinned by the tests there.
 
 // Refresh the CompanyCam access token if it's expired; returns a valid token.
 async function getValidCcToken() {
