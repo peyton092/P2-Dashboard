@@ -77,12 +77,27 @@ reference. `daily_reports/...` is locked to staff. Same 25 MiB cap retained.
 3. Promote: `mv storage.rules.next storage.rules && firebase deploy --only storage`.
 **Rollback:** redeploy the previous `storage.rules` (instant).
 
-## 5. Decompose `App.jsx` (1030 lines)
-**What:** auth gating, tab routing, OAuth-callback handling, terms gate, and
-user-creation all live in one file.
-**Plan:** extract the routing/tab map and the auth/terms shell into separate
-modules. Pure refactor, no behavior change — defer until the security items land so
-diffs don't collide.
+## 5. Decompose `App.jsx` (1030 lines) — **DONE**
+Auth gating, tab routing, OAuth-callback handling, terms gate, and
+user-creation now live in six focused modules:
+- `src/App.jsx` (238 lines) — root auth state machine + portal/dashboard
+  fan-out. No UI of its own.
+- `src/MainDashboard.jsx` (215 lines) — tab routing + nav-count derivation.
+  All tab-screen lazy imports moved here.
+- `src/auth/LoginScreen.jsx` — sign-in form + forgot-password handler.
+- `src/auth/CreateUserModal.jsx` — staff-only user-creation modal.
+- `src/auth/TermsGate.jsx` — builder Terms-of-Access acceptance screen.
+  Internally uses the new `logError` sink (no more bare `console.error`).
+- `src/auth/screens.jsx` — small fullscreen states (auth loading, portal
+  loading, OAuth result, account-not-provisioned).
+- `src/nav/navConfig.js` — `TENANTS`, `NAV_SECTIONS`, `MOBILE_PRIMARY`,
+  `MOBILE_MORE`. Pure data, imported by `MainDashboard` and
+  `CreateUserModal`.
+
+Behavior preserved verbatim (467→469 → 469 tests still passing). The six
+trivial single-line `Tab` wrappers (`function Extras() { return
+<ChangeOrdersComponent /> }`, etc.) were inlined — they only existed to
+alias the lazy components.
 
 ## 6. Minor UX/a11y (low risk, batchable) — **DONE**
 - `aria-label` on icon-only buttons (ChangeOrders back / line-item remove,
