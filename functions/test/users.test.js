@@ -444,11 +444,15 @@ describe('onUserWritten', () => {
     })
   })
 
-  // A new users document is a first assignment of claims. Internal staff can create
-  // one for an owner whose claims were set by hand and who has no document yet, and
-  // that must not take the owner's role away. The claims write is skipped and the
-  // jobs half still runs.
-  describe('a first assignment never lowers staff', () => {
+  // Only an owner can write a staff role into a users document, so a document that
+  // said owner or internal before the write was set by an owner, and lowering it is
+  // how an owner changes a staff role. Any other write (a new document, or one over a
+  // document that said builder, client, nothing or a role that does not exist) never
+  // lowers an account that is owner or internal now: internal staff can create a
+  // client document for an owner whose claims were set by hand, and edit it again
+  // later, and neither write may take the owner's role away. The claims write is
+  // skipped and the jobs half still runs.
+  describe('a write over a document that did not say owner or internal never lowers staff', () => {
     const claimsOf = (role) => ({ role, tenantId: 'p2-core', clientJobIds: [] })
     const warnings = () => logged.filter(([level]) => level === 'warn').map(([, message]) => String(message))
 
@@ -580,14 +584,67 @@ describe('onUserWritten', () => {
       assert.ok(hasOp(batches.flat(), 'jobs/a', FieldValue.arrayUnion('u1')))
     })
 
-    it('reads the account for a new document only, not for an update or a deletion', async () => {
+    it('leaves an owner alone when internal staff create a client document for them, and again when they edit it', async () => {
       stubAuth({ existing: claimsOf('owner') })
       stubFirestore()
-      await run('u1', client(['QBS-001']), client(['QBS-001']))
-      await run('u2', { role: 'internal' }, { role: 'client', clientJobIds: [] })
-      await run('u3', client(['QBS-001']), null)
+      const created = client(['QBS-001'])
+      await run('x', null, created)
+      assert.deepEqual(claimed, [])
+      assert.equal(warnings().length, 1)
+
+      const edited = { ...created, clientJobIds: ['QBS-001', 'QBS-002'] }
+      await run('x', created, edited)
+      assert.deepEqual(claimed, [], 'the claims are still the owner ones')
+      assert.deepEqual(revoked, [])
+      assert.equal(warnings().length, 2)
+      assert.match(warnings()[1], /users\/x says client/)
+      assert.match(warnings()[1], /already owner/)
+      assertNoDashes(warnings()[1])
+    })
+
+    for (const before of [{ role: 'builder', tenantId: 'qbs' }, client(['QBS-001']), { displayName: 'No role' }, { role: 'superuser' }]) {
+      it(`leaves internal staff alone when a document that said ${before.role ?? 'nothing'} is changed to a lower role`, async () => {
+        stubAuth({ existing: claimsOf('internal') })
+        stubFirestore()
+        await run('u1', before, { role: 'builder', tenantId: 'vision' })
+        assert.deepEqual(fetched, ['u1'])
+        assert.deepEqual(claimed, [])
+        assert.deepEqual(revoked, [])
+        assert.equal(warnings().length, 1)
+      })
+    }
+
+    it('keeps an owner when a client document over their hand set claims is deleted, and says the document is gone', async () => {
+      stubAuth({ existing: claimsOf('owner') })
+      stubFirestore()
+      await run('x', client(['QBS-001']), null)
+      assert.deepEqual(claimed, [])
+      assert.deepEqual(revoked, [])
+      assert.match(warnings()[0], /users\/x is gone/)
+      assertNoDashes(warnings()[0])
+    })
+
+    it('lowers the claims when an owner changes a document that said internal to client, without reading the account', async () => {
+      stubAuth({ existing: claimsOf('internal') })
+      stubFirestore()
+      await run('x', { role: 'internal', tenantId: 'p2-core' }, client(['QBS-001']))
+      assert.deepEqual(claimed, [{ uid: 'x', claims: { role: 'client', tenantId: 'p2-core', clientJobIds: ['QBS-001'] } }])
+      assert.deepEqual(revoked, ['x'])
       assert.deepEqual(fetched, [])
-      assert.equal(claimed.length, 3, 'an edit to an existing document is how a role is changed, so it is applied')
+      assert.deepEqual(warnings(), [])
+    })
+
+    it('reads the account only when the document did not say owner or internal before the write', async () => {
+      stubAuth({ existing: claimsOf('owner') })
+      stubFirestore()
+      await run('u1', { role: 'internal' }, { role: 'client', clientJobIds: [] })
+      await run('u2', { role: 'owner', tenantId: 'p2-core' }, null)
+      assert.deepEqual(fetched, [])
+      assert.equal(claimed.length, 2, 'an owner editing or deleting a staff document is how a staff role is changed, so it is applied')
+
+      await run('u3', client(['QBS-001']), client(['QBS-001']))
+      await run('u4', null, { role: 'builder', tenantId: 'qbs' })
+      assert.deepEqual(fetched, ['u3', 'u4'])
     })
   })
 

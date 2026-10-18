@@ -5,7 +5,7 @@ import { assertNoDashes, code, isServerTime, stubFirestore as installStub } from
 
 // The Firestore stub is shared with the other handler tests (helpers/firestore-stub.js).
 // Each test installs it with the documents that exist, and `stub` then holds what the
-// handler did: stub.calls, stub.reads, stub.writes and stub.stub.written(prefix).
+// handler did: stub.calls, stub.reads, stub.writes and stub.written(prefix).
 //
 // jobs: { job1: { id: 'QBS-045' } }  job documents that exist, by document id
 let stub
@@ -140,7 +140,7 @@ describe('createJob', () => {
     stubFirestore()
     await asOwner(form())
     assert.ok(stub.calls.includes('runTransaction'))
-    assert.deepEqual(stub.reads, ['query:jobs:id==QBS-045'])
+    assert.equal(stub.reads[0], 'query:jobs:id==QBS-045')
     assert.equal(stub.writes.length, 3)
   })
 
@@ -212,6 +212,47 @@ describe('createJob', () => {
     assert.equal(stub.written('jobs/')[0].data.createdByEmail, null)
     assert.equal(stub.written('notifications/')[0].data.createdByEmail, null)
     assert.equal(stub.written('history/')[0].data.actorEmail, null)
+  })
+
+  // A client whose users document lists the id before the job exists is linked here:
+  // onUserWritten only links a client to jobs that exist when their document is written.
+  describe('the clients who already list the job', () => {
+    const USERS = {
+      c2: { role: 'client', clientJobIds: ['QBS-001', 'QBS-045'] },
+      c1: { role: 'client', clientJobIds: ['QBS-045'] },
+      c3: { role: 'client', clientJobIds: ['QBS-046'] },
+      b1: { role: 'builder', tenantId: 'qbs', clientJobIds: ['QBS-045'] },
+      i1: { role: 'internal', clientJobIds: ['QBS-045'] },
+    }
+
+    it('are stamped, sorted, on the job and on its notification, whatever clientUids the caller sent', async () => {
+      stubFirestore({ users: USERS })
+      await asOwner({ ...form(), clientUids: ['intruder'] })
+      assert.deepEqual(stub.written('jobs/')[0].data.clientUids, ['c1', 'c2'])
+      assert.deepEqual(stub.written('notifications/')[0].data.clientUids, ['c1', 'c2'])
+      assert.equal(stub.written('notifications/')[0].data.tenantId, 'qbs')
+    })
+
+    it('give an empty clientUids when no client lists the job', async () => {
+      stubFirestore({ users: { c3: USERS.c3, b1: USERS.b1, i1: USERS.i1 } })
+      await asOwner(form())
+      assert.deepEqual(stub.written('jobs/')[0].data.clientUids, [])
+      assert.deepEqual(stub.written('notifications/')[0].data.clientUids, [])
+    })
+
+    it('are looked up inside the transaction, after the id check and before anything is written', async () => {
+      // The stub refuses a read once a write is staged, so the run finishing proves the order.
+      stubFirestore({ users: USERS })
+      await asOwner(form())
+      assert.deepEqual(stub.reads, ['query:jobs:id==QBS-045', 'query:users:role==client,clientJobIds array-contains QBS-045'])
+      assert.equal(stub.writes.length, 3)
+    })
+
+    it('are not looked up for an id that is taken', async () => {
+      stubFirestore({ jobs: { existing: { id: 'QBS-045' } }, users: USERS })
+      await assert.rejects(asOwner(form()), code('already-exists'))
+      assert.deepEqual(stub.reads, ['query:jobs:id==QBS-045'])
+    })
   })
 
   it('is free of dashes in the wording', async () => {

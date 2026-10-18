@@ -5,7 +5,7 @@ import { assertNoDashes, code, isServerTime, stubFirestore as installStub } from
 
 // The Firestore stub is shared with the other handler tests (helpers/firestore-stub.js).
 // Each test installs it with the documents that exist, and `stub` then holds what the
-// handler did: stub.calls, stub.reads, stub.writes and stub.stub.written(prefix).
+// handler did: stub.calls, stub.reads, stub.writes and stub.written(prefix).
 //
 // jobs:  { job1: { id: 'QBS-003', ... } }  job documents that exist, by document id
 // users: { u1: { displayName } }           users documents the actor lookup may read

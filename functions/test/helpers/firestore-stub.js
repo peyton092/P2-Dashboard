@@ -49,6 +49,19 @@ export function assertNoDashes(text) {
   assert.doesNotMatch(text.replace(IDS, 'ID'), /[-‐-―−]/, `dash in: ${text}`)
 }
 
+// The where clauses the stub answers. A document matches == when the field holds the
+// value, and array-contains when the field is a list with the value in it.
+const OPERATORS = ['==', 'array-contains']
+const matches = (data, { field, op, value }) =>
+  op === '==' ? data[field] === value : Array.isArray(data[field]) && data[field].includes(value)
+
+// The clauses of a query, whether the stub built it ({ name, clauses }) or a test wrote
+// one clause out by hand ({ name, field, op, value }).
+const clausesOf = (query) => query.clauses ?? [{ field: query.field, op: query.op, value: query.value }]
+
+// How a clause is written in stub.reads: id==QBS-003, clientJobIds array-contains QBS-003.
+const clauseLabel = ({ field, op, value }) => (op === '==' ? `${field}==${value}` : `${field} ${op} ${value}`)
+
 const isPlainObject = (value) =>
   value !== null && typeof value === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(value))
 
@@ -69,10 +82,16 @@ function assertDefined(value, field) {
 // example { extras: { x1: {...} }, jobs: { job3: {...} }, users: { u1: {...} } }.
 //
 // Stubs the Firestore methods the handlers use: collection(name).doc(id?),
-// collection(name).where(field, '==', value).limit(n), doc('users/uid').get() and
-// runTransaction. Returns what the handler did:
+// collection(name).where(field, op, value), with more where clauses chained after it
+// and .limit(n) last if the handler likes, doc('users/uid').get() and runTransaction.
+// A where clause is == or array-contains (the field holds a list with the value in
+// it), and a document matches a query when it matches every clause; limit is not
+// applied. Returns what the handler did:
 //   calls    every Firestore entry point it touched, in order
-//   reads    every document or query it read inside a transaction, in order
+//   reads    every document or query it read inside a transaction, in order: a
+//            document by its path, a query as query:collection:clauses, the clauses
+//            joined by commas, like query:jobs:id==QBS-003 or
+//            query:users:role==client,clientJobIds array-contains QBS-003
 //   writes   committed writes, in order: { op: 'set' | 'update', path, data }
 //   written(prefix)   the committed writes under a path prefix, like 'history/'
 //   batches  the committed batches, each the list of writes it held (always empty
@@ -80,8 +99,8 @@ function assertDefined(value, field) {
 //   clear()  forgets calls, reads, writes and batches (the documents stay)
 //
 // outsideTransactions: true also stubs what the triggers and the backfill use outside
-// a transaction. collection(name).get() and collection(name).where(field, '==',
-// value).get() answer { empty, size, docs }, each doc { id, ref: { id, path }, data() }
+// a transaction. collection(name).get() and the get() of a query (the same where
+// clauses as above) answer { empty, size, docs }, each doc { id, ref: { id, path }, data() }
 // in the order the documents are listed. db.batch() stages update and set and commits
 // them as one group on commit(). Staging undefined in the data throws at once, as the
 // Admin SDK does. A commit throws the way Firestore does for more than 500 writes and
@@ -98,16 +117,36 @@ export function stubFirestore(collections = {}, { outsideTransactions = false } 
     return collections[name]?.[id]
   }
 
-  // The documents of a collection, all or those where field equals value, as a
-  // snapshot a plain read answers with.
-  const scan = (name, query) => {
-    if (query) assert.equal(query.op, '==', 'the stub answers == queries only')
-    const found = Object.entries(collections[name] ?? {}).filter(([, data]) => !query || data[query.field] === query.value)
+  // The documents of a collection that match every clause (all of them for none), in
+  // the order the documents are listed.
+  const matching = (name, clauses) => {
+    for (const { op } of clauses) {
+      assert.ok(OPERATORS.includes(op), 'the stub answers == and array-contains queries only')
+    }
+    return Object.entries(collections[name] ?? {}).filter(([, data]) => clauses.every((clause) => matches(data, clause)))
+  }
+
+  // The documents of a collection, all or those a query matches, as a snapshot a plain
+  // read answers with.
+  const scan = (name, clauses = []) => {
+    const found = matching(name, clauses)
     return {
       empty: found.length === 0,
       size: found.length,
       docs: found.map(([id, data]) => ({ id, ref: { id, path: `${name}/${id}` }, data: () => data })),
     }
+  }
+
+  // A query on a collection: its clauses so far, more of them chained on, and limit.
+  const queryOn = (name, clauses) => {
+    const query = { name, clauses }
+    const chain = {
+      query,
+      where: (field, op, value) => queryOn(name, [...clauses, { field, op, value }]),
+      limit: () => ({ query }),
+    }
+    if (outsideTransactions) chain.get = async () => scan(name, clauses)
+    return chain
   }
 
   mock.method(db, 'collection', (name) => {
@@ -117,12 +156,7 @@ export function stubFirestore(collections = {}, { outsideTransactions = false } 
         const docId = id ?? `auto${++auto}`
         return { id: docId, path: `${name}/${docId}` }
       },
-      where: (field, op, value) => {
-        const query = { name, field, op, value }
-        const where = { limit: () => ({ query }) }
-        if (outsideTransactions) where.get = async () => scan(name, query)
-        return where
-      },
+      where: (field, op, value) => queryOn(name, [{ field, op, value }]),
     }
     if (outsideTransactions) collection.get = async () => scan(name)
     return collection
@@ -173,10 +207,10 @@ export function stubFirestore(collections = {}, { outsideTransactions = false } 
       get: (target) => {
         if (staged.length > 0) throw new Error(READ_AFTER_WRITE)
         if (target.query) {
-          const { name, field, op, value } = target.query
-          assert.equal(op, '==', 'the stub answers == queries only')
-          stub.reads.push(`query:${name}:${field}${op}${value}`)
-          const found = Object.entries(collections[name] ?? {}).filter(([, data]) => data[field] === value)
+          const { name } = target.query
+          const clauses = clausesOf(target.query)
+          const found = matching(name, clauses)
+          stub.reads.push(`query:${name}:${clauses.map(clauseLabel).join(',')}`)
           return Promise.resolve({
             empty: found.length === 0,
             size: found.length,

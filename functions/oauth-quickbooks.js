@@ -9,13 +9,15 @@
 //                    tokens, persists them at qb_config/tokens.
 //    qbDisconnect  — Revokes the refresh token at Intuit and deletes the
 //                    Firestore tokens doc.
+//
+//  All three are staff only: requireStaff runs before anything is read.
 // ============================================================================
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { FieldValue } from 'firebase-admin/firestore'
 import { randomBytes } from 'node:crypto'
 import { db } from './lib/admin.js'
-import { requireAuth } from './lib/authz.js'
+import { requireStaff } from './lib/authz.js'
 import { QB_CLIENT_ID, QB_CLIENT_SECRET } from './lib/secrets.js'
 import { region, STATE_TTL_MS } from './lib/config.js'
 
@@ -44,7 +46,7 @@ const basicAuth = () =>
 // Generates a one-time `state` token, stores it, and returns the Intuit
 // authorization URL. Frontend then does `window.location.href = data.authUrl`.
 export const qbAuth = onCall(callableOpts, async (req) => {
-  await requireAuth(req)
+  await requireStaff(req)
   const auth = req.auth
 
   const state = randomBytes(24).toString('hex')
@@ -68,7 +70,7 @@ export const qbAuth = onCall(callableOpts, async (req) => {
 // Frontend extracts ?code=…&state=…&realmId=… from the redirect URL and
 // posts them here. We verify state, exchange the code for tokens, and persist.
 export const qbCallback = onCall(callableOpts, async (req) => {
-  await requireAuth(req)
+  await requireStaff(req)
   const auth = req.auth
   const { code, state, realmId } = req.data || {}
 
@@ -140,7 +142,7 @@ export const qbCallback = onCall(callableOpts, async (req) => {
 // ── qbDisconnect ──────────────────────────────────────────────────────────────
 // Revokes the refresh token at Intuit and deletes the local tokens doc.
 export const qbDisconnect = onCall(callableOpts, async (req) => {
-  await requireAuth(req)
+  await requireStaff(req)
 
   const ref  = db.collection('qb_config').doc('tokens')
   const snap = await ref.get()

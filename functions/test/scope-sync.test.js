@@ -1,8 +1,9 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { getAuth } from 'firebase-admin/auth'
+import { FieldValue } from 'firebase-admin/firestore'
 import { db } from '../lib/admin.js'
-import { clientLinks, creatorDecides, creatorOf, jobIdOf, needsRestamp, scopeChanged, scopePatchFor, staysInTenant } from '../lib/scope-sync.js'
+import { clientLinks, creatorDecides, creatorOf, jobIdOf, listsClients, needsRestamp, scopeChanged, scopePatchFor, staysInTenant } from '../lib/scope-sync.js'
 import { scopeForJob } from '../lib/scope.js'
 import * as handlers from '../scope-sync.js'
 import { assertNoDashes, code, stubFirestore } from './helpers/firestore-stub.js'
@@ -204,6 +205,18 @@ describe('staysInTenant', () => {
   it('is false for a submission that names no creator, whatever role is passed', () => {
     const { createdBy: _createdBy, ...anonymous } = planted
     assert.equal(staysInTenant(anonymous, JOB, 'builder'), false)
+  })
+})
+
+describe('listsClients', () => {
+  it('is true for a clientUids list with something in it', () => {
+    assert.equal(listsClients({ clientUids: ['c1'] }), true)
+  })
+
+  it('is false for an empty list, no list, something that is not a list, or no document', () => {
+    for (const doc of [{ clientUids: [] }, {}, { clientUids: 'c1' }, { clientUids: null }, null, undefined]) {
+      assert.equal(listsClients(doc), false, JSON.stringify(doc))
+    }
   })
 })
 
@@ -595,18 +608,17 @@ describe('onJobWritten', () => {
       const written = stub.writes.map((write) => [write.op, write.path, write.data]).sort((a, b) => a[1].localeCompare(b[1]))
       assert.deepEqual(written, [
         ['update', 'extras/x1', scope],
-        ['update', 'extras/x3', scope],
         ['update', 'notifications/n1', scope],
         ['update', 'submits/s1', scope],
       ])
     })
 
-    it('leaves alone the other jobs, the staff submissions, the documents that name the job in the wrong field, and the ones already right', async () => {
+    it('leaves alone the other jobs, the drafts, the staff submissions, the documents that name the job in the wrong field, and the ones already right', async () => {
       const after = { ...JOB, tenantId: 'vision' }
       install({ jobs: { j1: after }, ...dependents() })
       await run(jobEvent('j1', JOB, after))
       const touched = stub.writes.map((write) => write.path)
-      for (const untouched of ['extras/x2', 'extras/x4', 'submits/s2', 'submits/s3', 'submits/s4', 'submits/s5', 'notifications/n2', 'notifications/n3', 'notifications/n4']) {
+      for (const untouched of ['extras/x2', 'extras/x3', 'extras/x4', 'submits/s2', 'submits/s3', 'submits/s4', 'submits/s5', 'notifications/n2', 'notifications/n3', 'notifications/n4']) {
         assert.ok(!touched.includes(untouched), `${untouched} must not be written`)
       }
     })
@@ -625,7 +637,7 @@ describe('onJobWritten', () => {
       const after = { ...JOB, clientUids: ['c1', 'c2'] }
       install({ jobs: { j1: after }, ...dependents() })
       await run(jobEvent('j1', JOB, after))
-      assert.deepEqual(stub.writes.map((write) => write.path).sort(), ['extras/x1', 'extras/x3', 'notifications/n1', 'notifications/n3', 'submits/s1'])
+      assert.deepEqual(stub.writes.map((write) => write.path).sort(), ['extras/x1', 'notifications/n1', 'notifications/n3', 'submits/s1'])
       assert.ok(stub.writes.every((write) => write.data.clientUids.join() === 'c1,c2'))
 
       const gone = { ...JOB, clientUids: [] }
@@ -1387,6 +1399,83 @@ describe('onExtraWritten, onSubmitWritten and a document in another tenant', () 
   })
 })
 
+// A draft change order has not been sent, so only staff may see it: it carries no
+// scope, and none of the three paths gives it one. sendExtraToBuilder stamps it from
+// its job as it sends it (extras-handlers.test.js), and from then on it is stamped
+// like any other change order.
+describe('a draft change order', () => {
+  const JOB3 = { id: 'QBS-003', tenantId: 'qbs', clientUids: ['c1'] }
+  const SCOPE = { tenantId: 'qbs', clientUids: ['c1'] }
+  const draft = (over = {}) => ({ id: 'CO-009', job: 'QBS-003', status: 'Draft', ...over })
+  const OWNER = { uid: 'o1', token: { role: 'owner', email: 'jesse@p2em.com' } }
+  const backfill = () => backfillScopes.run({ data: {}, auth: OWNER, rawRequest: {} })
+  const isDelete = (value) => value?.isEqual?.(FieldValue.delete()) === true
+
+  it('gets no write from onExtraWritten, with a scope or without one', async () => {
+    for (const doc of [draft(), draft({ tenantId: 'vision', clientUids: ['c9'] })]) {
+      restart({ jobs: { j3: JOB3 }, extras: { d1: doc } })
+      await onExtraWritten.run(documentEvent('extras', 'd1', doc))
+      assert.deepEqual(stub.writes, [], JSON.stringify(doc))
+      assert.deepEqual(warnings(), [])
+    }
+  })
+
+  it('gets no write from onExtraWritten when it is a draft by the time the transaction reads it', async () => {
+    const sent = draft({ status: 'Sent to Builder' })
+    install({ jobs: { j3: JOB3 }, extras: { d1: draft() } })
+    await onExtraWritten.run(documentEvent('extras', 'd1', sent))
+    assert.deepEqual(stub.writes, [])
+  })
+
+  it('is stamped by onExtraWritten once it has been sent, whatever its status says', async () => {
+    for (const status of ['Sent to Builder', 'pending', 'Rejected', undefined]) {
+      const sent = draft({ status })
+      restart({ jobs: { j3: JOB3 }, extras: { d1: sent } })
+      await onExtraWritten.run(documentEvent('extras', 'd1', sent))
+      assert.deepEqual(stub.writes, [{ op: 'update', path: 'extras/d1', data: SCOPE }], String(status))
+    }
+  })
+
+  it('is left out of the job fan out, while the change orders that were sent get the new scope', async () => {
+    const after = { ...JOB3, tenantId: 'vision' }
+    install({
+      jobs: { j3: after },
+      extras: { d1: draft(), d2: draft({ tenantId: 'qbs', clientUids: ['c1'] }), s1: draft({ status: 'Sent to Builder' }) },
+      submits: {},
+      notifications: {},
+    })
+    await onJobWritten.run(jobEvent('j3', JOB3, after))
+    assert.deepEqual(stub.written('extras/').map((write) => [write.path, write.data]), [['extras/s1', { tenantId: 'vision', clientUids: ['c1'] }]])
+  })
+
+  it('has its scope cleared by the backfill when it carries one, in one update, counted under draftsCleared', async () => {
+    install({
+      users: {},
+      jobs: { j3: JOB3 },
+      extras: { d1: draft({ tenantId: 'qbs', clientUids: ['c1'] }), d2: draft({ tenantId: 'qbs' }), d3: draft({ clientUids: [] }) },
+      submits: {},
+      notifications: {},
+    })
+    stubAuth()
+    const result = await backfill()
+    assert.deepEqual([result.extras, result.draftsCleared, result.skipped], [0, 3, 0])
+    const writes = stub.written('extras/')
+    assert.deepEqual(writes.map((write) => [write.op, write.path]), [['update', 'extras/d1'], ['update', 'extras/d2'], ['update', 'extras/d3']])
+    for (const { data } of writes) {
+      assert.deepEqual(Object.keys(data).sort(), ['clientUids', 'tenantId'])
+      assert.ok(isDelete(data.tenantId) && isDelete(data.clientUids), 'both fields are deleted')
+    }
+  })
+
+  it('is left alone by the backfill, and counted as skipped, when it carries no scope', async () => {
+    install({ users: {}, jobs: { j3: JOB3 }, extras: { d1: draft(), x1: { id: 'CO-001', job: 'QBS-003', status: 'Sent to Builder' } }, submits: {}, notifications: {} })
+    stubAuth()
+    const result = await backfill()
+    assert.deepEqual([result.extras, result.draftsCleared, result.skipped], [1, 0, 1])
+    assert.deepEqual(stub.written('extras/').map((write) => write.path), ['extras/x1'])
+  })
+})
+
 // A builder in qbs names a job of vision. Their submission must stay in qbs whichever
 // path looks at it: its own trigger, a change to the vision job, and the backfill.
 describe('a submission a qbs builder planted on a vision job', () => {
@@ -1413,6 +1502,66 @@ describe('a submission a qbs builder planted on a vision job', () => {
     const result = await backfillScopes.run({ data: {}, auth: { uid: 'o1', token: { role: 'owner', email: 'jesse@p2em.com' } }, rawRequest: {} })
     assert.deepEqual([result.submits, result.skipped], [0, 1])
     assert.deepEqual(stub.written('submits/'), [])
+  })
+})
+
+// A submission a builder created can carry clients from a time its job was in the
+// builder's tenant: it followed the job then, and is left in its tenant once the job
+// moves. A builder creates a submission with no clients, so a submission that stays in
+// its tenant has its clientUids emptied, once, and that is the only write it gets.
+describe('a builder submission left in its tenant with clients on it', () => {
+  const VISION = { id: 'VIS-009', tenantId: 'vision', clientUids: ['c9'] }
+  const users = { b1: { role: 'builder', tenantId: 'qbs' }, c9: { role: 'client', clientJobIds: ['VIS-009'] } }
+  const pinned = (over = {}) => ({ subject: 'Panel', jobId: 'VIS-009', tenantId: 'qbs', clientUids: ['c9'], createdBy: 'b1', ...over })
+  const EMPTIED = { clientUids: [] }
+  const keptLines = () => warnings().filter((line) => line.includes('submits/s1 '))
+
+  it('has its clientUids emptied by its own trigger, and nothing else written', async () => {
+    const documents = { users, jobs: { j9: VISION }, submits: { s1: pinned() } }
+    install(documents)
+    await onSubmitWritten.run(documentEvent('submits', 's1', pinned()))
+    assert.deepEqual(stub.writes, [{ op: 'update', path: 'submits/s1', data: EMPTIED }])
+    assert.equal(keptLines().length, 1)
+    assert.match(keptLines()[0], /its clientUids emptied/)
+    assertNoDashes(keptLines()[0].replace('VIS-009', 'ID'))
+
+    // The write fires the trigger again, and this time there is nothing to write.
+    const next = applied(documents, stub.writes)
+    restart(next)
+    await onSubmitWritten.run(documentEvent('submits', 's1', next.submits.s1, pinned()))
+    assert.deepEqual(stub.writes, [])
+  })
+
+  it('has its clientUids emptied once by the job fan out, even when the job moves and a second pass runs', async () => {
+    const before = { ...VISION, clientUids: [] }
+    const newer = { ...VISION, clientUids: ['c9', 'c10'] }
+    const documents = { users, jobs: { j9: newer }, extras: {}, submits: { s1: pinned() }, notifications: {} }
+    install(documents)
+    await onJobWritten.run(jobEvent('j9', before, VISION, { now: (n) => (n === 1 ? VISION : newer) }))
+    assert.deepEqual(stub.written('submits/'), [{ op: 'update', path: 'submits/s1', data: EMPTIED }])
+    assert.equal(keptLines().length, 1)
+
+    const next = applied(documents, stub.writes)
+    restart(next)
+    await onJobWritten.run(jobEvent('j9', VISION, newer))
+    assert.deepEqual(stub.written('submits/'), [], 'a later change to the job finds nothing to write')
+  })
+
+  it('has its clientUids emptied by the backfill, counted with the submissions it wrote', async () => {
+    install({ users, jobs: { j9: VISION }, extras: {}, submits: { s1: pinned(), s2: pinned({ clientUids: [] }) }, notifications: {} })
+    stubAuth()
+    const result = await backfillScopes.run({ data: {}, auth: { uid: 'o1', token: { role: 'owner', email: 'jesse@p2em.com' } }, rawRequest: {} })
+    assert.deepEqual(stub.written('submits/'), [{ op: 'update', path: 'submits/s1', data: EMPTIED }])
+    assert.deepEqual([result.submits, result.skipped], [1, 1])
+  })
+
+  it('is written nothing when it carries no clients, or no clientUids at all', async () => {
+    for (const doc of [pinned({ clientUids: [] }), pinned({ clientUids: undefined })]) {
+      restart({ users, jobs: { j9: VISION }, submits: { s1: doc } })
+      await onSubmitWritten.run(documentEvent('submits', 's1', doc))
+      assert.deepEqual(stub.writes, [], JSON.stringify(doc))
+      assert.match(keptLines()[0], /left as it is/)
+    }
   })
 })
 
@@ -1475,7 +1624,7 @@ describe('backfillScopes', () => {
     it('counts the users, jobs, change orders, submissions and notifications, and what it left alone', async () => {
       install(small())
       stubAuth()
-      assert.deepEqual(await call(), { ok: true, users: 2, jobs: 2, extras: 1, submits: 0, notifications: 0, skipped: 1 })
+      assert.deepEqual(await call(), { ok: true, users: 2, jobs: 2, extras: 1, submits: 0, notifications: 0, skipped: 1, draftsCleared: 0 })
     })
 
     it('counts every collection it stamped', async () => {
@@ -1486,13 +1635,13 @@ describe('backfillScopes', () => {
         notifications: { n1: { jobId: 'QBS-001' }, n2: { jobId: 'QBS-001' }, n3: { jobId: 'QBS-002' } },
       })
       stubAuth()
-      assert.deepEqual(await call(), { ok: true, users: 2, jobs: 2, extras: 2, submits: 1, notifications: 3, skipped: 1 })
+      assert.deepEqual(await call(), { ok: true, users: 2, jobs: 2, extras: 2, submits: 1, notifications: 3, skipped: 1, draftsCleared: 0 })
     })
 
     it('returns zeros for an empty database', async () => {
       install({ users: {}, ...nothingElse })
       stubAuth()
-      assert.deepEqual(await call(), { ok: true, users: 0, jobs: 0, extras: 0, submits: 0, notifications: 0, skipped: 0 })
+      assert.deepEqual(await call(), { ok: true, users: 0, jobs: 0, extras: 0, submits: 0, notifications: 0, skipped: 0, draftsCleared: 0 })
       assert.deepEqual([stub.writes, stub.batches], [[], []])
     })
 

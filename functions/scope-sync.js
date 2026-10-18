@@ -16,18 +16,24 @@
 //  change order names its job in `job`, and a submission or notification in
 //  `jobId`, both holding the job's own id (like QBS-001) and not its document id.
 //  A submission or notification with no jobId belongs to staff and has no scope to
-//  carry, so it is left alone.
+//  carry, so it is left alone. So is a draft change order (extraState in
+//  lib/extras.js): it has not been sent, so only staff may see it, and it carries no
+//  scope until sendExtraToBuilder stamps it from its job as it sends it.
 //
 //  One exception holds everywhere: a submission a builder created stays in the tenant it
 //  carries when its job is in another. A builder stamps their own tenant on the
 //  submissions they create and may name any job, so following the job would let them
 //  put a submission in another tenant's portals. Whether that applies is read from the
 //  users document of the person in its createdBy; every other submission, a client's or
-//  staff's, or one whose creator is unknown, follows its job.
+//  staff's, or one whose creator is unknown, follows its job. A submission that stays in
+//  its tenant and still lists clients (from a time it followed its job) has its
+//  clientUids emptied, once: a builder creates a submission with none, and that is the
+//  only write it gets.
 //
 //  None of these can fire itself. A document is written only when it does not
-//  carry its job's scope, and the write makes it carry it, so the trigger that the
-//  write fires finds nothing to do.
+//  carry its job's scope, and the write makes it carry it (or, for a submission that
+//  stays in its tenant, empties its clientUids), so the trigger that the write fires
+//  finds nothing to do.
 //
 //  The rules (what counts as a change, what has to be stamped again) live in
 //  lib/scope-sync.js, which imports no Firebase code and is unit tested directly.
@@ -36,6 +42,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import { getAuth } from 'firebase-admin/auth'
+import { FieldValue } from 'firebase-admin/firestore'
 import { db } from './lib/admin.js'
 import { requireOwner } from './lib/authz.js'
 import { region } from './lib/config.js'
@@ -44,8 +51,9 @@ import { wouldLowerStaff } from './lib/roles.js'
 import { nonEmptyString } from './lib/scope.js'
 import { claimsPatchFor } from './lib/users-sync.js'
 import { BATCH_SIZE, chunks } from './lib/batches.js'
+import { extraState } from './lib/extras.js'
 import {
-  clientLinks, creatorDecides, creatorOf, jobIdOf, needsRestamp, scopeChanged, scopePatchFor, staysInTenant,
+  clientLinks, creatorDecides, creatorOf, jobIdOf, listsClients, needsRestamp, scopeChanged, scopePatchFor, staysInTenant,
 } from './lib/scope-sync.js'
 
 export { needsRestamp, scopePatchFor }
@@ -57,6 +65,9 @@ const SCOPED = [
   { collection: 'submits', field: 'jobId' },
   { collection: 'notifications', field: 'jobId' },
 ]
+
+// A change order that has not been sent. It is never stamped.
+const isDraft = (collection, data) => collection === 'extras' && extraState(data) === 'draft'
 
 // Applies [ref, data] updates in batches kept well under the 500 writes Firestore
 // allows in one. The first batch that fails stops the rest and is thrown, unless
@@ -80,14 +91,15 @@ async function commitUpdates(updates, onFailure) {
 // job's tenantId, or the set of uids in its clientUids, changed (clientUids moves
 // whenever onUserWritten links or unlinks a client). Then every change order,
 // submission and notification that names the job is given the job's scope, if it
-// does not carry it already. A job that was deleted writes nothing: the documents
-// that named it keep the scope they were last given.
+// does not carry it already, except a draft change order, which is left as it is.
+// A job that was deleted writes nothing: the documents that named it keep the
+// scope they were last given.
 //
 // A submission a builder created that carries another tenant than the job is left where
-// it is and logged once (see staysInTenant). Its creator's role is read from their users
-// document, once per pass for each creator, and only for a submission whose tenant
-// differs from the job's. Every other submission, change order and notification follows
-// the job.
+// it is and logged once (see staysInTenant), and has its clientUids emptied when it
+// lists any. Its creator's role is read from their users document, once per pass for
+// each creator, and only for a submission whose tenant differs from the job's. Every
+// other submission, change order and notification follows the job.
 //
 // A new job that was written without a tenantId gets the legacy default, qbs,
 // written onto itself once, instead of leaving it implied for ever. That is one
@@ -184,9 +196,10 @@ async function stampDependents(ref, job) {
 }
 
 // One pass: the documents that name the job and do not carry its scope are stamped, in
-// batches, except a submission a builder created in another tenant, which is logged
-// (once, by the paths in kept) and left alone. A batch that fails is logged and added to
-// failures, and the rest go on.
+// batches, except a draft change order, which is skipped, and a submission a builder
+// created in another tenant, which is logged and has its clientUids emptied when it
+// lists any, once for the whole event (by the paths in kept, so a second pass writes
+// nothing to it). A batch that fails is logged and added to failures, and the rest go on.
 async function stampPass(path, job, failures, kept) {
   if (!nonEmptyString(job.id)) return
   const found = await Promise.all(
@@ -198,24 +211,27 @@ async function stampPass(path, job, failures, kept) {
     if (!roles.has(uid)) roles.set(uid, db.doc(`users/${uid}`).get().then(roleIn))
     return roles.get(uid)
   }
-  const stale = []
+  const updates = []
   for (const [i, snap] of found.entries()) {
     for (const doc of snap.docs) {
       const data = doc.data()
+      if (isDraft(SCOPED[i].collection, data)) continue
       if (!needsRestamp(data, job)) continue
       if (SCOPED[i].collection === 'submits' && creatorDecides(data, job)
         && staysInTenant(data, job, await roleOf(creatorOf(data)))) {
         if (!kept.has(doc.ref.path)) {
           kept.add(doc.ref.path)
-          console.warn(keptInTenant('onJobWritten', doc.ref.path, data, job.id, job))
+          const empty = listsClients(data)
+          console.warn(keptInTenant('onJobWritten', doc.ref.path, data, job.id, job, empty))
+          if (empty) updates.push([doc.ref, { clientUids: [] }])
         }
         continue
       }
-      stale.push(doc)
+      updates.push([doc.ref, scopePatchFor(job)])
     }
   }
   await commitUpdates(
-    stale.map((doc) => [doc.ref, scopePatchFor(job)]),
+    updates,
     (error, part) => {
       console.error(`[onJobWritten] ${part.length} of the documents for ${path} could not be stamped, and the rest went on:`, error)
       failures.push(error)
@@ -230,21 +246,23 @@ async function stampPass(path, job, failures, kept) {
 // id and the document is given the job's tenantId and clientUids if it does not
 // carry them. A document that already carries its job's scope produces no write, so
 // the update this makes does not stamp anything again. A document whose job cannot
-// be found is logged and left as it is, and so is one that names no job. A deleted
+// be found is logged and left as it is, and so is one that names no job. A draft
+// change order, as the transaction reads it, is left as it is too. A deleted
 // document writes nothing.
 //
-// A submission a builder created that carries another tenant than its job is left
-// exactly as it is, its clients included, and logged (see staysInTenant): the rules
-// cannot see which tenant the job a builder names is in. Its creator is read inside
-// the transaction, after the submission and the job, and only when its tenant differs
-// from the job's. Every other submission follows its job. A change order is written by
-// staff, who may point it at any job, so it always takes its job's scope.
+// A submission a builder created that carries another tenant than its job keeps its
+// tenant and is logged (see staysInTenant): the rules cannot see which tenant the job a
+// builder names is in. When it lists clients its clientUids are emptied, which is the
+// only write it gets, so the run that write fires finds nothing to do. Its creator is
+// read inside the transaction, after the submission and the job, and only when its
+// tenant differs from the job's. Every other submission follows its job. A change order
+// is written by staff, who may point it at any job, so it always takes its job's scope.
 //
 // The document, the job and the write are one transaction. A change to the job
 // while this runs (a client linked, say) therefore cannot be overwritten by the
 // scope this read before it. All the reads come first, as Firestore requires.
 export const onExtraWritten = onDocumentWritten({ document: 'extras/{id}', region }, (event) =>
-  stampFromJob('onExtraWritten', event, 'job'),
+  stampFromJob('onExtraWritten', event, 'job', { skipDrafts: true }),
 )
 
 export const onSubmitWritten = onDocumentWritten({ document: 'submits/{id}', region }, (event) =>
@@ -255,11 +273,11 @@ export const onSubmitWritten = onDocumentWritten({ document: 'submits/{id}', reg
 const roleIn = (snap) => (snap.exists ? (snap.data()?.role ?? null) : null)
 
 // The line logged when a builder's submission is left in its tenant rather than moved
-// to its job's.
-const keptInTenant = (name, path, doc, jobId, job) =>
-  `[${name}] ${path} was created by a builder and carries tenant ${doc.tenantId}, but its job ${jobId} is in tenant ${scopePatchFor(job).tenantId}, so it was left as it is.`
+// to its job's, and says so when its clientUids are emptied too.
+const keptInTenant = (name, path, doc, jobId, job, emptied = false) =>
+  `[${name}] ${path} was created by a builder and carries tenant ${doc.tenantId}, but its job ${jobId} is in tenant ${scopePatchFor(job).tenantId}, so it was ${emptied ? 'left in its tenant with its clientUids emptied' : 'left as it is'}.`
 
-async function stampFromJob(name, event, field, { pinBuilders = false } = {}) {
+async function stampFromJob(name, event, field, { pinBuilders = false, skipDrafts = false } = {}) {
   const change = event.data
   if (!change) {
     console.warn(`[${name}] The event carried no data; nothing to stamp.`)
@@ -273,6 +291,7 @@ async function stampFromJob(name, event, field, { pinBuilders = false } = {}) {
     const snap = await tx.get(ref)
     if (!snap.exists) return
     const doc = snap.data()
+    if (skipDrafts && extraState(doc) === 'draft') return
     const jobId = jobIdOf(doc, field)
     if (jobId === null) return
 
@@ -286,7 +305,9 @@ async function stampFromJob(name, event, field, { pinBuilders = false } = {}) {
     if (pinBuilders && creatorDecides(doc, job)) {
       const creator = await tx.get(db.collection('users').doc(creatorOf(doc)))
       if (staysInTenant(doc, job, roleIn(creator))) {
-        console.warn(keptInTenant(name, ref.path, doc, jobId, job))
+        const empty = listsClients(doc)
+        console.warn(keptInTenant(name, ref.path, doc, jobId, job, empty))
+        if (empty) tx.update(ref, { clientUids: [] })
         return
       }
     }
@@ -319,9 +340,14 @@ const BACKFILL_FAILED = 'The backfill stopped before it finished. It is safe to 
 //   submits,       (jobId) the scope of the job it names. One that names no job, or
 //   notifications  a job that does not exist, is left alone, and so is a submission a
 //                  builder created that carries a tenant other than its job's, which
-//                  is logged (its creator's role comes from the users scan below).
-// Returns { ok: true, users, jobs, extras, submits, notifications, skipped }, where
-// skipped is how many of those documents were left alone.
+//                  is logged (its creator's role comes from the users scan below) and,
+//                  when it lists clients, has its clientUids emptied and is counted
+//                  with the submissions written. A draft change order is never
+//                  stamped: one that carries a tenantId or clientUids has both
+//                  deleted in one update, and one that carries neither is left alone.
+// Returns { ok: true, users, jobs, extras, submits, notifications, skipped,
+// draftsCleared }, where skipped is how many of those documents were left alone and
+// draftsCleared how many drafts had their scope deleted.
 //
 // Every step can be repeated. If one fails the run stops and says so, and running
 // it again carries on.
@@ -367,23 +393,39 @@ async function runBackfill() {
 
   const stamped = {}
   let skipped = 0
+  let draftsCleared = 0
   for (const { collection, field } of SCOPED) {
     const writes = []
+    let stamps = 0
     for (const doc of (await db.collection(collection).get()).docs) {
       const data = doc.data()
       const jobId = jobIdOf(data, field)
       const scope = scopes.get(jobId)
-      if (!scope) {
+      if (isDraft(collection, data)) {
+        if ('tenantId' in data || 'clientUids' in data) {
+          writes.push([doc.ref, { tenantId: FieldValue.delete(), clientUids: FieldValue.delete() }])
+          draftsCleared += 1
+        } else {
+          skipped += 1
+        }
+      } else if (!scope) {
         skipped += 1
       } else if (collection === 'submits' && staysInTenant(data, scope, roles.get(creatorOf(data)) ?? null)) {
-        console.warn(keptInTenant('backfillScopes', doc.ref.path, data, jobId, scope))
-        skipped += 1
+        const empty = listsClients(data)
+        console.warn(keptInTenant('backfillScopes', doc.ref.path, data, jobId, scope, empty))
+        if (empty) {
+          writes.push([doc.ref, { clientUids: [] }])
+          stamps += 1
+        } else {
+          skipped += 1
+        }
       } else {
         writes.push([doc.ref, { tenantId: scope.tenantId, clientUids: [...scope.clientUids] }])
+        stamps += 1
       }
     }
     await commitUpdates(writes)
-    stamped[collection] = writes.length
+    stamped[collection] = stamps
   }
 
   return {
@@ -394,6 +436,7 @@ async function runBackfill() {
     submits: stamped.submits,
     notifications: stamped.notifications,
     skipped,
+    draftsCleared,
   }
 }
 

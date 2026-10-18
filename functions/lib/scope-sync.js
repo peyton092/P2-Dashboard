@@ -70,6 +70,11 @@ export function staysInTenant(doc, job, creatorRole) {
   return creatorRole === 'builder' && creatorDecides(doc, job)
 }
 
+// Whether a document lists any clients in its clientUids. A submission that stays in
+// its tenant and lists some (it followed its job while the job was in the builder's
+// tenant) has them emptied, because a builder creates a submission with none.
+export const listsClients = (doc) => Array.isArray(doc?.clientUids) && doc.clientUids.length > 0
+
 // The tenant a job is stored with, or null when it has none. Unlike scopeForJob
 // this does not fill in the qbs default: here the question is whether the stored
 // value changed, and a job that gets its tenantId written down has changed.

@@ -5,10 +5,13 @@ import { FieldValue } from 'firebase-admin/firestore'
 import {
   NOTE_MAX,
   NOTE_REQUIRED,
+  TOTAL_CHANGED,
   cleanRevisionNote,
   extraActivity,
   extraState,
   extraTransition,
+  totalChanged,
+  totalOf,
 } from '../lib/extras.js'
 
 const actor = { uid: 'u1', email: 'dana@qbs.example', displayName: 'Dana Lee' }
@@ -302,5 +305,33 @@ describe('extraActivity', () => {
       assertNoDashes(result.msg)
       assertNoDashes(result.summary)
     }
+  })
+})
+
+describe('totalOf and totalChanged', () => {
+  it('reads the stored total as total, else amount, else 0', () => {
+    assert.equal(totalOf({ total: 4200, amount: 4100 }), 4200)
+    assert.equal(totalOf({ amount: 4100 }), 4100)
+    assert.equal(totalOf({ total: 0, amount: 4100 }), 0)
+    assert.equal(totalOf({}), 0)
+    assert.equal(totalOf(null), 0)
+  })
+
+  it('is never a change when no expectedTotal was sent', () => {
+    assert.equal(totalChanged({ amount: 4100 }, undefined), false)
+  })
+
+  it('compares the total sent with the stored one as numbers', () => {
+    assert.equal(totalChanged({ amount: 4100 }, 4100), false)
+    assert.equal(totalChanged({ amount: '4100' }, 4100), false)
+    assert.equal(totalChanged({ total: 4200, amount: 4100 }, 4200), false)
+    assert.equal(totalChanged({}, 0), false)
+    assert.equal(totalChanged({ amount: 4100 }, 4000), true)
+    assert.equal(totalChanged({ total: 4200, amount: 4100 }, 4100), true)
+    assert.equal(totalChanged({ amount: 4100 }, 'abc'), true)
+  })
+
+  it('words the refusal without a dash', () => {
+    assertNoDashes(TOTAL_CHANGED)
   })
 })

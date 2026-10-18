@@ -7,8 +7,9 @@
 //  data: the job as the New Job form builds it. It needs an id like QBS-001, a
 //  street address, a client and a tenant (p2-core, qbs or vision); a name is
 //  optional, and the other fields are copied through when they are plain enough
-//  (see lib/jobs.js). The id has to be new. The server sets clientUids to [] (the
-//  clients are linked to the job by their own accounts), and createdBy,
+//  (see lib/jobs.js). The id has to be new. The server sets clientUids to the
+//  clients whose users document already lists the id (sorted, [] when there are
+//  none; a client who lists it later is linked by onUserWritten), and createdBy,
 //  createdByEmail and createdAt, whatever the caller sent. Returns
 //  { ok: true, docId } with the new job's document id.
 //
@@ -39,11 +40,19 @@ export const createJob = onCall({ region, cors: true }, async (req) => {
     const taken = await tx.get(db.collection('jobs').where('id', '==', id).limit(1))
     if (!taken.empty) throw new HttpsError('already-exists', 'A job with that ID already exists.')
 
+    // The clients whose users document already lists this id. onUserWritten links a
+    // client only to jobs that exist when their document is written, so these would
+    // otherwise wait for their next edit. Read here, before anything is written.
+    const linked = await tx.get(
+      db.collection('users').where('role', '==', 'client').where('clientJobIds', 'array-contains', id),
+    )
+    const clientUids = [...new Set(linked.docs.map((doc) => doc.id))].sort()
+
     const job = {
       ...fields,
       id,
       tenantId,
-      clientUids: [],
+      clientUids,
       createdBy: actor.uid,
       createdByEmail: actor.email,
       createdAt: FieldValue.serverTimestamp(),
@@ -53,7 +62,7 @@ export const createJob = onCall({ region, cors: true }, async (req) => {
     tx.set(ref, job)
     tx.set(
       db.collection('notifications').doc(),
-      notificationDoc({ type: activity.type, msg: activity.msg, jobId: id, scope: { tenantId, clientUids: [] }, actor }),
+      notificationDoc({ type: activity.type, msg: activity.msg, jobId: id, scope: { tenantId, clientUids }, actor }),
     )
     tx.set(
       db.collection('history').doc(),

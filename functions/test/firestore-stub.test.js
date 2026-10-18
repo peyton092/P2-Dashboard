@@ -125,12 +125,46 @@ describe('stubFirestore reads', () => {
     })
   })
 
-  it('refuses a query that is not an equality, so a handler cannot lean on one it does not answer', async () => {
+  it('refuses a query that is neither an equality nor an array-contains, so a handler cannot lean on one it does not answer', async () => {
     stubFirestore(DOCS)
     await assert.rejects(
       db.runTransaction((tx) => tx.get(db.collection('jobs').where('id', 'in', ['QBS-003']).limit(1))),
-      /the stub answers == queries only/,
+      /the stub answers == and array-contains queries only/,
     )
+  })
+
+  it('answers a chain of an equality and an array-contains, and records it as one read', async () => {
+    const stub = stubFirestore({
+      users: {
+        c2: { role: 'client', clientJobIds: ['QBS-001', 'QBS-003'] },
+        c1: { role: 'client', clientJobIds: ['QBS-003'] },
+        c3: { role: 'client', clientJobIds: ['QBS-004'] },
+        c4: { role: 'client', clientJobIds: 'QBS-003' },
+        b1: { role: 'builder', clientJobIds: ['QBS-003'] },
+      },
+    })
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(db.collection('users').where('role', '==', 'client').where('clientJobIds', 'array-contains', 'QBS-003'))
+      assert.deepEqual(snap.docs.map((doc) => doc.id), ['c2', 'c1'])
+      assert.equal(snap.size, 2)
+      const none = await tx.get(db.collection('users').where('clientJobIds', 'array-contains', 'QBS-999'))
+      assert.equal(none.empty, true)
+    })
+    assert.deepEqual(stub.reads, [
+      'query:users:role==client,clientJobIds array-contains QBS-003',
+      'query:users:clientJobIds array-contains QBS-999',
+    ])
+  })
+
+  it('refuses a chained query read after a write, like any other read', async () => {
+    stubFirestore(DOCS)
+    await db.runTransaction(async (tx) => {
+      tx.set(db.collection('history').doc(), { type: 'job' })
+      assert.throws(
+        () => tx.get(db.collection('users').where('role', '==', 'client').where('clientJobIds', 'array-contains', 'QBS-003')),
+        { message: READ_AFTER_WRITE },
+      )
+    })
   })
 
   it('reads a users document outside a transaction', async () => {
@@ -219,14 +253,20 @@ describe('stubFirestore outside a transaction (opt in)', () => {
     }
   })
 
-  it('answers an equality query with the matching documents, and refuses any other operator', async () => {
+  it('answers an equality query with the matching documents, and refuses an operator it does not answer', async () => {
     stubFirestore(DOCS, OPT_IN)
     const some = await db.collection('jobs').where('id', '==', 'QBS-004').get()
     assert.deepEqual(some.docs.map((doc) => doc.id), ['job4'])
     assert.deepEqual(some.docs[0].ref, { id: 'job4', path: 'jobs/job4' })
     const none = await db.collection('jobs').where('id', '==', 'QBS-999').get()
     assert.equal(none.empty, true)
-    await assert.rejects(db.collection('jobs').where('id', 'in', ['QBS-003']).get(), /the stub answers == queries only/)
+    await assert.rejects(db.collection('jobs').where('id', 'in', ['QBS-003']).get(), /the stub answers == and array-contains queries only/)
+  })
+
+  it('answers a chained equality and array-contains query outside a transaction too', async () => {
+    stubFirestore({ users: { c1: { role: 'client', clientJobIds: ['QBS-003'] }, b1: { role: 'builder', clientJobIds: ['QBS-003'] } } }, OPT_IN)
+    const snap = await db.collection('users').where('role', '==', 'client').where('clientJobIds', 'array-contains', 'QBS-003').get()
+    assert.deepEqual(snap.docs.map((doc) => doc.ref.path), ['users/c1'])
   })
 
   it('still answers the transaction reads and the query the privileged callables use', async () => {

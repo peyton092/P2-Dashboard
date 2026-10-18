@@ -22,17 +22,20 @@
 //    authz.js              requireAuth, requireStaff, requireOwner (callable guards)
 //    roles.js              VALID_ROLES, isStaff, isOwner, claimsOf, mergeUserDoc, wouldLowerStaff (pure)
 //    scope.js              scopeForJob, canReadJob, canActOnExtra, nonEmptyString (pure)
-//    scope-sync.js         scopePatchFor, needsRestamp, scopeChanged, jobIdOf, clientLinks (pure)
+//    scope-sync.js         scopePatchFor, needsRestamp, scopeChanged, jobIdOf, clientLinks,
+//                          creatorOf, creatorDecides, staysInTenant, listsClients (pure)
 //    batches.js            chunks, JOB_ID_CHUNK, BATCH_SIZE (pure)
 //    auth-claims.js        currentClaimRole (reads one account's custom claims)
 //    push-targets.js       targetTokens, groupTokens (pure)
-//    users-validate.js     validateNewUser (pure)
-//    users-sync.js         claimsPatchFor (pure)
-//    extras.js             extraState, extraTransition, extraActivity (pure)
-//    inspections.js        TRADE_PHASES, validateInspection, inspectionPatch (pure)
-//    jobs.js               validateNewJob, jobActivity (pure)
+//    users-validate.js     validateNewUser, tenantForRole (pure)
+//    users-sync.js         claimsPatchFor, jobLinkChanges (pure)
+//    extras.js             extraState, extraTransition, extraActivity, cleanRevisionNote,
+//                          totalOf, totalChanged, NOTE_MAX, NOTE_REQUIRED, TOTAL_CHANGED (pure)
+//    inspections.js        TRADE_PHASES, TRADE_MESSAGE, PHASE_MESSAGE, validateInspection,
+//                          inspectionPatch, inspectionActivity (pure)
+//    jobs.js               validateNewJob, jobActivity, TENANTS, JOB_ID, MAX_DEPTH (pure)
 //    activity.js           notificationDoc, historyDoc (pure)
-//    actor.js              buildActor (pure), actorOf (reads the caller's name)
+//    actor.js              buildActor (pure), actorOf (reads the caller's users document)
 //    doc-id.js             cleanDocId (pure)
 //
 //  Firebase deploys only what is exported here, and a deployed function that
@@ -40,7 +43,7 @@
 //  to this file, and never drop or rename an existing one (test/exports.test.js
 //  pins the current set).
 //
-//  QuickBooks functions:
+//  QuickBooks functions (staff only, like the CompanyCam ones and ccSyncPhotos):
 //    qbAuth        — Returns an Intuit OAuth2 authorization URL for the
 //                    frontend to redirect to. Stores a one-time `state` token
 //                    in Firestore so the callback can verify it.
@@ -50,7 +53,7 @@
 //    qbDisconnect  — Revokes the refresh token at Intuit and deletes the
 //                    Firestore tokens doc.
 //
-//  CompanyCam functions (mirror the QuickBooks flow):
+//  CompanyCam functions (mirror the QuickBooks flow, and are staff only too):
 //    ccAuth        — Returns a CompanyCam OAuth2 authorization URL. Stores a
 //                    one-time `state` token at cc_config/oauth_states.
 //    ccCallback    — Receives { code, state } from the redirect (CompanyCam
@@ -73,24 +76,30 @@
 //                   list and out of any job that lists them but no longer
 //                   should (all of them when the document goes), and revokes
 //                   refresh tokens when an existing role changes or is removed.
-//                   A new document never lowers an account that is already owner
-//                   or internal: its claims are left as they are and the log says so.
+//                   A write over a document that did not say owner or internal (a
+//                   new document included) never lowers an account that is already
+//                   owner or internal: its claims are left as they are and the log
+//                   says so.
 //
 //  Privileged actions. The browser no longer writes any of these itself; each
 //  call checks the caller's role, makes the change, and writes the notification
 //  and the history line together in one transaction. All return { ok: true }.
 //    sendExtraToBuilder  Staff only. Takes { extraId }. Sends a change order (new,
 //                        or revised after a rejection) to the builder.
-//    approveExtra        Takes { extraId }. Approves a change order that is
-//                        waiting for a decision. Allowed for whoever may act on
-//                        it: staff, the builder of its tenant, its job's clients.
-//    rejectExtra         Takes { extraId, note }. Asks for a revision; the note
-//                        says what. Allowed for the same people.
+//    approveExtra        Takes { extraId, expectedTotal? }. Approves a change order
+//                        that is waiting for a decision. Allowed for whoever may act
+//                        on it: staff, the builder of its tenant, its job's clients.
+//                        Refused when expectedTotal, the total the person was shown,
+//                        is sent and the stored total is another.
+//    rejectExtra         Takes { extraId, note, expectedTotal? }. Asks for a
+//                        revision; the note says what. Allowed for the same people,
+//                        and refused the same way when the total changed.
 //    passInspection      Staff only. Takes { jobDocId, trade, phase }. Marks one
 //    failInspection      phase of one trade passed or failed, dated today.
 //    createJob           Staff only. Takes the job from the New Job form (id like
 //                        QBS-001, address, client, tenantId). Refuses an id that
-//                        is taken. Returns { ok: true, docId }.
+//                        is taken, and gives the job the clients whose users
+//                        document already lists the id. Returns { ok: true, docId }.
 //
 //  Scope stamping. A job's scope is { tenantId, clientUids }, and every change order,
 //  submission and notification that names the job carries a copy, which the Firestore
@@ -107,13 +116,18 @@
 //                     when it lacks them or carries another job scope. A document that
 //                     already carries it, one that names no job and one whose job is
 //                     missing are not written, so none of these can fire itself.
+//                     None of the three stamps a draft change order, and a submission
+//                     a builder created keeps its own tenant when its job is in
+//                     another, with its clientUids emptied once if it lists any.
 //    backfillScopes   Owner only callable. Takes no data. Sets the Auth claims of every
 //                     user with a role, from each user's document as it is when their turn
 //                     comes (never lowering an owner or internal account), sets every job's
 //                     tenantId (qbs when it has none) and clientUids (exactly the clients who
 //                     list it, from a scan of the users taken after the claims), then stamps
-//                     the change orders, submissions and notifications. Returns { ok: true,
-//                     users, jobs, extras, submits, notifications, skipped }. Safe to run again.
+//                     the change orders, submissions and notifications, and deletes the
+//                     scope a draft change order carries. Returns { ok: true, users, jobs,
+//                     extras, submits, notifications, skipped, draftsCleared }. Safe to run
+//                     again.
 //
 //  Required Firebase secrets (set with `firebase functions:secrets:set`):
 //    QB_CLIENT_ID       — Intuit app's Client ID

@@ -24,7 +24,8 @@ import { groupTokens, targetTokens } from './lib/push-targets.js'
 import { nonEmptyString } from './lib/scope.js'
 import { tenantForRole } from './lib/users-validate.js'
 
-// What a person reads on the lock screen carries no dashes, in a title or a body.
+// The titles, and the body used when a notification has no message, carry no
+// dashes. A notification's own message is sent as it was written.
 const NOTIF_TITLE = {
   error:   'P2 Field Control: action needed',
   warn:    'P2 Field Control: heads up',
@@ -42,9 +43,9 @@ const MULTICAST_LIMIT = 500
 // account (tenantForRole): a builder keeps qbs or vision and otherwise has none, so a
 // builder whose document names any other tenant matches no tenant scoped push, as the
 // rules show them nothing scoped. A uid whose document does not exist is left out,
-// which leaves its devices out of the fan out. So is a uid that cannot name a
-// document (not a string, empty, or holding a slash, which would point the path
-// somewhere else), so that one odd token cannot stop everyone else's push.
+// which leaves its devices out of the fan out. So is a uid that is not a string, is
+// empty, or holds a slash (which would point the path somewhere else), so that one
+// such token cannot stop everyone else's push.
 async function loadUsers(uids) {
   const named = [...new Set(uids)].filter((uid) => nonEmptyString(uid) && !uid.includes('/'))
   const entries = []

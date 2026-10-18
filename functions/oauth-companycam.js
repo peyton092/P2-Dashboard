@@ -11,13 +11,15 @@
 //                    verifies state, exchanges the code, persists tokens at
 //                    cc_config/tokens.
 //    ccDisconnect  — Revokes the token at CompanyCam and deletes the doc.
+//
+//  All three are staff only: requireStaff runs before anything is read.
 // ============================================================================
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { FieldValue } from 'firebase-admin/firestore'
 import { randomBytes } from 'node:crypto'
 import { db } from './lib/admin.js'
-import { requireAuth } from './lib/authz.js'
+import { requireStaff } from './lib/authz.js'
 import { CC_CLIENT_ID, CC_CLIENT_SECRET } from './lib/secrets.js'
 import { STATE_TTL_MS, CC_TOKEN_URL, ccCallableOpts } from './lib/config.js'
 
@@ -32,7 +34,7 @@ const CC_REVOKE_URL    = 'https://app.companycam.com/oauth/revoke'
 // Generates a one-time `state` token, stores it, and returns the CompanyCam
 // authorization URL. Frontend then does `window.location.href = data.authUrl`.
 export const ccAuth = onCall(ccCallableOpts, async (req) => {
-  await requireAuth(req)
+  await requireStaff(req)
   const auth = req.auth
 
   const state = randomBytes(24).toString('hex')
@@ -57,7 +59,7 @@ export const ccAuth = onCall(ccCallableOpts, async (req) => {
 // CompanyCam does not return a realmId — the frontend uses that absence to route
 // the redirect to this function rather than qbCallback.
 export const ccCallback = onCall(ccCallableOpts, async (req) => {
-  await requireAuth(req)
+  await requireStaff(req)
   const auth = req.auth
   const { code, state } = req.data || {}
 
@@ -130,7 +132,7 @@ export const ccCallback = onCall(ccCallableOpts, async (req) => {
 // ── ccDisconnect ────────────────────────────────────────────────────────────────
 // Revokes the access token at CompanyCam and deletes the local tokens doc.
 export const ccDisconnect = onCall(ccCallableOpts, async (req) => {
-  await requireAuth(req)
+  await requireStaff(req)
 
   const ref  = db.collection('cc_config').doc('tokens')
   const snap = await ref.get()

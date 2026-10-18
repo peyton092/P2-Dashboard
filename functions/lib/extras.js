@@ -13,6 +13,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 // A revision note is 1 to 1000 characters once trimmed.
 export const NOTE_MAX = 1000
 export const NOTE_REQUIRED = 'Say what should be revised.'
+export const TOTAL_CHANGED = 'This change order changed since you opened it. Review it again.'
 
 // Where a change order stands. Stored statuses are mixed: the Change Orders
 // screen writes Title Case, and older browser writes and the demo data use lower
@@ -35,6 +36,18 @@ export function cleanRevisionNote(note) {
   if (typeof note !== 'string') return null
   const trimmed = note.trim()
   return trimmed !== '' && trimmed.length <= NOTE_MAX ? trimmed : null
+}
+
+// The total a change order stands at, as stored: its total, else its amount, else 0.
+export const totalOf = (extra) => extra?.total ?? extra?.amount ?? 0
+
+// Whether the total a person was shown (expectedTotal, which the portals send with
+// an approval or a revision request) is no longer the stored one. The two are
+// compared as numbers. No expectedTotal (undefined) means the caller did not say,
+// and that is never a change.
+export function totalChanged(extra, expectedTotal) {
+  if (expectedTotal === undefined) return false
+  return Number(expectedTotal) !== Number(totalOf(extra))
 }
 
 // Only the three fields of who acted are stored, whatever else the caller holds.

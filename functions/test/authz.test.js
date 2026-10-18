@@ -57,9 +57,9 @@ describe('requireAuth', () => {
   })
 
   it('reads users/{uid} exactly once and merges it when the token has no role claim', async () => {
-    stubUsers({ u2: { role: 'client', tenantId: 'qbs', clientJobIds: ['QBS-001'], displayName: 'Pat' } })
+    stubUsers({ u2: { role: 'client', tenantId: 'p2-core', clientJobIds: ['QBS-001'], displayName: 'Pat' } })
     const claims = await requireAuth(reqFor('u2', { email: 'pat@example.com' }))
-    assert.deepEqual(claims, { uid: 'u2', role: 'client', tenantId: 'qbs', clientJobIds: ['QBS-001'] })
+    assert.deepEqual(claims, { uid: 'u2', role: 'client', tenantId: 'p2-core', clientJobIds: ['QBS-001'] })
     assert.deepEqual(reads, ['users/u2'])
   })
 

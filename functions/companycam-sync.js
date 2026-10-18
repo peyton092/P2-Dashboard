@@ -2,14 +2,15 @@
 //  CompanyCam photo sync
 //  Pulls photos from CompanyCam, matches projects to P2 jobs by street
 //  address, and writes photo references into jobs/{jobDocId}/files. The client
-//  portal and document views already render that subcollection.
+//  portal and document views already render that subcollection. The ccSyncPhotos
+//  callable is staff only: requireStaff runs before anything is read.
 // ============================================================================
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { FieldValue } from 'firebase-admin/firestore'
 import { db } from './lib/admin.js'
-import { requireAuth } from './lib/authz.js'
+import { requireStaff } from './lib/authz.js'
 import { CC_CLIENT_ID, CC_CLIENT_SECRET } from './lib/secrets.js'
 import { region, CC_TOKEN_URL, ccCallableOpts } from './lib/config.js'
 
@@ -169,7 +170,7 @@ async function syncCompanyCamPhotos() {
 
 // ── ccSyncPhotos (manual trigger from Settings) ───────────────────────────────
 export const ccSyncPhotos = onCall(ccCallableOpts, async (req) => {
-  await requireAuth(req)
+  await requireStaff(req)
   try {
     return { ok: true, ...(await syncCompanyCamPhotos()) }
   } catch (e) {

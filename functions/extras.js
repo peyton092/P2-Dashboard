@@ -6,6 +6,11 @@
 //    approveExtra        Approves a change order that is waiting for a decision.
 //    rejectExtra         Asks for a revision of one, with a note saying what.
 //
+//  approveExtra and rejectExtra take an optional expectedTotal, the total the
+//  person was shown. When it is sent and the stored total (total, else amount,
+//  else 0) is another, the call is refused before anything is written, so nobody
+//  decides a change order at a total they never saw.
+//
 //  Approving and rejecting are open to whoever may act on the change order:
 //  staff, the builder whose tenant owns it, and the clients linked to its job
 //  (canActOnExtra). The browser no longer writes any of this itself. Each call
@@ -25,7 +30,9 @@ import { actorOf } from './lib/actor.js'
 import { cleanDocId } from './lib/doc-id.js'
 import { historyDoc, notificationDoc } from './lib/activity.js'
 import { canActOnExtra, scopeForJob } from './lib/scope.js'
-import { NOTE_REQUIRED, cleanRevisionNote, extraActivity, extraState, extraTransition } from './lib/extras.js'
+import {
+  NOTE_REQUIRED, TOTAL_CHANGED, cleanRevisionNote, extraActivity, extraState, extraTransition, totalChanged,
+} from './lib/extras.js'
 
 export { extraState, extraTransition }
 
@@ -34,8 +41,8 @@ const JOB_GONE = 'That job no longer exists.'
 const NOT_YOURS = 'You can only act on change orders for your own projects.'
 
 // ── The three callables ───────────────────────────────────────────────────────
-// data: { extraId, note? }. The guard runs first, before anything is read.
-// Each returns { ok: true }.
+// data: { extraId, note?, expectedTotal? }. The guard runs first, before anything
+// is read. Each returns { ok: true }.
 
 export const sendExtraToBuilder = onCall({ region, cors: true }, async (req) => {
   const claims = await requireStaff(req)
@@ -53,10 +60,11 @@ export const rejectExtra = onCall({ region, cors: true }, async (req) => {
   return applyAction(req, claims, 'reject')
 })
 
-// Reads the change order, checks the caller may act on it and that the action
-// applies to its state, then writes the change, the notification and the history
-// line together. All of it happens inside one transaction, so two people deciding
-// at once cannot both succeed. A refusal throws before anything is written.
+// Reads the change order, checks the caller may act on it, that the action applies
+// to its state and, for an approval or a revision request, that its total is the
+// one the caller was shown, then writes the change, the notification and the
+// history line together. All of it happens inside one transaction, so two people
+// deciding at once cannot both succeed. A refusal throws before anything is written.
 async function applyAction(req, claims, action) {
   const extraId = cleanDocId(req.data?.extraId)
   if (extraId === null) throw new HttpsError('invalid-argument', 'Choose a change order.')
@@ -79,6 +87,9 @@ async function applyAction(req, claims, action) {
     if (!canActOnExtra(claims, scoped)) throw new HttpsError('permission-denied', NOT_YOURS)
 
     const patch = extraTransition(extra, action, actor, note)
+    if (action !== 'send' && totalChanged(extra, req.data?.expectedTotal)) {
+      throw new HttpsError('failed-precondition', TOTAL_CHANGED)
+    }
     const activity = extraActivity(extra, action, actor, note)
     const jobId = typeof extra.job === 'string' && extra.job !== '' ? extra.job : null
 

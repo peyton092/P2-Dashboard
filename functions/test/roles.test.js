@@ -97,11 +97,11 @@ describe('mergeUserDoc', () => {
   const none = { uid: 'u1', role: null, tenantId: null, clientJobIds: [] }
 
   it('fills role, tenantId and clientJobIds from the document when the claims have none', () => {
-    const doc = { role: 'client', tenantId: 'qbs', clientJobIds: ['QBS-001'] }
+    const doc = { role: 'builder', tenantId: 'vision', clientJobIds: ['QBS-001'] }
     assert.deepEqual(mergeUserDoc(none, doc), {
       uid: 'u1',
-      role: 'client',
-      tenantId: 'qbs',
+      role: 'builder',
+      tenantId: 'vision',
       clientJobIds: ['QBS-001'],
     })
   })
@@ -125,8 +125,8 @@ describe('mergeUserDoc', () => {
 
   it('treats empty strings as missing', () => {
     const claims = { uid: 'u1', role: '', tenantId: '', clientJobIds: [] }
-    const out = mergeUserDoc(claims, { role: 'internal', tenantId: 'qbs' })
-    assert.equal(out.role, 'internal')
+    const out = mergeUserDoc(claims, { role: 'builder', tenantId: 'qbs' })
+    assert.equal(out.role, 'builder')
     assert.equal(out.tenantId, 'qbs')
   })
 
@@ -138,7 +138,7 @@ describe('mergeUserDoc', () => {
 
   it('rejects an invalid tenantId in the document', () => {
     for (const bad of ['', 5, null, undefined, ['qbs']]) {
-      assert.equal(mergeUserDoc(none, { tenantId: bad }).tenantId, null, `tenantId ${JSON.stringify(bad)}`)
+      assert.equal(mergeUserDoc(none, { role: 'builder', tenantId: bad }).tenantId, null, `tenantId ${JSON.stringify(bad)}`)
     }
   })
 
@@ -150,6 +150,20 @@ describe('mergeUserDoc', () => {
   it('drops non string entries from the documents clientJobIds', () => {
     const out = mergeUserDoc(none, { clientJobIds: ['QBS-001', 7, null, '', 'QBS-002'] })
     assert.deepEqual(out.clientJobIds, ['QBS-001', 'QBS-002'])
+  })
+
+  // A token without claims takes its tenant from the document, cleaned for the role the
+  // way the claims sync (and push) clean it: a builder keeps qbs or vision and otherwise
+  // has none, and every other role is p2-core. The rules give a builder of any other
+  // tenant nothing scoped, and the guards must not either.
+  it('cleans the tenant for the role, so a builder whose document says p2-core has none', () => {
+    assert.equal(mergeUserDoc(none, { role: 'builder', tenantId: 'p2-core' }).tenantId, null)
+    assert.equal(mergeUserDoc(none, { role: 'builder', tenantId: 'acme' }).tenantId, null)
+    assert.equal(mergeUserDoc(none, { role: 'builder' }).tenantId, null)
+    assert.equal(mergeUserDoc(none, { role: 'builder', tenantId: 'vision' }).tenantId, 'vision')
+    assert.equal(mergeUserDoc(none, { role: 'client', tenantId: 'qbs' }).tenantId, 'p2-core')
+    assert.equal(mergeUserDoc(none, { role: 'internal', tenantId: 'vision' }).tenantId, 'p2-core')
+    assert.equal(mergeUserDoc({ ...none, tenantId: 'p2-core' }, { role: 'builder', tenantId: 'qbs' }).tenantId, null)
   })
 
   it('returns the claims unchanged when there is no document', () => {
@@ -180,9 +194,9 @@ describe('mergeUserDoc', () => {
   })
 })
 
-// First assignment of claims (a new users document, or the backfill) must not
-// quietly take a role away from an owner or internal staff member whose claims
-// were set by hand and who has no users document yet.
+// A write over a users document that did not say owner or internal (a new one
+// included), and the backfill, must not quietly take a role away from an owner or
+// internal staff member whose claims were set by hand.
 describe('wouldLowerStaff', () => {
   it('is true when an owner would be given any lower role, or none', () => {
     for (const next of ['internal', 'builder', 'client', null, undefined, 'admin']) {

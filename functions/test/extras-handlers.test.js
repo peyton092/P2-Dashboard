@@ -8,7 +8,7 @@ const { approveExtra, rejectExtra, sendExtraToBuilder } = extras
 
 // The Firestore stub is shared with the other handler tests (helpers/firestore-stub.js).
 // Each test installs it with the documents that exist, and `stub` then holds what the
-// handler did: stub.calls, stub.reads, stub.writes and stub.stub.written(prefix).
+// handler did: stub.calls, stub.reads, stub.writes and stub.written(prefix).
 //
 // extras: { x1: { ...document } }   change orders that exist, by document id
 // jobs:   { job3: { id: 'QBS-003' } }  job documents that exist, by document id
@@ -67,15 +67,16 @@ describe('the guards run before anything is read', () => {
     assert.deepEqual([stub.calls, stub.reads, stub.writes], [[], [], []])
   })
 
-  it('reads users/{uid} for a token without a role, once, and then still refuses a role less caller', async () => {
+  it('reads users/{uid} for a token without a role, and then still refuses a role less caller', async () => {
     stubFirestore({ extras: { x1: stamped() }, users: {} })
     const noClaims = { uid: 'ghost', token: { email: 'ghost@x.example', name: 'Ghost' } }
     await assert.rejects(call(approveExtra, { extraId: 'x1' }, noClaims), code('permission-denied', 'You can only act on change orders for your own projects.'))
-    // The guard reads the caller's users document, and reads it once: the token
-    // carries a name, so the actor lookup has no reason to read it again.
-    assert.deepEqual(stub.calls.filter((entry) => entry.startsWith('doc:')), ['doc:users/ghost'])
+    // The guard reads the caller's users document for the role, and the actor lookup
+    // reads it again for the name, which it takes from the document before the token.
+    assert.deepEqual(stub.calls.filter((entry) => entry.startsWith('doc:')), ['doc:users/ghost', 'doc:users/ghost'])
     assert.deepEqual(stub.writes, [])
   })
+
 
   it('takes the role of a token without one from the users document', async () => {
     stubFirestore({ extras: { x1: stamped({ status: 'Draft' }) }, users: { late: { role: 'internal' } } })
@@ -226,9 +227,9 @@ describe('approveExtra', () => {
         code('failed-precondition', 'This change order has already been decided.'),
         status,
       )
+      assert.deepEqual(stub.writes, [], status)
       mock.restoreAll()
     }
-    assert.deepEqual(stub.writes, [])
   })
 
   it('refuses a draft, which has not been sent for approval', async () => {
@@ -279,6 +280,13 @@ describe('approveExtra', () => {
     stubFirestore({ extras: { x1: stamped() }, users: {} })
     await call(approveExtra, { extraId: 'x1' }, nameless)
     assert.equal(stub.written('extras/')[0].data.approvedBy.displayName, 'dana@qbs.example')
+  })
+
+  it('takes the name the users document gives the caller over the one on the token', async () => {
+    stubFirestore({ extras: { x1: stamped() }, users: { b1: { displayName: 'Dana Lee Parker' } } })
+    await call(approveExtra, { extraId: 'x1' }, QBS)
+    assert.equal(stub.written('extras/')[0].data.approvedBy.displayName, 'Dana Lee Parker')
+    assert.equal(stub.written('history/')[0].data.actor, 'Dana Lee Parker')
   })
 
   it('ignores a note, since an approval has nowhere to keep one', async () => {
@@ -504,6 +512,25 @@ describe('sendExtraToBuilder', () => {
     assert.equal(stub.written('notifications/')[0].data.tenantId, 'qbs')
   })
 
+  // A draft carries no scope (the stamping triggers and the backfill leave it without
+  // one), so every send of one stamps it, in the same update as the send.
+  it('stamps an unstamped draft from its job in the same transaction and the same update as the send', async () => {
+    for (const unstamped of [legacy({ status: 'Draft' }), legacy({ status: 'Draft', tenantId: 'vision' })]) {
+      stubFirestore({ extras: { x1: unstamped }, jobs: { job3: JOB } })
+      await call(sendExtraToBuilder, { extraId: 'x1' }, INTERNAL)
+      assert.deepEqual(stub.calls.filter((entry) => entry === 'runTransaction'), ['runTransaction'])
+      assert.deepEqual(stub.reads, ['extras/x1', 'query:jobs:id==QBS-003'])
+      const writes = stub.written('extras/')
+      assert.equal(writes.length, 1, 'one update carries the send and the stamp')
+      assert.equal(writes[0].data.status, 'Sent to Builder')
+      assert.equal(writes[0].data.tenantId, 'qbs')
+      assert.deepEqual(writes[0].data.clientUids, ['c1'])
+      const [note] = stub.written('notifications/')
+      assert.deepEqual([note.data.tenantId, note.data.clientUids], ['qbs', ['c1']])
+      mock.restoreAll()
+    }
+  })
+
   it('answers a change order or a job that is gone with not-found', async () => {
     stubFirestore({ extras: { x1: legacy({ status: 'Draft' }) }, jobs: {} })
     await assert.rejects(call(sendExtraToBuilder, { extraId: 'x1' }, OWNER), code('not-found', 'That job no longer exists.'))
@@ -514,6 +541,69 @@ describe('sendExtraToBuilder', () => {
   it('does not ask for a note', async () => {
     stubFirestore({ extras: { x1: stamped({ status: 'Draft' }) } })
     assert.deepEqual(await call(sendExtraToBuilder, { extraId: 'x1' }, OWNER), { ok: true })
+  })
+})
+
+// The portals send the total they showed (expectedTotal), so a change order whose
+// total was changed after the person opened it is not decided at a total they never
+// saw. The stored total is total, else amount, else 0.
+describe('the total the caller was shown', () => {
+  const TOTAL_CHANGED = 'This change order changed since you opened it. Review it again.'
+  const NOTE = 'Use the 200A panel'
+  const extras = () => ({
+    a: stamped({ amount: 4100 }),
+    t: stamped({ total: 4200, amount: 4100 }),
+    z: { id: 'CO-007', job: 'QBS-003', status: 'Sent to Builder', tenantId: 'qbs', clientUids: ['c1'] },
+  })
+
+  for (const [name, fn, more] of [['approveExtra', approveExtra, {}], ['rejectExtra', rejectExtra, { note: NOTE }]]) {
+    it(`${name} refuses a total that is not the stored one, and writes nothing`, async () => {
+      stubFirestore({ extras: extras() })
+      for (const [extraId, expectedTotal] of [['a', 4000], ['a', '4000'], ['t', 4100], ['z', 4100], ['a', null]]) {
+        await assert.rejects(
+          call(fn, { extraId, expectedTotal, ...more }, QBS),
+          code('failed-precondition', TOTAL_CHANGED),
+          `${extraId} at ${expectedTotal}`,
+        )
+      }
+      assert.deepEqual(stub.writes, [])
+    })
+
+    it(`${name} goes ahead when the total sent is the stored one`, async () => {
+      for (const [extraId, expectedTotal] of [['a', 4100], ['t', 4200], ['z', 0]]) {
+        stubFirestore({ extras: extras() })
+        assert.deepEqual(await call(fn, { extraId, expectedTotal, ...more }, QBS), { ok: true }, extraId)
+        assert.equal(stub.written('extras/').length, 1, extraId)
+        mock.restoreAll()
+      }
+    })
+
+    it(`${name} goes ahead when no total is sent`, async () => {
+      stubFirestore({ extras: extras() })
+      assert.deepEqual(await call(fn, { extraId: 't', ...more }, QBS), { ok: true })
+      assert.equal(stub.writes.length, 3)
+    })
+
+    it(`${name} tells a caller who may not act on it only that, whatever total they send`, async () => {
+      stubFirestore({ extras: extras() })
+      await assert.rejects(
+        call(fn, { extraId: 'a', expectedTotal: 1, ...more }, VISION),
+        code('permission-denied', 'You can only act on change orders for your own projects.'),
+      )
+    })
+
+    it(`${name} still answers a decided change order as decided, whatever total is sent`, async () => {
+      stubFirestore({ extras: { d: stamped({ status: 'Approved' }) } })
+      await assert.rejects(
+        call(fn, { extraId: 'd', expectedTotal: 1, ...more }, QBS),
+        code('failed-precondition', 'This change order has already been decided.'),
+      )
+    })
+  }
+
+  it('is not asked of sendExtraToBuilder, which sends whatever total is passed', async () => {
+    stubFirestore({ extras: { x1: stamped({ status: 'Draft' }) } })
+    assert.deepEqual(await call(sendExtraToBuilder, { extraId: 'x1', expectedTotal: 1 }, OWNER), { ok: true })
   })
 })
 
