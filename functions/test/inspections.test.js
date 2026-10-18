@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { describe, it, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   PHASE_MESSAGE,
@@ -101,16 +101,51 @@ describe('inspectionPatch', () => {
     })
   })
 
-  it('dates it by the UTC day, not the local one', () => {
-    assert.equal(inspectionPatch('hvac', 'final', 'passed', new Date('2026-10-18T23:59:59Z'))['insp.hvac.finalDate'], '2026-10-18')
-    assert.equal(inspectionPatch('hvac', 'final', 'passed', new Date('2026-10-19T00:00:00Z'))['insp.hvac.finalDate'], '2026-10-19')
-    assert.equal(inspectionPatch('hvac', 'final', 'passed', new Date('2026-01-05T03:00:00-08:00'))['insp.hvac.finalDate'], '2026-01-05')
+  // The day is the one on the calendar in Middle Tennessee (see lib/business-time.js),
+  // which is five hours behind UTC in daylight time and six in standard time.
+  describe('dates it by the day in Central time, not the UTC day', () => {
+    const dated = (instant) => inspectionPatch('hvac', 'final', 'passed', new Date(instant))['insp.hvac.finalDate']
+
+    it('keeps the evening on the day it happened', () => {
+      assert.equal(dated('2026-10-18T23:59:59Z'), '2026-10-18')
+      assert.equal(dated('2026-10-19T00:00:00Z'), '2026-10-18')
+      assert.equal(dated('2026-10-19T00:05:00Z'), '2026-10-18')
+    })
+
+    it('turns the day over at local midnight, a second before and at it, in daylight time', () => {
+      assert.equal(dated('2026-10-19T04:59:59Z'), '2026-10-18')
+      assert.equal(dated('2026-10-19T05:00:00Z'), '2026-10-19')
+    })
+
+    it('turns the day over at local midnight, a second before and at it, in standard time', () => {
+      assert.equal(dated('2026-01-06T05:59:59Z'), '2026-01-05')
+      assert.equal(dated('2026-01-06T06:00:00Z'), '2026-01-06')
+    })
+
+    it('follows the change to and from daylight saving time', () => {
+      assert.equal(dated('2026-03-09T04:59:59Z'), '2026-03-08')
+      assert.equal(dated('2026-03-09T05:00:00Z'), '2026-03-09')
+      assert.equal(dated('2026-11-02T05:59:59Z'), '2026-11-01')
+      assert.equal(dated('2026-11-02T06:00:00Z'), '2026-11-02')
+    })
+
+    it('reads an instant written in another zone as the instant it is', () => {
+      assert.equal(dated('2026-01-05T03:00:00-08:00'), '2026-01-05')
+      assert.equal(dated('2026-01-05T22:30:00-08:00'), '2026-01-06')
+    })
   })
 
-  it('uses today when no time is given', () => {
-    const patch = inspectionPatch('hvac', 'final', 'passed')
-    assert.match(patch['insp.hvac.finalDate'], /^\d{4}-\d{2}-\d{2}$/)
-    assert.equal(patch['insp.hvac.finalDate'], new Date().toISOString().slice(0, 10))
+  describe('with no time given', () => {
+    afterEach(() => {
+      mock.timers.reset()
+    })
+
+    it('uses the day it is now in Central time', () => {
+      mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-19T00:30:00Z') })
+      const patch = inspectionPatch('hvac', 'final', 'passed')
+      assert.match(patch['insp.hvac.finalDate'], /^\d{4}-\d{2}-\d{2}$/)
+      assert.equal(patch['insp.hvac.finalDate'], '2026-10-18')
+    })
   })
 
   it('throws for a result other than passed or failed', () => {

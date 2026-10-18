@@ -99,8 +99,15 @@ describe('passInspection', () => {
     })
   })
 
-  it('dates the result by the UTC day', async () => {
+  it('dates the result by the day in Central time, which is still the 18th at five past midnight UTC', async () => {
     mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-19T00:05:00Z') })
+    stubFirestore({ jobs: { job1: JOB } })
+    await call(passInspection, { ...request, trade: 'hvac', phase: 'final' }, OWNER)
+    assert.deepEqual(stub.written('jobs/')[0].data, { 'insp.hvac.final': 'passed', 'insp.hvac.finalDate': '2026-10-18' })
+  })
+
+  it('dates the result with the next day from local midnight', async () => {
+    mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-19T05:00:00Z') })
     stubFirestore({ jobs: { job1: JOB } })
     await call(passInspection, { ...request, trade: 'hvac', phase: 'final' }, OWNER)
     assert.deepEqual(stub.written('jobs/')[0].data, { 'insp.hvac.final': 'passed', 'insp.hvac.finalDate': '2026-10-19' })

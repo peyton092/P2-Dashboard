@@ -6,6 +6,7 @@
 // The words end up in notifications and history that people read, so they carry
 // no dashes. Job ids (QBS-003) are data and keep theirs.
 
+import { businessDay } from './business-time.js'
 import { cleanDocId } from './doc-id.js'
 
 // The phases each trade is inspected in. The browser lists the same ones
@@ -46,15 +47,16 @@ export function validateInspection(input) {
   return { ok: true, value: { jobDocId, trade, phase } }
 }
 
-// The update to the job: the result and the day it was recorded (YYYY-MM-DD, UTC),
-// as dotted field paths so only that phase changes. result is passed or failed.
+// The update to the job: the result and the day it was recorded (YYYY-MM-DD, the day in
+// the business time zone, see business-time.js), as dotted field paths so only that phase
+// changes. result is passed or failed.
 export function inspectionPatch(trade, phase, result, now = new Date()) {
   if (result !== 'passed' && result !== 'failed') {
     throw new Error(`Unknown inspection result: ${result}`)
   }
   return {
     [`insp.${trade}.${phase}`]: result,
-    [`insp.${trade}.${phase}Date`]: now.toISOString().slice(0, 10),
+    [`insp.${trade}.${phase}Date`]: businessDay(now),
   }
 }
 
