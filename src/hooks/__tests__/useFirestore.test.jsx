@@ -249,16 +249,19 @@ describe.each([
   })
 })
 
-// Subcontractors, materials, daily reports, urgent items, history and supplier
-// invoices are staff only. For anyone else the hooks listen to nothing at all.
+// Subcontractors, materials, daily reports, urgent items, history, supplier
+// invoices, the app settings and the agent alerts are staff only. For anyone else
+// the hooks listen to nothing at all, and give an empty list (or no settings).
 describe.each([
-  ['useSubs', useSubs, 'subs', 'subs'],
-  ['useMaterials', useMaterials, 'materials', 'materials'],
-  ['useDailyReports', useDailyReports, 'dailyReports', 'daily_reports'],
-  ['useUrgentItems', useUrgentItems, 'urgentItems', 'urgent_items'],
-  ['useHistory', useHistory, 'history', 'history'],
-  ['useSupplierInvoices', useSupplierInvoices, 'invoices', 'supplier_invoices'],
-])('%s for staff only', (_name, hook, key, path) => {
+  ['useSubs', useSubs, 'subs', 'subs', []],
+  ['useMaterials', useMaterials, 'materials', 'materials', []],
+  ['useDailyReports', useDailyReports, 'dailyReports', 'daily_reports', []],
+  ['useUrgentItems', useUrgentItems, 'urgentItems', 'urgent_items', []],
+  ['useHistory', useHistory, 'history', 'history', []],
+  ['useSupplierInvoices', useSupplierInvoices, 'invoices', 'supplier_invoices', []],
+  ['useSettings', useSettings, 'settings', 'config/settings', {}],
+  ['useAgentAlerts', useAgentAlerts, 'alerts', 'agent_alerts', []],
+])('%s for staff only', (_name, hook, key, path, empty) => {
   it.each(['owner', 'internal'])('listens for %s staff', (role) => {
     renderHook(() => hook({ role, tenantId: 'p2-core', uid: 'u1' }))
     expect(live(path)).toBeDefined()
@@ -272,7 +275,7 @@ describe.each([
   ])('listens to nothing for %s, and reports no rows, no error and nothing loading', (_label, scope) => {
     const { result } = renderHook(() => hook(scope))
     expect(listeners).toHaveLength(0)
-    expect(result.current).toEqual({ [key]: [], loading: false, error: null })
+    expect(result.current).toEqual({ [key]: empty, loading: false, error: null })
   })
 
   it('keeps its listener when staff switch workspace', () => {
@@ -291,8 +294,7 @@ describe.each([
 describe('every hook the module exports', () => {
   const hookNames = Object.keys(firestoreModule).filter(name => /^use[A-Z]/.test(name))
   // Hooks that listen to one record take its id. Every other hook takes the signed
-  // in user's scope first (useSettings and useAgentAlerts read what everyone may
-  // read and ignore it), and staff may read everything.
+  // in user's scope first, and staff may read everything.
   const RECORD_HOOKS = ['useJobFiles', 'useSubmitReplies']
   const argumentFor = (name) => (RECORD_HOOKS.includes(name) ? 'some-id' : STAFF)
 

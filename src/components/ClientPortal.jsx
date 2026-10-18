@@ -541,8 +541,7 @@ function ClientMessages({ jobs, clientName }) {
     if (!form.subject.trim() || !form.body.trim() || !form.jobId) return
     setSubmitting(true)
     // A client may create a submission for one of their own jobs that lists only
-    // them; the stamping trigger then gives it the job's whole scope.
-    const job = jobs.find(j => j.id === form.jobId)
+    // them and names no tenant; the stamping trigger then gives it the job's scope.
     await addSubmit({
       subject: form.subject.trim(),
       category: form.category,
@@ -553,7 +552,6 @@ function ClientMessages({ jobs, clientName }) {
       jobId: form.jobId,
       status: 'Open',
       clientUids: [uid],
-      ...(job?.tenantId ? { tenantId: job.tenantId } : {}),
     })
     setForm({ subject: '', category: 'Question', body: '', jobId: '' })
     setSubmitting(false)

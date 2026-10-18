@@ -300,10 +300,10 @@ describe('data subscriptions and the builder terms gate', () => {
   })
 })
 
-// Every collection hook queries with the signed in user's scope, and the rules
-// check the same fields, so each provider must hand its hooks the right one.
+// Every hook the provider calls queries with the signed in user's scope, and the
+// rules check the same fields, so each provider must hand its hooks the right one.
 describe('the scope the data provider hands its hooks', () => {
-  const COLLECTION_HOOKS = ['jobs', 'extras', 'notifs', 'subs', 'materials', 'submits', 'dailyReports', 'urgentItems']
+  const COLLECTION_HOOKS = probe.names
 
   it.each([
     ['an owner', OWNER, dashboardShown, { role: 'owner', tenantId: 'p2-core', uid: 'owner1' }],

@@ -16,8 +16,8 @@ export function DataProvider({ children, scope, tenantId = null }) {
   const { submits: firestoreSubmits, loading: submitsLoading, error: submitsError }     = useSubmits(scope)
   const { dailyReports: firestoreDailyReports, loading: drLoading, error: drError }     = useDailyReports(scope)
   const { urgentItems: firestoreUrgentItems, loading: uiLoading, error: uiError }       = useUrgentItems(scope)
-  const { settings, error: settingsError }                                              = useSettings()
-  const { alerts: agentAlerts, error: alertsError }                                     = useAgentAlerts()
+  const { settings, error: settingsError }                                              = useSettings(scope)
+  const { alerts: agentAlerts, error: alertsError }                                     = useAgentAlerts(scope)
 
   const loading = jobsLoading || extrasLoading || notifsLoading || subsLoading || matsLoading || submitsLoading || drLoading || uiLoading
 

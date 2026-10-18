@@ -12,9 +12,10 @@ import { functions } from '../firebase'
 // Jobs, change orders, notifications and submissions carry a scope of their own
 // (tenantId and clientUids, stamped by the Cloud Functions), and their hooks run
 // the query queryFor builds, which asks for exactly what the rules let that user
-// read. The other collections are staff only. A scope that may read nothing, or
-// no scope at all, subscribes to nothing: the hook reports no rows, no error and
-// nothing loading, and never falls back to reading the whole collection.
+// read. The other collections, the app settings among them, are staff only. A
+// scope that may read nothing, or no scope at all, subscribes to nothing: the hook
+// reports no rows (or no settings), no error and nothing loading, and never falls
+// back to reading the whole collection.
 
 const isStaffRole = (role) => role === 'owner' || role === 'internal'
 const isFilled = (value) => typeof value === 'string' && value !== ''
@@ -51,28 +52,29 @@ export function queryFor(collectionName, scope) {
   return query(collection(db, collectionName), ...filter, orderBy(...list.order), limit(list.max))
 }
 
-// Rows are stored with the query they came from and returned only while that
-// query is current, so a changed scope never shows the rows of the one before.
-// Without a query nothing is subscribed, and there are no rows, no error and
-// nothing loading.
-const NO_ROWS = { query: null, rows: [], error: null }
+// Listens to source, a query or a document, and keeps what toValue makes of each
+// snapshot. The value is stored with the source it came from and returned only
+// while that source is current, so a changed scope never shows what the one
+// before it loaded; until a snapshot arrives the hook gives empty. Without a
+// source nothing is subscribed, and there is empty, no error and nothing loading.
+const NOTHING_YET = { source: null, value: null, error: null }
 
-function useRows(q, toRows) {
-  const [state, setState] = useState(NO_ROWS)
+function useListener(source, toValue, empty) {
+  const [state, setState] = useState(NOTHING_YET)
 
   useEffect(() => {
-    if (!q) return
+    if (!source) return
     return onSnapshot(
-      q,
-      snap => setState({ query: q, rows: toRows(snap), error: null }),
-      err => setState(prev => ({ query: q, rows: prev.query === q ? prev.rows : [], error: err })),
+      source,
+      snap => setState({ source, value: toValue(snap), error: null }),
+      err => setState(prev => ({ source, value: prev.source === source ? prev.value : null, error: err })),
     )
-  }, [q, toRows])
+  }, [source, toValue])
 
-  const current = q !== null && state.query === q
+  const current = source !== null && state.source === source
   return {
-    rows: current ? state.rows : [],
-    loading: q !== null && !current,
+    value: current && state.value !== null ? state.value : empty,
+    loading: source !== null && !current,
     error: current ? state.error : null,
   }
 }
@@ -90,35 +92,37 @@ function useScopedList(collectionName, scope) {
     () => queryFor(collectionName, { role, tenantId, uid }),
     [collectionName, role, tenantId, uid],
   )
-  return useRows(q, docRows)
+  return useListener(q, docRows, [])
 }
 
-// A staff only list: the query makeQuery builds for owner and internal staff, and
-// nothing at all for anyone else.
-function useStaffList(scope, makeQuery, toRows) {
+// Something only staff read: what makeSource points at, for owner and internal
+// staff, and nothing at all for anyone else, who get empty.
+function useStaffOnly(scope, makeSource, toValue, empty) {
   const staff = isStaffRole(scope?.role)
-  const q = useMemo(() => (staff ? makeQuery() : null), [staff, makeQuery])
-  return useRows(q, toRows)
+  const source = useMemo(() => (staff ? makeSource() : null), [staff, makeSource])
+  return useListener(source, toValue, empty)
 }
+
+const useStaffList = (scope, makeQuery, toRows) => useStaffOnly(scope, makeQuery, toRows, [])
 
 export function useJobs(scope) {
-  const { rows, loading, error } = useScopedList('jobs', scope)
-  return { jobs: rows, loading, error }
+  const { value, loading, error } = useScopedList('jobs', scope)
+  return { jobs: value, loading, error }
 }
 
 export function useAllExtras(scope) {
-  const { rows, loading, error } = useScopedList('extras', scope)
-  return { extras: rows, loading, error }
+  const { value, loading, error } = useScopedList('extras', scope)
+  return { extras: value, loading, error }
 }
 
 export function useNotifications(scope) {
-  const { rows, loading, error } = useScopedList('notifications', scope)
-  return { notifs: rows, loading, error }
+  const { value, loading, error } = useScopedList('notifications', scope)
+  return { notifs: value, loading, error }
 }
 
 export function useSubmits(scope) {
-  const { rows, loading, error } = useScopedList('submits', scope)
-  return { submits: rows, loading, error }
+  const { value, loading, error } = useScopedList('submits', scope)
+  return { submits: value, loading, error }
 }
 
 const subsQuery = () => query(collection(db, 'subs'), limit(100))
@@ -129,8 +133,8 @@ const subsRows = (snap) => {
 }
 
 export function useSubs(scope) {
-  const { rows, loading, error } = useStaffList(scope, subsQuery, subsRows)
-  return { subs: rows, loading, error }
+  const { value, loading, error } = useStaffList(scope, subsQuery, subsRows)
+  return { subs: value, loading, error }
 }
 
 const materialsQuery = () => query(collection(db, 'materials'), orderBy('createdAt', 'desc'), limit(200))
@@ -141,8 +145,8 @@ const materialsRows = (snap) => {
 }
 
 export function useMaterials(scope) {
-  const { rows, loading, error } = useStaffList(scope, materialsQuery, materialsRows)
-  return { materials: rows, loading, error }
+  const { value, loading, error } = useStaffList(scope, materialsQuery, materialsRows)
+  return { materials: value, loading, error }
 }
 
 // Rows are stored with the id they were loaded for and only returned while that
@@ -308,15 +312,15 @@ export async function createJob(data) {
 const dailyReportsQuery = () => query(collection(db, 'daily_reports'), orderBy('createdAt', 'desc'), limit(100))
 
 export function useDailyReports(scope) {
-  const { rows, loading, error } = useStaffList(scope, dailyReportsQuery, docRows)
-  return { dailyReports: rows, loading, error }
+  const { value, loading, error } = useStaffList(scope, dailyReportsQuery, docRows)
+  return { dailyReports: value, loading, error }
 }
 
 const urgentItemsQuery = () => query(collection(db, 'urgent_items'), orderBy('createdAt', 'desc'), limit(100))
 
 export function useUrgentItems(scope) {
-  const { rows, loading, error } = useStaffList(scope, urgentItemsQuery, docRows)
-  return { urgentItems: rows, loading, error }
+  const { value, loading, error } = useStaffList(scope, urgentItemsQuery, docRows)
+  return { urgentItems: value, loading, error }
 }
 
 export async function addUrgentItem(data) {
@@ -341,8 +345,8 @@ export async function addDailyReport(data) {
 const historyQuery = () => query(collection(db, 'history'), orderBy('createdAt', 'desc'), limit(200))
 
 export function useHistory(scope) {
-  const { rows, loading, error } = useStaffList(scope, historyQuery, docRows)
-  return { history: rows, loading, error }
+  const { value, loading, error } = useStaffList(scope, historyQuery, docRows)
+  return { history: value, loading, error }
 }
 
 export async function addHistory(data) {
@@ -352,38 +356,23 @@ export async function addHistory(data) {
   }))
 }
 
-export function useSettings() {
-  const [settings, setSettings] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    const ref = doc(db, 'config', 'settings')
-    const unsub = onSnapshot(ref, snap => {
-      setSettings(snap.exists() ? snap.data() : {})
-      setLoading(false)
-    }, err => { setSettings({}); setError(err); setLoading(false) })
-    return unsub
-  }, [])
-  return { settings, loading, error }
+const settingsDoc = () => doc(db, 'config', 'settings')
+const settingsOf = (snap) => (snap.exists() ? snap.data() : {})
+
+export function useSettings(scope) {
+  const { value, loading, error } = useStaffOnly(scope, settingsDoc, settingsOf, {})
+  return { settings: value, loading, error }
 }
 
 export async function updateSetting(key, value) {
   await setDoc(doc(db, 'config', 'settings'), { [key]: value }, { merge: true })
 }
 
-export function useAgentAlerts() {
-  const [alerts, setAlerts] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    const q = query(collection(db, 'agent_alerts'), orderBy('createdAt', 'desc'), limit(50))
-    const unsub = onSnapshot(q, snap => {
-      setAlerts(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setAlerts([]); setError(err); setLoading(false) })
-    return unsub
-  }, [])
-  return { alerts, loading, error }
+const agentAlertsQuery = () => query(collection(db, 'agent_alerts'), orderBy('createdAt', 'desc'), limit(50))
+
+export function useAgentAlerts(scope) {
+  const { value, loading, error } = useStaffList(scope, agentAlertsQuery, docRows)
+  return { alerts: value, loading, error }
 }
 
 export async function addAgentAlert(data) {
@@ -397,8 +386,8 @@ export async function updateAgentAlert(docId, data) {
 const supplierInvoicesQuery = () => query(collection(db, 'supplier_invoices'), orderBy('createdAt', 'desc'), limit(200))
 
 export function useSupplierInvoices(scope) {
-  const { rows, loading, error } = useStaffList(scope, supplierInvoicesQuery, docRows)
-  return { invoices: rows, loading, error }
+  const { value, loading, error } = useStaffList(scope, supplierInvoicesQuery, docRows)
+  return { invoices: value, loading, error }
 }
 
 export async function addSupplierInvoice(data) {

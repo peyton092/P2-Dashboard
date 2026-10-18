@@ -47,6 +47,18 @@ export function needsRestamp(doc, job) {
   return doc.tenantId !== want.tenantId || !sameItems(doc.clientUids, want.clientUids)
 }
 
+// Whether stamping this job's scope onto a submission would move it to another
+// tenant: the submission carries a tenant of its own (a builder stamps theirs on
+// the submissions they create) and the job is in a different one, the legacy
+// default counted for a job with no tenant. Such a submission is left where it
+// is, so a builder cannot put one in another tenant's portals by naming a job of
+// that tenant. A document with no tenant, or an empty one, moves nowhere: it
+// simply takes its job's. When either side is missing the answer is false.
+export function movesTenant(doc, job) {
+  if (!isDocument(doc) || !isDocument(job)) return false
+  return nonEmptyString(doc.tenantId) && doc.tenantId !== scopePatchFor(job).tenantId
+}
+
 // The tenant a job is stored with, or null when it has none. Unlike scopeForJob
 // this does not fill in the qbs default: here the question is whether the stored
 // value changed, and a job that gets its tenantId written down has changed.

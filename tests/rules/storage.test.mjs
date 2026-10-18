@@ -2,6 +2,7 @@ import { before, after, beforeEach, describe, it } from 'node:test'
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
 import { doc, setDoc } from 'firebase/firestore'
 import { ref, uploadBytes, getBytes } from 'firebase/storage'
+import { ALLOWED_UPLOAD_TYPES } from '../../src/lib/uploads.js'
 import { setupEnv } from './helpers.mjs'
 
 // Clients upload photos and documents for their own jobs under
@@ -63,6 +64,21 @@ describe('storage rules', () => {
       await assertFails(put(client(), `jobs/qbs1/client-uploads/${name('zip')}`, MB, 'application/zip'))
     })
 
+    // The rule takes exactly the types the app lets a person pick (ALLOWED_UPLOAD_TYPES),
+    // so the two cannot drift apart: an SVG, which can carry script, is refused.
+    it('a client uploads every type the app accepts, a WebP among them', async () => {
+      if (!ALLOWED_UPLOAD_TYPES.includes('image/webp')) throw new Error('the app no longer accepts WebP')
+      for (const type of ALLOWED_UPLOAD_TYPES) {
+        await assertSucceeds(put(client(), `jobs/qbs1/client-uploads/${name('bin')}`, MB, type))
+      }
+    })
+
+    it('a client cannot upload an SVG, or any other type the app does not accept', async () => {
+      for (const type of ['image/svg+xml', 'image/gif', 'image/bmp', 'text/html', 'application/octet-stream']) {
+        await assertFails(put(client(), `jobs/qbs1/client-uploads/${name('bin')}`, MB, type))
+      }
+    })
+
     it('a client cannot upload a file of 25 MB or more', async () => {
       await assertFails(put(client(), `jobs/qbs1/client-uploads/${name('jpg')}`, 25 * MB, 'image/jpeg'))
     })
@@ -81,6 +97,7 @@ describe('storage rules', () => {
       await assertSucceeds(put(staff(), `jobs/vis1/client-uploads/${name('jpg')}`, MB, 'image/jpeg'))
       await assertSucceeds(put(owner(), `jobs/qbs1/client-uploads/${name('pdf')}`, MB, 'application/pdf'))
       await assertFails(put(staff(), `jobs/qbs1/client-uploads/${name('zip')}`, MB, 'application/zip'))
+      await assertFails(put(staff(), `jobs/qbs1/client-uploads/${name('svg')}`, MB, 'image/svg+xml'))
     })
 
     it('anyone signed in reads a client upload, and nobody signed out does', async () => {

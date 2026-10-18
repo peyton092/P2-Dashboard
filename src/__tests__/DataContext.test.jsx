@@ -19,8 +19,11 @@ vi.mock('../hooks/useFirestore', () => {
     useSubmits: hook('submits'),
     useDailyReports: hook('dailyReports'),
     useUrgentItems: hook('urgentItems'),
-    useSettings: () => ({ settings: null, loading: state.loading, error: state.errors.settings ?? null }),
-    useAgentAlerts: () => ({ alerts: [], loading: state.loading, error: state.errors.alerts ?? null }),
+    useSettings: (scope) => {
+      state.scopes.settings = scope
+      return { settings: null, loading: state.loading, error: state.errors.settings ?? null }
+    },
+    useAgentAlerts: hook('alerts'),
   }
 })
 
@@ -41,7 +44,7 @@ function renderValue(props = {}) {
   return value
 }
 
-const SCOPED_HOOKS = ['jobs', 'extras', 'notifs', 'subs', 'materials', 'submits', 'dailyReports', 'urgentItems']
+const SCOPED_HOOKS = ['jobs', 'extras', 'notifs', 'subs', 'materials', 'submits', 'dailyReports', 'urgentItems', 'settings', 'alerts']
 
 beforeEach(() => {
   state.loading = false

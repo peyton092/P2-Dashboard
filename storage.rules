@@ -5,9 +5,9 @@ rules_version = '2';
 // Clients upload photos and documents for their own jobs under
 // jobs/{jobDocId}/client-uploads/. A client may write there when the job's
 // clientUids list them, staff may write there for any job, and every upload
-// there is an image or a PDF under 25 MB. Anyone signed in may read those
-// uploads. Every other path is for staff only. CompanyCam photos are
-// referenced by URL and are not stored here.
+// there is a JPEG, PNG, HEIC, WebP or PDF under 25 MB. Anyone signed in may
+// read those uploads. Every other path is for staff only. CompanyCam photos
+// are referenced by URL and are not stored here.
 
 service firebase.storage {
   match /b/{bucket}/o {
@@ -38,11 +38,11 @@ service firebase.storage {
       return request.resource.size < 25 * 1024 * 1024;
     }
 
-    // An image or a PDF under 25 MB.
+    // One of the types the app lets a person pick (ALLOWED_UPLOAD_TYPES in
+    // src/lib/uploads.js), under 25 MB. An SVG, which can carry script, is not one.
     function isAllowedUpload() {
       return isUnder25MB()
-        && (request.resource.contentType.matches('image/.*')
-            || request.resource.contentType.matches('application/pdf'));
+        && request.resource.contentType in ['image/jpeg', 'image/png', 'image/heic', 'image/webp', 'application/pdf'];
     }
 
     match /jobs/{jobDocId}/client-uploads/{file} {

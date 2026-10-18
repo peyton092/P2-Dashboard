@@ -156,6 +156,21 @@ describe('scoped reads and writes', () => {
       }
     })
 
+    it('a builder whose tenant is p2-core, or any tenant but qbs and vision, reads nothing', async () => {
+      await t.seed(async (db) => {
+        await setDoc(doc(db, 'jobs/core1'), { id: 'P2-001', tenantId: 'p2-core', clientUids: [] })
+        await setDoc(doc(db, 'jobs/acme1'), { id: 'ACM-001', tenantId: 'acme', clientUids: [] })
+        await setDoc(doc(db, 'users/b8'), { role: 'builder', tenantId: 'p2-core' })
+      })
+      const fromDoc = t.asUserWithDoc('b8')
+      await assertFails(getDoc(doc(fromDoc, 'jobs/core1')))
+      await assertFails(list(fromDoc, 'jobs', ofTenant('p2-core')))
+      for (const [db, tenantId, path] of [[t.asBuilder('b7', 'p2-core'), 'p2-core', 'jobs/core1'], [t.asBuilder('b6', 'acme'), 'acme', 'jobs/acme1']]) {
+        await assertFails(getDoc(doc(db, path)))
+        await assertFails(list(db, 'jobs', ofTenant(tenantId)))
+      }
+    })
+
     it('a client reads a job that lists their uid', async () => {
       await assertSucceeds(getDoc(doc(clientOne(), 'jobs/qbs1')))
     })
@@ -269,13 +284,26 @@ describe('scoped reads and writes', () => {
   describe('submissions', () => {
     it('a client creates a submission for their own job, stamped with their uid', async () => {
       await assertSucceeds(addDoc(collection(clientOne(), 'submits'), newSubmit('c1', {
-        portal: 'Client', jobId: 'QBS-001', tenantId: 'qbs', clientUids: ['c1'],
+        portal: 'Client', jobId: 'QBS-001', clientUids: ['c1'],
+      })))
+    })
+
+    // The stamping trigger gives a client's submission the tenant of its job, so the
+    // client never names one: a tenant they chose would reach that tenant's builders.
+    it('a client submission carries no tenant of its own', async () => {
+      for (const tenantId of ['qbs', 'vision', 'p2-core', '']) {
+        await assertFails(addDoc(collection(clientOne(), 'submits'), newSubmit('c1', {
+          portal: 'Client', jobId: 'QBS-001', clientUids: ['c1'], tenantId,
+        })))
+      }
+      await assertSucceeds(addDoc(collection(clientOne(), 'submits'), newSubmit('c1', {
+        portal: 'Client', jobId: 'QBS-001', clientUids: ['c1'], tenantId: null,
       })))
     })
 
     it('a client cannot create a submission for a job that is not theirs', async () => {
       await assertFails(addDoc(collection(clientOne(), 'submits'), newSubmit('c1', {
-        portal: 'Client', jobId: 'VIS-001', tenantId: 'vision', clientUids: ['c1'],
+        portal: 'Client', jobId: 'VIS-001', clientUids: ['c1'],
       })))
     })
 
@@ -300,7 +328,7 @@ describe('scoped reads and writes', () => {
 
     it('a client whose job ids are only in their users document creates a submission for that job', async () => {
       await assertSucceeds(addDoc(collection(t.asUserWithDoc('c9'), 'submits'), newSubmit('c9', {
-        portal: 'Client', jobId: 'QBS-001', tenantId: 'qbs', clientUids: ['c9'],
+        portal: 'Client', jobId: 'QBS-001', clientUids: ['c9'],
       })))
     })
 
@@ -322,9 +350,12 @@ describe('scoped reads and writes', () => {
       })))
     })
 
-    it('a builder with no tenant cannot create a submission', async () => {
+    it('a builder with no tenant, or one that is not a builder tenant, cannot create a submission', async () => {
       await assertFails(addDoc(collection(t.asBuilder('b3', null), 'submits'), newSubmit('b3', {
         portal: 'Builder', jobId: null, tenantId: null, clientUids: [],
+      })))
+      await assertFails(addDoc(collection(t.asBuilder('b7', 'p2-core'), 'submits'), newSubmit('b7', {
+        portal: 'Builder', jobId: null, tenantId: 'p2-core', clientUids: [],
       })))
     })
 
@@ -385,6 +416,31 @@ describe('scoped reads and writes', () => {
       await assertFails(addDoc(collection(clientOne(), 'submits/s1/replies'), newReply('c2')))
     })
 
+    it('a client replies as a client, and cannot post as P2 or as a builder', async () => {
+      await assertSucceeds(addDoc(collection(clientOne(), 'submits/s1/replies'), newReply('c1', { authorRole: 'client' })))
+      for (const authorRole of ['internal', 'owner', 'builder']) {
+        await assertFails(addDoc(collection(clientOne(), 'submits/s1/replies'), newReply('c1', { authorRole })))
+      }
+      const { authorRole: _authorRole, ...unsigned } = newReply('c1')
+      await assertFails(addDoc(collection(clientOne(), 'submits/s1/replies'), unsigned))
+    })
+
+    it('a builder replies as a builder, and cannot post as P2 or as a client', async () => {
+      await assertSucceeds(addDoc(collection(builderQbs(), 'submits/s1/replies'), newReply('b1', { authorRole: 'builder' })))
+      for (const authorRole of ['internal', 'owner', 'client']) {
+        await assertFails(addDoc(collection(builderQbs(), 'submits/s1/replies'), newReply('b1', { authorRole })))
+      }
+    })
+
+    it('staff reply as internal or owner, and as nothing else', async () => {
+      await assertSucceeds(addDoc(collection(t.asStaff('s1'), 'submits/s1/replies'), newReply('s1', { author: 'P2 Team', authorRole: 'internal' })))
+      await assertSucceeds(addDoc(collection(t.asOwner('o1'), 'submits/s1/replies'), newReply('o1', { author: 'P2 Team', authorRole: 'internal' })))
+      await assertSucceeds(addDoc(collection(t.asOwner('o1'), 'submits/s1/replies'), newReply('o1', { author: 'Jesse', authorRole: 'owner' })))
+      for (const authorRole of ['client', 'builder']) {
+        await assertFails(addDoc(collection(t.asStaff('s1'), 'submits/s1/replies'), newReply('s1', { authorRole })))
+      }
+    })
+
     it('a builder replies to a submission of their tenant', async () => {
       await assertSucceeds(addDoc(collection(builderQbs(), 'submits/s1/replies'), newReply('b1', { authorRole: 'builder' })))
       await assertFails(addDoc(collection(builderQbs(), 'submits/s2/replies'), newReply('b1', { authorRole: 'builder' })))
@@ -420,6 +476,21 @@ describe('scoped reads and writes', () => {
       await assertFails(addDoc(collection(clientOne(), 'jobs/qbs1/files'), clientUpload('c1', { source: 'companycam' })))
       const { source: _source, ...unsourced } = clientUpload('c1')
       await assertFails(addDoc(collection(clientOne(), 'jobs/qbs1/files'), unsourced))
+    })
+
+    it('a client upload record has a name and an https link', async () => {
+      for (const over of [
+        { url: 'http://firebasestorage.googleapis.com/v0/b/p2-dashboard/o/plan.pdf' },
+        { url: 'javascript:alert(1)' },
+        { url: 42 },
+        { name: 7 },
+      ]) {
+        await assertFails(addDoc(collection(clientOne(), 'jobs/qbs1/files'), clientUpload('c1', over)))
+      }
+      const { url: _url, ...linkless } = clientUpload('c1')
+      await assertFails(addDoc(collection(clientOne(), 'jobs/qbs1/files'), linkless))
+      const { name: _name, ...nameless } = clientUpload('c1')
+      await assertFails(addDoc(collection(clientOne(), 'jobs/qbs1/files'), nameless))
     })
 
     it('a client cannot record an upload on a job that does not list them', async () => {
@@ -474,7 +545,28 @@ describe('scoped reads and writes', () => {
   })
 
   describe('staff only collections', () => {
-    const STAFF_ONLY = ['materials', 'subs', 'permits', 'daily_reports', 'urgent_items', 'history', 'supplier_invoices']
+    const STAFF_ONLY = [
+      'materials', 'subs', 'permits', 'daily_reports', 'urgent_items', 'history', 'supplier_invoices',
+      'config', 'agent_alerts', 'crew_scores', 'app_settings',
+    ]
+
+    // Agent alerts name jobs, project managers and amounts across every tenant, and
+    // only staff screens read them or the app settings.
+    it('builders and clients cannot read the app settings or an agent alert, and staff can, with or without a claim', async () => {
+      await t.seed(async (db) => {
+        await setDoc(doc(db, 'config/settings'), { emailAlerts: true })
+        await setDoc(doc(db, 'agent_alerts/x'), { jobId: 'VIS-001', title: 'Stalled 5 days', severity: 'critical', status: 'open', createdAt: at(13) })
+      })
+      for (const db of [builderQbs(), clientOne(), t.asUserWithDoc('b9'), t.asUserWithDoc('c9')]) {
+        await assertFails(getDoc(doc(db, 'config/settings')))
+        await assertFails(getDoc(doc(db, 'agent_alerts/x')))
+      }
+      for (const db of [t.asStaff('s1'), t.asOwner('o1'), t.asUserWithDoc('s9')]) {
+        await assertSucceeds(getDoc(doc(db, 'config/settings')))
+        await assertSucceeds(getDoc(doc(db, 'agent_alerts/x')))
+        await assertSucceeds(getDocs(query(collection(db, 'agent_alerts'), orderBy('createdAt', 'desc'), limit(50))))
+      }
+    })
 
     for (const name of STAFF_ONLY) {
       it(`builders and clients can neither read nor write ${name}`, async () => {

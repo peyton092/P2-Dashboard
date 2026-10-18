@@ -5,7 +5,8 @@
 //                     its clientUids changed, gives the job's change orders,
 //                     submissions and notifications the new scope.
 //    onExtraWritten   Fire on every write to extras/{id} and submits/{id}. Give the
-//    onSubmitWritten  document its job's scope when it does not carry it.
+//    onSubmitWritten  document its job's scope when it does not carry it, except
+//                     that a submission is never moved to another tenant.
 //    backfillScopes   Owner only. Stamps the scope onto everything that exists now
 //                     and sets the sign in claims of every user, then returns
 //                     what it did.
@@ -37,7 +38,7 @@ import { wouldLowerStaff } from './lib/roles.js'
 import { nonEmptyString } from './lib/scope.js'
 import { claimsPatchFor } from './lib/users-sync.js'
 import { BATCH_SIZE, chunks } from './lib/batches.js'
-import { clientLinks, jobIdOf, needsRestamp, scopeChanged, scopePatchFor } from './lib/scope-sync.js'
+import { clientLinks, jobIdOf, movesTenant, needsRestamp, scopeChanged, scopePatchFor } from './lib/scope-sync.js'
 
 export { needsRestamp, scopePatchFor }
 
@@ -184,14 +185,21 @@ async function stampPass(path, job, failures) {
 }
 
 // ── onExtraWritten and onSubmitWritten ────────────────────────────────────────
-// Fire on every create, update and delete of extras/{id} and submits/{id}. The
-// browser creates a submission with no scope, and a change order written before
-// scopes existed has none, so whenever one is written the job it names is looked
-// up by its id and the document is given the job's tenantId and clientUids if it
-// does not carry them. A document that already carries its job's scope produces no
-// write, so the update this makes does not stamp anything again. A document whose
-// job cannot be found is logged and left as it is, and so is one that names no
-// job. A deleted document writes nothing.
+// Fire on every create, update and delete of extras/{id} and submits/{id}. A client
+// creates a submission with no tenant, and a change order written before scopes
+// existed has none, so whenever one is written the job it names is looked up by its
+// id and the document is given the job's tenantId and clientUids if it does not
+// carry them. A document that already carries its job's scope produces no write, so
+// the update this makes does not stamp anything again. A document whose job cannot
+// be found is logged and left as it is, and so is one that names no job. A deleted
+// document writes nothing.
+//
+// A submission that carries a tenant is never moved to another one. A builder
+// stamps their own tenant on the submissions they create, and the rules cannot see
+// which tenant the job they name is in, so naming a job of another tenant must not
+// put a submission in that tenant's portals. Such a submission is logged and left
+// exactly as it is, its clients included. A change order is written by staff, who
+// may point it at any job, so it always takes its job's tenant.
 //
 // The document, the job and the write are one transaction. A change to the job
 // while this runs (a client linked, say) therefore cannot be overwritten by the
@@ -201,10 +209,14 @@ export const onExtraWritten = onDocumentWritten({ document: 'extras/{id}', regio
 )
 
 export const onSubmitWritten = onDocumentWritten({ document: 'submits/{id}', region }, (event) =>
-  stampFromJob('onSubmitWritten', event, 'jobId'),
+  stampFromJob('onSubmitWritten', event, 'jobId', { keepTenant: true }),
 )
 
-async function stampFromJob(name, event, field) {
+// The line logged when a submission is left in its tenant rather than moved to its job's.
+const keptInTenant = (name, path, doc, jobId, job) =>
+  `[${name}] ${path} carries tenant ${doc.tenantId}, but its job ${jobId} is in tenant ${scopePatchFor(job).tenantId}, so it was left as it is.`
+
+async function stampFromJob(name, event, field, { keepTenant = false } = {}) {
   const change = event.data
   if (!change) {
     console.warn(`[${name}] The event carried no data; nothing to stamp.`)
@@ -227,6 +239,10 @@ async function stampFromJob(name, event, field) {
       return
     }
     const job = found.docs[0].data()
+    if (keepTenant && movesTenant(doc, job)) {
+      console.warn(keptInTenant(name, ref.path, doc, jobId, job))
+      return
+    }
     if (needsRestamp(doc, job)) tx.update(ref, scopePatchFor(job))
   })
 }
@@ -254,9 +270,12 @@ const BACKFILL_FAILED = 'The backfill stopped before it finished. It is safe to 
 //                  right, so the count shows the run covered them.
 //   extras,        Gives every change order (job), submission and notification
 //   submits,       (jobId) the scope of the job it names. One that names no job, or
-//   notifications  a job that does not exist, is left alone.
+//   notifications  a job that does not exist, is left alone, and so is a submission
+//                  that carries a tenant other than its job's, which is logged: like
+//                  onSubmitWritten, the backfill never moves a submission to another
+//                  tenant.
 // Returns { ok: true, users, jobs, extras, submits, notifications, skipped }, where
-// skipped is how many of those documents were left alone for want of a job.
+// skipped is how many of those documents were left alone.
 //
 // Every step can be repeated. If one fails the run stops and says so, and running
 // it again carries on.
@@ -304,9 +323,17 @@ async function runBackfill() {
   for (const { collection, field } of SCOPED) {
     const writes = []
     for (const doc of (await db.collection(collection).get()).docs) {
-      const scope = scopes.get(jobIdOf(doc.data(), field))
-      if (scope) writes.push([doc.ref, { tenantId: scope.tenantId, clientUids: [...scope.clientUids] }])
-      else skipped += 1
+      const data = doc.data()
+      const jobId = jobIdOf(data, field)
+      const scope = scopes.get(jobId)
+      if (!scope) {
+        skipped += 1
+      } else if (collection === 'submits' && movesTenant(data, scope)) {
+        console.warn(keptInTenant('backfillScopes', doc.ref.path, data, jobId, scope))
+        skipped += 1
+      } else {
+        writes.push([doc.ref, { tenantId: scope.tenantId, clientUids: [...scope.clientUids] }])
+      }
     }
     await commitUpdates(writes)
     stamped[collection] = writes.length

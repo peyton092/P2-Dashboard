@@ -80,9 +80,11 @@ describe('firestore rules', () => {
       await assertFails(setDoc(doc(t.asClient('c1', []), 'crew_scores/austin'), { score: 9 }))
     })
 
-    it('client reads crew_scores/austin succeeds', async () => {
+    it('client reads crew_scores/austin fails, staff reads it', async () => {
       await t.seed((db) => setDoc(doc(db, 'crew_scores/austin'), { score: 9 }))
-      await assertSucceeds(getDoc(doc(t.asClient('c1', []), 'crew_scores/austin')))
+      await assertFails(getDoc(doc(t.asClient('c1', []), 'crew_scores/austin')))
+      await assertFails(getDoc(doc(t.asBuilder('b1', 'qbs'), 'crew_scores/austin')))
+      await assertSucceeds(getDoc(doc(t.asStaff('s1'), 'crew_scores/austin')))
     })
   })
 
@@ -95,9 +97,11 @@ describe('firestore rules', () => {
       await assertFails(setDoc(doc(t.asClient('c1', []), 'app_settings/google_review'), { url: 'x' }))
     })
 
-    it('client reads app_settings/google_review succeeds', async () => {
+    it('client reads app_settings/google_review fails, staff reads it', async () => {
       await t.seed((db) => setDoc(doc(db, 'app_settings/google_review'), { url: 'x' }))
-      await assertSucceeds(getDoc(doc(t.asClient('c1', []), 'app_settings/google_review')))
+      await assertFails(getDoc(doc(t.asClient('c1', []), 'app_settings/google_review')))
+      await assertFails(getDoc(doc(t.asBuilder('b1', 'qbs'), 'app_settings/google_review')))
+      await assertSucceeds(getDoc(doc(t.asStaff('s1'), 'app_settings/google_review')))
     })
   })
 

@@ -30,6 +30,17 @@ describe('resolveSession', () => {
       .toMatchObject({ role: null, tenantId: null })
   })
 
+  // A builder belongs to qbs or vision. p2-core is P2's own, and any other value is no
+  // tenant at all, so either one leaves the builder with no access.
+  it('a builder whose tenant is p2-core or any tenant but qbs and vision has no access', () => {
+    expect(resolveSession({ role: 'builder', tenantId: 'p2-core', clientJobIds: [] }, null, {}))
+      .toMatchObject({ role: null, tenantId: null })
+    expect(resolveSession({}, { role: 'builder', tenantId: 'p2-core' }, {}))
+      .toMatchObject({ role: null, tenantId: null })
+    expect(resolveSession({}, { role: 'builder', tenantId: 'acme' }, {}))
+      .toMatchObject({ role: null, tenantId: null })
+  })
+
   it('a builder keeps a valid tenant from claims or the document', () => {
     expect(resolveSession({ role: 'builder', tenantId: 'vision', clientJobIds: [] }, null, {}))
       .toMatchObject({ role: 'builder', tenantId: 'vision' })

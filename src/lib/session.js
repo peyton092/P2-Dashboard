@@ -5,16 +5,22 @@ export const VALID_ROLES = ['owner', 'internal', 'builder', 'client']
 
 const validRole = (r) => (VALID_ROLES.includes(r) ? r : null)
 
+// The tenants a builder can belong to. p2-core is P2's own and never a builder's.
+const BUILDER_TENANTS = ['qbs', 'vision']
+
 export function resolveSession(claims, userDoc, firebaseUser) {
   const c = claims || {}
   const u = userDoc || {}
   const fu = firebaseUser || {}
 
   const namedRole = validRole(c.role) || validRole(u.role)
-  const tenantId = c.tenantId || u.tenantId || (namedRole === 'builder' ? null : 'p2-core')
-  // A builder reads only the documents of their own tenant, so a builder with no
-  // tenant has nothing to read: the same as no role, and the app says so.
-  const role = namedRole === 'builder' && !tenantId ? null : namedRole
+  const namedTenant = c.tenantId || u.tenantId || null
+  // A builder reads only the documents of their own tenant, qbs or vision, so a
+  // builder with no tenant, or any other, has nothing to read: the same as no
+  // role, and the app says so.
+  const noTenant = namedRole === 'builder' && !BUILDER_TENANTS.includes(namedTenant)
+  const role = noTenant ? null : namedRole
+  const tenantId = noTenant ? null : (namedTenant || 'p2-core')
   const displayName = c.displayName || u.displayName || fu.displayName || ''
   // fu.displayName covers a client whose claims are complete, since the app then
   // skips the users document: createUser gives the Auth account the same name.

@@ -125,14 +125,10 @@ describe('a submission created in the client portal', () => {
     return mocks.addSubmit.mock.calls[0][0]
   }
 
-  it('names the job, lists only the client, and carries the job\'s tenant', async () => {
+  // The rules refuse a tenant on a client's submission; the stamping trigger gives it
+  // the tenant of its job.
+  it('names the job, lists only the client, and carries no tenant', async () => {
     mocks.data = portalData(CLIENT, { jobs: [JOB] })
-    expect(await sendMessage()).toMatchObject({ jobId: 'QBS-003', clientUids: ['c1'], tenantId: 'qbs' })
-  })
-
-  it('leaves the tenant out when the job has none', async () => {
-    const { tenantId: _tenantId, ...unstamped } = JOB
-    mocks.data = portalData(CLIENT, { jobs: [unstamped] })
     const sent = await sendMessage()
     expect(sent).toMatchObject({ jobId: 'QBS-003', clientUids: ['c1'] })
     expect('tenantId' in sent).toBe(false)
