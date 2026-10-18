@@ -27,6 +27,7 @@ import {
   useDailyReports, useUrgentItems, useHistory, useSettings, useAgentAlerts, useSupplierInvoices,
   useJobFiles, useSubmitReplies,
 } from '../useFirestore'
+import * as firestoreModule from '../useFirestore'
 
 const snapshot = (...ids) => ({ docs: ids.map(id => ({ id, data: () => ({ name: id }) })) })
 const live = (path) => listeners.filter(l => l.path === path && !l.unsubscribed).at(-1)
@@ -152,5 +153,25 @@ describe.each([
     const { unmount } = renderHook(() => hook())
     unmount()
     expect(listeners.filter(l => l.path === path && !l.unsubscribed)).toEqual([])
+  })
+})
+
+// The table above covers each hook in detail. This one walks everything the
+// module exports, so a hook added later that swallows its error fails here too.
+describe('every hook the module exports', () => {
+  const hookNames = Object.keys(firestoreModule).filter(name => /^use[A-Z]/.test(name))
+
+  it('includes the ones this test is meant to cover', () => {
+    expect(hookNames).toContain('useJobs')
+    expect(hookNames).toContain('useSubmitReplies')
+  })
+
+  it.each(hookNames)('%s returns the error its subscription fails with', (name) => {
+    // Hooks that listen to one record take its id; the others ignore the argument.
+    const { result } = renderHook(() => firestoreModule[name]('some-id'))
+    expect(listeners.length).toBeGreaterThan(0)
+    const failure = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
+    act(() => { for (const listener of listeners) listener.onError(failure) })
+    expect(result.current.error).toBe(failure)
   })
 })

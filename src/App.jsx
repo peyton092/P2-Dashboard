@@ -3741,11 +3741,13 @@ export default function P2DashboardV4() {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
         // Nobody is signed in, whether the person chose Sign out or the session
-        // ended some other way (another tab, access revoked), so nothing of the
-        // last person may carry over to the next. A sign in sets all of this again
-        // except the accepted terms, which only a builder's terms gate sets.
+        // ended some other way (another tab, access revoked). Clear what belongs
+        // to the last person, and what they left open: a sign in sets the session
+        // again, but not the accepted terms or the Create User dialog, and the
+        // next person must not inherit those. The tenant stays as it is; every
+        // sign in sets it, and nothing reads it while signed out.
         setUser(null); setRole(null); setUserName(''); setClientName(''); setClientJobIds([])
-        setTermsAccepted(false); setAuthLoading(false)
+        setTermsAccepted(false); setShowCreateUser(false); setAuthLoading(false)
         return
       }
       // Custom claims first; the users doc fills in whatever claims lack.

@@ -285,6 +285,27 @@ describe('data subscriptions and the builder terms gate', () => {
   })
 })
 
+// A session can end without the Sign out button (signed out in another tab, access
+// revoked). The next person to sign in on that page must not find what the last
+// one left open.
+describe('what the next person to sign in does not inherit', () => {
+  it.each([
+    ['a client', CLIENT, clientPortalShown],
+    ['the same owner', OWNER, dashboardShown],
+  ])('an open Create User dialog is not shown to %s', async (_who, next, shown) => {
+    await openSignedOut()
+    await authChanges(OWNER)
+    await dashboardShown()
+    fireEvent.click(screen.getByRole('button', { name: /Manage users/ }))
+    expect(await screen.findByRole('dialog', { name: 'Create User Account' })).toBeTruthy()
+
+    await authChanges(null)
+    await authChanges(next)
+    await shown()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
 // The provider is keyed by who is signed in and in what role, so a different user
 // or role starts new subscriptions. The tenant is not part of the key (see below).
 describe('what makes the data provider start over', () => {

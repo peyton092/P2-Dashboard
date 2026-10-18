@@ -7,11 +7,6 @@ import { httpsCallable } from 'firebase/functions'
 import { db, auth } from '../firebase'
 import { functions } from '../firebase'
 
-// Firestore ends a listener that fails (the rules refuse it, an index is missing)
-// and reports the error once; it never restarts it. The hooks below that return
-// an object keep that error in `error`, null until it happens, so a screen can
-// tell a failed subscription from an empty collection. useExtras and
-// useInspections return bare arrays, have no callers, and report nothing.
 export function useJobs() {
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -27,20 +22,6 @@ export function useJobs() {
   }, [])
 
   return { jobs, loading, error }
-}
-
-export function useExtras(jobId) {
-  const [extras, setExtras] = useState([])
-
-  useEffect(() => {
-    if (!jobId) return
-    const q = query(collection(db, 'jobs', jobId, 'extras'), orderBy('date'))
-    return onSnapshot(q, snap => {
-      setExtras(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-    }, () => {})
-  }, [jobId])
-
-  return extras
 }
 
 export function useAllExtras() {
@@ -75,20 +56,6 @@ export function useNotifications() {
   }, [])
 
   return { notifs, loading, error }
-}
-
-export function useInspections(jobId) {
-  const [inspections, setInspections] = useState([])
-
-  useEffect(() => {
-    if (!jobId) return
-    const q = query(collection(db, 'jobs', jobId, 'inspections'), orderBy('date'))
-    return onSnapshot(q, snap => {
-      setInspections(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-    }, () => {})
-  }, [jobId])
-
-  return inspections
 }
 
 export function useSubs() {
