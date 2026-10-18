@@ -21,7 +21,7 @@ import {
   FilePenLineIcon, FolderOpenIcon, BarChart3Icon,
 } from 'lucide-react'
 import { classifyRisk } from '../agent/scoring'
-import { daysSince, fmtLongDate, monthKey } from '../lib/dates'
+import { daysSince, fmtLongDate, monthKey, toDate } from '../lib/dates'
 import { sumContracts, sumInvoices, missingNote } from '../lib/money'
 import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
 import { INSPECTION_STATUS, statusColor, statusLabel, toneText } from '../lib/status'
@@ -247,10 +247,8 @@ export default function CommandCenter() {
     const recentlyInvoiced = jobs.filter(j => {
       if (!j.invoiceDate) return false
       if (j.billingStatus === 'paid') return false
-      const m = String(j.invoiceDate).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-      const ms = m ? Date.parse(`${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`)
-                   : Date.parse(j.invoiceDate)
-      return !isNaN(ms) && ms >= cutoffMs
+      const invoiced = toDate(j.invoiceDate)
+      return invoiced !== null && invoiced.getTime() >= cutoffMs
     })
     const recentlyInvoicedAmt = sumInvoices(recentlyInvoiced)
 

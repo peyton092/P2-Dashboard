@@ -3,7 +3,7 @@ import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
 import { updateJob } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
-import { daysSince, monthKey } from '../lib/dates'
+import { daysSince, monthKey, toDate } from '../lib/dates'
 import { contractValue, fmtMoney, sumContracts, sumInvoices, missingNote } from '../lib/money'
 import { ZONES, getZoneId } from '../agent/zones'
 import {
@@ -60,18 +60,17 @@ function fmtCompact(n) {
 const jobLabel = (j) => j.name || j.client?.split?.(' ')?.[0] || j.id
 const jobBuilder = (j) => j.client || j.qbsPM || '—'
 
-// `invoiceDate` is stored as MM/DD/YYYY in seed and ISO from Firestore writes.
+// `invoiceDate` is stored as MM/DD/YYYY in seed and ISO from Firestore writes. A day
+// without a time is local midnight of that day, so an invoice dated the 1st is in its own
+// month and ages from the start of the day it is dated. A string with a time on it is the
+// moment it names.
 function parseInvoiceDate(dateStr) {
-  if (!dateStr) return null
-  const m = String(dateStr).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  const ms = m ? Date.parse(`${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`)
-               : Date.parse(dateStr)
-  return isNaN(ms) ? null : new Date(ms)
+  return toDate(dateStr)
 }
 
 function invoiceMonthKey(dateStr) {
   const d = parseInvoiceDate(dateStr)
-  return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : null
+  return d ? monthKey(d) : null
 }
 
 function hasPermit(job) {
