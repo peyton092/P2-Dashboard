@@ -1,4 +1,5 @@
 export { PageHeader, SectionHeader } from './headers'
+export { ConnectionChip } from './ConnectionChip'
 export { StatBand } from './StatBand'
 export { default as DataPanel } from './DataPanel'
 export {
