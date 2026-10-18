@@ -59,6 +59,17 @@ export function movesTenant(doc, job) {
   return nonEmptyString(doc.tenantId) && doc.tenantId !== scopePatchFor(job).tenantId
 }
 
+// Whether a job's fan out may restamp this submission: it carries no tenant (or an
+// empty one), and so takes its job's, or it carries one of the tenants the job was
+// in before (previous, a list; empty for a new job, which was in none). A submission
+// that carries any other tenant is left where it is, as onSubmitWritten leaves it,
+// or a builder could name a job of another tenant and wait for that job's clients
+// to change. False for a missing document.
+export function followsJob(doc, previous) {
+  if (!isDocument(doc)) return false
+  return !nonEmptyString(doc.tenantId) || previous.includes(doc.tenantId)
+}
+
 // The tenant a job is stored with, or null when it has none. Unlike scopeForJob
 // this does not fill in the qbs default: here the question is whether the stored
 // value changed, and a job that gets its tenantId written down has changed.

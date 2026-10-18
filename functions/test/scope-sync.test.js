@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { getAuth } from 'firebase-admin/auth'
 import { db } from '../lib/admin.js'
-import { clientLinks, jobIdOf, movesTenant, needsRestamp, scopeChanged, scopePatchFor } from '../lib/scope-sync.js'
+import { clientLinks, followsJob, jobIdOf, movesTenant, needsRestamp, scopeChanged, scopePatchFor } from '../lib/scope-sync.js'
 import { scopeForJob } from '../lib/scope.js'
 import * as handlers from '../scope-sync.js'
 import { assertNoDashes, code, stubFirestore } from './helpers/firestore-stub.js'
@@ -173,6 +173,33 @@ describe('movesTenant', () => {
   it('is false when either side is missing', () => {
     assert.equal(movesTenant(null, JOB), false)
     assert.equal(movesTenant({ tenantId: 'vision' }, null), false)
+  })
+})
+
+describe('followsJob', () => {
+  it('is true for a submission with no tenant, an empty one, or one that is not text', () => {
+    for (const tenantId of [undefined, null, '', 7]) {
+      assert.equal(followsJob({ tenantId }, ['qbs']), true, String(tenantId))
+      assert.equal(followsJob({ tenantId }, []), true, String(tenantId))
+    }
+  })
+
+  it('is true for a submission that carries one of the tenants the job was in before', () => {
+    assert.equal(followsJob({ tenantId: 'qbs' }, ['qbs']), true)
+    assert.equal(followsJob({ tenantId: 'vision' }, ['qbs', 'vision']), true)
+  })
+
+  it('is false for a submission that carries any other tenant', () => {
+    assert.equal(followsJob({ tenantId: 'vision' }, ['qbs']), false)
+    assert.equal(followsJob({ tenantId: 'p2-core' }, ['qbs', 'vision']), false)
+  })
+
+  it('is false for every submission that carries a tenant when the job had none before, as a new job has not', () => {
+    assert.equal(followsJob({ tenantId: 'qbs' }, []), false)
+  })
+
+  it('is false for a document that is missing', () => {
+    assert.equal(followsJob(null, ['qbs']), false)
   })
 })
 
@@ -677,6 +704,117 @@ describe('onJobWritten', () => {
       assert.deepEqual([stub.calls, stub.writes], [[], []])
       assert.equal(warnings().length, 1)
       assert.match(warnings()[0], /jobs\/j1/)
+    })
+  })
+
+  // A submission follows its job only from the tenant the job was in before. One that
+  // carries another tenant is left where it is, or a builder could name a job of
+  // another tenant and wait for that job's clients to change. Change orders and
+  // notifications always follow their job.
+  describe('a submission that carries another tenant', () => {
+    const odd = (tenantId) => ({ s6: { subject: 'Odd', jobId: 'QBS-001', tenantId, clientUids: [] } })
+    const keptLines = () => warnings().filter((line) => line.includes('submits/s6'))
+
+    it('is left alone, and logged once, when the clients of its job change', async () => {
+      const after = { ...JOB, clientUids: ['c1', 'c2'] }
+      install({ jobs: { j1: after }, ...dependents({ submits: { ...dependents().submits, ...odd('vision') } }) })
+      await run(jobEvent('j1', JOB, after))
+      const touched = stub.writes.map((write) => write.path)
+      assert.ok(!touched.includes('submits/s6'), 'submits/s6 is not written')
+      assert.ok(touched.includes('submits/s1'), 'a submission of the job tenant still gets the new clients')
+      assert.equal(keptLines().length, 1)
+      assert.match(keptLines()[0], /tenant vision/)
+      assert.match(keptLines()[0], /\(qbs\)/, 'the tenant the job was in before')
+      assert.match(keptLines()[0], /now in tenant qbs/)
+      assertNoDashes(keptLines()[0].replace('QBS-001', 'ID'))
+    })
+
+    it('is left alone, and logged once, when its job moves from another tenant', async () => {
+      const after = { ...JOB, tenantId: 'vision' }
+      install({ jobs: { j1: after }, ...dependents({ submits: { ...dependents().submits, ...odd('p2-core') } }) })
+      await run(jobEvent('j1', JOB, after))
+      assert.ok(!stub.writes.some((write) => write.path === 'submits/s6'))
+      assert.ok(stub.writes.some((write) => write.path === 'submits/s1'), 'a submission of the previous tenant follows the job')
+      assert.equal(keptLines().length, 1)
+      assert.match(keptLines()[0], /tenant p2-core/)
+      assert.match(keptLines()[0], /\(qbs\)/)
+      assert.match(keptLines()[0], /now in tenant vision/)
+    })
+
+    it('is logged once in each pass, when the job moves while its documents are stamped', async () => {
+      const first = { ...JOB, clientUids: ['c1', 'c2'] }
+      const newer = { ...JOB, clientUids: ['c1', 'c2', 'c3'] }
+      install({ jobs: { j1: newer }, extras: {}, submits: odd('vision'), notifications: {} })
+      await run(jobEvent('j1', JOB, first, { now: (n) => (n === 1 ? first : newer) }))
+      assert.deepEqual(stub.writes, [])
+      assert.equal(keptLines().length, 2)
+    })
+
+    it('is stamped when it carries no tenant, or an empty one, on a move and on a change of clients', async () => {
+      const blank = { s7: { subject: 'Blank', jobId: 'QBS-001' }, s8: { subject: 'Empty', jobId: 'QBS-001', tenantId: '' } }
+      for (const after of [{ ...JOB, tenantId: 'vision' }, { ...JOB, clientUids: ['c1', 'c2'] }]) {
+        restart({ jobs: { j1: after }, ...dependents({ submits: blank }) })
+        await run(jobEvent('j1', JOB, after))
+        const scope = scopePatchFor(after)
+        assert.deepEqual(stub.written('submits/').map((write) => [write.path, write.data]), [
+          ['submits/s7', scope],
+          ['submits/s8', scope],
+        ])
+        assert.deepEqual(warnings(), [])
+      }
+    })
+
+    it('leaves the change orders and notifications to follow their job, whatever tenant they carry', async () => {
+      const after = { ...JOB, tenantId: 'vision' }
+      install({
+        jobs: { j1: after },
+        extras: { x9: { job: 'QBS-001', tenantId: 'p2-core', clientUids: [] } },
+        submits: {},
+        notifications: { n9: { jobId: 'QBS-001', tenantId: 'p2-core', clientUids: [] } },
+      })
+      await run(jobEvent('j1', JOB, after))
+      assert.deepEqual(stub.writes.map((write) => write.path).sort(), ['extras/x9', 'notifications/n9'])
+      assert.deepEqual(warnings(), [])
+    })
+
+    it('for a new job, only a submission with no tenant is stamped', async () => {
+      const created = { id: 'QBS-007', tenantId: 'qbs', clientUids: ['c1'] }
+      install({
+        jobs: { j7: created },
+        extras: {},
+        submits: {
+          s7: { subject: 'Blank', jobId: 'QBS-007' },
+          s9: { subject: 'Early', jobId: 'QBS-007', tenantId: 'qbs', clientUids: [] },
+        },
+        notifications: {},
+      })
+      await run(jobEvent('j7', null, created))
+      assert.deepEqual(stub.written('submits/').map((write) => write.path), ['submits/s7'])
+      const kept = warnings().filter((line) => line.includes('submits/s9'))
+      assert.equal(kept.length, 1)
+      assert.match(kept[0], /none, as the job is new/)
+    })
+
+    it('in the second pass, follows from the tenant the first pass stamped as well', async () => {
+      // The job moves qbs to vision (the event), then vision to p2-core while the first
+      // pass runs. s1 already carries vision (stamped when the job was read), s2 still
+      // carries qbs; both follow the job to p2-core, and a third tenant does not.
+      const first = { ...JOB, tenantId: 'vision' }
+      const newer = { ...JOB, tenantId: 'p2-core' }
+      install({
+        jobs: { j1: newer },
+        extras: {},
+        submits: {
+          s1: { jobId: 'QBS-001', tenantId: 'vision', clientUids: ['c1'] },
+          s2: { jobId: 'QBS-001', tenantId: 'qbs', clientUids: ['c1'] },
+          s3: { jobId: 'QBS-001', tenantId: 'other', clientUids: ['c1'] },
+        },
+        notifications: {},
+      })
+      await run(jobEvent('j1', JOB, first, { now: (n) => (n === 1 ? first : newer) }))
+      const moved = stub.writes.filter((write) => write.data.tenantId === 'p2-core').map((write) => write.path).sort()
+      assert.deepEqual(moved, ['submits/s1', 'submits/s2'])
+      assert.ok(!stub.writes.some((write) => write.path === 'submits/s3'))
     })
   })
 
@@ -1719,6 +1857,24 @@ describe('backfillScopes', () => {
       assert.match(moved[0], /\bqbs\b/)
       assert.match(moved[0], /\bvision\b/)
       assertNoDashes(moved[0].replace('QBS-001', 'ID'))
+    })
+
+    it('compares a submission with the effective tenant of a job that has none stored, which is qbs', async () => {
+      install({
+        users: {},
+        jobs: { j2: { id: 'QBS-002' } },
+        extras: {},
+        submits: {
+          s1: { jobId: 'QBS-002', tenantId: 'qbs', clientUids: [] },
+          s2: { jobId: 'QBS-002', tenantId: 'vision', clientUids: [] },
+        },
+        notifications: {},
+      })
+      stubAuth()
+      const result = await call()
+      assert.deepEqual([result.submits, result.skipped], [1, 1])
+      assert.deepEqual(stub.written('submits/').map((write) => write.path), ['submits/s1'])
+      assert.equal(warnings().filter((line) => line.includes('submits/s2')).length, 1)
     })
 
     it('stamps a document even when it already carries the right scope, so the counts show the run covered it', async () => {

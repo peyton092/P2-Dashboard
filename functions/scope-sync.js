@@ -3,7 +3,8 @@
 //
 //    onJobWritten     Fires on every write to jobs/{id}. When the job's tenantId or
 //                     its clientUids changed, gives the job's change orders,
-//                     submissions and notifications the new scope.
+//                     submissions and notifications the new scope; a submission
+//                     follows only from the tenant the job was in before.
 //    onExtraWritten   Fire on every write to extras/{id} and submits/{id}. Give the
 //    onSubmitWritten  document its job's scope when it does not carry it, except
 //                     that a submission is never moved to another tenant.
@@ -38,7 +39,7 @@ import { wouldLowerStaff } from './lib/roles.js'
 import { nonEmptyString } from './lib/scope.js'
 import { claimsPatchFor } from './lib/users-sync.js'
 import { BATCH_SIZE, chunks } from './lib/batches.js'
-import { clientLinks, jobIdOf, movesTenant, needsRestamp, scopeChanged, scopePatchFor } from './lib/scope-sync.js'
+import { clientLinks, followsJob, jobIdOf, movesTenant, needsRestamp, scopeChanged, scopePatchFor } from './lib/scope-sync.js'
 
 export { needsRestamp, scopePatchFor }
 
@@ -74,6 +75,14 @@ async function commitUpdates(updates, onFailure) {
 // submission and notification that names the job is given the job's scope, if it
 // does not carry it already. A job that was deleted writes nothing: the documents
 // that named it keep the scope they were last given.
+//
+// A submission follows its job only when it carries no tenant, or the tenant the job
+// was in before this write (the legacy default counted, and none for a new job). One
+// that carries any other tenant is left where it is and logged, once in each pass:
+// a builder stamps their own tenant on the submissions they create and may name any
+// job, so following the job from there would let them put a submission in another
+// tenant's portals just by waiting for that job's clients to change. Change orders
+// and notifications are written by staff and the functions, so they always follow.
 //
 // A new job that was written without a tenantId gets the legacy default, qbs,
 // written onto itself once, instead of leaving it implied for ever. That is one
@@ -124,7 +133,7 @@ export const onJobWritten = onDocumentWritten({ document: 'jobs/{id}', region },
   // The two halves do not depend on each other, so one failing must not stop the other.
   const halves = [
     ['its tenant', before === null ? stampOwnTenant(ref) : null],
-    ['its documents', stampDependents(ref, job)],
+    ['its documents', stampDependents(ref, job, before)],
   ]
   const results = await Promise.allSettled(halves.map(([, work]) => work))
   results.forEach((result, i) => {
@@ -152,29 +161,54 @@ async function stampOwnTenant(ref) {
 // Gives every document that names the job the job's scope, then looks at the job once
 // more and, if its scope moved while that was going on, gives them the newer one. Every
 // failed batch is collected, and the first is thrown when both passes are done.
-async function stampDependents(ref, job) {
+//
+// before is the job as the event had it before the write, or null for a new job. A
+// submission follows from the tenant the job was in then; in the second pass also from
+// the tenant the first pass stamped, which is where the job was until it moved again.
+async function stampDependents(ref, job, before) {
   if (!nonEmptyString(job.id)) {
     console.warn(`[onJobWritten] ${ref.path} has no id, so nothing that names it was stamped.`)
     return
   }
   const failures = []
-  await stampPass(ref.path, job, failures)
+  const previous = before === null ? [] : [scopePatchFor(before).tenantId]
+  await stampPass(ref.path, job, previous, failures)
 
   const again = await ref.get()
   if (again.exists && needsRestamp(scopePatchFor(job), again.data())) {
-    await stampPass(ref.path, again.data(), failures)
+    const passed = [...new Set([...previous, scopePatchFor(job).tenantId])]
+    await stampPass(ref.path, again.data(), passed, failures)
   }
   if (failures.length > 0) throw failures[0]
 }
 
+// The line logged when the fan out leaves a submission in its tenant.
+function keptFromJob(path, doc, job, previous) {
+  const before = previous.length > 0 ? previous.join(' or ') : 'none, as the job is new'
+  return `[onJobWritten] ${path} carries tenant ${doc.tenantId}, which is not the tenant its job ${job.id} was in before (${before}), so it was left as it is. The job is now in tenant ${scopePatchFor(job).tenantId}.`
+}
+
 // One pass: the documents that name the job and do not carry its scope are stamped, in
-// batches. A batch that fails is logged and added to failures, and the rest go on.
-async function stampPass(path, job, failures) {
+// batches, except a submission that may not follow the job (see followsJob), which is
+// logged and left alone. A batch that fails is logged and added to failures, and the
+// rest go on.
+async function stampPass(path, job, previous, failures) {
   if (!nonEmptyString(job.id)) return
   const found = await Promise.all(
     SCOPED.map(({ collection, field }) => db.collection(collection).where(field, '==', job.id).get()),
   )
-  const stale = found.flatMap((snap) => snap.docs).filter((doc) => needsRestamp(doc.data(), job))
+  const stale = []
+  found.forEach((snap, i) => {
+    for (const doc of snap.docs) {
+      const data = doc.data()
+      if (!needsRestamp(data, job)) continue
+      if (SCOPED[i].collection === 'submits' && !followsJob(data, previous)) {
+        console.warn(keptFromJob(doc.ref.path, data, job, previous))
+        continue
+      }
+      stale.push(doc)
+    }
+  })
   await commitUpdates(
     stale.map((doc) => [doc.ref, scopePatchFor(job)]),
     (error, part) => {
