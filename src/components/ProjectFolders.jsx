@@ -176,6 +176,7 @@ export default function ProjectFolders() {
                 {files.map(f => {
                   const TIcon = typeIconMap[f.type] || FileTextIcon
                   const tc = typeColor[f.type] || '#6b7280'
+                  const fileHref = safeHttpUrl(f.url)
                   return (
                     <div
                       key={f._docId}
@@ -200,8 +201,8 @@ export default function ProjectFolders() {
                           )}
                         </div>
                       </div>
-                      {safeHttpUrl(f.url) ? (
-                        <a href={safeHttpUrl(f.url)} target="_blank" rel="noopener noreferrer">
+                      {fileHref ? (
+                        <a href={fileHref} target="_blank" rel="noopener noreferrer">
                           <Button variant="ghost" size="sm" className="gap-1 h-8 px-2 text-xs hover:bg-white/10">
                             <DownloadIcon size={12} /> Download
                           </Button>

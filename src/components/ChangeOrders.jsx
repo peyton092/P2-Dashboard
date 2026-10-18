@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
+import { withAuthor } from '../hooks/useFirestore'
 import { useData } from '../use-data'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -468,7 +469,7 @@ export default function ChangeOrders() {
       if (editingCO?._docId) {
         await updateDoc(doc(db, 'extras', editingCO._docId), data)
       } else {
-        await addDoc(collection(db, 'extras'), { ...data, createdAt: serverTimestamp() })
+        await addDoc(collection(db, 'extras'), withAuthor({ ...data, createdAt: serverTimestamp() }))
       }
       setView('list')
       setForm(null)

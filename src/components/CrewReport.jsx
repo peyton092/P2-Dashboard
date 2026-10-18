@@ -2,6 +2,7 @@ import { useState, useRef, useMemo } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { addDailyReport } from '../hooks/useFirestore'
+import { validateUpload, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
 import { useData } from '../use-data'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -194,7 +195,13 @@ export default function CrewReport() {
 
   const handlePhoto = (e) => {
     const files = Array.from(e.target.files || [])
-    const newPhotos = files.map(f => ({ file: f, preview: URL.createObjectURL(f) }))
+    const accepted = []
+    for (const f of files) {
+      const check = validateUpload(f)
+      if (check.ok) accepted.push(f)
+      else setError(check.reason)
+    }
+    const newPhotos = accepted.map(f => ({ file: f, preview: URL.createObjectURL(f) }))
     setPhotos(prev => [...prev, ...newPhotos])
     e.target.value = ''
   }
@@ -209,7 +216,9 @@ export default function CrewReport() {
   const uploadPhotos = async (dateStr, jobIdVal) => {
     const urls = []
     for (const p of photos) {
-      const ext = p.file.name.split('.').pop()
+      const check = validateUpload(p.file)
+      if (!check.ok) throw new Error(check.reason)
+      const ext = (p.file.name.split('.').pop() || 'jpg').replace(/[^A-Za-z0-9]/g, '').slice(0, 10) || 'jpg'
       const name = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const path = `daily_reports/${dateStr}/${jobIdVal}/${name}`
       const sRef = storageRef(storage, path)
@@ -519,7 +528,7 @@ export default function CrewReport() {
             <input
               ref={cameraRef}
               type="file"
-              accept="image/*"
+              accept={ALLOWED_UPLOAD_TYPES.join(',')}
               multiple
               capture="environment"
               className="hidden"
