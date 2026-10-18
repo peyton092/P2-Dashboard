@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 19, Vite 8 (rolldown), Tailwind 4, Base UI (`@base-ui/react`), lucide-react, recharts 3, Geist Variable (body), Barlow Condensed (display), Geist Mono (data), vitest, @testing-library/react, vitest-axe, Playwright with @axe-core/playwright, Firebase emulators.
 
-**Spec:** `AUDIT.md` sections 2 to 6 (items 15 to 18, 21 to 26) and the UX directive of 2026 10 18 ("Strengthen the UX and UI, greatest asset to the company alive"). The UI inventory that anchors this plan is summarized in the Design Direction below; file and line anchors in each task come from it and were current at commit `ce667ce`.
+**Spec:** `AUDIT.md` sections 2 to 6 (items 15 to 18, 21 to 26) and the UX directive of 2026 10 18 ("Strengthen the UX and UI, greatest asset to the company alive"). The UI inventory that anchors this plan is summarized in the Design Direction below; file and line anchors in each task come from it and were current at commit `ce667ce`; the branch now sits on `889c404` and Task 0 carries the security foundation's residuals.
 
 ## Design Direction (binding for every task)
 
@@ -40,6 +40,22 @@
 3. A job whose `insp` map is missing must render on every list and on the Today board without an error boundary. Test in Task 8 (rank helper) and Task 7 (row renders with `insp` undefined).
 4. Leaving the tab open across midnight must advance the Today board date and every "days since" value without a reload. Test in Task 4 (`useNow` with fake timers).
 5. A change order saved from the form with Status set to Approved must stay Approved, and a Submit Invoice without an amount must be refused with a message, not written. Test in Task 11.
+
+---
+
+### Task 0: Carry overs from the security foundation (do first)
+
+**Why this task exists.** The final review of the Phase 0 and 1 branch left small residuals that are safe to ship but should not linger. Each is one contained change with a test.
+
+**Files:** `functions/scope-sync.js`, `functions/extras.js`, `functions/test/scope-sync.test.js`, `functions/test/extras-handlers.test.js`, `src/components/SettingsPage.jsx`, `src/components/Architecture.jsx`, `functions/push.js`, `src/hooks/useFirestore.js`, `SECURITY.md`.
+
+- [ ] **Drafts carrying a scope.** In `stampFromJob` (scope-sync.js) a draft change order that carries `tenantId` or `clientUids` has both fields deleted in its transaction (its own trigger then reads an unscoped draft and returns). In `functions/extras.js` `scopeOf` resolves a draft's scope from its job on send instead of trusting a carried scope. Tests for both.
+- [ ] **Backfill counts.** Unscoped drafts are counted under a `drafts` count, not `skipped`; the Settings toast says "n drafts stay staff only until they are sent." (no dashes). Tests.
+- [ ] **Architecture chips comment.** `urgent_items` shows resolved, createdBy and createdAt; say so. The client uploads row says "listable by any signed in account that knows the job id".
+- [ ] **push.js uid filter.** Extend the guard to reject `.`, `..`, `__name__` style ids and ids over 1500 bytes; the comment lists exactly what it covers. Test.
+- [ ] **Staff claims and deleted documents.** Document in SECURITY.md that offboarding a hand set staff account means writing the staff role into its users document first, then deleting it (a deletion over a document that never held the staff role keeps the claims).
+- [ ] **Deferred test hygiene.** Split `functions/test/scope-sync.test.js` by trigger; remove the `console.error` mutes that hide act warnings in `ExtraApprovals.test.jsx` by wrapping the Brand renders in act or asserting the expected logs.
+- [ ] **Gate and commit** `git commit -m "Carry the security foundation residuals forward"`
 
 ---
 
