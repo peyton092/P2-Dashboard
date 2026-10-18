@@ -96,6 +96,15 @@ const openIt = async () => {
 }
 const gone = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 const focusIsInside = (dialog) => waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+// Base UI puts focus inside a dialog on the next animation frame after it mounts, and
+// not when it mounts. A test that moves focus itself, or opens a list from a control in
+// the dialog, waits for that first. If it does not, the frame arrives later on a slow
+// machine and lands on top of what the test did.
+const openSettled = async () => {
+  const dialog = await openIt()
+  await focusIsInside(dialog)
+  return dialog
+}
 
 describe('Dialog', () => {
   it('renders nothing while it is closed', () => {
@@ -330,7 +339,7 @@ describe('a Select inside a dialog', () => {
         <DialogBody><TradeSelect /></DialogBody>
       </Page>,
     )
-    await openIt()
+    await openSettled()
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Trade' }))
     const list = await screen.findByRole('listbox')
@@ -348,7 +357,7 @@ describe('a Select inside a dialog', () => {
         <DialogBody><TradeSelect /></DialogBody>
       </Page>,
     )
-    const dialog = await openIt()
+    const dialog = await openSettled()
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Trade' }))
     const option = await screen.findByRole('option', { name: 'HVAC' })

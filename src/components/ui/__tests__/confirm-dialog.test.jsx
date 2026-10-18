@@ -32,6 +32,14 @@ const openIt = async () => {
 const actions = (dialog) =>
   [...dialog.querySelectorAll('button')].filter((button) => button.getAttribute('aria-label') !== 'Close')
 
+// Base UI puts focus on Cancel on the next animation frame after the dialog mounts, and
+// not when it mounts, so the dialog is on the screen before focus is in it. A test that
+// moves focus itself has to wait for this first. If it does not, the frame arrives
+// later on a slow machine, lands on top of what the test did, and takes focus back to
+// Cancel.
+const initialFocusLanded = () =>
+  waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' })))
+
 describe('ConfirmDialog', () => {
   it('asks with its title and its body, and describes itself with the body', async () => {
     render(<Page />)
@@ -53,7 +61,7 @@ describe('ConfirmDialog', () => {
     render(<Page />)
     await openIt()
 
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' })))
+    await initialFocusLanded()
   })
 
   it('names the confirm button with confirmLabel', async () => {
@@ -149,8 +157,10 @@ describe('ConfirmDialog', () => {
   it('keeps focus on the confirm button when the work starts', async () => {
     render(<Starts onConfirm={() => {}} />)
     await openIt()
+    await initialFocusLanded()
     const confirm = screen.getByRole('button', { name: 'Confirm' })
     act(() => { confirm.focus() })
+    expect(document.activeElement).toBe(confirm)
 
     fireEvent.click(confirm)
 
