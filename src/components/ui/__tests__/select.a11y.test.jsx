@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { axe } from '@/test/axe'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select'
 
@@ -59,10 +59,6 @@ describe('Select', () => {
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Electrical', 'HVAC'])
     expect(list.closest('.dark'), 'the open list sits inside an element with the dark class').not.toBeNull()
 
-    let results
-    await act(async () => {
-      results = await axe(document.body)
-    })
-    expect(results).toHaveNoViolations()
+    expect(await axe(document.body)).toHaveNoViolations()
   })
 })

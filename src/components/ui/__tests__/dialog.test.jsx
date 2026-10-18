@@ -1,0 +1,280 @@
+import { useRef, useState } from 'react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
+import { axe } from '@/test/axe'
+import { Dialog, DialogBody, DialogFooter } from '../dialog'
+
+afterEach(cleanup)
+
+// jsdom has no Tab key. This does what a browser does with one: it moves focus to
+// the next tabbable element in document order, or the previous one with shift, and
+// leaves the rest to the page. Whatever keeps focus inside the dialog has to do it.
+const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+function pressTab({ shift = false } = {}) {
+  const stops = [...document.querySelectorAll(TABBABLE)].filter((el) => !el.closest('[inert]'))
+  const at = stops.indexOf(document.activeElement)
+  const next = stops[(at + (shift ? -1 : 1) + stops.length) % stops.length]
+  act(() => { next.focus() })
+}
+
+// A click as a mouse sends it, which is how a click on the scrim reaches the dialog.
+function press(el) {
+  fireEvent.pointerDown(el, { button: 0, pointerType: 'mouse' })
+  fireEvent.mouseDown(el, { button: 0 })
+  fireEvent.pointerUp(el, { button: 0, pointerType: 'mouse' })
+  fireEvent.mouseUp(el, { button: 0 })
+  fireEvent.click(el, { button: 0 })
+}
+
+// A page with an opener, the way a screen uses the dialog.
+function Page({ onClose = () => {}, children, ...props }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>Edit job</button>
+      <Dialog
+        open={open}
+        onClose={() => { onClose(); setOpen(false) }}
+        title="Edit job details"
+        {...props}
+      >
+        {children ?? (
+          <>
+            <DialogBody>
+              <label>
+                Job name
+                <input defaultValue="QBS 003" />
+              </label>
+            </DialogBody>
+            <DialogFooter>
+              <button type="button">Discard</button>
+              <button type="button">Save job</button>
+            </DialogFooter>
+          </>
+        )}
+      </Dialog>
+    </>
+  )
+}
+
+const opener = () => screen.getByRole('button', { name: 'Edit job' })
+// Focus the opener, as a keyboard user arrives at it, and open the dialog.
+const openIt = async () => {
+  act(() => { opener().focus() })
+  fireEvent.click(opener())
+  return screen.findByRole('dialog')
+}
+const gone = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+const focusIsInside = (dialog) => waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+
+describe('Dialog', () => {
+  it('renders nothing while it is closed', () => {
+    render(<Page />)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('is a modal dialog named by its title', async () => {
+    render(<Page />)
+    const dialog = await openIt()
+
+    expect(dialog.getAttribute('role')).toBe('dialog')
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    const title = screen.getByRole('heading', { name: 'Edit job details' })
+    expect(dialog.getAttribute('aria-labelledby')).toBe(title.id)
+    expect(screen.getByRole('dialog', { name: 'Edit job details' })).toBe(dialog)
+  })
+
+  it('describes itself with the description, when it has one', async () => {
+    render(<Page description="Changes save to the job record." />)
+    const dialog = await openIt()
+
+    const description = screen.getByText('Changes save to the job record.')
+    expect(dialog.getAttribute('aria-describedby')).toBe(description.id)
+  })
+
+  it('has nothing to be described by when it has no description', async () => {
+    render(<Page />)
+    const dialog = await openIt()
+    expect(dialog.hasAttribute('aria-describedby')).toBe(false)
+  })
+
+  it('moves focus inside when it opens', async () => {
+    render(<Page />)
+    const dialog = await openIt()
+    await focusIsInside(dialog)
+  })
+
+  it('moves focus to the element initialFocusRef names', async () => {
+    function WithInitialFocus() {
+      const reason = useRef(null)
+      return (
+        <Page initialFocusRef={reason}>
+          <DialogBody>
+            <input aria-label="First field" />
+            <input ref={reason} aria-label="Reason" />
+          </DialogBody>
+        </Page>
+      )
+    }
+    render(<WithInitialFocus />)
+    await openIt()
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Reason')))
+  })
+
+  it('calls onClose when Escape is pressed, and goes when the page closes it', async () => {
+    const onClose = vi.fn()
+    render(<Page onClose={onClose} />)
+    const dialog = await openIt()
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    await gone()
+  })
+
+  it('calls onClose when the scrim is clicked', async () => {
+    const onClose = vi.fn()
+    const { baseElement } = render(<Page onClose={onClose} />)
+    await openIt()
+
+    press(baseElement.querySelector('[data-slot="dialog-scrim"]'))
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    await gone()
+  })
+
+  it('calls onClose when the space around the panel is clicked', async () => {
+    const onClose = vi.fn()
+    const { baseElement } = render(<Page onClose={onClose} />)
+    await openIt()
+
+    press(baseElement.querySelector('[data-slot="dialog-viewport"]'))
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    await gone()
+  })
+
+  it('stays open when the panel itself is clicked', async () => {
+    const onClose = vi.fn()
+    render(<Page onClose={onClose} />)
+    const dialog = await openIt()
+
+    press(screen.getByRole('heading', { name: 'Edit job details' }))
+    press(dialog)
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBe(dialog)
+  })
+
+  it('has a named close button, last in the tab order, that calls onClose', async () => {
+    const onClose = vi.fn()
+    render(<Page onClose={onClose} />)
+    const dialog = await openIt()
+
+    const close = screen.getByRole('button', { name: 'Close' })
+    expect([...dialog.querySelectorAll('button')].at(-1)).toBe(close)
+
+    fireEvent.click(close)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    await gone()
+  })
+
+  it('wraps focus from the last element to the first when Tab is pressed', async () => {
+    render(<Page />)
+    const dialog = await openIt()
+    await focusIsInside(dialog)
+
+    const inside = [...dialog.querySelectorAll(TABBABLE)]
+    const first = inside[0]
+    const last = inside.at(-1)
+    expect(first.tagName).toBe('INPUT')
+    expect(last.getAttribute('aria-label')).toBe('Close')
+
+    act(() => { last.focus() })
+    pressTab()
+
+    await waitFor(() => expect(document.activeElement).toBe(first))
+  })
+
+  it('wraps focus from the first element to the last when Shift and Tab are pressed', async () => {
+    render(<Page />)
+    const dialog = await openIt()
+    await focusIsInside(dialog)
+
+    const inside = [...dialog.querySelectorAll(TABBABLE)]
+    act(() => { inside[0].focus() })
+    pressTab({ shift: true })
+
+    await waitFor(() => expect(document.activeElement).toBe(inside.at(-1)))
+  })
+
+  it('returns focus to the opener when it closes', async () => {
+    render(<Page />)
+    const dialog = await openIt()
+    await focusIsInside(dialog)
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await gone()
+
+    await waitFor(() => expect(document.activeElement).toBe(opener()))
+  })
+
+  it('has no accessibility violations while it is open', async () => {
+    render(<Page description="Changes save to the job record." />)
+    await openIt()
+
+    expect(await axe(document.body)).toHaveNoViolations()
+  })
+
+  it('draws a black scrim at 70 percent and a panel in the design system colors', async () => {
+    const { baseElement } = render(<Page />)
+    const dialog = await openIt()
+
+    const scrim = baseElement.querySelector('[data-slot="dialog-scrim"]')
+    expect(scrim.classList.contains('bg-black/70')).toBe(true)
+    for (const name of ['bg-surface-2', 'border', 'border-white/10', 'rounded-[10px]']) {
+      expect(dialog.classList.contains(name), name).toBe(true)
+    }
+  })
+
+  it.each([
+    ['sm', 'max-w-sm'],
+    ['md', 'max-w-lg'],
+    ['lg', 'max-w-2xl'],
+  ])('is no wider than %s allows (%s)', async (size, width) => {
+    render(<Page size={size} />)
+    const dialog = await openIt()
+    expect(dialog.classList.contains(width)).toBe(true)
+  })
+
+  it('is small unless it is told a size', async () => {
+    render(<Page />)
+    const dialog = await openIt()
+    expect(dialog.classList.contains('max-w-sm')).toBe(true)
+  })
+})
+
+describe('the parts of a dialog', () => {
+  it('DialogBody and DialogFooter pass a class name and their children through', async () => {
+    render(
+      <Page>
+        <DialogBody className="body-extra">Body text</DialogBody>
+        <DialogFooter className="footer-extra"><button type="button">Done</button></DialogFooter>
+      </Page>,
+    )
+    await openIt()
+
+    expect(screen.getByText('Body text').classList.contains('body-extra')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Done' }).parentElement.classList.contains('footer-extra')).toBe(true)
+  })
+
+  it('DialogTitle sets the title in the display face', async () => {
+    render(<Page />)
+    await openIt()
+
+    const title = screen.getByRole('heading', { name: 'Edit job details' })
+    expect(title.tagName).toBe('H2')
+    expect(title.classList.contains('font-display')).toBe(true)
+  })
+})
