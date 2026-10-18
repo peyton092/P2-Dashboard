@@ -19,7 +19,7 @@ import { parse } from 'espree'
 //    The connection chip reads the real state, and it is the only place the word is
 //    written.
 //
-// It also checks the one line that keeps the connection probe running from the
+// It also checks the small component that keeps the connection probe running from the
 // dashboard. Files under a __tests__ directory are not scanned: they hold these
 // patterns on purpose as inputs.
 
@@ -54,6 +54,21 @@ const CLOCK_DEFAULTS = { toLocalDateStr: 0, monthKey: 0, startOfLocalDay: 0, fmt
 const isFunction = (node) => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(node.type)
 const isNamed = (node, name) => node?.type === 'Identifier' && node.name === name
 
+const parseSource = (code) => parse(code, { ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true }, loc: true })
+
+// Every node under a node, the node first.
+function* nodesUnder(node) {
+  if (Array.isArray(node)) {
+    for (const child of node) yield* nodesUnder(child)
+    return
+  }
+  if (!node || typeof node.type !== 'string') return
+  yield node
+  for (const [key, child] of Object.entries(node)) {
+    if (key !== 'loc' && child && typeof child === 'object') yield* nodesUnder(child)
+  }
+}
+
 // What a node reads from the clock, or null when it reads none.
 function clockRead(node) {
   if (node.type === 'NewExpression' && isNamed(node.callee, 'Date')) return 'new Date'
@@ -84,7 +99,7 @@ function runsInPlace(call) {
 // runs at once, so it is read as the code around it. A function handed to map or forEach at
 // the top of a file runs at once too, and this scan does not follow it.
 function loadTimeClockReads(code) {
-  const tree = parse(code, { ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true }, loc: true })
+  const tree = parseSource(code)
   const found = []
 
   function walk(node, deferred, inPlace = false) {
@@ -140,12 +155,33 @@ describe('time and connection in the source', () => {
     expect(hits(/toISOString\(\)\s*\.split\(\s*['"]T['"]\s*\)/)).toEqual([])
   })
 
-  it('keeps the connection probe running from the dashboard, for the screens that show no chip', () => {
-    // Without this call the probe stops on Settings, a job page and Analytics, and the chip on
-    // the next screen starts from nothing and flashes Syncing.
-    const app = sources.find(({ name }) => name === 'App.jsx').lines.join('\n')
-    expect(app).toMatch(/import \{ useConnectionState \} from '\.\/hooks\/useConnectionState'/)
-    expect(app).toMatch(/^\s*useConnectionState\(\)\s*$/m)
+  it('keeps the connection probe running from the dashboard in a component of its own, so that the dashboard is not rendered again for each change', () => {
+    // Without a call the probe stops on Settings, a job page and Analytics, and the chip on
+    // the next screen starts from nothing and flashes Syncing. A hook subscribes the
+    // component that calls it to every change, so the call is in a small component that
+    // renders nothing, and the dashboard only renders that component.
+    const tree = parseSource(sources.find(({ name }) => name === 'App.jsx').code)
+    const all = [...nodesUnder(tree)]
+    const declared = (name) => all.find((node) => node.type === 'FunctionDeclaration' && node.id?.name === name)
+    const callsIn = (node) => [...nodesUnder(node)].filter((child) => child.type === 'CallExpression' && isNamed(child.callee, 'useConnectionState'))
+
+    const imported = tree.body.filter((node) => node.type === 'ImportDeclaration' && node.source.value === './hooks/useConnectionState')
+    expect(imported.flatMap((node) => node.specifiers.map((specifier) => specifier.imported?.name))).toContain('useConnectionState')
+
+    const keepalive = declared('ConnectionKeepalive')
+    expect(keepalive, 'a component named ConnectionKeepalive').toBeDefined()
+    expect(callsIn(keepalive)).toHaveLength(1)
+    expect(callsIn(keepalive)[0].arguments).toHaveLength(0)
+    const returnsNull = [...nodesUnder(keepalive.body)].some((node) => node.type === 'ReturnStatement' && node.argument?.type === 'Literal' && node.argument.value === null)
+    expect(returnsNull, 'ConnectionKeepalive renders nothing').toBe(true)
+
+    const dashboard = declared('MainDashboard')
+    expect(dashboard, 'a component named MainDashboard').toBeDefined()
+    expect(callsIn(dashboard), 'the dashboard itself must not call the hook').toHaveLength(0)
+    const rendersKeepalive = [...nodesUnder(dashboard)].some((node) => node.type === 'JSXOpeningElement' && node.name.name === 'ConnectionKeepalive')
+    expect(rendersKeepalive, 'the dashboard renders ConnectionKeepalive').toBe(true)
+
+    expect(callsIn(tree), 'no other call of the hook in App.jsx').toHaveLength(1)
   })
 
   it('writes the word Live in the connection chip and nowhere else', () => {

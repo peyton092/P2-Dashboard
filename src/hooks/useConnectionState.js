@@ -120,8 +120,9 @@ function subscribeToBrowser(onChange) {
 const browserIsOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false
 
 // 'online', 'syncing' or 'offline'. Call it in a component that is shown while a user
-// is signed in; ConnectionChip is that component. The dashboard calls it once itself
-// and ignores the answer, to keep the probe running on the screens that show no chip.
+// is signed in; ConnectionChip is that component. The dashboard renders
+// ConnectionKeepalive, in App.jsx, which calls it and ignores the answer, to keep the
+// probe running on the screens that show no chip.
 export function useConnectionState() {
   const uid = useData()?.uid ?? null
   const online = useSyncExternalStore(subscribeToBrowser, browserIsOnline, () => true)

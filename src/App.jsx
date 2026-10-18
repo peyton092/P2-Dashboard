@@ -3500,16 +3500,22 @@ function Architecture() {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
+// Keeps the connection probe running on the screens that show no connection chip
+// (Settings, a job page, Analytics), so the chip on the next screen starts from what is
+// already known and does not flash Syncing. The answer is not needed here. The call is in
+// a component of its own that renders nothing, because a hook subscribes the component
+// that calls it to every change of connection, and the dashboard should not render again
+// for each one.
+function ConnectionKeepalive() {
+  useConnectionState()
+  return null
+}
+
 function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange, onLogout, onCreateUser, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'command-center')
   const [collapsed, setCollapsed] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState(null)
   const { loading, jobs, extras, notifs, subs, submits, agentAlerts } = useData()
-
-  // Keeps the connection probe running on the screens that show no connection chip
-  // (Settings, a job page, Analytics), so the chip on the next screen starts from
-  // what is already known and does not flash Syncing. The answer is not needed here.
-  useConnectionState()
 
   // Cross-component navigation. Command Center's "View All" links and Quick
   // Modules dispatch `p2:navigate` with a tab id; the shell listens here.
@@ -3557,13 +3563,16 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 animate-spin"
-            style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
-          <p className="text-sm text-muted-foreground">Loading field data…</p>
+      <>
+        <ConnectionKeepalive />
+        <div className="flex h-screen items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-10 h-10 rounded-full border-2 animate-spin"
+              style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
+            <p className="text-sm text-muted-foreground">Loading field data…</p>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
 
@@ -3642,14 +3651,17 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
   )
 
   return (
-    <AppShell sidebar={sidebar} mobileNav={mobileNav}>
-      <CommandPalette />
-      <Suspense fallback={<PageSkeleton />}>
-        <div key={activeTab} className="p2-page-enter">
-          {TAB_COMPONENTS[activeTab]}
-        </div>
-      </Suspense>
-    </AppShell>
+    <>
+      <ConnectionKeepalive />
+      <AppShell sidebar={sidebar} mobileNav={mobileNav}>
+        <CommandPalette />
+        <Suspense fallback={<PageSkeleton />}>
+          <div key={activeTab} className="p2-page-enter">
+            {TAB_COMPONENTS[activeTab]}
+          </div>
+        </Suspense>
+      </AppShell>
+    </>
   )
 }
 
