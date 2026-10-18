@@ -1,5 +1,6 @@
 export { PageHeader, SectionHeader } from './headers'
 export { default as MetricTile } from './MetricTile'
+export { StatBand } from './StatBand'
 export { default as DataPanel } from './DataPanel'
 export {
   Pill,
