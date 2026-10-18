@@ -741,7 +741,7 @@ function BillingCard({ row }) {
           <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
             {billable > 0 ? fmtMoney(billable) : '—'}
           </p>
-          <p className="text-[10px] text-zinc-400">{milestone} {anyFinalPassed(job) ? '30%' : '70%'}</p>
+          <p className="text-[10px] text-zinc-400">{milestone}</p>
         </div>
       </header>
 
