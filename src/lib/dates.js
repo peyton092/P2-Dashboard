@@ -53,9 +53,11 @@ export function parseDateStr(text) {
 
 // A Date from whatever a document or a prop holds: a Date, a Firestore Timestamp,
 // milliseconds, a day written either way above, or another string the Date
-// constructor reads. Null when it is none of these or the Date is not a real one.
-// Anything falsy is a field that was never filled in, zero included.
-function asDate(value) {
+// constructor reads. A day comes back as local midnight, so a screen that shows or
+// compares a saved day reads it here and never through new Date(text). Null when it is
+// none of these or the Date is not a real one. Anything falsy is a field that was never
+// filled in, zero included.
+export function toDate(value) {
   if (!value) return null
   let date = null
   if (value instanceof Date) date = value
@@ -71,11 +73,11 @@ const dayNumber = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 
 
 // The calendar days from a to b: 0 for two times on one day, 1 for the next day
 // however close the two times are, negative when b is before a. Each is a Date or
-// anything asDate reads. Null when either is not a date. Use it for two days on the
+// anything toDate reads. Null when either is not a date. Use it for two days on the
 // calendar, such as today and a due date.
 export function daysBetween(a, b) {
-  const from = asDate(a)
-  const to = asDate(b)
+  const from = toDate(a)
+  const to = toDate(b)
   return from && to ? dayNumber(to) - dayNumber(from) : null
 }
 
@@ -85,7 +87,7 @@ export function daysBetween(a, b) {
 // saving adds or takes away is not counted as time passing, so a day is 24 hours on
 // the wall clock in every week of the year. Null when dateLike is not a date.
 export function daysSince(dateLike, now = new Date()) {
-  const from = asDate(dateLike)
+  const from = toDate(dateLike)
   if (!from) return null
   const wallClock = now.getTime() - from.getTime() + (from.getTimezoneOffset() - now.getTimezoneOffset()) * 60_000
   return Math.floor(wallClock / MS_PER_DAY)

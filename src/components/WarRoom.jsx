@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
-import { daysBetween, daysSince } from '../lib/dates'
+import { daysBetween, daysSince, toDate } from '../lib/dates'
 import {
   scoreJob,
   classifyRisk,
@@ -43,8 +43,8 @@ function cleanPhase(phase, status) {
 function fmtDateShort(dateVal) {
   if (!dateVal) return null
   try {
-    const d = dateVal?.toDate ? dateVal.toDate() : new Date(dateVal)
-    if (isNaN(d.getTime())) return null
+    const d = toDate(dateVal)
+    if (!d) return null
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   } catch { return null }
 }
@@ -242,8 +242,8 @@ export default function WarRoom() {
       sorted.sort((a, b) => (b.stale ?? -1) - (a.stale ?? -1))
     } else if (sortBy === 'target') {
       sorted.sort((a, b) => {
-        const ta = a.job.target ? new Date(a.job.target).getTime() : Infinity
-        const tb = b.job.target ? new Date(b.job.target).getTime() : Infinity
+        const ta = toDate(a.job.target)?.getTime() ?? Infinity
+        const tb = toDate(b.job.target)?.getTime() ?? Infinity
         return ta - tb
       })
     } else if (sortBy === 'name') {

@@ -1,3 +1,4 @@
+import { daysBetween, toDate } from './dates'
 import { MATERIAL_STATUS } from './status'
 
 // Materials vocabulary, status normalisation, and pure derivation helpers.
@@ -28,13 +29,10 @@ export const matName    = (m) => m.name || m.item || '—'
 export const matJobId   = (m) => m.jobId || m.job || ''
 export const matOrdered = (m) => m.dateOrdered || m.eta || ''
 
-export function matDaysUntilNeeded(m) {
-  if (!m.dateNeeded) return null
-  const d = new Date(m.dateNeeded)
-  if (isNaN(d.getTime())) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.ceil((d.getTime() - today.getTime()) / 86400000)
+// The calendar days from today to the day the material is needed, negative when that day
+// has gone. Null when no day is set or it is not a date.
+export function matDaysUntilNeeded(m, now = new Date()) {
+  return daysBetween(now, m.dateNeeded)
 }
 
 export function matIsOpen(m) {
@@ -92,8 +90,8 @@ export function matMatchesFilter(m, filter) {
 
 export function fmtMatDate(dateStr) {
   if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
+  const d = toDate(dateStr)
+  if (!d) return dateStr
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 

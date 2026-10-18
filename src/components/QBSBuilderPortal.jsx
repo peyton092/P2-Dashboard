@@ -6,7 +6,7 @@ import {
 } from '../hooks/useFirestore'
 import { extraState } from '../lib/extraStatus'
 import { callableMessage } from '../lib/callableError'
-import { daysSince } from '../lib/dates'
+import { daysSince, toDate } from '../lib/dates'
 import { useNow } from '../hooks/useNow'
 import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
@@ -46,8 +46,8 @@ const jobName = (j) => j.name || (j.client || '').split(' ')[0] || j.id
 const fmtDate = (d) => {
   if (!d) return ''
   try {
-    const dt = d?.toDate ? d.toDate() : new Date(d)
-    if (isNaN(dt.getTime())) return ''
+    const dt = toDate(d)
+    if (!dt) return ''
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   } catch { return '' }
 }

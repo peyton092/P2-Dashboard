@@ -3538,13 +3538,13 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
       if (['complete','completed'].includes(j.status)) return false
       const insp = j.insp || {}
       const failed = Object.values(insp).some(t => Object.values(t || {}).some(s => s === 'failed'))
-      const stale  = ((new Date() - new Date(j.lastStatusChange || j.start)) / 86400000) >= 2
+      const stale  = (jobStaleness(j) ?? 0) >= 2
       return failed || (stale && j.status !== 'pending')
     }).length,
     jobs:          (jobs    || []).filter(j => j.status === 'needs-action').length,
     extras:        (extras  || []).filter(e => e.status === 'pending' && !e.qbs).length,
     notifications: (notifs  || []).filter(n => !n.read).length,
-    subs:          (subs    || []).filter(s => !s.w9 || (new Date(s.insExp) - new Date()) / 86400000 < 60).length,
+    subs:          (subs    || []).filter(s => subHasMissingDocs(s) || subInsuranceExpired(s) || subInsuranceExpiringSoon(s)).length,
     submit:        (submits || []).filter(s => !s.status || s.status === 'new').length,
     alerts:        (agentAlerts || []).filter(a => a.status === 'open' && a.severity === 'critical').length,
     inspections:   (jobs    || []).filter(j => {

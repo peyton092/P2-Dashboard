@@ -3,6 +3,7 @@ import { useData } from '../use-data'
 import { useJobFiles } from '../hooks/useFirestore'
 import { safeHttpUrl } from '../lib/safeUrl'
 import { extraState } from '../lib/extraStatus'
+import { toDate } from '../lib/dates'
 import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
 import { DataPanel, StatBand, Pill, ProgressBar, EmptyState } from './shared'
 import { PHASE_LABEL } from '../lib/inspections'
@@ -28,8 +29,8 @@ const DATE_KEYS = new Set(['roughInDate', 'trimDate', 'finalDate', 'finalFailDat
 function fmtDate(d) {
   if (!d) return ''
   try {
-    const dt = d?.toDate ? d.toDate() : new Date(d)
-    if (isNaN(dt.getTime())) return ''
+    const dt = toDate(d)
+    if (!dt) return ''
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   } catch { return '' }
 }

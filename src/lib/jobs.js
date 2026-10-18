@@ -1,4 +1,5 @@
 import { classifyRisk, hasFailedInspection, isBillingReady, daysSince } from '../agent/scoring'
+import { toDate } from './dates'
 import { isJobComplete } from './status'
 
 // Job-level helpers. Pure data + pure derivation. No React or Firestore
@@ -100,7 +101,7 @@ export function jobRiskMeta(j) {
 
 export function fmtJobDate(dateStr) {
   if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
+  const d = toDate(dateStr)
+  if (!d) return dateStr
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }

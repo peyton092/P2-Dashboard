@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
-import { daysBetween, daysSince } from '../lib/dates'
+import { daysBetween, daysSince, toDate } from '../lib/dates'
 import {
   scoreJob, classifyRisk,
   hasFailedInspection, isBillingReady, isHvacStartupBlocked,
@@ -77,8 +77,8 @@ function jobNextAction(job, now) {
 function fmtDateShort(date) {
   if (!date) return null
   try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
+    const d = toDate(date)
+    if (!d) return null
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   } catch { return null }
 }

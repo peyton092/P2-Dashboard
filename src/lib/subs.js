@@ -1,4 +1,5 @@
 import { daysSince } from '../agent/scoring'
+import { daysBetween, toDate } from './dates'
 import { SUB_STATUS } from './status'
 
 // Subcontractor compliance vocabulary + pure derivation helpers. No React or
@@ -25,13 +26,8 @@ export const TRADE_FILTERS = [
 ]
 
 // Date utility — null when missing/invalid; integer days otherwise (negative = expired).
-export function daysUntilDate(dateStr) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.ceil((d.getTime() - today.getTime()) / 86400000)
+export function daysUntilDate(dateStr, now = new Date()) {
+  return daysBetween(now, dateStr)
 }
 
 export function subInsuranceState(s) {
@@ -107,8 +103,8 @@ export function subNextAction(s) {
 
 export function fmtSubDate(dateStr) {
   if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
+  const d = toDate(dateStr)
+  if (!d) return dateStr
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 

@@ -1,7 +1,7 @@
 import process from 'node:process'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  toLocalDateStr, monthKey, startOfLocalDay, parseDateStr,
+  toLocalDateStr, monthKey, startOfLocalDay, parseDateStr, toDate,
   daysBetween, daysSince, fmtLongDate,
 } from '../dates'
 
@@ -138,6 +138,46 @@ describe.each(ZONES)('in %s', (zone, offsetMinutes) => {
       ['a Date', new Date(2026, 2, 10)],
     ])('gives null for %s', (_what, value) => {
       expect(parseDateStr(value)).toBeNull()
+    })
+  })
+
+  describe('toDate', () => {
+    it.each([
+      ['an ISO day', '2026-10-18', [2026, 9, 18]],
+      ['a US day', '10/18/2026', [2026, 9, 18]],
+      ['a US day without leading zeros', '3/9/2026', [2026, 2, 9]],
+      ['the first day of a month', '2026-11-01', [2026, 10, 1]],
+    ])('reads %s as local midnight, the day the person saved', (_what, text, parts) => {
+      expect(toDate(text).getTime()).toBe(local(parts).getTime())
+    })
+
+    it('names the saved day when the Date is written out in the zone of the person', () => {
+      const shown = (text) => toDate(text).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      expect(shown('2026-10-18')).toBe('Oct 18, 2026')
+      expect(shown('10/18/2026')).toBe('Oct 18, 2026')
+      expect(shown('2026-03-01')).toBe('Mar 1, 2026')
+    })
+
+    it('reads a moment as the moment it names', () => {
+      const moment = local([2026, 9, 18, 21, 30])
+      expect(toDate(moment)).toBe(moment)
+      expect(toDate(moment.getTime()).getTime()).toBe(moment.getTime())
+      expect(toDate(moment.toISOString()).getTime()).toBe(moment.getTime())
+      expect(toDate('2026-10-18T21:30:00-05:00').getTime()).toBe(Date.parse('2026-10-19T02:30:00Z'))
+      expect(toDate({ toDate: () => moment }).getTime()).toBe(moment.getTime())
+    })
+
+    it.each([
+      ['undefined', undefined],
+      ['null', null],
+      ['an empty string', ''],
+      ['zero, which is a field that was never filled in', 0],
+      ['words', 'not a date'],
+      ['an invalid Date', new Date(NaN)],
+      ['a Timestamp that cannot be read', { toDate: () => new Date(NaN) }],
+      ['an object that is not a date', {}],
+    ])('gives null for %s', (_what, value) => {
+      expect(toDate(value)).toBeNull()
     })
   })
 

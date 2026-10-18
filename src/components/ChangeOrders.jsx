@@ -6,7 +6,7 @@ import { extraState, statusOnSave } from '../lib/extraStatus'
 import { callableMessage } from '../lib/callableError'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
-import { daysSince, toLocalDateStr } from '../lib/dates'
+import { daysSince, toDate, toLocalDateStr } from '../lib/dates'
 import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -93,7 +93,8 @@ function coAgeDays(co, now) {
 
 function fmtDateShort(dateStr) {
   if (!dateStr) return '—'
-  const d = new Date(dateStr)
+  // Text that is not a date becomes an invalid Date, which the next line turns into the placeholder.
+  const d = toDate(dateStr) ?? new Date(NaN)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }

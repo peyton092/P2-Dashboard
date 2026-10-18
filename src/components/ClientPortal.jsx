@@ -5,7 +5,7 @@ import { safeHttpUrl } from '../lib/safeUrl'
 import { validateUpload, sanitizeFileName, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
 import { extraState } from '../lib/extraStatus'
 import { callableMessage } from '../lib/callableError'
-import { daysSince } from '../lib/dates'
+import { daysSince, toDate } from '../lib/dates'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
 import {
@@ -45,8 +45,8 @@ const jobName = (j) => j.name || (j.client || '').split(' ')[0] || j.id
 const fmtDate = (d) => {
   if (!d) return ''
   try {
-    const dt = d?.toDate ? d.toDate() : new Date(d)
-    if (isNaN(dt.getTime())) return ''
+    const dt = toDate(d)
+    if (!dt) return ''
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   } catch { return '' }
 }
@@ -761,8 +761,8 @@ function ClientMessages({ jobs, clientName }) {
 function fmtFullDate(d) {
   if (!d) return null
   try {
-    const dt = d?.toDate ? d.toDate() : new Date(d)
-    if (isNaN(dt.getTime())) return null
+    const dt = toDate(d)
+    if (!dt) return null
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   } catch { return null }
 }

@@ -3,6 +3,7 @@ import {
   PackageIcon, ShieldCheckIcon, UserRoundCogIcon,
 } from 'lucide-react'
 import { classifyRisk, hasFailedInspection, isBillingReady, isHvacStartupBlocked, daysSince } from '../agent/scoring'
+import { toDate } from './dates'
 import { jobName } from './jobs'
 import { matIsOpen, matIsOverdue, matIsBlocking, matDaysUntilNeeded } from './materials'
 import { subInsuranceExpired, subInsuranceExpiringSoon, subHasMissingDocs } from './subs'
@@ -203,7 +204,7 @@ export function buildBriefingItems({ jobs, extras, materials, subs }) {
   for (const e of extras) {
     if (e.status !== 'pending' && e.status !== 'Sent to Builder') continue
     const sentTs = e.sentAt?.toDate?.() || (e.sentAt ? new Date(e.sentAt) : null)
-    const dateTs = e.date ? new Date(e.date) : null
+    const dateTs = e.date ? toDate(e.date) : null
     const created = e.createdAt?.toDate?.() || (e.createdAt ? new Date(e.createdAt) : null)
     const t = sentTs || dateTs || created
     const age = t && !isNaN(t.getTime()) ? Math.floor((Date.now() - t.getTime()) / 86400000) : null
