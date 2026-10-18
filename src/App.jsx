@@ -1929,7 +1929,7 @@ function Inspections() {
           {
             label: 'Ready for Inspection',
             value: kpis.ready,
-            sub: kpis.ready > 0 ? 'Gate passed — call in' : 'No jobs cleared yet',
+            sub: kpis.ready > 0 ? 'Gate passed, call in' : 'No jobs cleared yet',
             tone: kpis.ready > 0 ? 'success' : 'mute',
           },
           {

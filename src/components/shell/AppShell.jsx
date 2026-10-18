@@ -17,7 +17,12 @@ export default function AppShell({ sidebar, mobileNav, children, className = '' 
         className="flex-1 min-w-0 overflow-y-auto"
         style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))' }}
       >
-        <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8 py-5 sm:py-7">
+        {/* The content fills the width of the screen, inside gutters of 16 pixels on
+            a phone, 24 from 640 and 32 from 1024. Only above 1800 pixels is it
+            capped at 1760 and centered, so a very wide monitor does not stretch a
+            row of figures across the room. The cap is min-[1800px] and not 2xl,
+            because 2xl starts at 1536 pixels. */}
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 min-[1800px]:mx-auto min-[1800px]:max-w-[1760px]">
           {children}
         </div>
       </main>
