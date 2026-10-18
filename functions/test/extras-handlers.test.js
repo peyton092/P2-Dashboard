@@ -1,0 +1,570 @@
+import { describe, it, beforeEach, afterEach, mock } from 'node:test'
+import assert from 'node:assert/strict'
+import { HttpsError } from 'firebase-functions/v2/https'
+import { FieldValue } from 'firebase-admin/firestore'
+import { db } from '../lib/admin.js'
+import * as extras from '../extras.js'
+import { extraState, extraTransition } from '../lib/extras.js'
+
+const { approveExtra, rejectExtra, sendExtraToBuilder } = extras
+
+// Nothing here reaches a network. The Firestore instance is the real singleton
+// with the methods the handlers call replaced, so a call the handlers make that
+// is not stubbed fails loudly (no credentials, no emulator) instead of quietly
+// succeeding.
+//
+// A transaction is replayed the way Firestore treats it: the writes it stages
+// are committed only if the callback finishes, so a refusal inside it leaves
+// `writes` empty.
+
+let calls // every Firestore entry point the handler touched, in order
+let reads // every document or query read inside the transaction, in order
+let writes // committed writes, in order: { op, path, data }
+
+// extras: { x1: { ...document } }   change orders that exist, by document id
+// jobs:   [{ id: 'QBS-003', ... }]  job documents that exist
+// userDocs: { u1: { displayName } } users documents the actor lookup may read
+function stubFirestore({ extras: extraDocs = {}, jobs = [], userDocs = {} } = {}) {
+  let auto = 0
+  mock.method(db, 'collection', (name) => {
+    calls.push(`collection:${name}`)
+    return {
+      doc: (id) => ({ path: `${name}/${id ?? `auto${++auto}`}` }),
+      where: (field, op, value) => ({ limit: () => ({ query: { name, field, op, value } }) }),
+    }
+  })
+  mock.method(db, 'doc', (path) => {
+    calls.push(`doc:${path}`)
+    return {
+      get: async () => {
+        const data = userDocs[path.replace(/^users\//, '')]
+        return { exists: data !== undefined, data: () => data }
+      },
+    }
+  })
+  mock.method(db, 'runTransaction', async (update) => {
+    calls.push('runTransaction')
+    const staged = []
+    const tx = {
+      get: async (target) => {
+        if (target.query) {
+          const { name, field, op, value } = target.query
+          reads.push(`query:${name}:${field}${op}${value}`)
+          const found = name === 'jobs' && field === 'id' && op === '==' ? jobs.filter((job) => job.id === value) : []
+          return { empty: found.length === 0, docs: found.map((job) => ({ data: () => job })) }
+        }
+        reads.push(target.path)
+        const data = extraDocs[target.path.replace(/^extras\//, '')]
+        return { exists: data !== undefined, data: () => data }
+      },
+      update: (ref, data) => staged.push({ op: 'update', path: ref.path, data }),
+      set: (ref, data) => staged.push({ op: 'set', path: ref.path, data }),
+    }
+    const result = await update(tx)
+    writes.push(...staged)
+    return result
+  })
+}
+
+beforeEach(() => {
+  calls = []
+  reads = []
+  writes = []
+})
+
+afterEach(() => {
+  mock.restoreAll()
+})
+
+const code = (expected, message) => (err) => {
+  assert.ok(err instanceof HttpsError, `expected an HttpsError, got ${err}`)
+  assert.equal(err.code, expected)
+  if (message !== undefined) assert.equal(err.message, message)
+  return true
+}
+
+const isServerTime = (value) => value.isEqual(FieldValue.serverTimestamp())
+const written = (prefix) => writes.filter((w) => w.path.startsWith(prefix))
+
+// Callers, as the sign in token describes them.
+const OWNER = { uid: 'o1', token: { role: 'owner', email: 'jesse@p2em.com', name: 'Jesse Parker' } }
+const INTERNAL = { uid: 'i1', token: { role: 'internal', email: 'pat@p2em.com', name: 'Pat Lee' } }
+const QBS = { uid: 'b1', token: { role: 'builder', tenantId: 'qbs', email: 'dana@qbs.example', name: 'Dana Lee' } }
+const VISION = { uid: 'b2', token: { role: 'builder', tenantId: 'vision', email: 'vic@vision.example', name: 'Vic Reed' } }
+const CLIENT = { uid: 'c1', token: { role: 'client', email: 'casey@client.example', name: 'Casey Hart', clientJobIds: ['QBS-003'] } }
+const OTHER_CLIENT = { uid: 'c2', token: { role: 'client', email: 'rae@client.example', name: 'Rae Cole', clientJobIds: ['QBS-009'] } }
+
+// A change order sent to the builder, already stamped with its job's scope, and
+// one written before stamping existed (no tenantId, no clientUids).
+const stamped = (over = {}) => ({
+  id: 'CO-004',
+  job: 'QBS-003',
+  amount: 4100,
+  status: 'Sent to Builder',
+  tenantId: 'qbs',
+  clientUids: ['c1'],
+  ...over,
+})
+const legacy = (over = {}) => ({ id: 'CO-004', job: 'QBS-003', amount: 4100, status: 'pending', ...over })
+const JOB = { id: 'QBS-003', tenantId: 'qbs', clientUids: ['c1'] }
+
+const call = (fn, data, auth) => fn.run({ data, auth, rawRequest: {} })
+
+describe('the guards run before anything is read', () => {
+  it('turns a signed out caller away from all three, touching nothing', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    for (const fn of [approveExtra, rejectExtra, sendExtraToBuilder]) {
+      await assert.rejects(call(fn, { extraId: 'x1', note: 'n' }, undefined), code('unauthenticated', 'You must be signed in.'))
+    }
+    assert.deepEqual([calls, reads, writes], [[], [], []])
+  })
+
+  it('turns a builder and a client away from sendExtraToBuilder, touching nothing', async () => {
+    stubFirestore({ extras: { x1: stamped({ status: 'Draft' }) } })
+    for (const auth of [QBS, CLIENT]) {
+      await assert.rejects(call(sendExtraToBuilder, { extraId: 'x1' }, auth), code('permission-denied', 'Staff access required.'))
+    }
+    assert.deepEqual([calls, reads, writes], [[], [], []])
+  })
+
+  it('reads users/{uid} for a token without a role, once, and then still refuses a role less caller', async () => {
+    stubFirestore({ extras: { x1: stamped() }, userDocs: {} })
+    const noClaims = { uid: 'ghost', token: { email: 'ghost@x.example', name: 'Ghost' } }
+    await assert.rejects(call(approveExtra, { extraId: 'x1' }, noClaims), code('permission-denied', 'You can only act on change orders for your own projects.'))
+    assert.deepEqual(writes, [])
+  })
+
+  it('takes the role of a token without one from the users document', async () => {
+    stubFirestore({ extras: { x1: stamped({ status: 'Draft' }) }, userDocs: { late: { role: 'internal' } } })
+    const noClaims = { uid: 'late', token: { email: 'late@p2em.com', name: 'Late Staff' } }
+    assert.deepEqual(await call(sendExtraToBuilder, { extraId: 'x1' }, noClaims), { ok: true })
+    assert.equal(written('extras/')[0].data.status, 'Sent to Builder')
+  })
+})
+
+describe('approveExtra', () => {
+  it('lets a builder of the change order tenant approve it, and answers { ok: true }', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    assert.deepEqual(await call(approveExtra, { extraId: 'x1' }, QBS), { ok: true })
+    assert.equal(written('extras/').length, 1)
+  })
+
+  it('writes the approval onto the change order', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(approveExtra, { extraId: 'x1' }, QBS)
+    const [patch] = written('extras/')
+    assert.equal(patch.op, 'update')
+    assert.equal(patch.path, 'extras/x1')
+    assert.deepEqual(Object.keys(patch.data).sort(), ['approvedAt', 'approvedBy', 'status'])
+    assert.equal(patch.data.status, 'Approved')
+    assert.deepEqual(patch.data.approvedBy, { uid: 'b1', email: 'dana@qbs.example', displayName: 'Dana Lee' })
+    assert.ok(isServerTime(patch.data.approvedAt), 'approvedAt is a server timestamp')
+  })
+
+  it('writes the notification, scoped like the change order and signed by the caller', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(approveExtra, { extraId: 'x1' }, QBS)
+    const [note] = written('notifications/')
+    assert.equal(note.op, 'set')
+    assert.deepEqual(Object.keys(note.data).sort(), [
+      'clientUids', 'createdAt', 'createdBy', 'createdByEmail', 'jobId', 'msg', 'read', 'tenantId', 'type',
+    ])
+    assert.equal(note.data.type, 'success')
+    assert.equal(note.data.msg, 'CO-004 approved by Dana Lee: $4,100 (QBS-003)')
+    assert.equal(note.data.jobId, 'QBS-003')
+    assert.equal(note.data.tenantId, 'qbs')
+    assert.deepEqual(note.data.clientUids, ['c1'])
+    assert.equal(note.data.createdBy, 'b1')
+    assert.equal(note.data.createdByEmail, 'dana@qbs.example')
+    assert.equal(note.data.read, false)
+    assert.ok(isServerTime(note.data.createdAt))
+  })
+
+  it('writes the history line the Activity feed renders', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(approveExtra, { extraId: 'x1' }, QBS)
+    const [line] = written('history/')
+    assert.equal(line.op, 'set')
+    assert.deepEqual(Object.keys(line.data).sort(), [
+      'action', 'actor', 'actorEmail', 'actorUid', 'createdAt', 'createdBy', 'createdByEmail', 'extraId', 'jobId', 'summary', 'type',
+    ])
+    assert.equal(line.data.type, 'change-order')
+    assert.equal(line.data.action, 'approved')
+    assert.equal(line.data.summary, 'CO-004 approved: $4,100')
+    assert.equal(line.data.actor, 'Dana Lee')
+    assert.equal(line.data.actorUid, 'b1')
+    assert.equal(line.data.actorEmail, 'dana@qbs.example')
+    assert.equal(line.data.jobId, 'QBS-003')
+    assert.equal(line.data.extraId, 'x1')
+    assert.equal(line.data.createdBy, 'b1')
+    assert.equal(line.data.createdByEmail, 'dana@qbs.example')
+  })
+
+  it('writes the change, the notification and the history line in one transaction, after reading the change order in it', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(approveExtra, { extraId: 'x1' }, QBS)
+    assert.ok(calls.includes('runTransaction'))
+    assert.deepEqual(reads, ['extras/x1'])
+    assert.equal(writes.length, 3)
+  })
+
+  it('does not stamp a change order that is already stamped', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(approveExtra, { extraId: 'x1' }, QBS)
+    const [patch] = written('extras/')
+    assert.equal('tenantId' in patch.data, false)
+    assert.equal('clientUids' in patch.data, false)
+    assert.ok(!reads.some((r) => r.startsWith('query:')), 'no job lookup was needed')
+  })
+
+  it('lets a client linked to the change order approve it', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    assert.deepEqual(await call(approveExtra, { extraId: 'x1' }, CLIENT), { ok: true })
+    assert.equal(written('extras/')[0].data.approvedBy.uid, 'c1')
+    assert.equal(written('notifications/')[0].data.msg, 'CO-004 approved by Casey Hart: $4,100 (QBS-003)')
+  })
+
+  it('lets staff approve any change order', async () => {
+    stubFirestore({ extras: { x1: stamped({ tenantId: 'vision', clientUids: [] }) } })
+    for (const auth of [OWNER, INTERNAL]) {
+      writes = []
+      await call(approveExtra, { extraId: 'x1' }, auth)
+      assert.equal(written('extras/')[0].data.status, 'Approved')
+    }
+  })
+
+  it('refuses a builder of another tenant, and writes nothing', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await assert.rejects(
+      call(approveExtra, { extraId: 'x1' }, VISION),
+      code('permission-denied', 'You can only act on change orders for your own projects.'),
+    )
+    assert.deepEqual(writes, [])
+  })
+
+  it('refuses a client who is not linked to the change order, and writes nothing', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await assert.rejects(
+      call(approveExtra, { extraId: 'x1' }, OTHER_CLIENT),
+      code('permission-denied', 'You can only act on change orders for your own projects.'),
+    )
+    assert.deepEqual(writes, [])
+  })
+
+  it('refuses a builder with no tenant, and a caller with a role that does not exist', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    const noTenant = { uid: 'b9', token: { role: 'builder', name: 'No Tenant' } }
+    const odd = { uid: 'z9', token: { role: 'admin', tenantId: 'qbs', name: 'Odd' } }
+    for (const auth of [noTenant, odd]) {
+      await assert.rejects(call(approveExtra, { extraId: 'x1' }, auth), code('permission-denied'))
+    }
+    assert.deepEqual(writes, [])
+  })
+
+  it('does not say whether a change order is decided to a caller who may not act on it', async () => {
+    stubFirestore({ extras: { x1: stamped({ status: 'Approved' }) } })
+    await assert.rejects(
+      call(approveExtra, { extraId: 'x1' }, VISION),
+      code('permission-denied', 'You can only act on change orders for your own projects.'),
+    )
+  })
+
+  it('answers a change order that does not exist with not-found', async () => {
+    stubFirestore({ extras: {} })
+    await assert.rejects(call(approveExtra, { extraId: 'gone' }, QBS), code('not-found', 'That change order no longer exists.'))
+    assert.deepEqual(writes, [])
+  })
+
+  it('refuses a change order that has been decided, in either casing', async () => {
+    for (const status of ['Approved', 'approved', 'Rejected', 'rejected']) {
+      stubFirestore({ extras: { x1: stamped({ status }) } })
+      await assert.rejects(
+        call(approveExtra, { extraId: 'x1' }, QBS),
+        code('failed-precondition', 'This change order has already been decided.'),
+        status,
+      )
+      mock.restoreAll()
+    }
+    assert.deepEqual(writes, [])
+  })
+
+  it('refuses a draft, which has not been sent for approval', async () => {
+    stubFirestore({ extras: { x1: stamped({ status: 'Draft' }) } })
+    await assert.rejects(
+      call(approveExtra, { extraId: 'x1' }, QBS),
+      code('failed-precondition', 'This change order has not been sent for approval.'),
+    )
+    assert.deepEqual(writes, [])
+  })
+
+  it('approves one that still has the lower case pending status the demo data uses', async () => {
+    stubFirestore({ extras: { x1: stamped({ status: 'pending' }) } })
+    assert.deepEqual(await call(approveExtra, { extraId: 'x1' }, QBS), { ok: true })
+    assert.equal(written('extras/')[0].data.status, 'Approved')
+  })
+
+  it('takes the actor from the sign in token, never from the request', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(
+      approveExtra,
+      { extraId: 'x1', approvedBy: 'The Owner', actor: { uid: 'o1', displayName: 'The Owner' }, uid: 'o1', displayName: 'The Owner' },
+      QBS,
+    )
+    assert.deepEqual(written('extras/')[0].data.approvedBy, { uid: 'b1', email: 'dana@qbs.example', displayName: 'Dana Lee' })
+    assert.equal(written('history/')[0].data.actorUid, 'b1')
+  })
+
+  it('takes the name from the users document when the token has none, then from the email', async () => {
+    stubFirestore({ extras: { x1: stamped() }, userDocs: { b1: { displayName: 'Dana From Doc' } } })
+    const nameless = { uid: 'b1', token: { role: 'builder', tenantId: 'qbs', email: 'dana@qbs.example' } }
+    await call(approveExtra, { extraId: 'x1' }, nameless)
+    assert.equal(written('extras/')[0].data.approvedBy.displayName, 'Dana From Doc')
+    mock.restoreAll()
+
+    writes = []
+    stubFirestore({ extras: { x1: stamped() }, userDocs: {} })
+    await call(approveExtra, { extraId: 'x1' }, nameless)
+    assert.equal(written('extras/')[0].data.approvedBy.displayName, 'dana@qbs.example')
+  })
+
+  it('ignores a note, since an approval has nowhere to keep one', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(approveExtra, { extraId: 'x1', note: 'looks good' }, QBS)
+    assert.deepEqual(Object.keys(written('extras/')[0].data).sort(), ['approvedAt', 'approvedBy', 'status'])
+  })
+
+  it('refuses a missing or unusable change order id before reading anything', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    for (const data of [undefined, null, {}, { extraId: '' }, { extraId: 5 }, { extraId: 'x1/files/y' }, { extraId: '..' }]) {
+      await assert.rejects(call(approveExtra, data, QBS), code('invalid-argument', 'Choose a change order.'))
+    }
+    assert.deepEqual([calls, reads, writes], [[], [], []])
+  })
+
+  describe('a change order written before scopes were stamped', () => {
+    it('takes its scope from its job, and stamps it in the same update', async () => {
+      stubFirestore({ extras: { x1: legacy() }, jobs: [JOB] })
+      await call(approveExtra, { extraId: 'x1' }, QBS)
+      assert.deepEqual(reads, ['extras/x1', 'query:jobs:id==QBS-003'])
+      const [patch] = written('extras/')
+      assert.deepEqual(Object.keys(patch.data).sort(), ['approvedAt', 'approvedBy', 'clientUids', 'status', 'tenantId'])
+      assert.equal(patch.data.tenantId, 'qbs')
+      assert.deepEqual(patch.data.clientUids, ['c1'])
+    })
+
+    it('puts the job scope on the notification too', async () => {
+      stubFirestore({ extras: { x1: legacy() }, jobs: [{ ...JOB, tenantId: 'vision', clientUids: ['c1', 'c7'] }] })
+      await call(approveExtra, { extraId: 'x1' }, VISION)
+      const [note] = written('notifications/')
+      assert.equal(note.data.tenantId, 'vision')
+      assert.deepEqual(note.data.clientUids, ['c1', 'c7'])
+    })
+
+    it('lets a client linked on the job approve, and refuses one who is not', async () => {
+      stubFirestore({ extras: { x1: legacy() }, jobs: [JOB] })
+      assert.deepEqual(await call(approveExtra, { extraId: 'x1' }, CLIENT), { ok: true })
+      writes = []
+      await assert.rejects(call(approveExtra, { extraId: 'x1' }, OTHER_CLIENT), code('permission-denied'))
+      assert.deepEqual(writes, [])
+    })
+
+    it('refuses a builder whose tenant is not the job tenant, and writes nothing', async () => {
+      stubFirestore({ extras: { x1: legacy() }, jobs: [JOB] })
+      await assert.rejects(call(approveExtra, { extraId: 'x1' }, VISION), code('permission-denied'))
+      assert.deepEqual(writes, [])
+    })
+
+    it('treats a change order with only one of the two fields as unstamped', async () => {
+      stubFirestore({ extras: { x1: legacy({ tenantId: 'vision' }), x2: legacy({ clientUids: ['c1'] }) }, jobs: [JOB] })
+      await assert.rejects(call(approveExtra, { extraId: 'x1' }, VISION), code('permission-denied'))
+      await call(approveExtra, { extraId: 'x2' }, QBS)
+      assert.equal(written('extras/')[0].data.tenantId, 'qbs')
+    })
+
+    it('answers a change order whose job is gone with not-found, and writes nothing', async () => {
+      stubFirestore({ extras: { x1: legacy() }, jobs: [] })
+      await assert.rejects(call(approveExtra, { extraId: 'x1' }, QBS), code('not-found', 'That job no longer exists.'))
+      assert.deepEqual(writes, [])
+    })
+
+    it('answers a change order that names no job with not-found', async () => {
+      stubFirestore({ extras: { x1: legacy({ job: undefined }), x2: legacy({ job: '' }) }, jobs: [JOB] })
+      await assert.rejects(call(approveExtra, { extraId: 'x1' }, QBS), code('not-found', 'That job no longer exists.'))
+      await assert.rejects(call(approveExtra, { extraId: 'x2' }, QBS), code('not-found', 'That job no longer exists.'))
+    })
+  })
+})
+
+describe('rejectExtra', () => {
+  const NOTE = 'Use the 200A panel'
+
+  it('requires a note, and refuses before reading anything when there is none', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    for (const note of [undefined, null, '', '   ', 5, {}, 'x'.repeat(1001)]) {
+      await assert.rejects(call(rejectExtra, { extraId: 'x1', note }, QBS), code('invalid-argument', 'Say what should be revised.'))
+    }
+    assert.deepEqual([calls, reads, writes], [[], [], []])
+  })
+
+  it('writes the rejection with who, when and the trimmed note', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    assert.deepEqual(await call(rejectExtra, { extraId: 'x1', note: `  ${NOTE}  ` }, QBS), { ok: true })
+    const [patch] = written('extras/')
+    assert.equal(patch.op, 'update')
+    assert.deepEqual(Object.keys(patch.data).sort(), ['rejectNotes', 'rejectedAt', 'rejectedBy', 'status'])
+    assert.equal(patch.data.status, 'Rejected')
+    assert.deepEqual(patch.data.rejectedBy, { uid: 'b1', email: 'dana@qbs.example', displayName: 'Dana Lee' })
+    assert.equal(patch.data.rejectNotes, NOTE)
+    assert.ok(isServerTime(patch.data.rejectedAt))
+  })
+
+  it('writes a warn notification and a history line, with the note cut short', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(rejectExtra, { extraId: 'x1', note: 'a'.repeat(120) }, QBS)
+    const [note] = written('notifications/')
+    assert.equal(note.data.type, 'warn')
+    assert.equal(note.data.msg, `CO-004 revision requested by Dana Lee (QBS-003): ${'a'.repeat(80)}`)
+    assert.equal(note.data.tenantId, 'qbs')
+    assert.deepEqual(note.data.clientUids, ['c1'])
+    const [line] = written('history/')
+    assert.equal(line.data.type, 'change-order')
+    assert.equal(line.data.action, 'rejected')
+    assert.equal(line.data.summary, `CO-004 revision requested: ${'a'.repeat(60)}`)
+    assert.equal(line.data.extraId, 'x1')
+    assert.equal(line.data.actor, 'Dana Lee')
+  })
+
+  it('stores the whole note on the change order even though the notification cuts it', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(rejectExtra, { extraId: 'x1', note: 'b'.repeat(900) }, QBS)
+    assert.equal(written('extras/')[0].data.rejectNotes.length, 900)
+  })
+
+  it('lets a linked client ask for a revision', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    await call(rejectExtra, { extraId: 'x1', note: NOTE }, CLIENT)
+    assert.equal(written('extras/')[0].data.rejectedBy.uid, 'c1')
+  })
+
+  it('refuses a builder of another tenant and a client who is not linked', async () => {
+    stubFirestore({ extras: { x1: stamped() } })
+    for (const auth of [VISION, OTHER_CLIENT]) {
+      await assert.rejects(
+        call(rejectExtra, { extraId: 'x1', note: NOTE }, auth),
+        code('permission-denied', 'You can only act on change orders for your own projects.'),
+      )
+    }
+    assert.deepEqual(writes, [])
+  })
+
+  it('refuses a draft and a change order that is already decided', async () => {
+    stubFirestore({ extras: { d: stamped({ status: 'Draft' }), a: stamped({ status: 'Approved' }), r: stamped({ status: 'rejected' }) } })
+    await assert.rejects(call(rejectExtra, { extraId: 'd', note: NOTE }, QBS), code('failed-precondition', 'This change order has not been sent for approval.'))
+    await assert.rejects(call(rejectExtra, { extraId: 'a', note: NOTE }, QBS), code('failed-precondition', 'This change order has already been decided.'))
+    await assert.rejects(call(rejectExtra, { extraId: 'r', note: NOTE }, QBS), code('failed-precondition', 'This change order has already been decided.'))
+    assert.deepEqual(writes, [])
+  })
+
+  it('stamps a change order written before scopes existed', async () => {
+    stubFirestore({ extras: { x1: legacy() }, jobs: [JOB] })
+    await call(rejectExtra, { extraId: 'x1', note: NOTE }, QBS)
+    const [patch] = written('extras/')
+    assert.equal(patch.data.tenantId, 'qbs')
+    assert.deepEqual(patch.data.clientUids, ['c1'])
+  })
+})
+
+describe('sendExtraToBuilder', () => {
+  it('sends a draft: status, the qbs flag and both send times', async () => {
+    stubFirestore({ extras: { x1: stamped({ status: 'Draft' }) } })
+    assert.deepEqual(await call(sendExtraToBuilder, { extraId: 'x1' }, INTERNAL), { ok: true })
+    const [patch] = written('extras/')
+    assert.equal(patch.op, 'update')
+    assert.equal(patch.path, 'extras/x1')
+    assert.deepEqual(Object.keys(patch.data).sort(), ['qbs', 'qbsSentAt', 'sentAt', 'status'])
+    assert.equal(patch.data.status, 'Sent to Builder')
+    assert.equal(patch.data.qbs, true)
+    assert.ok(isServerTime(patch.data.qbsSentAt))
+    assert.ok(isServerTime(patch.data.sentAt))
+  })
+
+  it('writes an info notification for the builder, scoped like the change order', async () => {
+    stubFirestore({ extras: { x1: stamped({ status: 'Draft' }) } })
+    await call(sendExtraToBuilder, { extraId: 'x1' }, OWNER)
+    const [note] = written('notifications/')
+    assert.equal(note.data.type, 'info')
+    assert.equal(note.data.msg, 'CO-004 sent to the builder: $4,100 (QBS-003)')
+    assert.equal(note.data.tenantId, 'qbs')
+    assert.deepEqual(note.data.clientUids, ['c1'])
+    assert.equal(note.data.createdBy, 'o1')
+    assert.equal(note.data.createdByEmail, 'jesse@p2em.com')
+    const [line] = written('history/')
+    assert.equal(line.data.action, 'sent')
+    assert.equal(line.data.summary, 'CO-004 sent to the builder: $4,100')
+    assert.equal(line.data.actor, 'Jesse Parker')
+  })
+
+  it('sends again after a rejection, and again when it was already sent', async () => {
+    stubFirestore({ extras: { r: stamped({ status: 'Rejected' }), s: stamped({ status: 'Sent to Builder' }), p: stamped({ status: 'pending' }) } })
+    for (const id of ['r', 's', 'p']) {
+      writes = []
+      assert.deepEqual(await call(sendExtraToBuilder, { extraId: id }, OWNER), { ok: true })
+      assert.equal(written('extras/')[0].data.status, 'Sent to Builder', id)
+    }
+  })
+
+  it('refuses a change order that is already approved', async () => {
+    stubFirestore({ extras: { a: stamped({ status: 'Approved' }), b: stamped({ status: 'approved' }) } })
+    for (const id of ['a', 'b']) {
+      await assert.rejects(call(sendExtraToBuilder, { extraId: id }, OWNER), code('failed-precondition', 'This change order is already approved.'))
+    }
+    assert.deepEqual(writes, [])
+  })
+
+  it('stamps a change order written before scopes existed, from its job', async () => {
+    stubFirestore({ extras: { x1: legacy({ status: 'Draft' }) }, jobs: [JOB] })
+    await call(sendExtraToBuilder, { extraId: 'x1' }, INTERNAL)
+    const [patch] = written('extras/')
+    assert.equal(patch.data.tenantId, 'qbs')
+    assert.deepEqual(patch.data.clientUids, ['c1'])
+    assert.equal(written('notifications/')[0].data.tenantId, 'qbs')
+  })
+
+  it('answers a change order or a job that is gone with not-found', async () => {
+    stubFirestore({ extras: { x1: legacy({ status: 'Draft' }) }, jobs: [] })
+    await assert.rejects(call(sendExtraToBuilder, { extraId: 'x1' }, OWNER), code('not-found', 'That job no longer exists.'))
+    await assert.rejects(call(sendExtraToBuilder, { extraId: 'nope' }, OWNER), code('not-found', 'That change order no longer exists.'))
+    assert.deepEqual(writes, [])
+  })
+
+  it('does not ask for a note', async () => {
+    stubFirestore({ extras: { x1: stamped({ status: 'Draft' }) } })
+    assert.deepEqual(await call(sendExtraToBuilder, { extraId: 'x1' }, OWNER), { ok: true })
+  })
+})
+
+describe('everything the three write', () => {
+  it('is free of dashes in the wording, and every document carries who created it', async () => {
+    const IDS = /[A-Z]+(-\d+)+/g
+    stubFirestore({ extras: { d: stamped({ status: 'Draft', coNumber: 'CO-2026-001' }), p: stamped(), q: stamped() } })
+    await call(sendExtraToBuilder, { extraId: 'd' }, OWNER)
+    await call(approveExtra, { extraId: 'p' }, QBS)
+    await call(rejectExtra, { extraId: 'q', note: 'Please add the 3 phase panel' }, QBS)
+
+    assert.equal(written('notifications/').length, 3)
+    for (const { data } of [...written('notifications/'), ...written('history/')]) {
+      assert.ok(data.createdBy, 'createdBy')
+      assert.ok(data.createdByEmail, 'createdByEmail')
+      for (const text of [data.msg, data.summary].filter(Boolean)) {
+        assert.doesNotMatch(text.replace(IDS, 'ID'), /[-‐-―−]/, `dash in: ${text}`)
+      }
+    }
+  })
+})
+
+describe('the pure rules are reachable from here too', () => {
+  it('re-exports extraState and extraTransition for callers and tests', () => {
+    assert.equal(extras.extraState, extraState)
+    assert.equal(extras.extraTransition, extraTransition)
+  })
+})

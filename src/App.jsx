@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { useToast } from '@/components/ui/use-toast'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -71,6 +72,7 @@ import BillingQueueComponent from './components/BillingQueue'
 import ErrorBoundary from './components/ErrorBoundary'
 import NoAccessScreen from './components/NoAccessScreen'
 import { resolveSession } from './lib/session'
+import { callableMessage } from './lib/callableError'
 import {
   PageHeader, MetricTile, DataPanel, Pill,
   EmptyState, AllClearState, FilterBar, PageSkeleton,
@@ -408,18 +410,9 @@ const parseJobIds = (text) => text.split(/[\s,]+/).map(s => s.toUpperCase()).fil
 
 const CREATE_FAILED = 'Could not create the account. Try again.'
 
-// What the owner reads when createUser fails. The function's own errors carry a
-// sentence meant for people (HttpsError messages), so they are shown as they are.
-// When the request never got a reply, or the reply had a status but no message,
-// the Functions SDK uses the code ("internal") or the status name ("INTERNAL",
-// "NOT_FOUND") as the message, which says nothing, so that gets the plain fallback.
-// "functions/not-found", "NOT_FOUND" and "Not-Found" all name the same status.
-const statusName = (text) => String(text).toLowerCase().replace(/^functions\//, '').replace(/_/g, '-')
-
-function createFailureMessage(err) {
-  const bareCode = typeof err?.code === 'string' && statusName(err.message) === statusName(err.code)
-  return err?.message && !bareCode ? err.message : CREATE_FAILED
-}
+// What the owner reads when createUser fails: the function's own sentence, or the
+// plain fallback when only a bare status came back (see callableMessage).
+const createFailureMessage = (err) => callableMessage(err, CREATE_FAILED)
 
 const FIELD_CLASS = 'bg-white/5 border-white/20'
 // A native select, styled like Input. The solid background keeps the option
@@ -1010,8 +1003,9 @@ function BriefingGroup({ category, items }) {
 // jobMatchesFilter, jobNextAction, jobRiskMeta, fmtJobDate moved to
 // src/lib/jobs.js (Phase 18).
 
-function JobStatus() {
+export function JobStatus() {
   const { jobs = [], subs = [] } = useData()
+  const toast = useToast()
   const [search, setSearch]         = useState('')
   const [filter, setFilter]         = useState('all')
   const [pmFilter, setPmFilter]     = useState('all')
@@ -1115,34 +1109,44 @@ function JobStatus() {
   const handleCreateJob = async () => {
     if (!jobForm.id || !jobForm.address || !jobForm.client) return
     setCreating(true)
-    await createJob({
-      id:           jobForm.id,
-      address:      jobForm.address,
-      city:         jobForm.city,
-      client:       jobForm.client,
-      type:         jobForm.type,
-      pm:           jobForm.pm,
-      status:       'active',
-      progress:     0,
-      extras:       0,
-      tenantId:     'qbs',
-      lead:         '',
-      start:        new Date().toISOString().slice(0, 10),
-      target:       jobForm.target || '',
-      county:       '',
-      billingStatus:'not-invoiced',
-      permitNumber: jobForm.permitNumber || '',
-      subs:    { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
-      permits: { electrical: 'pending', plumbing: 'pending', hvac: 'pending' },
-      insp: {
-        electrical: { roughIn: 'pending', trim: 'blocked', final: 'blocked' },
-        plumbing:   { roughIn: 'pending', final: 'blocked' },
-        hvac:       { roughIn: 'pending', final: 'blocked' },
-      },
-    })
-    setJobForm(JOB_FORM_INITIAL)
-    setShowNewJob(false)
-    setCreating(false)
+    try {
+      await createJob({
+        id:           jobForm.id,
+        address:      jobForm.address,
+        city:         jobForm.city,
+        client:       jobForm.client,
+        type:         jobForm.type,
+        pm:           jobForm.pm,
+        status:       'active',
+        progress:     0,
+        extras:       0,
+        tenantId:     'qbs',
+        lead:         '',
+        start:        new Date().toISOString().slice(0, 10),
+        target:       jobForm.target || '',
+        county:       '',
+        billingStatus:'not-invoiced',
+        permitNumber: jobForm.permitNumber || '',
+        subs:    { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
+        permits: { electrical: 'pending', plumbing: 'pending', hvac: 'pending' },
+        insp: {
+          electrical: { roughIn: 'pending', trim: 'blocked', final: 'blocked' },
+          plumbing:   { roughIn: 'pending', final: 'blocked' },
+          hvac:       { roughIn: 'pending', final: 'blocked' },
+        },
+      })
+      setJobForm(JOB_FORM_INITIAL)
+      setShowNewJob(false)
+    } catch (err) {
+      // The form stays open with what was typed, so it can be corrected and sent again.
+      toast({
+        tone: 'error',
+        title: 'Could not create the job',
+        description: callableMessage(err, 'Check your connection and try again.'),
+      })
+    } finally {
+      setCreating(false)
+    }
   }
 
   const exportVisibleCsv = () => {
@@ -1667,10 +1671,31 @@ function Extras() {
 // INSP_STATUSES, TRADE_META, PHASE_LABEL, inspection* helpers moved to
 // src/lib/inspections.js (Phase 18).
 
-function PhaseRow({ label, status, note, docId, field }) {
+export function PhaseRow({ label, status, note, docId, field }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
   const canEdit = !!docId
   const [, trade, phase] = field ? field.split('.') : []
   const meta = iMeta(status)
+
+  // Passing or failing a phase goes through a Cloud Function: it checks that the
+  // caller is staff, dates the result, and writes the notification and the
+  // history entry. One call at a time, since each call raises an alert.
+  const record = async (action) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await action(docId, trade, phase)
+    } catch (err) {
+      toast({
+        tone: 'error',
+        title: 'Could not record the inspection result',
+        description: callableMessage(err, 'Check your connection and try again.'),
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <div className="flex items-center justify-between py-2 border-b border-white/5 gap-2">
       <span className="text-sm text-zinc-300 shrink-0">{label}</span>
@@ -1684,8 +1709,16 @@ function PhaseRow({ label, status, note, docId, field }) {
           <>
             <select
               value={status || 'pending'}
-              onChange={e => updateJob(docId, { [field]: e.target.value })}
-              className="text-[11px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none"
+              onChange={e => {
+                // Passed and failed are recorded by the Cloud Functions, like the two
+                // buttons beside this list. Any other status is a plain edit of the job.
+                const next = e.target.value
+                if (next === 'passed') record(passInspection)
+                else if (next === 'failed') record(failInspection)
+                else updateJob(docId, { [field]: next })
+              }}
+              disabled={busy}
+              className="text-[11px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none disabled:opacity-50"
               style={{
                 color: meta.color,
                 backgroundColor: meta.color + '22',
@@ -1701,20 +1734,22 @@ function PhaseRow({ label, status, note, docId, field }) {
             </select>
             <button
               type="button"
-              onClick={() => passInspection(docId, trade, phase)}
+              onClick={() => record(passInspection)}
+              disabled={busy}
               title="Mark passed"
               aria-label={`Mark ${label} passed`}
-              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors"
+              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
               style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}
             >
               <CheckIcon size={13} strokeWidth={2.5} />
             </button>
             <button
               type="button"
-              onClick={() => failInspection(docId, trade, phase)}
+              onClick={() => record(failInspection)}
+              disabled={busy}
               title="Mark failed"
               aria-label={`Mark ${label} failed`}
-              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors"
+              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
               style={{ backgroundColor: '#ef444422', color: '#ef4444', border: '1px solid #ef444444' }}
             >
               <XIcon size={13} strokeWidth={2.5} />

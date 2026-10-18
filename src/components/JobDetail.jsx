@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useData } from '../use-data'
 import { useJobFiles } from '../hooks/useFirestore'
 import { safeHttpUrl } from '../lib/safeUrl'
+import { extraState } from '../lib/extraStatus'
 import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
@@ -103,7 +104,7 @@ export default function JobDetail({ jobId, onBack }) {
     : complete ? '#22c55e' : O
 
   const pendingCO = jobExtras.filter(e => e.status === 'pending')
-  const approvedCO = jobExtras.filter(e => e.status === 'approved')
+  const approvedCO = jobExtras.filter(e => extraState(e) === 'approved')
   const photos = files.filter(f => (f.type || '').startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(f.name || ''))
   const docs = files.filter(f => !photos.includes(f))
   const hasInvoice = Boolean(job.invoiceNum)
@@ -190,7 +191,7 @@ export default function JobDetail({ jobId, onBack }) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-bold" style={{ color: O }}>{co.id || 'CO'}</span>
-                    <Pill tone={CO_TONE[co.status] || 'neutral'} size="xs">{co.status || 'pending'}</Pill>
+                    <Pill tone={CO_TONE[extraState(co)] || 'neutral'} size="xs">{co.status || 'pending'}</Pill>
                   </div>
                   <p className="text-sm text-zinc-200 truncate mt-0.5">{co.desc || 'No description'}</p>
                 </div>

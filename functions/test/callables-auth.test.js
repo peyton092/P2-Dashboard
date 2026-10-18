@@ -25,6 +25,12 @@ const REQUIRED = [
   'ccDisconnect',
   'ccSyncPhotos',
   'createUser',
+  'approveExtra',
+  'rejectExtra',
+  'sendExtraToBuilder',
+  'passInspection',
+  'failInspection',
+  'createJob',
 ]
 
 // Everything index.js exports that is a callable, found by its deploy metadata,

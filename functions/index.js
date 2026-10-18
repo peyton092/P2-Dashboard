@@ -10,6 +10,9 @@
 //    companycam-sync.js    ccSyncPhotos, ccSyncPhotosScheduled
 //    push.js               onNotificationCreated
 //    users.js              createUser, onUserWritten
+//    extras.js             sendExtraToBuilder, approveExtra, rejectExtra
+//    inspections.js        passInspection, failInspection
+//    jobs.js               createJob
 //
 //  Shared code lives in lib/:
 //    admin.js              initializes the Admin SDK once and exports `db`
@@ -21,6 +24,12 @@
 //    push-targets.js       targetTokens, groupTokens (pure)
 //    users-validate.js     validateNewUser (pure)
 //    users-sync.js         claimsPatchFor (pure)
+//    extras.js             extraState, extraTransition, extraActivity (pure)
+//    inspections.js        TRADE_PHASES, validateInspection, inspectionPatch (pure)
+//    jobs.js               validateNewJob, jobActivity (pure)
+//    activity.js           notificationDoc, historyDoc (pure)
+//    actor.js              buildActor (pure), actorOf (reads the caller's name)
+//    doc-id.js             cleanDocId (pure)
 //
 //  Firebase deploys only what is exported here, and a deployed function that
 //  stops being exported is deleted on the next deploy. Add every new function
@@ -61,6 +70,22 @@
 //                   should (all of them when the document goes), and revokes
 //                   refresh tokens when an existing role changes or is removed.
 //
+//  Privileged actions. The browser no longer writes any of these itself; each
+//  call checks the caller's role, makes the change, and writes the notification
+//  and the history line together in one transaction. All return { ok: true }.
+//    sendExtraToBuilder  Staff only. Takes { extraId }. Sends a change order (new,
+//                        or revised after a rejection) to the builder.
+//    approveExtra        Takes { extraId }. Approves a change order that is
+//                        waiting for a decision. Allowed for whoever may act on
+//                        it: staff, the builder of its tenant, its job's clients.
+//    rejectExtra         Takes { extraId, note }. Asks for a revision; the note
+//                        says what. Allowed for the same people.
+//    passInspection      Staff only. Takes { jobDocId, trade, phase }. Marks one
+//    failInspection      phase of one trade passed or failed, dated today.
+//    createJob           Staff only. Takes the job from the New Job form (id like
+//                        QBS-001, address, client, tenantId). Refuses an id that
+//                        is taken. Returns { ok: true, docId }.
+//
 //  Required Firebase secrets (set with `firebase functions:secrets:set`):
 //    QB_CLIENT_ID       — Intuit app's Client ID
 //    QB_CLIENT_SECRET   — Intuit app's Client Secret
@@ -85,3 +110,6 @@ export { ccAuth, ccCallback, ccDisconnect } from './oauth-companycam.js'
 export { ccSyncPhotos, ccSyncPhotosScheduled } from './companycam-sync.js'
 export { onNotificationCreated } from './push.js'
 export { createUser, onUserWritten } from './users.js'
+export { sendExtraToBuilder, approveExtra, rejectExtra } from './extras.js'
+export { passInspection, failInspection } from './inspections.js'
+export { createJob } from './jobs.js'

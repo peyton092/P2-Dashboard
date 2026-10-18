@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react'
 import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
-import { withAuthor } from '../hooks/useFirestore'
+import { withAuthor, sendExtraToBuilder } from '../hooks/useFirestore'
+import { statusOnSave } from '../lib/extraStatus'
+import { callableMessage } from '../lib/callableError'
 import { useData } from '../use-data'
+import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -237,7 +240,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Status</label>
-              <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
+              <Select value={form.status} disabled>
                 <SelectTrigger className="bg-white/5 border-white/20 w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -245,6 +248,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                   {CO_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">Set when the change order is sent, approved or rejected.</p>
             </div>
           </div>
         </CardContent>
@@ -397,6 +401,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
 
 export default function ChangeOrders() {
   const { jobs: JOBS, extras: ALL_EXTRAS, loading } = useData()
+  const toast = useToast()
   const [view, setView] = useState('list')
   const [editingCO, setEditingCO] = useState(null)
   const [form, setForm] = useState(null)
@@ -429,12 +434,16 @@ export default function ChangeOrders() {
     setView('form')
   }
 
+  // Saves the change order as a draft. With sendToBuilder it then asks the Cloud
+  // Function to send it: the status, the send times, the notification and the
+  // history entry are all written there, so this screen writes none of them (nor
+  // the qbs flag), and it never changes a status itself (see statusOnSave).
   async function saveCO(sendToBuilder) {
     if (!form.job || !form.lineItems.some(li => li.desc.trim())) return
     setSaving(true)
+    let saved = false
     try {
       const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
-      const status = sendToBuilder ? 'Sent to Builder' : (form.status === 'Sent to Builder' ? 'Sent to Builder' : 'Draft')
 
       // The constructed object below names every saved field explicitly, so
       // the UI-only `_id` (used as a React key on the form rows) never lands
@@ -453,27 +462,40 @@ export default function ChangeOrders() {
         coNumber: form.coNumber,
         job: form.job,
         date: form.date,
-        status,
+        ...statusOnSave(editingCO),
         lineItems: cleanLines,
         subtotal,
         markupPct: parseFloat(form.markupPct) || 15,
         markup,
         total,
         notes: form.notes || '',
-        qbs: sendToBuilder,
         amount: total,
         desc: `${form.coNumber}${firstLine ? ` — ${firstLine}` : ''}`,
-        ...(sendToBuilder ? { sentAt: serverTimestamp() } : {}),
       }
 
-      if (editingCO?._docId) {
-        await updateDoc(doc(db, 'extras', editingCO._docId), data)
+      let docId = editingCO?._docId
+      if (docId) {
+        await updateDoc(doc(db, 'extras', docId), data)
       } else {
-        await addDoc(collection(db, 'extras'), withAuthor({ ...data, createdAt: serverTimestamp() }))
+        const created = await addDoc(collection(db, 'extras'), withAuthor({ ...data, createdAt: serverTimestamp() }))
+        docId = created.id
+        // The draft exists now. If sending it fails below, the form stays open on
+        // this saved draft, so trying again updates it and does not add a second.
+        setEditingCO({ ...data, _docId: docId })
       }
+      saved = true
+
+      if (sendToBuilder) await sendExtraToBuilder(docId)
       setView('list')
       setForm(null)
       setEditingCO(null)
+    } catch (err) {
+      console.error('[ChangeOrders] Save failed:', err)
+      toast({
+        tone: 'error',
+        title: saved ? 'Saved, but not sent' : 'Could not save the change order',
+        description: callableMessage(err, saved ? 'Try Send to Builder again.' : 'Check your connection and try again.'),
+      })
     } finally {
       setSaving(false)
     }

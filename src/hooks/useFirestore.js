@@ -198,24 +198,8 @@ export async function addExtra(jobId, data) {
   }))
 }
 
-export async function updateExtra(docId, data) {
-  await updateDoc(doc(db, 'extras', docId), data)
-}
-
-export async function addNotification(data) {
-  await addDoc(collection(db, 'notifications'), withAuthor({
-    ...data,
-    read: false,
-    createdAt: serverTimestamp(),
-  }))
-}
-
 export async function updateNotification(docId, data) {
   await updateDoc(doc(db, 'notifications', docId), data)
-}
-
-export async function updateInspection(jobDocId, inspDocId, data) {
-  await updateDoc(doc(db, 'jobs', jobDocId, 'inspections', inspDocId), data)
 }
 
 export async function updateSub(subId, data) {
@@ -269,64 +253,41 @@ export async function addSubmitReply(submitDocId, data) {
   }))
 }
 
-// ── Callable Cloud Functions (with Firestore fallback) ────────────────────────
+// ── Callable Cloud Functions ──────────────────────────────────────────────────
+// Sending, approving and rejecting change orders, recording inspection results
+// and creating jobs are done by Cloud Functions. They check the caller's role
+// and write the notification and the history entry together with the change, so
+// the browser writes none of it. There is no fallback to doing the write from
+// here: a failed call throws, and the caller shows the message (see
+// callableMessage in lib/callableError.js).
 
-export async function sendExtraToQBS(docId) {
-  try {
-    await httpsCallable(functions, 'sendExtraToBuilder')({ extraId: docId })
-  } catch {
-    await updateDoc(doc(db, 'extras', docId), { qbs: true, qbsSentAt: serverTimestamp() })
-  }
+async function callCloud(name, payload) {
+  const { data } = await httpsCallable(functions, name)(payload)
+  return data
 }
 
-export async function approveExtra(docId, approvedBy = 'QBS') {
-  try {
-    await httpsCallable(functions, 'approveExtra')({ extraId: docId, approvedBy })
-  } catch {
-    await updateDoc(doc(db, 'extras', docId), {
-      status: 'approved',
-      approvedBy,
-      approvedAt: serverTimestamp(),
-    })
-  }
+export async function sendExtraToBuilder(docId) {
+  return callCloud('sendExtraToBuilder', { extraId: docId })
 }
 
-export async function rejectExtra(docId) {
-  try {
-    await httpsCallable(functions, 'rejectExtra')({ extraId: docId })
-  } catch {
-    await updateDoc(doc(db, 'extras', docId), {
-      status: 'rejected',
-      rejectedAt: serverTimestamp(),
-    })
-  }
+export async function approveExtra(docId, note) {
+  return callCloud('approveExtra', { extraId: docId, ...(note === undefined ? {} : { note }) })
+}
+
+export async function rejectExtra(docId, note) {
+  return callCloud('rejectExtra', { extraId: docId, note })
 }
 
 export async function passInspection(jobDocId, trade, phase) {
-  try {
-    await httpsCallable(functions, 'passInspection')({ jobId: jobDocId, trade, phase })
-  } catch {
-    await updateDoc(doc(db, 'jobs', jobDocId), { [`insp.${trade}.${phase}`]: 'passed' })
-  }
+  return callCloud('passInspection', { jobDocId, trade, phase })
 }
 
 export async function failInspection(jobDocId, trade, phase) {
-  try {
-    await httpsCallable(functions, 'failInspection')({ jobId: jobDocId, trade, phase })
-  } catch {
-    await updateDoc(doc(db, 'jobs', jobDocId), { [`insp.${trade}.${phase}`]: 'failed' })
-  }
+  return callCloud('failInspection', { jobDocId, trade, phase })
 }
 
 export async function createJob(data) {
-  try {
-    await httpsCallable(functions, 'createJob')(data)
-  } catch {
-    await addDoc(collection(db, 'jobs'), {
-      ...data,
-      createdAt: serverTimestamp(),
-    })
-  }
+  return callCloud('createJob', data)
 }
 
 export function useDailyReports() {

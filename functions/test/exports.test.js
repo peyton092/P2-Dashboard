@@ -21,6 +21,12 @@ const EXPECTED = {
   onNotificationCreated: { trigger: 'eventTrigger',    secrets: [] },
   createUser:            { trigger: 'callableTrigger', secrets: [] },
   onUserWritten:         { trigger: 'eventTrigger',    secrets: [] },
+  approveExtra:          { trigger: 'callableTrigger', secrets: [] },
+  rejectExtra:           { trigger: 'callableTrigger', secrets: [] },
+  sendExtraToBuilder:    { trigger: 'callableTrigger', secrets: [] },
+  passInspection:        { trigger: 'callableTrigger', secrets: [] },
+  failInspection:        { trigger: 'callableTrigger', secrets: [] },
+  createJob:             { trigger: 'callableTrigger', secrets: [] },
 }
 
 const mod = await import('../index.js')
@@ -50,10 +56,10 @@ describe('index.js exports', () => {
     assert.equal(trigger.eventFilterPathPatterns.document, 'users/{uid}')
   })
 
-  it('lets the hosted app call createUser across origins (cors: true)', async () => {
-    // onCall does not put cors into the deploy metadata, so it is checked the
-    // way a browser meets it: a preflight request must be answered for the
-    // caller's origin, with POST allowed.
+  // onCall does not put cors into the deploy metadata, so it is checked the way a
+  // browser meets it: a preflight request must be answered for the caller's
+  // origin, with POST allowed.
+  async function preflight(fn) {
     const headers = {}
     const listeners = {}
     const res = {
@@ -74,9 +80,43 @@ describe('index.js exports', () => {
         'access-control-request-headers': 'authorization,content-type',
       },
     }
-    await mod.createUser(req, res)
+    await fn(req, res)
+    return { res, headers, origin }
+  }
+
+  it('lets the hosted app call createUser across origins (cors: true)', async () => {
+    const { res, headers, origin } = await preflight(mod.createUser)
     assert.equal(res.statusCode, 204)
     assert.equal(headers['access-control-allow-origin'], origin)
     assert.match(headers['access-control-allow-methods'], /POST/)
+  })
+
+  for (const name of ['approveExtra', 'rejectExtra', 'sendExtraToBuilder', 'passInspection', 'failInspection', 'createJob']) {
+    it(`lets the hosted app call ${name} across origins (cors: true)`, async () => {
+      const { res, headers, origin } = await preflight(mod[name])
+      assert.equal(res.statusCode, 204)
+      assert.equal(headers['access-control-allow-origin'], origin)
+      assert.match(headers['access-control-allow-methods'], /POST/)
+    })
+  }
+})
+
+// The hosted app can only call a callable once allUsers has the Cloud Run invoker
+// role on it, which functions/scripts/grant-public-invoker.js grants one service
+// at a time (the service is the function name in lower case). A callable missing
+// from its list deploys fine and then answers 403 to the browser, so the list is
+// held to exactly the callables index.js exports.
+describe('grant-public-invoker.js', () => {
+  it('lists every callable index.js exports, and nothing else', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync(new URL('../scripts/grant-public-invoker.js', import.meta.url), 'utf8')
+    const list = source.match(/const SERVICES = \[([^\]]*)\]/)?.[1]
+    assert.ok(list, 'SERVICES must be an array literal')
+    const listed = [...list.matchAll(/'([^']+)'/g)].map((m) => m[1]).sort()
+    const callables = Object.entries(mod)
+      .filter(([, fn]) => Boolean(fn?.__endpoint?.callableTrigger))
+      .map(([name]) => name.toLowerCase())
+      .sort()
+    assert.deepEqual(listed, callables)
   })
 })

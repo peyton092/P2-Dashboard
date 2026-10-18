@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
 import {
-  approveExtra, updateExtra, addNotification, addSubmit, updateSubmit,
-  useSubmitReplies, addSubmitReply, updateNotification, addHistory,
+  approveExtra, rejectExtra, addSubmit, updateSubmit,
+  useSubmitReplies, addSubmitReply, updateNotification,
 } from '../hooks/useFirestore'
+import { extraState } from '../lib/extraStatus'
+import { callableMessage } from '../lib/callableError'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -226,9 +228,9 @@ function nextMilestoneFor(job) {
 function JobCard({ job, extras }) {
   const [expanded, setExpanded] = useState(false)
   const jobExtras = extras.filter(e => e.job === job.id)
-  const approvedTotal = jobExtras.filter(e => e.status === 'approved').reduce((s, e) => s + (e.amount || 0), 0)
-  const pendingTotal  = jobExtras.filter(e => e.status === 'pending').reduce((s, e) => s + (e.amount || 0), 0)
-  const pendingCount  = jobExtras.filter(e => e.status === 'pending').length
+  const approvedTotal = jobExtras.filter(e => extraState(e) === 'approved').reduce((s, e) => s + (e.amount || 0), 0)
+  const pendingTotal  = jobExtras.filter(e => extraState(e) === 'pending').reduce((s, e) => s + (e.amount || 0), 0)
+  const pendingCount  = jobExtras.filter(e => extraState(e) === 'pending').length
 
   const phaseLabel = (job.phase || 'unknown').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
   const daysInPhase = daysSince(job.lastStatusChange)
@@ -402,9 +404,11 @@ function ExtraRow({ co, compact = false }) {
   const [busy, setBusy] = useState(false)
   const [errMsg, setErrMsg] = useState('')
 
-  const status = co.status || 'pending'
-  const isPending = status === 'pending'
+  const state = extraState(co)
+  const isPending = state === 'pending'
 
+  // The approval, the notification and the history entry are all written by the
+  // Cloud Function, which also checks that this person may act on the change order.
   const handleApprove = async () => {
     if (!co._docId) {
       setErrMsg('This change order is missing a document ID — refresh the page and try again.')
@@ -413,15 +417,10 @@ function ExtraRow({ co, compact = false }) {
     setBusy(true)
     setErrMsg('')
     try {
-      await approveExtra(co._docId, 'QBS Coordinator')
-      await addNotification({
-        type: 'success',
-        msg: `${co.id || 'CO'} approved by QBS — ${fmt$(co.amount)} (${co.job})`,
-      })
-      await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: 'QBS Coordinator', jobId: co.job })
+      await approveExtra(co._docId)
     } catch (err) {
       console.error('[QBS] Approve failed:', err)
-      setErrMsg('Could not save approval. Check your connection and try again.')
+      setErrMsg(callableMessage(err, 'Could not save approval. Check your connection and try again.'))
     } finally {
       setBusy(false)
     }
@@ -432,22 +431,12 @@ function ExtraRow({ co, compact = false }) {
     setBusy(true)
     setErrMsg('')
     try {
-      await updateExtra(co._docId, {
-        status: 'rejected',
-        rejectedAt: new Date().toISOString(),
-        rejectedBy: 'QBS Coordinator',
-        rejectNotes: rejectNotes.trim(),
-      })
-      await addNotification({
-        type: 'warn',
-        msg: `${co.id || 'CO'} rejected by QBS — ${co.job}: ${rejectNotes.trim().slice(0, 80)}`,
-      })
-      await addHistory({ type: 'change-order', action: 'rejected', summary: `${co.id || 'CO'} revision requested — ${rejectNotes.trim().slice(0, 60)}`, actor: 'QBS Coordinator', jobId: co.job })
+      await rejectExtra(co._docId, rejectNotes.trim())
       setShowReject(false)
       setRejectNotes('')
     } catch (err) {
       console.error('[QBS] Reject failed:', err)
-      setErrMsg('Could not save rejection. Check your connection and try again.')
+      setErrMsg(callableMessage(err, 'Could not save rejection. Check your connection and try again.'))
     } finally {
       setBusy(false)
     }
@@ -455,21 +444,21 @@ function ExtraRow({ co, compact = false }) {
 
   // Builder-facing label for the CO state.
   const stateLabel =
-    status === 'approved' ? 'Approved' :
-    status === 'rejected' ? 'Needs revision' :
+    state === 'approved' ? 'Approved' :
+    state === 'rejected' ? 'Needs revision' :
     'Awaiting your approval'
   const stateTone =
-    status === 'approved' ? 'success' :
-    status === 'rejected' ? 'critical' :
+    state === 'approved' ? 'success' :
+    state === 'rejected' ? 'critical' :
     'warning'
 
   return (
     <div
       className="rounded-xl border bg-white/[0.025] overflow-hidden"
       style={{
-        borderColor: status === 'pending'  ? '#eab30844'
-                    : status === 'rejected' ? '#ef444444'
-                    : status === 'approved' ? '#22c55e44'
+        borderColor: state === 'pending'  ? '#eab30844'
+                    : state === 'rejected' ? '#ef444444'
+                    : state === 'approved' ? '#22c55e44'
                     : 'rgba(255,255,255,0.10)',
       }}
     >
@@ -500,7 +489,7 @@ function ExtraRow({ co, compact = false }) {
                 ))}
               </ul>
             )}
-            {co.rejectNotes && status === 'rejected' && (
+            {co.rejectNotes && state === 'rejected' && (
               <div className="mt-2.5 rounded-lg border border-red-500/30 px-3 py-2"
                 style={{ backgroundColor: '#ef44440a' }}
               >
@@ -554,6 +543,7 @@ function ExtraRow({ co, compact = false }) {
             <Textarea
               className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
               placeholder="What should be revised? (required)"
+              maxLength={1000}
               value={rejectNotes}
               onChange={e => setRejectNotes(e.target.value)}
             />
@@ -581,7 +571,7 @@ function ExtraRow({ co, compact = false }) {
           </div>
         )}
 
-        {!isPending && status === 'approved' && (
+        {!isPending && state === 'approved' && (
           <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: '#22c55e' }}>
             <CheckCircleIcon size={12} /> Approved · ready to bill
           </div>
@@ -1018,11 +1008,12 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
   }, [jobs, selectedPM])
 
   const myJobIds = useMemo(() => new Set(myJobs.map(j => j.id)), [myJobs])
-  const myExtras = useMemo(() => extras.filter(e => myJobIds.has(e.job)), [extras, myJobIds])
+  // A draft has not been sent to the builder yet, so it never shows here.
+  const myExtras = useMemo(() => extras.filter(e => myJobIds.has(e.job) && extraState(e) !== 'draft'), [extras, myJobIds])
 
   const activeJobs = myJobs.filter(j => !['complete', 'completed'].includes(j.status))
   const completedJobs = myJobs.filter(j => ['complete', 'completed'].includes(j.status))
-  const pendingExtras = myExtras.filter(e => e.status === 'pending')
+  const pendingExtras = myExtras.filter(e => extraState(e) === 'pending')
   const pendingValue = pendingExtras.reduce((s, e) => s + (e.amount || 0), 0)
   const failedInsp = activeJobs.filter(j => {
     const ph = getJobInspectionTimeline(j)
@@ -1365,7 +1356,7 @@ function ExtrasTab({ extras, jobs }) {
 
   const filtered = useMemo(() => {
     if (filter === 'all') return extras
-    return extras.filter(e => e.status === filter)
+    return extras.filter(e => extraState(e) === filter)
   }, [extras, filter])
 
   // Group by job
@@ -1379,15 +1370,15 @@ function ExtrasTab({ extras, jobs }) {
   }, [filtered])
 
   const totals = {
-    pending: extras.filter(e => e.status === 'pending').reduce((s, e) => s + (e.amount || 0), 0),
-    approved: extras.filter(e => e.status === 'approved').reduce((s, e) => s + (e.amount || 0), 0),
-    rejected: extras.filter(e => e.status === 'rejected').reduce((s, e) => s + (e.amount || 0), 0),
+    pending: extras.filter(e => extraState(e) === 'pending').reduce((s, e) => s + (e.amount || 0), 0),
+    approved: extras.filter(e => extraState(e) === 'approved').reduce((s, e) => s + (e.amount || 0), 0),
+    rejected: extras.filter(e => extraState(e) === 'rejected').reduce((s, e) => s + (e.amount || 0), 0),
   }
 
   const FILTERS = [
-    { id: 'pending', label: 'Pending', color: '#eab308', count: extras.filter(e => e.status === 'pending').length },
-    { id: 'approved', label: 'Approved', color: '#22c55e', count: extras.filter(e => e.status === 'approved').length },
-    { id: 'rejected', label: 'Rejected', color: '#ef4444', count: extras.filter(e => e.status === 'rejected').length },
+    { id: 'pending', label: 'Pending', color: '#eab308', count: extras.filter(e => extraState(e) === 'pending').length },
+    { id: 'approved', label: 'Approved', color: '#22c55e', count: extras.filter(e => extraState(e) === 'approved').length },
+    { id: 'rejected', label: 'Rejected', color: '#ef4444', count: extras.filter(e => extraState(e) === 'rejected').length },
     { id: 'all', label: 'All', color: O, count: extras.length },
   ]
 

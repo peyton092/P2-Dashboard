@@ -3,10 +3,12 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { storage, auth } from '../firebase'
 import { safeHttpUrl } from '../lib/safeUrl'
 import { validateUpload, sanitizeFileName, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
+import { extraState } from '../lib/extraStatus'
+import { callableMessage } from '../lib/callableError'
 import { useData } from '../use-data'
 import {
-  approveExtra, updateExtra, addNotification, useJobFiles,
-  addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile, addHistory,
+  approveExtra, rejectExtra, useJobFiles,
+  addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile,
 } from '../hooks/useFirestore'
 import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
 import { useToast } from '@/components/ui/use-toast'
@@ -159,7 +161,7 @@ function InspectionTimeline({ job }) {
 
 function ProjectCard({ job, extras }) {
   const jobExtras = extras.filter(e => e.job === job.id)
-  const pendingCount = jobExtras.filter(e => e.status === 'pending').length
+  const pendingCount = jobExtras.filter(e => extraState(e) === 'pending').length
   const phaseLabel = (job.phase || 'unknown').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
   const daysInPhase = daysSince(job.lastStatusChange)
   const milestone = nextMilestoneFor(job)
@@ -223,27 +225,27 @@ function ProjectCard({ job, extras }) {
 
 // ── Change Order row (approve / request revision) ────────────────────────────
 
-function ExtraRow({ co, clientName }) {
+function ExtraRow({ co }) {
   const toast = useToast()
   const [showReject, setShowReject] = useState(false)
   const [rejectNotes, setRejectNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [errMsg, setErrMsg] = useState('')
 
-  const status = co.status || 'pending'
-  const isPending = status === 'pending'
+  const state = extraState(co)
+  const isPending = state === 'pending'
 
+  // The approval, the notification and the history entry are all written by the
+  // Cloud Function, which also checks that this person may act on the change order.
   const handleApprove = async () => {
     if (!co._docId) { setErrMsg('This change order is missing an ID — refresh and try again.'); return }
     setBusy(true); setErrMsg('')
     try {
-      await approveExtra(co._docId, clientName || 'Client')
-      await addNotification({ type: 'success', msg: `${co.id || 'CO'} approved by ${clientName || 'client'} — ${fmt$(co.amount)} (${co.job})` })
-      await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: clientName || 'Client', jobId: co.job })
+      await approveExtra(co._docId)
       toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
     } catch (err) {
       console.error('[Client] Approve failed:', err)
-      setErrMsg('Could not save approval. Check your connection and try again.')
+      setErrMsg(callableMessage(err, 'Could not save approval. Check your connection and try again.'))
     } finally { setBusy(false) }
   }
 
@@ -251,28 +253,21 @@ function ExtraRow({ co, clientName }) {
     if (!co._docId || !rejectNotes.trim()) return
     setBusy(true); setErrMsg('')
     try {
-      await updateExtra(co._docId, {
-        status: 'rejected',
-        rejectedAt: new Date().toISOString(),
-        rejectedBy: clientName || 'Client',
-        rejectNotes: rejectNotes.trim(),
-      })
-      await addNotification({ type: 'warn', msg: `${co.id || 'CO'} rejected by ${clientName || 'client'} — ${co.job}: ${rejectNotes.trim().slice(0, 80)}` })
-      await addHistory({ type: 'change-order', action: 'rejected', summary: `${co.id || 'CO'} revision requested — ${rejectNotes.trim().slice(0, 60)}`, actor: clientName || 'Client', jobId: co.job })
+      await rejectExtra(co._docId, rejectNotes.trim())
       toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
       setShowReject(false); setRejectNotes('')
     } catch (err) {
       console.error('[Client] Reject failed:', err)
-      setErrMsg('Could not save your request. Check your connection and try again.')
+      setErrMsg(callableMessage(err, 'Could not save your request. Check your connection and try again.'))
     } finally { setBusy(false) }
   }
 
-  const stateLabel = status === 'approved' ? 'Approved' : status === 'rejected' ? 'Needs revision' : 'Awaiting your approval'
-  const stateTone  = status === 'approved' ? 'success'  : status === 'rejected' ? 'critical'       : 'warning'
+  const stateLabel = state === 'approved' ? 'Approved' : state === 'rejected' ? 'Needs revision' : 'Awaiting your approval'
+  const stateTone  = state === 'approved' ? 'success'  : state === 'rejected' ? 'critical'       : 'warning'
 
   return (
     <div className="rounded-xl border bg-white/[0.025] overflow-hidden"
-      style={{ borderColor: status === 'pending' ? '#eab30844' : status === 'rejected' ? '#ef444444' : status === 'approved' ? '#22c55e44' : 'rgba(255,255,255,0.10)' }}>
+      style={{ borderColor: state === 'pending' ? '#eab30844' : state === 'rejected' ? '#ef444444' : state === 'approved' ? '#22c55e44' : 'rgba(255,255,255,0.10)' }}>
       <div className="p-3 sm:p-4">
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex-1 min-w-0">
@@ -292,7 +287,7 @@ function ExtraRow({ co, clientName }) {
                 ))}
               </ul>
             )}
-            {co.rejectNotes && status === 'rejected' && (
+            {co.rejectNotes && state === 'rejected' && (
               <div className="mt-2.5 rounded-lg border border-red-500/30 px-3 py-2" style={{ backgroundColor: '#ef44440a' }}>
                 <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: '#ef4444' }}>Your revision request</p>
                 <p className="text-[11px] text-zinc-200 italic">“{co.rejectNotes}”</p>
@@ -324,7 +319,7 @@ function ExtraRow({ co, clientName }) {
           <div className="mt-3 space-y-2">
             <p className="text-[10px] uppercase tracking-wide font-bold text-zinc-300">Tell P2 what needs to change</p>
             <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
-              placeholder="What should be revised? (required)" value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} />
+              placeholder="What should be revised? (required)" maxLength={1000} value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} />
             <div className="flex gap-2">
               <Button className="flex-1 h-10 text-xs text-white font-bold" style={{ backgroundColor: '#ef4444' }} disabled={busy || !rejectNotes.trim()} onClick={handleReject}>
                 {busy ? 'Submitting…' : 'Send revision request'}
@@ -337,7 +332,7 @@ function ExtraRow({ co, clientName }) {
           </div>
         )}
 
-        {!isPending && status === 'approved' && (
+        {!isPending && state === 'approved' && (
           <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: '#22c55e' }}>
             <CheckCircleIcon size={12} /> Approved
           </div>
@@ -815,11 +810,12 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
   }, [jobs, projectFilter])
 
   const jobIds = useMemo(() => new Set(visibleJobs.map(j => j.id)), [visibleJobs])
-  const visibleExtras = useMemo(() => extras.filter(e => jobIds.has(e.job)), [extras, jobIds])
+  // A draft has not been sent to the client yet, so it never shows here.
+  const visibleExtras = useMemo(() => extras.filter(e => jobIds.has(e.job) && extraState(e) !== 'draft'), [extras, jobIds])
 
   const activeJobs    = visibleJobs.filter(j => !['complete', 'completed'].includes(j.status))
   const completedJobs = visibleJobs.filter(j => ['complete', 'completed'].includes(j.status))
-  const pendingExtras = visibleExtras.filter(e => e.status === 'pending')
+  const pendingExtras = visibleExtras.filter(e => extraState(e) === 'pending')
   const pendingValue  = pendingExtras.reduce((s, e) => s + (e.amount || 0), 0)
   const openInvoices  = visibleJobs.filter(j => j.invoiceNum && j.billingStatus !== 'paid').length
   const openMessages  = submits.filter(s => s.status === 'Open' || !s.status).length
@@ -963,12 +959,12 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
               <>
                 <AllClearState title="No approvals pending" description="No change orders are waiting for your decision right now." />
                 <div className="space-y-2">
-                  {visibleExtras.map(co => <ExtraRow key={co._docId || co.id} co={co} clientName={userName || clientName} />)}
+                  {visibleExtras.map(co => <ExtraRow key={co._docId || co.id} co={co} />)}
                 </div>
               </>
             ) : (
               <div className="space-y-2">
-                {visibleExtras.map(co => <ExtraRow key={co._docId || co.id} co={co} clientName={userName || clientName} />)}
+                {visibleExtras.map(co => <ExtraRow key={co._docId || co.id} co={co} />)}
               </div>
             )}
           </div>

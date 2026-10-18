@@ -39,6 +39,9 @@ functions/
   companycam-sync.js           # Photo sync (ccSyncPhotos/ccSyncPhotosScheduled)
   push.js                      # Push fan out (onNotificationCreated)
   users.js                     # User accounts (createUser callable, onUserWritten claims sync)
+  extras.js                    # Change orders (sendExtraToBuilder, approveExtra, rejectExtra callables)
+  inspections.js               # Inspection results (passInspection, failInspection callables)
+  jobs.js                      # New jobs (createJob callable)
   lib/                         # Shared code — Admin init, secrets, config, role/scope/push-target rules, authz guards
   test/                        # Unit tests (cd functions && npm test)
   QUICKBOOKS_SETUP.md          # Step-by-step QB connect setup
