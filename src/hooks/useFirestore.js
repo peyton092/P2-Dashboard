@@ -4,7 +4,7 @@ import {
   query, orderBy, limit, serverTimestamp,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
-import { db } from '../firebase'
+import { db, auth } from '../firebase'
 import { functions } from '../firebase'
 
 export function useJobs() {
@@ -194,16 +194,24 @@ export function useSubmitReplies(submitDocId) {
 
 // ── Basic Mutations ───────────────────────────────────────────────────────────
 
+// Stamps a new document with the signed in author. Throws when signed out so
+// no create can go through without an author.
+export function withAuthor(data) {
+  const user = auth.currentUser
+  if (!user) throw new Error('You must be signed in.')
+  return { ...data, createdBy: user.uid, createdByEmail: user.email || null }
+}
+
 export async function updateJob(docId, data) {
   await updateDoc(doc(db, 'jobs', docId), data)
 }
 
 export async function addExtra(jobId, data) {
-  await addDoc(collection(db, 'extras'), {
+  await addDoc(collection(db, 'extras'), withAuthor({
     ...data,
     job: jobId,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function updateExtra(docId, data) {
@@ -211,11 +219,11 @@ export async function updateExtra(docId, data) {
 }
 
 export async function addNotification(data) {
-  await addDoc(collection(db, 'notifications'), {
+  await addDoc(collection(db, 'notifications'), withAuthor({
     ...data,
     read: false,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function updateNotification(docId, data) {
@@ -231,10 +239,10 @@ export async function updateSub(subId, data) {
 }
 
 export async function addMaterial(data) {
-  await addDoc(collection(db, 'materials'), {
+  await addDoc(collection(db, 'materials'), withAuthor({
     ...data,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function updateMaterial(docId, data) {
@@ -242,10 +250,10 @@ export async function updateMaterial(docId, data) {
 }
 
 export async function addPermit(data) {
-  await addDoc(collection(db, 'permits'), {
+  await addDoc(collection(db, 'permits'), withAuthor({
     ...data,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function updatePermit(jobDocId, trade, status) {
@@ -253,10 +261,10 @@ export async function updatePermit(jobDocId, trade, status) {
 }
 
 export async function addSubmit(data) {
-  await addDoc(collection(db, 'submits'), {
+  await addDoc(collection(db, 'submits'), withAuthor({
     ...data,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function updateSubmit(docId, data) {
@@ -264,17 +272,17 @@ export async function updateSubmit(docId, data) {
 }
 
 export async function addJobFile(jobDocId, data) {
-  await addDoc(collection(db, 'jobs', jobDocId, 'files'), {
+  await addDoc(collection(db, 'jobs', jobDocId, 'files'), withAuthor({
     ...data,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function addSubmitReply(submitDocId, data) {
-  await addDoc(collection(db, 'submits', submitDocId, 'replies'), {
+  await addDoc(collection(db, 'submits', submitDocId, 'replies'), withAuthor({
     ...data,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 // ── Callable Cloud Functions (with Firestore fallback) ────────────────────────
@@ -366,11 +374,11 @@ export function useUrgentItems() {
 }
 
 export async function addUrgentItem(data) {
-  await addDoc(collection(db, 'urgent_items'), {
+  await addDoc(collection(db, 'urgent_items'), withAuthor({
     ...data,
     resolved: false,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function resolveUrgentItem(docId, resolved) {
@@ -378,10 +386,10 @@ export async function resolveUrgentItem(docId, resolved) {
 }
 
 export async function addDailyReport(data) {
-  await addDoc(collection(db, 'daily_reports'), {
+  await addDoc(collection(db, 'daily_reports'), withAuthor({
     ...data,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export function useHistory() {
@@ -399,10 +407,10 @@ export function useHistory() {
 }
 
 export async function addHistory(data) {
-  await addDoc(collection(db, 'history'), {
+  await addDoc(collection(db, 'history'), withAuthor({
     ...data,
     createdAt: serverTimestamp(),
-  })
+  }))
 }
 
 export function useSettings() {
@@ -460,11 +468,11 @@ export function useSupplierInvoices() {
 }
 
 export async function addSupplierInvoice(data) {
-  return await addDoc(collection(db, 'supplier_invoices'), {
+  return await addDoc(collection(db, 'supplier_invoices'), withAuthor({
     ...data,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  })
+  }))
 }
 
 export async function updateSupplierInvoice(docId, data) {

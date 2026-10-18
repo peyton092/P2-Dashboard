@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useData } from '../use-data'
 import { useJobFiles } from '../hooks/useFirestore'
+import { safeHttpUrl } from '../lib/safeUrl'
 import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
@@ -222,20 +223,36 @@ export default function JobDetail({ jobId, onBack }) {
           <div className="space-y-3">
             {photos.length > 0 && (
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-                {photos.map(p => (
-                  <a key={p._docId} href={p.url} target="_blank" rel="noopener noreferrer" className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5">
-                    <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
-                  </a>
-                ))}
+                {photos.map(p => {
+                  const href = safeHttpUrl(p.url)
+                  return href ? (
+                    <a key={p._docId} href={href} target="_blank" rel="noopener noreferrer" className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5">
+                      <img src={href} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
+                    </a>
+                  ) : (
+                    <div key={p._docId} className="aspect-square rounded-lg border border-white/10 bg-white/5 flex items-center justify-center p-1 text-center">
+                      <span className="text-[10px] text-zinc-400">Preview unavailable</span>
+                    </div>
+                  )
+                })}
               </div>
             )}
-            {docs.map(d => (
-              <a key={d._docId} href={d.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
-                <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
-                <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
-                <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
-              </a>
-            ))}
+            {docs.map(d => {
+              const href = safeHttpUrl(d.url)
+              return href ? (
+                <a key={d._docId} href={href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                  <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
+                  <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
+                  <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
+                </a>
+              ) : (
+                <div key={d._docId} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02]">
+                  <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
+                  <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
+                  <span className="text-[10px] text-zinc-400 shrink-0">Link unavailable</span>
+                </div>
+              )
+            })}
           </div>
         )}
       </DataPanel>

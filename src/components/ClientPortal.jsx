@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { storage } from '../firebase'
+import { storage, auth } from '../firebase'
+import { safeHttpUrl } from '../lib/safeUrl'
+import { validateUpload, sanitizeFileName, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
 import { useData } from '../use-data'
 import {
   approveExtra, updateExtra, addNotification, useJobFiles,
@@ -358,6 +360,7 @@ function InvoiceRow({ job }) {
   const toast = useToast()
   const meta = BILLING_META[job.billingStatus] || BILLING_META['not-invoiced']
   const hasInvoice = Boolean(job.invoiceNum)
+  const payHref = safeHttpUrl(job.paymentUrl)
   return (
     <div className="flex items-center gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025]">
       <div className="shrink-0 flex items-center justify-center rounded-lg" style={{ width: 36, height: 36, backgroundColor: '#3b82f622', color: '#3b82f6' }}>
@@ -374,8 +377,8 @@ function InvoiceRow({ job }) {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
-        {job.paymentUrl && job.billingStatus !== 'paid' && (
-          <a href={job.paymentUrl} target="_blank" rel="noopener noreferrer"
+        {payHref && job.billingStatus !== 'paid' && (
+          <a href={payHref} target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] font-bold text-white" style={{ backgroundColor: '#22c55e' }}>
             <CreditCardIcon size={13} /> Pay now
           </a>
@@ -410,9 +413,13 @@ function JobFiles({ job }) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file || !job._docId) return
+    const check = validateUpload(file)
+    if (!check.ok) { setUploadErr(check.reason); return }
     setUploading(true); setUploadErr('')
     try {
-      const path = `jobs/${job._docId}/client-uploads/${Date.now()}-${file.name}`
+      const user = auth.currentUser
+      if (!user) throw new Error('You must be signed in.')
+      const path = `jobs/${job._docId}/client-uploads/${Date.now()}-${sanitizeFileName(file.name)}`
       const sref = storageRef(storage, path)
       await uploadBytes(sref, file)
       const url = await getDownloadURL(sref)
@@ -422,6 +429,8 @@ function JobFiles({ job }) {
         type: file.type || 'application/octet-stream',
         size: file.size,
         source: 'client-upload',
+        uploadedBy: user.uid,
+        uploadedByName: user.displayName || user.email || 'P2 Team',
       })
     } catch (err) {
       console.error('[Client] Upload failed:', err)
@@ -438,7 +447,7 @@ function JobFiles({ job }) {
           <p className="font-bold text-sm text-white truncate">{jobName(job)}</p>
           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">{job.id}</span>
           <div className="ml-auto shrink-0">
-            <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
+            <input ref={fileInputRef} type="file" accept={ALLOWED_UPLOAD_TYPES.join(',')} className="hidden" onChange={handleUpload} />
             <Button variant="outline" className="h-7 px-2 text-[11px] gap-1.5 border-white/20 text-zinc-200" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
               <UploadIcon size={12} /> {uploading ? 'Uploading…' : 'Upload'}
             </Button>
@@ -462,12 +471,20 @@ function JobFiles({ job }) {
                   <ImageIcon size={11} /> Photos · {photos.length}
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                  {photos.map(p => (
-                    <a key={p._docId} href={p.url} target="_blank" rel="noopener noreferrer"
-                      className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 block">
-                      <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
-                    </a>
-                  ))}
+                  {photos.map(p => {
+                    const href = safeHttpUrl(p.url)
+                    return href ? (
+                      <a key={p._docId} href={href} target="_blank" rel="noopener noreferrer"
+                        className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 block">
+                        <img src={href} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
+                      </a>
+                    ) : (
+                      <div key={p._docId}
+                        className="aspect-square rounded-lg border border-white/10 bg-white/5 flex items-center justify-center p-1 text-center">
+                        <span className="text-[10px] text-zinc-400">Preview unavailable</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -477,14 +494,24 @@ function JobFiles({ job }) {
                   <FileTextIcon size={11} /> Documents · {docs.length}
                 </p>
                 <div className="space-y-1.5">
-                  {docs.map(d => (
-                    <a key={d._docId} href={d.url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
-                      <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
-                      <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
-                      <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
-                    </a>
-                  ))}
+                  {docs.map(d => {
+                    const href = safeHttpUrl(d.url)
+                    return href ? (
+                      <a key={d._docId} href={href} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                        <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
+                        <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
+                        <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
+                      </a>
+                    ) : (
+                      <div key={d._docId}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02]">
+                        <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
+                        <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
+                        <span className="text-[10px] text-zinc-400 shrink-0">Link unavailable</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
