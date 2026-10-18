@@ -45,7 +45,7 @@ functions/
 - `qbs` — QBS Builder Portal (filtered by builder PM)
 - `vision` — Vision Building Group
 
-Routing: signed-in `role === 'builder'` → QBSBuilderPortal; `role === 'internal'` → MainDashboard with tenant switcher. URL `?portal=qbs` forces builder demo view.
+Routing: signed-in `role === 'builder'` → QBSBuilderPortal; `role === 'internal'` → MainDashboard with tenant switcher; a signed-in user with no valid role sees the No Access screen.
 
 ## Local development
 

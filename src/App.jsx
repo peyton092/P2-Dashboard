@@ -69,6 +69,8 @@ import PMDashboardComponent from './components/PMDashboard'
 import AlertsPageComponent from './components/AlertsPage'
 import BillingQueueComponent from './components/BillingQueue'
 import ErrorBoundary from './components/ErrorBoundary'
+import NoAccessScreen from './components/NoAccessScreen'
+import { resolveSession } from './lib/session'
 import {
   PageHeader, MetricTile, DataPanel, Pill,
   EmptyState, AllClearState, FilterBar, PageSkeleton,
@@ -258,7 +260,7 @@ const daysSince = (date) => {
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
 
-function LoginScreen({ onSignup }) {
+function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -380,11 +382,6 @@ function LoginScreen({ onSignup }) {
               </p>
             )}
           </form>
-          <button
-            className="mt-4 text-xs text-muted-foreground hover:text-foreground w-full text-center transition-colors"
-            onClick={onSignup}>
-            Create account (owner setup)
-          </button>
         </CardContent>
       </Card>
     </div>
@@ -525,12 +522,14 @@ function CreateUserModal({ onClose }) {
 function TermsGate({ tenantId, tenantName, onAccept }) {
   const [checked, setChecked] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const version = 'v2026.04.16'
 
   const handleAccept = async () => {
     if (!checked) return
     const u = auth.currentUser
     setSaving(true)
+    setError('')
     try {
       if (u) {
         await setDoc(
@@ -544,12 +543,13 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
           { merge: true },
         )
       }
+      onAccept()
     } catch (err) {
-      // Don't block portal entry if logging fails — but record it.
+      // The gate stays closed unless the acceptance was recorded.
       console.error('[TermsGate] Could not persist acceptance:', err)
+      setError('Could not record your acceptance. Check your connection and try again.')
     } finally {
       setSaving(false)
-      onAccept()
     }
   }
 
@@ -598,6 +598,7 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
             onClick={handleAccept}>
             {saving ? 'Recording acceptance…' : 'Accept & Enter Portal'}
           </Button>
+          {error && <p className="text-xs text-red-400 text-center font-medium">{error}</p>}
         </CardContent>
       </Card>
     </div>
@@ -3617,7 +3618,6 @@ export default function P2DashboardV4() {
   const [clientName, setClientName]   = useState('')
   const [clientJobIds, setClientJobIds] = useState([])
   const [termsAccepted, setTermsAccepted] = useState(false)
-  const [showSignup, setShowSignup]   = useState(false)
   const [showCreateUser, setShowCreateUser] = useState(false)
   const [oauthState, setOauthState]   = useState(null) // null | 'loading' | 'success' | { error: string }
   const [oauthProvider, setOauthProvider] = useState(null) // 'QuickBooks' | 'CompanyCam'
@@ -3633,12 +3633,6 @@ export default function P2DashboardV4() {
     return realmId
       ? { provider: 'QuickBooks', fn: 'qbCallback', data: { code, state, realmId } }
       : { provider: 'CompanyCam', fn: 'ccCallback', data: { code, state } }
-  })
-
-  // ?portal=qbs forces builder QBS portal view (bypasses auth/terms — for demos/links)
-  const [forcedPortal] = useState(() => {
-    const p = new URLSearchParams(window.location.search)
-    return p.get('portal')
   })
 
   // Process the OAuth callback once user is authenticated
@@ -3666,40 +3660,26 @@ export default function P2DashboardV4() {
         setUser(null); setRole(null); setAuthLoading(false)
         return
       }
-      // Check custom claims first, fall back to Firestore users doc
+      // Custom claims first; the users doc fills in whatever claims lack.
       const tokenResult = await firebaseUser.getIdTokenResult()
-      let r  = tokenResult.claims.role     || null
-      let tid = tokenResult.claims.tenantId || 'p2-core'
-      let dn = firebaseUser.displayName || ''
-      let cName = tokenResult.claims.clientName || ''
-      let cJobs = Array.isArray(tokenResult.claims.clientJobIds) ? tokenResult.claims.clientJobIds : null
-
-      // Always consult the users doc when claims are incomplete (client scoping
-      // and tenant/role are commonly stored there rather than as custom claims).
-      if (!r || cJobs === null) {
+      const claims = tokenResult.claims
+      let userDoc = null
+      if (!claims.role || !Array.isArray(claims.clientJobIds)) {
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid))
-          if (snap.exists()) {
-            const u = snap.data()
-            r   = r   || u.role     || 'internal'
-            tid = u.tenantId || tid
-            dn  = u.displayName || dn
-            cName = cName || u.clientName || u.displayName || ''
-            if (cJobs === null) cJobs = Array.isArray(u.clientJobIds) ? u.clientJobIds : []
-          } else if (!r) {
-            r = 'internal'
-          }
+          userDoc = snap.exists() ? snap.data() : null
         } catch {
-          if (!r) r = 'internal'
+          userDoc = null
         }
       }
+      const session = resolveSession(claims, userDoc, firebaseUser)
 
       setUser(firebaseUser)
-      setUserName(dn)
-      setRole(r)
-      setTenantId(tid)
-      setClientName(cName)
-      setClientJobIds(cJobs || [])
+      setUserName(session.displayName)
+      setRole(session.role)
+      setTenantId(session.tenantId)
+      setClientName(session.clientName)
+      setClientJobIds(session.clientJobIds)
       setAuthLoading(false)
     })
     return unsub
@@ -3752,36 +3732,16 @@ export default function P2DashboardV4() {
     )
   }
 
-  // ?portal=qbs URL bypass — ALWAYS forces builder portal, even if logged in as internal.
-  // This is what gets shared with QBS coordinators — they should never see internal P2 data.
-  if (forcedPortal === 'qbs') {
+  if (!user) {
     return (
-      <DataProvider tenantId="qbs" role="builder">
-        <Suspense fallback={<PortalLoading />}>
-          <QBSBuilderPortalComponent
-            tenantName="QBS Builder Portal"
-            userName={userName}
-            onLogout={user ? handleLogout : null}
-          />
-        </Suspense>
+      <DataProvider>
+        <LoginScreen />
       </DataProvider>
     )
   }
 
-  if (!user) {
-    if (showSignup) {
-      return (
-        <div className="dark min-h-screen bg-background">
-          <CreateUserModal onClose={() => setShowSignup(false)} />
-          <LoginScreen onSignup={() => setShowSignup(false)} />
-        </div>
-      )
-    }
-    return (
-      <DataProvider>
-        <LoginScreen onSignup={() => setShowSignup(true)} />
-      </DataProvider>
-    )
+  if (role === null) {
+    return <NoAccessScreen email={user.email} onLogout={handleLogout} />
   }
 
   const tenant = TENANTS.find(t => t.id === tenantId)
