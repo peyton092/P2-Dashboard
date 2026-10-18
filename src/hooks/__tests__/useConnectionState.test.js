@@ -47,7 +47,10 @@ let online
 const goOffline = () => act(() => { online = false; window.dispatchEvent(new Event('offline')) })
 const goOnline = () => act(() => { online = true; window.dispatchEvent(new Event('online')) })
 
-beforeEach(() => {
+beforeEach(async () => {
+  // A probe the last test left is stopped a moment after its components were removed.
+  // Let that moment pass, so that this test starts a probe of its own.
+  await settle()
   sdk.documents.length = 0
   sdk.inSync.length = 0
   session.value = null

@@ -15,8 +15,9 @@ import { join, relative, resolve } from 'node:path'
 //    The connection chip reads the real state, and it is the only place the word is
 //    written.
 //
-// Files under a __tests__ directory are not scanned: they hold these patterns on
-// purpose as inputs.
+// It also checks the one line that keeps the connection probe running from the
+// dashboard. Files under a __tests__ directory are not scanned: they hold these
+// patterns on purpose as inputs.
 
 const srcDir = resolve(import.meta.dirname, '..')
 
@@ -57,6 +58,14 @@ describe('time and connection in the source', () => {
   it('cuts no day or month out of an ISO string', () => {
     expect(hits(/toISOString\(\)\s*\.(?:slice|substring|substr)\(/)).toEqual([])
     expect(hits(/toISOString\(\)\s*\.split\(\s*['"]T['"]\s*\)/)).toEqual([])
+  })
+
+  it('keeps the connection probe running from the dashboard, for the screens that show no chip', () => {
+    // Without this call the probe stops on Settings, a job page and Analytics, and the chip on
+    // the next screen starts from nothing and flashes Syncing.
+    const app = sources.find(({ name }) => name === 'App.jsx').lines.join('\n')
+    expect(app).toMatch(/import \{ useConnectionState \} from '\.\/hooks\/useConnectionState'/)
+    expect(app).toMatch(/^\s*useConnectionState\(\)\s*$/m)
   })
 
   it('writes the word Live in the connection chip and nowhere else', () => {
