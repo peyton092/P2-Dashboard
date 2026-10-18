@@ -1,30 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
-import { configureAxe } from 'vitest-axe'
-import * as axeMatchers from 'vitest-axe/matchers'
+import { axe } from '@/test/axe'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select'
 
-// jsdom says its vendor is Apple, so Base UI takes it for Safari and shows its
-// focus guards to VoiceOver as buttons with no name. Chrome hides them. Base UI
-// reads the vendor once when it loads, so this runs before the imports above.
-vi.hoisted(() => {
-  Object.defineProperty(window.navigator, 'vendor', { value: 'Google Inc.', configurable: true })
-})
-
-expect.extend(axeMatchers)
+// The axe matchers and the Chrome vendor that Base UI needs come from
+// src/test/setup.js. The axe in src/test/axe.js leaves out the two rules that
+// jsdom cannot judge, so what this test can prove about the open list is its
+// structure and the theme it lands in.
 
 // The class each screen used to put on its own wrapper.
 const SCREEN_SCOPE = 'dark'
-
-// Two rules cannot be judged from a component on its own in jsdom. Region wants
-// the page landmarks a single control does not have, and color contrast needs
-// layout and a canvas, so axe reports it as undecided here. What this test can
-// prove about the open list is its structure and the theme it lands in.
-const axe = configureAxe({
-  rules: { region: { enabled: false }, 'color-contrast': { enabled: false } },
-})
 
 // The page the app mounts into. The open list is drawn in a portal on body, so
 // the only theme it can get is the one the document root carries, and
