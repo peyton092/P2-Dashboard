@@ -1,18 +1,76 @@
 rules_version = '2';
 
-// P2 Field Control — Cloud Storage rules.
+// P2 Field Control: Cloud Storage rules.
 //
-// Client document uploads land under jobs/{jobDocId}/client-uploads/ and
-// CompanyCam photos are referenced by URL (not stored here). Require auth for
-// all access and cap upload size; tighten per-path once query scoping lands
-// (see SECURITY.md).
+// Clients upload photos and documents for their own jobs under
+// jobs/{jobDocId}/client-uploads/. A client may write there when the job's
+// clientUids list them, staff may write there for any job, and every upload
+// there is a JPEG, PNG, HEIC, WebP or PDF under 25 MB. Anyone signed in may
+// read those uploads. Every other path is for staff only. CompanyCam photos
+// are referenced by URL and are not stored here.
 
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
-                   && request.resource.size < 25 * 1024 * 1024;
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Role comes from a custom claim when present, otherwise the users doc in
+    // Firestore, the same fallback as userRole() in firestore.rules. Each read
+    // is guarded by a look for the document, so a missing one is no role rather
+    // than an error.
+    function userRole() {
+      return ('role' in request.auth.token)
+        ? request.auth.token.role
+        : (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+            ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', null)
+            : null);
+    }
+
+    function isStaff() {
+      return signedIn() && userRole() in ['owner', 'internal'];
+    }
+
+    // Whether the job with this document id exists and lists the signed in user
+    // in its clientUids.
+    function listedOnJob(jobDocId) {
+      return firestore.exists(/databases/(default)/documents/jobs/$(jobDocId))
+        && request.auth.uid in firestore.get(/databases/(default)/documents/jobs/$(jobDocId)).data.get('clientUids', []);
+    }
+
+    function isUnder25MB() {
+      return request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // One of the types the app lets a person pick (ALLOWED_UPLOAD_TYPES in
+    // src/lib/uploads.js), under 25 MB. An SVG, which can carry script, is not one.
+    function isAllowedUpload() {
+      return isUnder25MB()
+        && request.resource.contentType in ['image/jpeg', 'image/png', 'image/heic', 'image/webp', 'application/pdf'];
+    }
+
+    match /jobs/{jobDocId}/client-uploads/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && (isStaff() || listedOnJob(jobDocId))
+        && isAllowedUpload();
+    }
+
+    // Every other path is for staff, with the 25 MB cap every upload has
+    // always had. Between them the two rules below allow staff every path except
+    // a job's client uploads folder, so the rule above, with its type and size
+    // limits, is the only one that applies there. An object directly under
+    // jobs/, or a bare object named jobs, is allowed by neither rule, so nobody
+    // may read or write one; that is intended, as nothing writes there.
+    match /{top}/{rest=**} {
+      allow read: if isStaff() && top != 'jobs';
+      allow write: if isStaff() && top != 'jobs' && isUnder25MB();
+    }
+
+    match /jobs/{jobDocId}/{folder}/{rest=**} {
+      allow read: if isStaff() && folder != 'client-uploads';
+      allow write: if isStaff() && folder != 'client-uploads' && isUnder25MB();
     }
   }
 }

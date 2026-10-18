@@ -1,4 +1,4 @@
-# Push Notifications — Setup
+# Push Notifications: Setup
 
 The plumbing is built. To turn it on you supply keys/credentials from the
 Firebase console (and, for mobile, the platform projects). Nothing here needs
@@ -10,8 +10,11 @@ code changes.
   (`src/lib/push.js`). Tokens are stored in Firestore `fcm_tokens/{token}`.
 - The `onNotificationCreated` Cloud Function fires whenever a doc is added to
   the `notifications` collection (which already happens on CO approvals,
-  inspection results, billing, etc.) and sends an FCM push to every registered
-  token, pruning dead ones.
+  inspection results, billing, etc.) and sends an FCM push to the devices of the
+  people that notification is for, pruning dead tokens. Staff get every
+  notification, a builder the ones stamped with their tenant, and a client the
+  ones that list them or name one of their jobs. A notification with none of
+  `tenantId`, `clientUids` or `jobId` reaches staff only.
 
 ## Web push (1 key)
 
@@ -51,7 +54,8 @@ npx firebase deploy --only functions:onNotificationCreated
 
 - `fcm_tokens` accumulates one doc per device; invalid tokens are auto-pruned
   when a send fails as unregistered.
-- Today the function broadcasts every notification to all devices. To target
-  only the relevant user (e.g. a client gets only their project's events), add a
-  `uid`/`tenant` field to notification docs and filter `fcm_tokens` on it — the
-  token docs already store `uid`, `email`, and `platform`.
+- Who a device belongs to is the `uid` on its `fcm_tokens` doc. That person's role,
+  tenant and jobs are read from `users/{uid}` each time a notification is created,
+  so a device registered before anyone signed in (no `uid`), or whose `uid` has no
+  `users` document, receives nothing. Such a device is never sent to, so a dead
+  token among them is not pruned.

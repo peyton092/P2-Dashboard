@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
   PageHeader,
@@ -21,36 +21,11 @@ import {
   FilePenLineIcon, FolderOpenIcon, BarChart3Icon,
 } from 'lucide-react'
 import { classifyRisk } from '../agent/scoring'
+import { sumContracts, sumInvoices, missingNote } from '../lib/money'
 
 const O = '#F47920'
 
 const TODAY = new Date()
-
-// Per-job-type contract estimate, used as a fallback when `contractValue`
-// isn't set on the document. Numbers come from the existing app's pricing
-// model and are documented inline so finance can audit them.
-const TYPE_ESTIMATE = {
-  'New Construction MEP':            28000,
-  'Full MEP Renovation':             22000,
-  'Commercial MEP Buildout':         35000,
-  'Commercial HVAC Retrofit':        20000,
-  'Electrical Rewire + HVAC':        18000,
-  'HVAC + Electrical Upgrade':       16000,
-  'Residential Full Rewire':         14000,
-  'HVAC + Plumbing Renovation':      15000,
-  'Plumbing + Electrical Upgrade':   16000,
-  'Full MEP New Build':              30000,
-  'HVAC System Replacement':         12000,
-  'Residential MEP Upgrade':         18000,
-  'Electrical + Plumbing Renovation':15000,
-  'Electrical + HVAC Upgrade':       17000,
-  'Electrical Full Rewire':          13000,
-  'HVAC + Plumbing':                 14000,
-}
-
-function jobContract(j) {
-  return Number(j.contractValue) || TYPE_ESTIMATE[j.type] || 18000
-}
 
 const isComplete = (j) => ['complete', 'completed'].includes(j.status)
 
@@ -127,11 +102,11 @@ export default function CommandCenter() {
 
   // KPI: financial pipeline
   const kpis = useMemo(() => {
-    const totalRevenue = jobs.reduce((s, j) => s + jobContract(j), 0)
+    const totalRevenue = sumContracts(jobs)
 
-    const openCommitments = jobs
-      .filter(j => !isComplete(j) && j.billingStatus !== 'paid')
-      .reduce((s, j) => s + jobContract(j), 0)
+    const openCommitments = sumContracts(
+      jobs.filter(j => !isComplete(j) && j.billingStatus !== 'paid'),
+    )
 
     const pendingCO = extras
       .filter(e => ['pending', 'Sent to Builder', 'Draft'].includes(e.status))
@@ -142,11 +117,10 @@ export default function CommandCenter() {
       .reduce((s, e) => s + Number(e.total ?? e.amount ?? 0), 0)
 
     const thisMonth = TODAY.toISOString().slice(0, 7)
-    const invoicedThisMonthAmt = jobs
+    const invoicedThisMonthJobs = jobs
       .filter(j => invoiceMonth(j.invoiceDate) === thisMonth)
-      .reduce((s, j) => s + jobContract(j) * 0.7, 0) // 70% milestone billing assumption
-    const invoicedThisMonthCount = jobs
-      .filter(j => invoiceMonth(j.invoiceDate) === thisMonth).length
+    const invoicedThisMonthAmt = sumInvoices(invoicedThisMonthJobs)
+    const invoicedThisMonthCount = invoicedThisMonthJobs.length
 
     return {
       totalRevenue,
@@ -274,11 +248,7 @@ export default function CommandCenter() {
         t?.final === 'passed' || t?.roughIn === 'passed',
       )
     })
-    const readyAmt = ready.reduce((s, j) => {
-      const anyFinal = ['electrical','plumbing','hvac'].some(t => j.insp?.[t]?.final === 'passed')
-      const pct = anyFinal ? 0.30 : 0.70
-      return s + jobContract(j) * pct
-    }, 0)
+    const readyAmt = sumContracts(ready)
 
     // Recently Invoiced: invoiceDate in last 30 days, not yet paid
     const cutoff = new Date(TODAY); cutoff.setDate(cutoff.getDate() - 30)
@@ -291,7 +261,7 @@ export default function CommandCenter() {
                    : Date.parse(j.invoiceDate)
       return !isNaN(ms) && ms >= cutoffMs
     })
-    const recentlyInvoicedAmt = recentlyInvoiced.reduce((s, j) => s + jobContract(j) * 0.7, 0)
+    const recentlyInvoicedAmt = sumInvoices(recentlyInvoiced)
 
     // Approved Pending Invoice: COs approved but not yet billed (qbs flag false)
     const approvedPending = extras.filter(e =>
@@ -302,9 +272,9 @@ export default function CommandCenter() {
     )
 
     return {
-      ready:            { count: ready.length,            amount: readyAmt },
-      recentlyInvoiced: { count: recentlyInvoiced.length, amount: recentlyInvoicedAmt },
-      approvedPending:  { count: approvedPending.length,  amount: approvedPendingAmt },
+      ready:            { count: ready.length,            amount: readyAmt.total,            note: missingNote(readyAmt.missing, 'contract') },
+      recentlyInvoiced: { count: recentlyInvoiced.length, amount: recentlyInvoicedAmt.total, note: missingNote(recentlyInvoicedAmt.missing, 'invoice') },
+      approvedPending:  { count: approvedPending.length,  amount: approvedPendingAmt, note: '' },
     }
   }, [jobs, extras])
 
@@ -339,15 +309,17 @@ export default function CommandCenter() {
       >
         <MetricTile
           label="Total Revenue"
-          value={fmtCompact(kpis.totalRevenue)}
+          value={fmtCompact(kpis.totalRevenue.total)}
           Icon={DollarSignIcon}
-          sub={`${jobs.length} contracts`}
+          sub={`${jobs.length - kpis.totalRevenue.missing} contracts`}
+          note={missingNote(kpis.totalRevenue.missing, 'contract')}
         />
         <MetricTile
           label="Open Commitments"
-          value={fmtCompact(kpis.openCommitments)}
+          value={fmtCompact(kpis.openCommitments.total)}
           Icon={ClockIcon}
           sub={`${activeJobs.length} active`}
+          note={missingNote(kpis.openCommitments.missing, 'contract')}
         />
         <MetricTile
           label="Approved Extras"
@@ -365,10 +337,11 @@ export default function CommandCenter() {
         />
         <MetricTile
           label="Invoiced This Month"
-          value={fmtCompact(kpis.invoicedThisMonthAmt)}
+          value={fmtCompact(kpis.invoicedThisMonthAmt.total)}
           Icon={BarChart3Icon}
           emphasis={kpis.invoicedThisMonthCount > 0 ? 'default' : 'mute'}
           sub={`${kpis.invoicedThisMonthCount} invoice${kpis.invoicedThisMonthCount === 1 ? '' : 's'}`}
+          note={missingNote(kpis.invoicedThisMonthAmt.missing, 'invoice')}
         />
       </section>
 
@@ -569,12 +542,14 @@ export default function CommandCenter() {
               label="Ready to Invoice"
               amount={billingOpps.ready.amount}
               count={billingOpps.ready.count}
+              note={billingOpps.ready.note}
               tone="success"
             />
             <BillingRow
               label="Recently Invoiced"
               amount={billingOpps.recentlyInvoiced.amount}
               count={billingOpps.recentlyInvoiced.count}
+              note={billingOpps.recentlyInvoiced.note}
               tone="info"
               subtitle="Last 30 days"
             />
@@ -582,6 +557,7 @@ export default function CommandCenter() {
               label="Approved Pending Invoice"
               amount={billingOpps.approvedPending.amount}
               count={billingOpps.approvedPending.count}
+              note={billingOpps.approvedPending.note}
               tone="brand"
               subtitle="Approved change orders"
             />
@@ -641,7 +617,7 @@ function NeedsActionIcon({ kind }) {
   return <Icon size={16} strokeWidth={2} />
 }
 
-function BillingRow({ label, amount, count, subtitle, tone = 'neutral' }) {
+function BillingRow({ label, amount, count, subtitle, note, tone = 'neutral' }) {
   const color =
     tone === 'success' ? '#22c55e' :
     tone === 'info'    ? '#3b82f6' :
@@ -654,6 +630,7 @@ function BillingRow({ label, amount, count, subtitle, tone = 'neutral' }) {
         <p className="text-[11px] text-zinc-400 truncate">
           {count} item{count === 1 ? '' : 's'}{subtitle ? ` · ${subtitle}` : ''}
         </p>
+        {note && <p className="text-[10px] text-zinc-500 leading-snug">{note}</p>}
       </div>
       <p
         className="text-base font-semibold tabular-nums shrink-0"

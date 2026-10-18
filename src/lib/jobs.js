@@ -17,10 +17,24 @@ export const JOB_FILTERS = [
   { id: 'stale',        label: 'Stale' },
 ]
 
+// The tenants a job can be created in, as the New Job form names them.
+export const JOB_TENANTS = [
+  { value: 'p2-core', label: 'P2 internal' },
+  { value: 'qbs', label: 'QBS' },
+  { value: 'vision', label: 'Vision' },
+]
+
 export const JOB_FORM_INITIAL = {
   id: '', address: '', city: '', client: '', type: 'Full MEP Renovation',
   pm: 'Blake Neblett', target: '', permitNumber: '',
   subElectrical: '', subPlumbing: '', subHvac: '',
+  tenantId: 'qbs',
+}
+
+// A blank New Job form. Its tenant starts as the sidebar workspace when that is a
+// builder tenant (qbs or vision), and as qbs otherwise.
+export function jobFormFor(workspace) {
+  return { ...JOB_FORM_INITIAL, tenantId: workspace === 'qbs' || workspace === 'vision' ? workspace : 'qbs' }
 }
 
 export function isJobComplete(j) {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { addSubmit, updateSubmit, useSubmitReplies, addSubmitReply } from '../hooks/useFirestore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'

@@ -1,19 +1,18 @@
 rules_version = '2';
 
-// P2 Field Control — Firestore security rules.
+// P2 Field Control: Firestore security rules.
 //
 // Baseline posture: nothing is accessible without authentication, and the
 // crown jewels (OAuth access tokens, app settings, user role records) are
 // locked to staff (owner / internal) only.
 //
-// KNOWN LIMITATION: operational collections (jobs, extras, …) are readable by
-// any signed-in user. The builder/client portals currently scope what each
-// user SEES in JavaScript (DataContext: tenantId / clientJobIds), not at the
-// database layer, because the portals issue unscoped collection queries. Fully
-// enforcing per-tenant/per-client READ isolation at the DB requires scoping
-// those queries first — see SECURITY.md. These rules close the highest-value
-// holes (auth required everywhere; tokens/settings/roles protected) without
-// breaking the existing client-side filtering.
+// Builders and clients read only what is in their scope. Every job, change
+// order, submission and notification carries a tenantId and a clientUids list,
+// stamped by the Cloud Functions; a builder reads the documents of their own
+// tenant, a client reads the documents whose clientUids list them, and staff
+// read everything. The portals query with exactly that filter (queryFor in
+// src/hooks/useFirestore.js), so Firestore can prove each of their queries
+// stays in scope.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -23,12 +22,39 @@ service cloud.firestore {
     }
 
     // Role comes from a custom claim when present, otherwise the users doc.
+    // The 'in' test matters: reading a missing claim directly throws and
+    // denies the request, which locked out every user without a claim.
     function userRole() {
-      return request.auth.token.role != null
+      return ('role' in request.auth.token)
         ? request.auth.token.role
         : (exists(/databases/$(database)/documents/users/$(request.auth.uid))
             ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
             : null);
+    }
+
+    // The builder tenant, the same way: the tenantId claim when the token has
+    // one (a builder without a tenant is given a null one), otherwise the users
+    // doc, otherwise null.
+    function userTenant() {
+      return ('tenantId' in request.auth.token)
+        ? request.auth.token.tenantId
+        : (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tenantId', null)
+            : null);
+    }
+
+    // A client's job ids (each job's own id, like QBS-001), the same way, or an
+    // empty list when neither the token nor the users doc has any.
+    function userClientJobIds() {
+      return ('clientJobIds' in request.auth.token)
+        ? request.auth.token.clientJobIds
+        : (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clientJobIds', [])
+            : []);
+    }
+
+    function isOwner() {
+      return signedIn() && userRole() == 'owner';
     }
 
     function isStaff() {
@@ -40,15 +66,29 @@ service cloud.firestore {
     match /qb_config/{doc=**} { allow read, write: if isStaff(); }
     match /cc_config/{doc=**} { allow read, write: if isStaff(); }
 
-    // ── App settings + agent config: everyone reads, staff writes. ──────────
-    match /config/{doc=**}       { allow read: if signedIn(); allow write: if isStaff(); }
-    match /agent_alerts/{doc}    { allow read: if signedIn(); allow write: if isStaff(); }
+    // App settings and agent alerts: staff only. Agent alerts name jobs, project
+    // managers and amounts across every tenant, and only staff screens read either.
+    match /config/{doc=**}       { allow read, write: if isStaff(); }
+    match /agent_alerts/{doc}    { allow read, write: if isStaff(); }
 
     // ── User records hold roles + client scoping — never self-writable, ─────
     //    so a user can't escalate their own role or widen clientJobIds.
     match /users/{uid} {
       allow read:  if signedIn() && (request.auth.uid == uid || isStaff());
-      allow write: if isStaff();
+      // Owners write any record. Internal staff may only write builder or
+      // client records: the record written must be one, and so must the record
+      // it replaces (a new record has none), so they can neither mint owners or
+      // other staff nor rewrite one into a builder or client, which onUserWritten
+      // would turn into a demotion and a sign out. A builder record needs a
+      // real builder tenant, so a builder cannot be pointed at p2-core or at a
+      // tenant that does not exist. Only an owner deletes a record.
+      allow create, update: if isOwner()
+        || (isStaff()
+            && request.resource.data.role in ['builder', 'client']
+            && (resource == null || resource.data.role in ['builder', 'client'])
+            && (request.resource.data.role != 'builder'
+                || request.resource.data.tenantId in ['qbs', 'vision']));
+      allow delete: if isOwner();
       // Builders accept Terms of Access as themselves.
       match /termsAcceptances/{version} {
         allow read, write: if signedIn() && (request.auth.uid == uid || isStaff());
@@ -58,21 +98,142 @@ service cloud.firestore {
     // ── Device push tokens. A user registers their own; staff can read all. ─
     match /fcm_tokens/{token} {
       allow read:  if isStaff();
-      allow write: if signedIn();
+      allow write: if signedIn() && request.resource.data.uid == request.auth.uid;
     }
 
-    // ── Operational data: signed-in access (see KNOWN LIMITATION above). ────
-    match /jobs/{doc=**}            { allow read, write: if signedIn(); }
-    match /extras/{doc=**}          { allow read, write: if signedIn(); }
-    match /notifications/{doc}      { allow read, write: if signedIn(); }
-    match /subs/{doc}               { allow read, write: if signedIn(); }
-    match /materials/{doc}          { allow read, write: if signedIn(); }
-    match /permits/{doc}            { allow read, write: if signedIn(); }
-    match /submits/{doc=**}         { allow read, write: if signedIn(); }
-    match /daily_reports/{doc}      { allow read, write: if signedIn(); }
-    match /urgent_items/{doc}       { allow read, write: if signedIn(); }
-    match /history/{doc}            { allow read, write: if signedIn(); }
-    match /supplier_invoices/{doc}  { allow read, write: if signedIn(); }
+    // ── Client error log: any signed-in user may report an error as ────────
+    //    themselves. Only staff read. No updates or deletes.
+    match /error_logs/{doc} {
+      allow create: if signedIn()
+        && request.resource.data.userEmail == request.auth.token.email;
+      allow read: if isStaff();
+    }
+
+    // Crew scores and the review link settings: staff only, like the screen that
+    // reads them.
+    match /crew_scores/{doc}  { allow read, write: if isStaff(); }
+    match /app_settings/{doc} { allow read, write: if isStaff(); }
+
+    // Scoped data. Whether a builder or a client may read a document is decided
+    // by its own tenantId and clientUids, and staff write everything. The few
+    // writes the portals make are allowed below, each as narrowly as the portal
+    // makes it.
+
+    // A builder whose tenant is one of the builder tenants. A builder with no
+    // tenant, or with p2-core or any other, reads and writes nothing scoped.
+    function isTenantBuilder() {
+      return userRole() == 'builder' && userTenant() in ['qbs', 'vision'];
+    }
+
+    // Whether the signed in user may read a scoped document, given its data:
+    // staff always, a builder when it carries their tenant, a client when its
+    // clientUids list them. A document that was never stamped is staff only,
+    // and nobody signed out reads anything.
+    function inScope(data) {
+      return signedIn()
+        && (isStaff()
+            || (isTenantBuilder() && data.tenantId == userTenant())
+            || (userRole() == 'client' && 'clientUids' in data && request.auth.uid in data.clientUids));
+    }
+
+    // The data of the job, or of the submission, a subcollection document sits under.
+    function jobData(jobId) {
+      return get(/databases/$(database)/documents/jobs/$(jobId)).data;
+    }
+
+    function submitData(submitId) {
+      return get(/databases/$(database)/documents/submits/$(submitId)).data;
+    }
+
+    match /jobs/{jobId} {
+      allow read: if inScope(resource.data);
+      allow write: if isStaff();
+
+      // Photo and document records, read with their job. A client listed on
+      // the job may record an upload of their own, with a name and an https
+      // link; everything else is staff.
+      match /files/{fileId} {
+        allow read: if inScope(jobData(jobId));
+        allow create: if isStaff()
+          || (signedIn()
+              && userRole() == 'client'
+              && request.auth.uid in jobData(jobId).clientUids
+              && request.resource.data.source == 'client-upload'
+              && request.resource.data.uploadedBy == request.auth.uid
+              && request.resource.data.createdBy == request.auth.uid
+              && request.resource.data.name is string
+              && request.resource.data.url is string
+              && request.resource.data.url.matches('https://.*'));
+        allow update, delete: if isStaff();
+      }
+    }
+
+    // Change orders. Approving and rejecting go through Cloud Functions, which
+    // bypass these rules.
+    match /extras/{extraId} {
+      allow read: if inScope(resource.data);
+      allow write: if isStaff();
+    }
+
+    // Notifications are written by the Cloud Functions and by staff. Anyone who
+    // may read one may mark it read, and change nothing else about it.
+    match /notifications/{notificationId} {
+      allow read: if inScope(resource.data);
+      allow create, delete: if isStaff();
+      allow update: if isStaff()
+        || (inScope(resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
+    }
+
+    // Submissions (questions, RFIs, issues). Each is created as the person
+    // signed in, and a builder or a client stamps it with their own scope: a
+    // client names one of their jobs, lists only themselves in clientUids and
+    // names no tenant, a builder carries their tenant and lists no client. The
+    // stamping triggers then give it its job's scope, except that a submission
+    // whose creator is a builder (by the role in users/{createdBy}) keeps its
+    // own tenant when its job is in another one. Anyone who may read one may
+    // move its status, and change nothing else about it.
+    match /submits/{submitId} {
+      allow read: if inScope(resource.data);
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && (isStaff()
+            || (userRole() == 'client'
+                && request.resource.data.jobId in userClientJobIds()
+                && request.resource.data.clientUids == [request.auth.uid]
+                && (!('tenantId' in request.resource.data) || request.resource.data.tenantId == null))
+            || (isTenantBuilder()
+                && request.resource.data.tenantId == userTenant()
+                && request.resource.data.clientUids == []));
+      allow update: if isStaff()
+        || (inScope(resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            && request.resource.data.status in ['Open', 'In Progress', 'Resolved']);
+      allow delete: if isStaff();
+
+      // The thread under a submission, read and answered by whoever may read
+      // the submission, each reply as the person signed in and under their own
+      // role, so a builder or a client cannot post as P2. Staff post as internal
+      // or owner.
+      match /replies/{replyId} {
+        allow read: if inScope(submitData(submitId));
+        allow create: if inScope(submitData(submitId))
+          && request.resource.data.createdBy == request.auth.uid
+          && (isStaff()
+              ? request.resource.data.authorRole in ['internal', 'owner']
+              : request.resource.data.authorRole == userRole());
+        allow update, delete: if isStaff();
+      }
+    }
+
+    // Staff only.
+    match /materials/{doc}          { allow read, write: if isStaff(); }
+    match /subs/{doc}               { allow read, write: if isStaff(); }
+    match /permits/{doc}            { allow read, write: if isStaff(); }
+    match /daily_reports/{doc}      { allow read, write: if isStaff(); }
+    match /urgent_items/{doc}       { allow read, write: if isStaff(); }
+    match /history/{doc}            { allow read, write: if isStaff(); }
+    match /supplier_invoices/{doc}  { allow read, write: if isStaff(); }
 
     // Default deny: any path not matched above is inaccessible.
   }

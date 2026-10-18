@@ -1,9 +1,12 @@
 import { useMemo } from 'react'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { useJobFiles } from '../hooks/useFirestore'
-import { generateInvoicePdf } from '../lib/generateInvoicePdf'
+import { safeHttpUrl } from '../lib/safeUrl'
+import { extraState } from '../lib/extraStatus'
+import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
+import { useToast } from '@/components/ui/use-toast'
 import { classifyRisk, hasFailedInspection } from '../agent/scoring'
 import {
   ChevronLeftIcon, MapPinIcon, UserRoundCogIcon, HardHatIcon,
@@ -71,6 +74,7 @@ function TradeInspections({ trade, data }) {
 
 export default function JobDetail({ jobId, onBack }) {
   const { jobs = [], extras = [], materials = [], dailyReports = [] } = useData()
+  const toast = useToast()
   const job = useMemo(() => jobs.find(j => j.id === jobId), [jobs, jobId])
   const { files } = useJobFiles(job?._docId)
 
@@ -100,7 +104,7 @@ export default function JobDetail({ jobId, onBack }) {
     : complete ? '#22c55e' : O
 
   const pendingCO = jobExtras.filter(e => e.status === 'pending')
-  const approvedCO = jobExtras.filter(e => e.status === 'approved')
+  const approvedCO = jobExtras.filter(e => extraState(e) === 'approved')
   const photos = files.filter(f => (f.type || '').startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(f.name || ''))
   const docs = files.filter(f => !photos.includes(f))
   const hasInvoice = Boolean(job.invoiceNum)
@@ -133,7 +137,7 @@ export default function JobDetail({ jobId, onBack }) {
                 <p className="text-sm text-zinc-400 mt-1">{job.client}{job.type ? ` · ${job.type}` : ''}</p>
               </div>
               {hasInvoice && (
-                <button onClick={() => generateInvoicePdf(job)} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
+                <button onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
                   <DownloadIcon size={13} /> Invoice PDF
                 </button>
               )}
@@ -187,7 +191,7 @@ export default function JobDetail({ jobId, onBack }) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-bold" style={{ color: O }}>{co.id || 'CO'}</span>
-                    <Pill tone={CO_TONE[co.status] || 'neutral'} size="xs">{co.status || 'pending'}</Pill>
+                    <Pill tone={CO_TONE[extraState(co)] || 'neutral'} size="xs">{co.status || 'pending'}</Pill>
                   </div>
                   <p className="text-sm text-zinc-200 truncate mt-0.5">{co.desc || 'No description'}</p>
                 </div>
@@ -220,20 +224,36 @@ export default function JobDetail({ jobId, onBack }) {
           <div className="space-y-3">
             {photos.length > 0 && (
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-                {photos.map(p => (
-                  <a key={p._docId} href={p.url} target="_blank" rel="noopener noreferrer" className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5">
-                    <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
-                  </a>
-                ))}
+                {photos.map(p => {
+                  const href = safeHttpUrl(p.url)
+                  return href ? (
+                    <a key={p._docId} href={href} target="_blank" rel="noopener noreferrer" className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5">
+                      <img src={href} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
+                    </a>
+                  ) : (
+                    <div key={p._docId} className="aspect-square rounded-lg border border-white/10 bg-white/5 flex items-center justify-center p-1 text-center">
+                      <span className="text-[10px] text-zinc-400">Preview unavailable</span>
+                    </div>
+                  )
+                })}
               </div>
             )}
-            {docs.map(d => (
-              <a key={d._docId} href={d.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
-                <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
-                <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
-                <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
-              </a>
-            ))}
+            {docs.map(d => {
+              const href = safeHttpUrl(d.url)
+              return href ? (
+                <a key={d._docId} href={href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                  <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
+                  <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
+                  <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
+                </a>
+              ) : (
+                <div key={d._docId} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02]">
+                  <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
+                  <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
+                  <span className="text-[10px] text-zinc-400 shrink-0">Link unavailable</span>
+                </div>
+              )
+            })}
           </div>
         )}
       </DataPanel>

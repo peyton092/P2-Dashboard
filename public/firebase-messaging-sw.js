@@ -1,7 +1,7 @@
 /* Firebase Cloud Messaging service worker (web push, background messages).
    Service workers can't read Vite env vars, so the public Firebase config is
    inlined here (same values as src/firebase.js — safe to expose). */
-/* global importScripts, firebase */
+/* global firebase */
 
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js')
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js')

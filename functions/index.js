@@ -4,7 +4,46 @@
 //  CompanyCam OAuth (Doorkeeper OAuth 2.0)
 // ============================================================================
 //
-//  QuickBooks functions:
+//  This file only re-exports. Each function lives in a module of its own:
+//    oauth-quickbooks.js   qbAuth, qbCallback, qbDisconnect
+//    oauth-companycam.js   ccAuth, ccCallback, ccDisconnect
+//    companycam-sync.js    ccSyncPhotos, ccSyncPhotosScheduled
+//    push.js               onNotificationCreated
+//    users.js              createUser, onUserWritten
+//    extras.js             sendExtraToBuilder, approveExtra, rejectExtra
+//    inspections.js        passInspection, failInspection
+//    jobs.js               createJob
+//    scope-sync.js         onJobWritten, onExtraWritten, onSubmitWritten, backfillScopes
+//
+//  Shared code lives in lib/:
+//    admin.js              initializes the Admin SDK once and exports `db`
+//    secrets.js            the four defineSecret instances
+//    config.js             region and constants used by more than one module
+//    authz.js              requireAuth, requireStaff, requireOwner (callable guards)
+//    roles.js              VALID_ROLES, isStaff, isOwner, claimsOf, mergeUserDoc, wouldLowerStaff (pure)
+//    scope.js              scopeForJob, canReadJob, canActOnExtra, nonEmptyString (pure)
+//    scope-sync.js         scopePatchFor, needsRestamp, scopeChanged, jobIdOf, clientLinks,
+//                          creatorOf, creatorDecides, staysInTenant, listsClients (pure)
+//    batches.js            chunks, JOB_ID_CHUNK, BATCH_SIZE (pure)
+//    auth-claims.js        currentClaimRole (reads one account's custom claims)
+//    push-targets.js       targetTokens, groupTokens (pure)
+//    users-validate.js     validateNewUser, tenantForRole (pure)
+//    users-sync.js         claimsPatchFor, jobLinkChanges (pure)
+//    extras.js             extraState, extraTransition, extraActivity, cleanRevisionNote,
+//                          totalOf, totalChanged, NOTE_MAX, NOTE_REQUIRED, TOTAL_CHANGED (pure)
+//    inspections.js        TRADE_PHASES, TRADE_MESSAGE, PHASE_MESSAGE, validateInspection,
+//                          inspectionPatch, inspectionActivity (pure)
+//    jobs.js               validateNewJob, jobActivity, TENANTS, JOB_ID, MAX_DEPTH (pure)
+//    activity.js           notificationDoc, historyDoc (pure)
+//    actor.js              buildActor (pure), actorOf (reads the caller's users document)
+//    doc-id.js             cleanDocId (pure)
+//
+//  Firebase deploys only what is exported here, and a deployed function that
+//  stops being exported is deleted on the next deploy. Add every new function
+//  to this file, and never drop or rename an existing one (test/exports.test.js
+//  pins the current set).
+//
+//  QuickBooks functions (staff only, like the CompanyCam ones and ccSyncPhotos):
 //    qbAuth        — Returns an Intuit OAuth2 authorization URL for the
 //                    frontend to redirect to. Stores a one-time `state` token
 //                    in Firestore so the callback can verify it.
@@ -14,7 +53,7 @@
 //    qbDisconnect  — Revokes the refresh token at Intuit and deletes the
 //                    Firestore tokens doc.
 //
-//  CompanyCam functions (mirror the QuickBooks flow):
+//  CompanyCam functions (mirror the QuickBooks flow, and are staff only too):
 //    ccAuth        — Returns a CompanyCam OAuth2 authorization URL. Stores a
 //                    one-time `state` token at cc_config/oauth_states.
 //    ccCallback    — Receives { code, state } from the redirect (CompanyCam
@@ -23,6 +62,72 @@
 //                    verifies state, exchanges the code, persists tokens at
 //                    cc_config/tokens.
 //    ccDisconnect  — Revokes the token at CompanyCam and deletes the doc.
+//
+//  User account functions:
+//    createUser     Owner only callable. Takes { email, displayName, role,
+//                   tenantId, clientJobIds }, creates the Auth user with a
+//                   random password and the matching claims, writes
+//                   users/{uid}, and returns { uid }. The browser then sends
+//                   the person a password reset email so they set their own.
+//    onUserWritten  Firestore trigger on users/{uid}. Reads the document as it
+//                   is now (events can arrive late or out of order), sets the
+//                   Auth custom claims { role, tenantId, clientJobIds } from it,
+//                   links a client's uid into the clientUids of every job they
+//                   list and out of any job that lists them but no longer
+//                   should (all of them when the document goes), and revokes
+//                   refresh tokens when an existing role changes or is removed.
+//                   A write over a document that did not say owner or internal (a
+//                   new document included) never lowers an account that is already
+//                   owner or internal: its claims are left as they are and the log
+//                   says so.
+//
+//  Privileged actions. The browser no longer writes any of these itself; each
+//  call checks the caller's role, makes the change, and writes the notification
+//  and the history line together in one transaction. All return { ok: true }.
+//    sendExtraToBuilder  Staff only. Takes { extraId }. Sends a change order (new,
+//                        or revised after a rejection) to the builder.
+//    approveExtra        Takes { extraId, expectedTotal? }. Approves a change order
+//                        that is waiting for a decision. Allowed for whoever may act
+//                        on it: staff, the builder of its tenant, its job's clients.
+//                        Refused when expectedTotal, the total the person was shown,
+//                        is sent and the stored total is another.
+//    rejectExtra         Takes { extraId, note, expectedTotal? }. Asks for a
+//                        revision; the note says what. Allowed for the same people,
+//                        and refused the same way when the total changed.
+//    passInspection      Staff only. Takes { jobDocId, trade, phase }. Marks one
+//    failInspection      phase of one trade passed or failed, dated today.
+//    createJob           Staff only. Takes the job from the New Job form (id like
+//                        QBS-001, address, client, tenantId). Refuses an id that
+//                        is taken, and gives the job the clients whose users
+//                        document already lists the id. Returns { ok: true, docId }.
+//
+//  Scope stamping. A job's scope is { tenantId, clientUids }, and every change order,
+//  submission and notification that names the job carries a copy, which the Firestore
+//  rules read to decide who may see it. The job is where it comes from.
+//    onJobWritten     Firestore trigger on jobs/{id}. When a job's tenantId or the set
+//                     of uids in its clientUids changed, gives the scope to every change
+//                     order (job), submission and notification (jobId) that names it and
+//                     does not carry it, then looks at the job once more and stamps again
+//                     if its scope moved meanwhile. A batch that fails is logged and the
+//                     rest go on. A new job with no tenantId is stamped qbs on itself, in
+//                     a transaction. A deleted job writes nothing.
+//    onExtraWritten   Firestore triggers on extras/{id} and submits/{id}. Look the job
+//    onSubmitWritten  up by its id and give the document its tenantId and clientUids
+//                     when it lacks them or carries another job scope. A document that
+//                     already carries it, one that names no job and one whose job is
+//                     missing are not written, so none of these can fire itself.
+//                     None of the three stamps a draft change order, and a submission
+//                     a builder created keeps its own tenant when its job is in
+//                     another, with its clientUids emptied once if it lists any.
+//    backfillScopes   Owner only callable. Takes no data. Sets the Auth claims of every
+//                     user with a role, from each user's document as it is when their turn
+//                     comes (never lowering an owner or internal account), sets every job's
+//                     tenantId (qbs when it has none) and clientUids (exactly the clients who
+//                     list it, from a scan of the users taken after the claims), then stamps
+//                     the change orders, submissions and notifications, and deletes the
+//                     scope a draft change order carries. Returns { ok: true, users, jobs,
+//                     extras, submits, notifications, skipped, draftsCleared }. Safe to run
+//                     again.
 //
 //  Required Firebase secrets (set with `firebase functions:secrets:set`):
 //    QB_CLIENT_ID       — Intuit app's Client ID
@@ -43,562 +148,12 @@
 //  (including trailing slash and protocol).
 // ============================================================================
 
-import { onCall, HttpsError } from 'firebase-functions/v2/https'
-import { onSchedule } from 'firebase-functions/v2/scheduler'
-import { onDocumentCreated } from 'firebase-functions/v2/firestore'
-import { defineSecret } from 'firebase-functions/params'
-import { initializeApp } from 'firebase-admin/app'
-import { getFirestore, FieldValue } from 'firebase-admin/firestore'
-import { getMessaging } from 'firebase-admin/messaging'
-import { randomBytes } from 'node:crypto'
-
-initializeApp()
-const db = getFirestore()
-
-// ── Secrets ───────────────────────────────────────────────────────────────────
-const QB_CLIENT_ID     = defineSecret('QB_CLIENT_ID')
-const QB_CLIENT_SECRET = defineSecret('QB_CLIENT_SECRET')
-const CC_CLIENT_ID     = defineSecret('CC_CLIENT_ID')
-const CC_CLIENT_SECRET = defineSecret('CC_CLIENT_SECRET')
-
-// ── Configuration ─────────────────────────────────────────────────────────────
-const QB_ENV          = process.env.QB_ENV || 'production'  // 'sandbox' | 'production'
-const QB_REDIRECT_URI = process.env.QB_REDIRECT_URI || 'https://p2-dashboard.web.app/'
-const QB_SCOPES       = 'com.intuit.quickbooks.accounting'
-
-// Intuit endpoints (same for sandbox & prod — environment is determined by which
-// Intuit App Key set you provide via QB_CLIENT_ID / QB_CLIENT_SECRET).
-const INTUIT_AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2'
-const INTUIT_TOKEN_URL     = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
-const INTUIT_REVOKE_URL    = 'https://developer.api.intuit.com/v2/oauth2/tokens/revoke'
-
-// CompanyCam OAuth (Doorkeeper). Photo sync only needs the `read` scope.
-const CC_REDIRECT_URI = process.env.CC_REDIRECT_URI || 'https://p2-dashboard.web.app/'
-const CC_SCOPES       = process.env.CC_SCOPES || 'read'
-const CC_AUTHORIZE_URL = 'https://app.companycam.com/oauth/authorize'
-const CC_TOKEN_URL     = 'https://app.companycam.com/oauth/token'
-const CC_REVOKE_URL    = 'https://app.companycam.com/oauth/revoke'
-
-const STATE_TTL_MS = 10 * 60 * 1000  // OAuth states are valid for 10 minutes
-
-const region = 'us-central1'
-const callableOpts = {
-  region,
-  cors: true,
-  secrets: [QB_CLIENT_ID, QB_CLIENT_SECRET],
-}
-const ccCallableOpts = {
-  region,
-  cors: true,
-  secrets: [CC_CLIENT_ID, CC_CLIENT_SECRET],
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const requireAuth = (req) => {
-  if (!req.auth) {
-    throw new HttpsError('unauthenticated', 'You must be signed in to manage QuickBooks.')
-  }
-  return req.auth
-}
-
-const basicAuth = () =>
-  'Basic ' + Buffer.from(`${QB_CLIENT_ID.value()}:${QB_CLIENT_SECRET.value()}`).toString('base64')
-
-// ── qbAuth ────────────────────────────────────────────────────────────────────
-// Generates a one-time `state` token, stores it, and returns the Intuit
-// authorization URL. Frontend then does `window.location.href = data.authUrl`.
-export const qbAuth = onCall(callableOpts, async (req) => {
-  const auth = requireAuth(req)
-
-  const state = randomBytes(24).toString('hex')
-  await db.collection('qb_config').doc('oauth_states').set(
-    { [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
-    { merge: true },
-  )
-
-  const params = new URLSearchParams({
-    client_id:     QB_CLIENT_ID.value(),
-    response_type: 'code',
-    scope:         QB_SCOPES,
-    redirect_uri:  QB_REDIRECT_URI,
-    state,
-  })
-  const authUrl = `${INTUIT_AUTHORIZE_URL}?${params.toString()}`
-  return { authUrl, env: QB_ENV }
-})
-
-// ── qbCallback ────────────────────────────────────────────────────────────────
-// Frontend extracts ?code=…&state=…&realmId=… from the redirect URL and
-// posts them here. We verify state, exchange the code for tokens, and persist.
-export const qbCallback = onCall(callableOpts, async (req) => {
-  const auth = requireAuth(req)
-  const { code, state, realmId } = req.data || {}
-
-  if (!code || !state || !realmId) {
-    throw new HttpsError('invalid-argument', 'Missing OAuth parameters from Intuit redirect.')
-  }
-
-  // ── Verify state ──────────────────────────────────────────────────────────
-  const stateRef  = db.collection('qb_config').doc('oauth_states')
-  const stateSnap = await stateRef.get()
-  const stateMap  = stateSnap.exists ? (stateSnap.data() || {}) : {}
-  const stateRec  = stateMap[state]
-
-  if (!stateRec) {
-    throw new HttpsError('failed-precondition', 'OAuth state expired or invalid. Try connecting again.')
-  }
-  const stateAge = Date.now() - (stateRec.createdAt?.toMillis?.() || 0)
-  if (stateAge > STATE_TTL_MS) {
-    await stateRef.update({ [state]: FieldValue.delete() })
-    throw new HttpsError('failed-precondition', 'OAuth state expired. Try connecting again.')
-  }
-  if (stateRec.uid && stateRec.uid !== auth.uid) {
-    throw new HttpsError('permission-denied', 'OAuth state belongs to a different user.')
-  }
-  // Burn the state so it can't be replayed
-  await stateRef.update({ [state]: FieldValue.delete() })
-
-  // ── Exchange code for tokens ──────────────────────────────────────────────
-  const body = new URLSearchParams({
-    grant_type:   'authorization_code',
-    code,
-    redirect_uri: QB_REDIRECT_URI,
-  })
-  const tokenRes = await fetch(INTUIT_TOKEN_URL, {
-    method:  'POST',
-    headers: {
-      'Authorization': basicAuth(),
-      'Accept':        'application/json',
-      'Content-Type':  'application/x-www-form-urlencoded',
-    },
-    body: body.toString(),
-  })
-
-  if (!tokenRes.ok) {
-    const errText = await tokenRes.text().catch(() => '')
-    console.error('[qbCallback] Token exchange failed:', tokenRes.status, errText)
-    throw new HttpsError('internal', 'Intuit token exchange failed. Try again.')
-  }
-  const tokens = await tokenRes.json()
-  // tokens = { token_type, access_token, refresh_token, expires_in, x_refresh_token_expires_in }
-
-  // ── Persist ───────────────────────────────────────────────────────────────
-  const now = Date.now()
-  await db.collection('qb_config').doc('tokens').set({
-    access_token:            tokens.access_token,
-    refresh_token:           tokens.refresh_token,
-    expires_at:              now + (tokens.expires_in * 1000),
-    refresh_expires_at:      now + (tokens.x_refresh_token_expires_in * 1000),
-    realmId,
-    env:                     QB_ENV,
-    connectedAt:             FieldValue.serverTimestamp(),
-    connectedBy:             auth.uid,
-    connectedByEmail:        auth.token?.email || null,
-  })
-
-  return { ok: true, realmId, env: QB_ENV }
-})
-
-// ── qbDisconnect ──────────────────────────────────────────────────────────────
-// Revokes the refresh token at Intuit and deletes the local tokens doc.
-export const qbDisconnect = onCall(callableOpts, async (req) => {
-  requireAuth(req)
-
-  const ref  = db.collection('qb_config').doc('tokens')
-  const snap = await ref.get()
-  if (!snap.exists) {
-    return { ok: true, alreadyDisconnected: true }
-  }
-  const refresh = snap.data()?.refresh_token
-
-  if (refresh) {
-    try {
-      const res = await fetch(INTUIT_REVOKE_URL, {
-        method:  'POST',
-        headers: {
-          'Authorization': basicAuth(),
-          'Accept':        'application/json',
-          'Content-Type':  'application/json',
-        },
-        body: JSON.stringify({ token: refresh }),
-      })
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '')
-        console.warn('[qbDisconnect] Revoke returned non-OK (deleting anyway):', res.status, txt)
-      }
-    } catch (err) {
-      console.warn('[qbDisconnect] Revoke threw (deleting anyway):', err.message)
-    }
-  }
-
-  await ref.delete()
-  return { ok: true }
-})
-
-// ============================================================================
-//  CompanyCam photo sync
-//  Pulls photos from CompanyCam, matches projects to P2 jobs by street
-//  address, and writes photo references into jobs/{jobDocId}/files. The client
-//  portal and document views already render that subcollection.
-// ============================================================================
-
-const CC_API_BASE = 'https://api.companycam.com/v2'
-
-// Street-suffix abbreviations → canonical short form, so "Drive" and "Dr"
-// (etc.) compare equal when matching CompanyCam addresses to P2 job addresses.
-const STREET_SUFFIX = {
-  street: 'st', st: 'st', avenue: 'ave', ave: 'ave', road: 'rd', rd: 'rd',
-  drive: 'dr', dr: 'dr', lane: 'ln', ln: 'ln', boulevard: 'blvd', blvd: 'blvd',
-  court: 'ct', ct: 'ct', circle: 'cir', cir: 'cir', way: 'way', place: 'pl', pl: 'pl',
-  terrace: 'ter', ter: 'ter', parkway: 'pkwy', pkwy: 'pkwy', cove: 'cv', cv: 'cv',
-  trail: 'trl', trl: 'trl', highway: 'hwy', hwy: 'hwy', crossing: 'xing', xing: 'xing',
-}
-
-function normAddr(s) {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/[.,#]/g, ' ')
-    .split(/\s+/)
-    .map(w => STREET_SUFFIX[w] || w)
-    .filter(Boolean)
-    .join(' ')
-    .trim()
-}
-
-// Tolerant address match: exact normalized equality, prefix containment, or
-// matching "<number> <first street word>" core.
-function addrMatches(jobAddr, ccAddr) {
-  const a = normAddr(jobAddr)
-  const b = normAddr(ccAddr)
-  if (!a || !b) return false
-  if (a === b || a.startsWith(b) || b.startsWith(a)) return true
-  const core = (s) => s.split(' ').slice(0, 2).join(' ')
-  return core(a) === core(b) && /\d/.test(core(a))
-}
-
-// Refresh the CompanyCam access token if it's expired; returns a valid token.
-async function getValidCcToken() {
-  const ref = db.collection('cc_config').doc('tokens')
-  const snap = await ref.get()
-  if (!snap.exists) throw new HttpsError('failed-precondition', 'CompanyCam is not connected.')
-  const t = snap.data() || {}
-  if (!t.access_token) throw new HttpsError('failed-precondition', 'CompanyCam is not connected.')
-
-  const notExpired = !t.expires_at || t.expires_at - Date.now() > 60_000
-  if (notExpired) return t.access_token
-  if (!t.refresh_token) return t.access_token // long-lived token without expiry info
-
-  const body = new URLSearchParams({
-    grant_type:    'refresh_token',
-    refresh_token: t.refresh_token,
-    client_id:     CC_CLIENT_ID.value(),
-    client_secret: CC_CLIENT_SECRET.value(),
-  })
-  const res = await fetch(CC_TOKEN_URL, {
-    method:  'POST',
-    headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  })
-  if (!res.ok) {
-    console.warn('[cc] Token refresh failed:', res.status, await res.text().catch(() => ''))
-    return t.access_token
-  }
-  const fresh = await res.json()
-  const now = Date.now()
-  await ref.set({
-    access_token:  fresh.access_token,
-    refresh_token: fresh.refresh_token || t.refresh_token,
-    expires_at:    fresh.expires_in ? now + fresh.expires_in * 1000 : null,
-  }, { merge: true })
-  return fresh.access_token
-}
-
-async function ccGet(path, token, params = {}) {
-  const url = new URL(`${CC_API_BASE}${path}`)
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)))
-  const res = await fetch(url.toString(), {
-    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
-  })
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '')
-    throw new Error(`CompanyCam ${path} → ${res.status} ${txt.slice(0, 200)}`)
-  }
-  return res.json()
-}
-
-// Core sync routine — shared by the callable and the scheduled function.
-async function syncCompanyCamPhotos() {
-  const token = await getValidCcToken()
-
-  // 1. Pull all CompanyCam projects (paginated).
-  const projects = []
-  for (let page = 1; page <= 20; page++) {
-    const batch = await ccGet('/projects', token, { page, per_page: 100 })
-    if (!Array.isArray(batch) || batch.length === 0) break
-    projects.push(...batch)
-    if (batch.length < 100) break
-  }
-
-  // 2. Load P2 jobs and index by normalized address.
-  const jobsSnap = await db.collection('jobs').get()
-  const jobs = jobsSnap.docs.map(d => ({ docId: d.id, ...d.data() }))
-
-  let matchedProjects = 0
-  let photosWritten = 0
-  const unmatched = []
-
-  for (const proj of projects) {
-    const ccAddrParts = proj.address || {}
-    const ccAddr = ccAddrParts.street_address_1 || proj.name || ''
-    const job = jobs.find(j => addrMatches(j.address, ccAddr))
-    if (!job) { unmatched.push(ccAddr); continue }
-    matchedProjects++
-
-    // 3. Pull photos for this project (paginated) and write references.
-    for (let page = 1; page <= 20; page++) {
-      const photos = await ccGet(`/projects/${proj.id}/photos`, token, { page, per_page: 100 })
-      if (!Array.isArray(photos) || photos.length === 0) break
-
-      const writer = db.batch()
-      for (const photo of photos) {
-        const uris = Array.isArray(photo.uris) ? photo.uris : []
-        const pick = (type) => uris.find(u => u.type === type)?.uri
-        const url = pick('web') || pick('original') || uris[0]?.uri
-        if (!url) continue
-        const fileRef = db.collection('jobs').doc(job.docId).collection('files').doc(`cc_${photo.id}`)
-        writer.set(fileRef, {
-          name:              `CompanyCam ${photo.id}`,
-          url,
-          thumbUrl:          pick('thumbnail') || url,
-          type:              'image/jpeg',
-          source:            'companycam',
-          companyCamPhotoId: String(photo.id),
-          companyCamProject: String(proj.id),
-          capturedAt:        photo.captured_at ? new Date(photo.captured_at * 1000).toISOString() : null,
-          creator:           photo.creator_name || null,
-          createdAt:         FieldValue.serverTimestamp(),
-        }, { merge: true })
-        photosWritten++
-      }
-      await writer.commit()
-      if (photos.length < 100) break
-    }
-  }
-
-  const result = {
-    projects: projects.length,
-    matchedProjects,
-    photosWritten,
-    unmatchedSample: unmatched.slice(0, 10),
-    syncedAt: new Date().toISOString(),
-  }
-  await db.collection('cc_config').doc('sync').set(result, { merge: true })
-  return result
-}
-
-// ── ccSyncPhotos (manual trigger from Settings) ───────────────────────────────
-export const ccSyncPhotos = onCall(ccCallableOpts, async (req) => {
-  requireAuth(req)
-  try {
-    return { ok: true, ...(await syncCompanyCamPhotos()) }
-  } catch (e) {
-    console.error('[ccSyncPhotos] failed:', e)
-    if (e instanceof HttpsError) throw e
-    throw new HttpsError('internal', 'CompanyCam photo sync failed. Try again.')
-  }
-})
-
-// ── ccSyncPhotosScheduled (every 6 hours) ─────────────────────────────────────
-export const ccSyncPhotosScheduled = onSchedule(
-  { schedule: 'every 6 hours', region, secrets: [CC_CLIENT_ID, CC_CLIENT_SECRET] },
-  async () => {
-    try {
-      const snap = await db.collection('cc_config').doc('tokens').get()
-      if (!snap.exists || !snap.data()?.access_token) return // not connected — skip
-      await syncCompanyCamPhotos()
-    } catch (e) {
-      console.error('[ccSyncPhotosScheduled] failed:', e)
-    }
-  },
-)
-
-// ============================================================================
-//  Push notifications
-//  Fan out a push to every registered device whenever a notification doc is
-//  created. Devices register via src/lib/push.js → fcm_tokens/{token}. This
-//  ties into existing app events (CO approvals, inspection results, billing)
-//  that already write to the notifications collection.
-// ============================================================================
-
-const NOTIF_TITLE = {
-  error:   'P2 — Action needed',
-  warn:    'P2 — Heads up',
-  success: 'P2 — Update',
-  info:    'P2 Field Control',
-}
-
-export const onNotificationCreated = onDocumentCreated({ document: 'notifications/{id}', region }, async (event) => {
-  const data = event.data?.data() || {}
-  const body = data.msg || 'New activity on your projects.'
-
-  const tokensSnap = await db.collection('fcm_tokens').get()
-  const tokens = tokensSnap.docs.map(d => d.id).filter(Boolean)
-  if (tokens.length === 0) return
-
-  const res = await getMessaging().sendEachForMulticast({
-    notification: { title: NOTIF_TITLE[data.type] || NOTIF_TITLE.info, body },
-    tokens,
-  })
-
-  // Prune tokens the FCM backend reports as permanently invalid.
-  const dead = []
-  res.responses.forEach((r, i) => {
-    const code = r.error?.code
-    if (!r.success && (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-argument')) {
-      dead.push(tokens[i])
-    }
-  })
-  await Promise.all(dead.map(t => db.collection('fcm_tokens').doc(t).delete()))
-})
-
-// ============================================================================
-//  CompanyCam OAuth — mirrors the QuickBooks flow above.
-//  Tokens live at cc_config/tokens; one-time states at cc_config/oauth_states.
-// ============================================================================
-
-// ── ccAuth ──────────────────────────────────────────────────────────────────
-// Generates a one-time `state` token, stores it, and returns the CompanyCam
-// authorization URL. Frontend then does `window.location.href = data.authUrl`.
-export const ccAuth = onCall(ccCallableOpts, async (req) => {
-  const auth = requireAuth(req)
-
-  const state = randomBytes(24).toString('hex')
-  await db.collection('cc_config').doc('oauth_states').set(
-    { [state]: { uid: auth.uid, createdAt: FieldValue.serverTimestamp() } },
-    { merge: true },
-  )
-
-  const params = new URLSearchParams({
-    client_id:     CC_CLIENT_ID.value(),
-    response_type: 'code',
-    scope:         CC_SCOPES,
-    redirect_uri:  CC_REDIRECT_URI,
-    state,
-  })
-  const authUrl = `${CC_AUTHORIZE_URL}?${params.toString()}`
-  return { authUrl }
-})
-
-// ── ccCallback ────────────────────────────────────────────────────────────────
-// Frontend extracts ?code=…&state=… from the redirect URL and posts them here.
-// CompanyCam does not return a realmId — the frontend uses that absence to route
-// the redirect to this function rather than qbCallback.
-export const ccCallback = onCall(ccCallableOpts, async (req) => {
-  const auth = requireAuth(req)
-  const { code, state } = req.data || {}
-
-  if (!code || !state) {
-    throw new HttpsError('invalid-argument', 'Missing OAuth parameters from CompanyCam redirect.')
-  }
-
-  // ── Verify state ──────────────────────────────────────────────────────────
-  const stateRef  = db.collection('cc_config').doc('oauth_states')
-  const stateSnap = await stateRef.get()
-  const stateMap  = stateSnap.exists ? (stateSnap.data() || {}) : {}
-  const stateRec  = stateMap[state]
-
-  if (!stateRec) {
-    throw new HttpsError('failed-precondition', 'OAuth state expired or invalid. Try connecting again.')
-  }
-  const stateAge = Date.now() - (stateRec.createdAt?.toMillis?.() || 0)
-  if (stateAge > STATE_TTL_MS) {
-    await stateRef.update({ [state]: FieldValue.delete() })
-    throw new HttpsError('failed-precondition', 'OAuth state expired. Try connecting again.')
-  }
-  if (stateRec.uid && stateRec.uid !== auth.uid) {
-    throw new HttpsError('permission-denied', 'OAuth state belongs to a different user.')
-  }
-  // Burn the state so it can't be replayed
-  await stateRef.update({ [state]: FieldValue.delete() })
-
-  // ── Exchange code for tokens ──────────────────────────────────────────────
-  // Doorkeeper expects client credentials in the form body.
-  const body = new URLSearchParams({
-    grant_type:    'authorization_code',
-    code,
-    redirect_uri:  CC_REDIRECT_URI,
-    client_id:     CC_CLIENT_ID.value(),
-    client_secret: CC_CLIENT_SECRET.value(),
-  })
-  const tokenRes = await fetch(CC_TOKEN_URL, {
-    method:  'POST',
-    headers: {
-      'Accept':       'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: body.toString(),
-  })
-
-  if (!tokenRes.ok) {
-    const errText = await tokenRes.text().catch(() => '')
-    console.error('[ccCallback] Token exchange failed:', tokenRes.status, errText)
-    throw new HttpsError('internal', 'CompanyCam token exchange failed. Try again.')
-  }
-  const tokens = await tokenRes.json()
-  // tokens = { token_type, access_token, refresh_token, expires_in, scope, created_at }
-
-  // ── Persist ───────────────────────────────────────────────────────────────
-  const now = Date.now()
-  await db.collection('cc_config').doc('tokens').set({
-    access_token:     tokens.access_token,
-    refresh_token:    tokens.refresh_token || null,
-    // CompanyCam tokens may be long-lived (no expires_in) — only stamp expiry when given.
-    expires_at:       tokens.expires_in ? now + (tokens.expires_in * 1000) : null,
-    scope:            tokens.scope || CC_SCOPES,
-    connectedAt:      FieldValue.serverTimestamp(),
-    connectedBy:      auth.uid,
-    connectedByEmail: auth.token?.email || null,
-  })
-
-  return { ok: true }
-})
-
-// ── ccDisconnect ────────────────────────────────────────────────────────────────
-// Revokes the access token at CompanyCam and deletes the local tokens doc.
-export const ccDisconnect = onCall(ccCallableOpts, async (req) => {
-  requireAuth(req)
-
-  const ref  = db.collection('cc_config').doc('tokens')
-  const snap = await ref.get()
-  if (!snap.exists) {
-    return { ok: true, alreadyDisconnected: true }
-  }
-  const token = snap.data()?.access_token
-
-  if (token) {
-    try {
-      const body = new URLSearchParams({
-        token,
-        client_id:     CC_CLIENT_ID.value(),
-        client_secret: CC_CLIENT_SECRET.value(),
-      })
-      const res = await fetch(CC_REVOKE_URL, {
-        method:  'POST',
-        headers: {
-          'Accept':       'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: body.toString(),
-      })
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '')
-        console.warn('[ccDisconnect] Revoke returned non-OK (deleting anyway):', res.status, txt)
-      }
-    } catch (err) {
-      console.warn('[ccDisconnect] Revoke threw (deleting anyway):', err.message)
-    }
-  }
-
-  await ref.delete()
-  return { ok: true }
-})
+export { qbAuth, qbCallback, qbDisconnect } from './oauth-quickbooks.js'
+export { ccAuth, ccCallback, ccDisconnect } from './oauth-companycam.js'
+export { ccSyncPhotos, ccSyncPhotosScheduled } from './companycam-sync.js'
+export { onNotificationCreated } from './push.js'
+export { createUser, onUserWritten } from './users.js'
+export { sendExtraToBuilder, approveExtra, rejectExtra } from './extras.js'
+export { passInspection, failInspection } from './inspections.js'
+export { createJob } from './jobs.js'
+export { onJobWritten, onExtraWritten, onSubmitWritten, backfillScopes } from './scope-sync.js'

@@ -31,10 +31,8 @@ export {
 export { Skeleton, PageSkeleton } from './Skeleton'
 export { ProgressBar } from './ProgressBar'
 export { StatCard } from './StatCard'
-export {
-  inspMeta, iMeta, statusMeta, sMeta,
-  InspBadge, JobBadge,
-} from './legacy-badges'
+export { inspMeta, iMeta, statusMeta, sMeta } from './legacy-badge-meta'
+export { InspBadge, JobBadge } from './legacy-badges'
 export {
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,

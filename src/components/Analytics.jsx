@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
+import { extraState } from '../lib/extraStatus'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
@@ -106,7 +107,7 @@ export default function Analytics() {
         const label = e.job || e.jobId || 'Unknown'
         if (!map[label]) map[label] = { name: label, approved: 0, pending: 0 }
         const amt = Number(e.amount) || 0
-        if (e.status === 'approved' || e.status === 'sent-to-qbs') map[label].approved += amt
+        if (extraState(e) === 'approved' || e.status === 'sent-to-qbs') map[label].approved += amt
         else if (e.status === 'pending' || !e.status)              map[label].pending  += amt
       })
       return Object.values(map).sort((a, b) => (b.approved + b.pending) - (a.approved + a.pending)).slice(0, 10)

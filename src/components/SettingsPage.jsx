@@ -3,12 +3,14 @@ import {
   updatePassword, EmailAuthProvider,
   reauthenticateWithCredential,
 } from 'firebase/auth'
-import { doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore'
+import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../firebase'
 import { enablePushNotifications } from '../lib/push'
-import { useData } from '../DataContext'
-import { useToast } from '@/components/ui/toast'
+import { withTimeout } from '../lib/withTimeout'
+import { callableMessage } from '../lib/callableError'
+import { useData } from '../use-data'
+import { useToast } from '@/components/ui/use-toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +35,25 @@ const TOGGLE_DEFS = [
   { key: 'qbsPortalAccess',       label: 'QBS Portal Access',        desc: 'Allow builder coordinators to view jobs',         Icon: Building2Icon,     def: true  },
 ]
 
+// "1 job", "2 jobs": a count with its noun, in the plural unless the count is one.
+const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+// What the access scopes backfill did, as the sentence the toast shows. A count the
+// result leaves out is shown as zero. Documents left alone are only mentioned when
+// there were some.
+function backfillSummary(result) {
+  const n = key => (Number.isFinite(result?.[key]) ? result[key] : 0)
+  const skipped = n('skipped')
+  const left = skipped === 1
+    ? '1 document has no matching job and was left alone.'
+    : `${skipped} documents have no matching job and were left alone.`
+  return [
+    `Stamped ${count(n('jobs'), 'job')}, ${count(n('extras'), 'change order')}, ${count(n('submits'), 'submission')} and ${count(n('notifications'), 'notification')}.`,
+    `Claims set for ${count(n('users'), 'user')}.`,
+    skipped > 0 ? left : '',
+  ].filter(Boolean).join(' ')
+}
+
 function Toggle({ enabled, onChange }) {
   return (
     <button
@@ -51,7 +72,7 @@ function Toggle({ enabled, onChange }) {
   )
 }
 
-export default function SettingsPage({ onLogout }) {
+export default function SettingsPage({ onLogout, role }) {
   const { jobs, settings } = useData()
   const user = auth.currentUser
   const toast = useToast()
@@ -81,6 +102,7 @@ export default function SettingsPage({ onLogout }) {
   const [ccSync, setCcSync] = useState(null)
 
   const [pushBusy, setPushBusy] = useState(false)
+  const [backfilling, setBackfilling] = useState(false)
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'qb_config', 'tokens'), snap => {
@@ -115,13 +137,8 @@ export default function SettingsPage({ onLogout }) {
     setQbConnecting(true)
     setQbError('')
     setQbInfo('')
-    const timeout = setTimeout(() => {
-      setQbConnecting(false)
-      setQbError('Connection timed out — QB auth did not respond. Try again.')
-    }, 10000)
     try {
-      const { data } = await httpsCallable(functions, 'qbAuth')()
-      clearTimeout(timeout)
+      const { data } = await withTimeout(httpsCallable(functions, 'qbAuth')(), 10000)
       if (!data?.authUrl) {
         setQbConnecting(false)
         setQbError('QuickBooks integration is not configured on the server yet. Contact support.')
@@ -129,9 +146,12 @@ export default function SettingsPage({ onLogout }) {
       }
       window.location.href = data.authUrl
     } catch (e) {
-      clearTimeout(timeout)
-      console.error('QB auth error:', e)
       setQbConnecting(false)
+      if (e?.code === 'timeout') {
+        setQbError('Connection timed out. QuickBooks did not respond. Try again.')
+        return
+      }
+      console.error('QB auth error:', e)
       const code = e?.code || ''
       if (code === 'functions/unavailable' || code === 'functions/not-found') {
         setQbError('QuickBooks integration is not deployed on the server yet.')
@@ -148,16 +168,11 @@ export default function SettingsPage({ onLogout }) {
     setQbError('')
     setQbInfo('')
     try {
-      try {
-        await httpsCallable(functions, 'qbDisconnect')()
-      } catch {
-        // Fallback: clear the token doc directly so the UI reflects disconnect.
-        await deleteDoc(doc(db, 'qb_config', 'tokens'))
-      }
+      await httpsCallable(functions, 'qbDisconnect')()
       setQbInfo('QuickBooks disconnected.')
     } catch (e) {
       console.error('QB disconnect error:', e)
-      setQbError('Could not disconnect. Try again.')
+      setQbError('Could not disconnect. The connection is unchanged. Try again.')
     } finally {
       setQbDisconnecting(false)
     }
@@ -167,13 +182,8 @@ export default function SettingsPage({ onLogout }) {
     setCcConnecting(true)
     setCcError('')
     setCcInfo('')
-    const timeout = setTimeout(() => {
-      setCcConnecting(false)
-      setCcError('Connection timed out — CompanyCam auth did not respond. Try again.')
-    }, 10000)
     try {
-      const { data } = await httpsCallable(functions, 'ccAuth')()
-      clearTimeout(timeout)
+      const { data } = await withTimeout(httpsCallable(functions, 'ccAuth')(), 10000)
       if (!data?.authUrl) {
         setCcConnecting(false)
         setCcError('CompanyCam integration is not configured on the server yet. Contact support.')
@@ -181,9 +191,12 @@ export default function SettingsPage({ onLogout }) {
       }
       window.location.href = data.authUrl
     } catch (e) {
-      clearTimeout(timeout)
-      console.error('CompanyCam auth error:', e)
       setCcConnecting(false)
+      if (e?.code === 'timeout') {
+        setCcError('Connection timed out. CompanyCam did not respond. Try again.')
+        return
+      }
+      console.error('CompanyCam auth error:', e)
       const code = e?.code || ''
       if (code === 'functions/unavailable' || code === 'functions/not-found') {
         setCcError('CompanyCam integration is not deployed on the server yet.')
@@ -200,16 +213,11 @@ export default function SettingsPage({ onLogout }) {
     setCcError('')
     setCcInfo('')
     try {
-      try {
-        await httpsCallable(functions, 'ccDisconnect')()
-      } catch {
-        // Fallback: clear the token doc directly so the UI reflects disconnect.
-        await deleteDoc(doc(db, 'cc_config', 'tokens'))
-      }
+      await httpsCallable(functions, 'ccDisconnect')()
       setCcInfo('CompanyCam disconnected.')
     } catch (e) {
       console.error('CompanyCam disconnect error:', e)
-      setCcError('Could not disconnect. Try again.')
+      setCcError('Could not disconnect. The connection is unchanged. Try again.')
     } finally {
       setCcDisconnecting(false)
     }
@@ -246,6 +254,21 @@ export default function SettingsPage({ onLogout }) {
       toast({ tone: 'error', title: 'Could not enable notifications', description: e?.message || 'Try again.' })
     } finally {
       setPushBusy(false)
+    }
+  }
+
+  // Owner only. The function checks the role again; this button is only a way to run it.
+  const handleBackfill = async () => {
+    setBackfilling(true)
+    try {
+      // It reads whole collections, so it is given longer than the 70 seconds a call gets by default.
+      const { data } = await httpsCallable(functions, 'backfillScopes', { timeout: 540000 })()
+      toast({ tone: 'success', title: 'Access scopes backfilled', description: backfillSummary(data) })
+    } catch (e) {
+      console.error('Backfill error:', e)
+      toast({ tone: 'error', title: 'Backfill failed', description: callableMessage(e, 'Could not run the backfill. Try again.') })
+    } finally {
+      setBackfilling(false)
     }
   }
 
@@ -458,6 +481,31 @@ export default function SettingsPage({ onLogout }) {
           </Button>
         </CardContent>
       </Card>
+
+      {/* ── Access Scopes (owner only) ───────────────────────────────── */}
+      {role === 'owner' && (
+        <Card className="border-white/10 bg-white/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ShieldIcon size={15} style={{ color: O }} /> Access Scopes
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-6 pb-5 space-y-3">
+            <Button
+              size="sm"
+              className="text-xs h-8 text-white"
+              style={{ backgroundColor: O }}
+              onClick={handleBackfill}
+              disabled={backfilling}
+            >
+              {backfilling ? 'Running…' : 'Backfill access scopes'}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Writes tenant and client access fields onto every job, change order, submission and notification, and refreshes everyone's sign in claims. Safe to run more than once.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Account ──────────────────────────────────────────────────── */}
       <Card className="border-white/10 bg-white/5">

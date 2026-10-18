@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { PageHeader, Pill } from './shared'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon } from 'lucide-react'
 

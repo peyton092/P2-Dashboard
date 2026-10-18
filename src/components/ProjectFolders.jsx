@@ -1,7 +1,9 @@
 import { useState, useRef } from 'react'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { useJobFiles, addJobFile } from '../hooks/useFirestore'
-import { storage } from '../firebase'
+import { storage, auth } from '../firebase'
+import { safeHttpUrl } from '../lib/safeUrl'
+import { validateUpload, sanitizeFileName, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -44,11 +46,19 @@ export default function ProjectFolders() {
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0]
     if (!file || !selectedJob?._docId) return
+    const check = validateUpload(file)
+    if (!check.ok) {
+      setUploadError(check.reason)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
     setUploading(true)
     setUploadProgress(0)
     setUploadError('')
     try {
-      const path = `jobs/${selectedJob.id}/files/${Date.now()}_${file.name}`
+      const user = auth.currentUser
+      if (!user) throw new Error('You must be signed in.')
+      const path = `jobs/${selectedJob.id}/files/${Date.now()}_${sanitizeFileName(file.name)}`
       const storageRef = ref(storage, path)
       await new Promise((resolve, reject) => {
         const task = uploadBytesResumable(storageRef, file)
@@ -63,7 +73,8 @@ export default function ProjectFolders() {
         name: file.name,
         type: fileType,
         url,
-        uploadedBy: 'P2 Team',
+        uploadedBy: user.uid,
+        uploadedByName: user.displayName || user.email || 'P2 Team',
         size: file.size,
         storagePath: path,
       })
@@ -110,7 +121,7 @@ export default function ProjectFolders() {
                   </Select>
                 </div>
                 <div>
-                  <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
+                  <input ref={fileInputRef} type="file" accept={ALLOWED_UPLOAD_TYPES.join(',')} className="hidden" onChange={handleFileSelect} />
                   <Button
                     style={{ backgroundColor: O }}
                     className="text-white gap-2"
@@ -165,6 +176,7 @@ export default function ProjectFolders() {
                 {files.map(f => {
                   const TIcon = typeIconMap[f.type] || FileTextIcon
                   const tc = typeColor[f.type] || '#6b7280'
+                  const fileHref = safeHttpUrl(f.url)
                   return (
                     <div
                       key={f._docId}
@@ -180,7 +192,7 @@ export default function ProjectFolders() {
                             style={{ backgroundColor: tc + '22', color: tc }}>
                             {f.type}
                           </span>
-                          <span className="text-xs text-muted-foreground">by {f.uploadedBy}</span>
+                          <span className="text-xs text-muted-foreground">by {f.uploadedByName || f.uploadedBy}</span>
                           <span className="text-xs text-muted-foreground">
                             {f.createdAt?.toDate?.()?.toLocaleDateString?.() || ''}
                           </span>
@@ -189,11 +201,15 @@ export default function ProjectFolders() {
                           )}
                         </div>
                       </div>
-                      <a href={f.url} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="sm" className="gap-1 h-8 px-2 text-xs hover:bg-white/10">
-                          <DownloadIcon size={12} /> Download
-                        </Button>
-                      </a>
+                      {fileHref ? (
+                        <a href={fileHref} target="_blank" rel="noopener noreferrer">
+                          <Button variant="ghost" size="sm" className="gap-1 h-8 px-2 text-xs hover:bg-white/10">
+                            <DownloadIcon size={12} /> Download
+                          </Button>
+                        </a>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Link unavailable</span>
+                      )}
                     </div>
                   )
                 })}

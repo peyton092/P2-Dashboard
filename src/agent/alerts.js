@@ -1,5 +1,6 @@
 import { getZoneId, getZoneName, ZONES } from './zones'
-import { daysSince, hasFailedInspection, isBillingReady, isHvacStartupBlocked } from './scoring'
+import { daysSince, isBillingReady } from './scoring'
+import { contractValue, fmtMoney } from '../lib/money'
 
 // Deterministic alert ID so we can dedup in Firestore
 export function alertId(jobId, type) {
@@ -146,10 +147,8 @@ function billingReadyAlerts(jobs, extras) {
         if (result === 'passed') passedPhases.push(`${trade} ${phase}`)
       }
     }
-    const contractVal = job.contractValue || 18000
-    const pct  = passedPhases.some(p => p.includes('final')) ? 0.30 : 0.70
-    const amt  = Math.round(contractVal * pct)
-    const milestone = passedPhases.some(p => p.includes('final')) ? 'Final (30%)' : 'Rough (70%)'
+    const value = contractValue(job)
+    const milestone = passedPhases.some(p => p.includes('final')) ? 'Final inspection' : 'Rough-in'
     alerts.push({
       id:             alertId(job.id, 'billing_ready'),
       jobId:          job.id,
@@ -157,12 +156,13 @@ function billingReadyAlerts(jobs, extras) {
       type:           'billing_ready',
       severity:       'info',
       title:          `Ready to bill — ${job.name || job.id} ${milestone}`,
-      description:    `Inspection passed. Estimated billable: $${amt.toLocaleString()} (${milestone} of $${contractVal.toLocaleString()} contract).`,
+      description:    value === null
+        ? 'Inspection passed. Add a contract value to this job before invoicing.'
+        : `Inspection passed. Contract value: ${fmtMoney(value)}.`,
       recommendation: `Send to Abby/Randi for invoicing. Invoice #${job.invoiceNum || 'TBD'}.`,
       pm:             job.pm,
       zoneId:         getZoneId(job),
       status:         'open',
-      billingAmount:  amt,
       milestone,
     })
   }

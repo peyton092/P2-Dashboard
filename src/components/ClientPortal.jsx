@@ -1,13 +1,17 @@
 import { useState, useMemo, useRef } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { storage } from '../firebase'
-import { useData } from '../DataContext'
+import { storage, auth } from '../firebase'
+import { safeHttpUrl } from '../lib/safeUrl'
+import { validateUpload, sanitizeFileName, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
+import { extraState } from '../lib/extraStatus'
+import { callableMessage } from '../lib/callableError'
+import { useData } from '../use-data'
 import {
-  approveExtra, updateExtra, addNotification, useJobFiles,
-  addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile, addHistory,
+  approveExtra, rejectExtra, useJobFiles,
+  addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile,
 } from '../hooks/useFirestore'
-import { generateInvoicePdf } from '../lib/generateInvoicePdf'
-import { useToast } from '@/components/ui/toast'
+import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
+import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -157,7 +161,7 @@ function InspectionTimeline({ job }) {
 
 function ProjectCard({ job, extras }) {
   const jobExtras = extras.filter(e => e.job === job.id)
-  const pendingCount = jobExtras.filter(e => e.status === 'pending').length
+  const pendingCount = jobExtras.filter(e => extraState(e) === 'pending').length
   const phaseLabel = (job.phase || 'unknown').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
   const daysInPhase = daysSince(job.lastStatusChange)
   const milestone = nextMilestoneFor(job)
@@ -221,27 +225,30 @@ function ProjectCard({ job, extras }) {
 
 // ── Change Order row (approve / request revision) ────────────────────────────
 
-function ExtraRow({ co, clientName }) {
+function ExtraRow({ co }) {
   const toast = useToast()
   const [showReject, setShowReject] = useState(false)
   const [rejectNotes, setRejectNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [errMsg, setErrMsg] = useState('')
 
-  const status = co.status || 'pending'
-  const isPending = status === 'pending'
+  const state = extraState(co)
+  const isPending = state === 'pending'
+  // The total shown here is the one sent with a decision: the function refuses it
+  // when the stored total has changed since.
+  const total = co.total ?? co.amount ?? 0
 
+  // The approval, the notification and the history entry are all written by the
+  // Cloud Function, which also checks that this person may act on the change order.
   const handleApprove = async () => {
-    if (!co._docId) { setErrMsg('This change order is missing an ID — refresh and try again.'); return }
+    if (!co._docId) { setErrMsg('This change order is missing an ID. Refresh and try again.'); return }
     setBusy(true); setErrMsg('')
     try {
-      await approveExtra(co._docId, clientName || 'Client')
-      await addNotification({ type: 'success', msg: `${co.id || 'CO'} approved by ${clientName || 'client'} — ${fmt$(co.amount)} (${co.job})` })
-      await addHistory({ type: 'change-order', action: 'approved', summary: `${co.id || 'CO'} approved — ${fmt$(co.amount)}`, actor: clientName || 'Client', jobId: co.job })
-      toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
+      await approveExtra(co._docId, total)
+      toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(total)}` })
     } catch (err) {
       console.error('[Client] Approve failed:', err)
-      setErrMsg('Could not save approval. Check your connection and try again.')
+      setErrMsg(callableMessage(err, 'Could not save approval. Check your connection and try again.'))
     } finally { setBusy(false) }
   }
 
@@ -249,28 +256,21 @@ function ExtraRow({ co, clientName }) {
     if (!co._docId || !rejectNotes.trim()) return
     setBusy(true); setErrMsg('')
     try {
-      await updateExtra(co._docId, {
-        status: 'rejected',
-        rejectedAt: new Date().toISOString(),
-        rejectedBy: clientName || 'Client',
-        rejectNotes: rejectNotes.trim(),
-      })
-      await addNotification({ type: 'warn', msg: `${co.id || 'CO'} rejected by ${clientName || 'client'} — ${co.job}: ${rejectNotes.trim().slice(0, 80)}` })
-      await addHistory({ type: 'change-order', action: 'rejected', summary: `${co.id || 'CO'} revision requested — ${rejectNotes.trim().slice(0, 60)}`, actor: clientName || 'Client', jobId: co.job })
+      await rejectExtra(co._docId, rejectNotes.trim(), total)
       toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
       setShowReject(false); setRejectNotes('')
     } catch (err) {
       console.error('[Client] Reject failed:', err)
-      setErrMsg('Could not save your request. Check your connection and try again.')
+      setErrMsg(callableMessage(err, 'Could not save your request. Check your connection and try again.'))
     } finally { setBusy(false) }
   }
 
-  const stateLabel = status === 'approved' ? 'Approved' : status === 'rejected' ? 'Needs revision' : 'Awaiting your approval'
-  const stateTone  = status === 'approved' ? 'success'  : status === 'rejected' ? 'critical'       : 'warning'
+  const stateLabel = state === 'approved' ? 'Approved' : state === 'rejected' ? 'Needs revision' : 'Awaiting your approval'
+  const stateTone  = state === 'approved' ? 'success'  : state === 'rejected' ? 'critical'       : 'warning'
 
   return (
     <div className="rounded-xl border bg-white/[0.025] overflow-hidden"
-      style={{ borderColor: status === 'pending' ? '#eab30844' : status === 'rejected' ? '#ef444444' : status === 'approved' ? '#22c55e44' : 'rgba(255,255,255,0.10)' }}>
+      style={{ borderColor: state === 'pending' ? '#eab30844' : state === 'rejected' ? '#ef444444' : state === 'approved' ? '#22c55e44' : 'rgba(255,255,255,0.10)' }}>
       <div className="p-3 sm:p-4">
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex-1 min-w-0">
@@ -290,7 +290,7 @@ function ExtraRow({ co, clientName }) {
                 ))}
               </ul>
             )}
-            {co.rejectNotes && status === 'rejected' && (
+            {co.rejectNotes && state === 'rejected' && (
               <div className="mt-2.5 rounded-lg border border-red-500/30 px-3 py-2" style={{ backgroundColor: '#ef44440a' }}>
                 <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: '#ef4444' }}>Your revision request</p>
                 <p className="text-[11px] text-zinc-200 italic">“{co.rejectNotes}”</p>
@@ -298,7 +298,7 @@ function ExtraRow({ co, clientName }) {
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="font-semibold text-base tabular-nums" style={{ color: O }}>{fmt$(co.amount)}</p>
+            <p className="font-semibold text-base tabular-nums" style={{ color: O }}>{fmt$(total)}</p>
             <p className="text-[10px] text-zinc-400">{co.date || fmtDate(co.createdAt)}</p>
           </div>
         </div>
@@ -322,7 +322,7 @@ function ExtraRow({ co, clientName }) {
           <div className="mt-3 space-y-2">
             <p className="text-[10px] uppercase tracking-wide font-bold text-zinc-300">Tell P2 what needs to change</p>
             <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
-              placeholder="What should be revised? (required)" value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} />
+              placeholder="What should be revised? (required)" maxLength={1000} value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} />
             <div className="flex gap-2">
               <Button className="flex-1 h-10 text-xs text-white font-bold" style={{ backgroundColor: '#ef4444' }} disabled={busy || !rejectNotes.trim()} onClick={handleReject}>
                 {busy ? 'Submitting…' : 'Send revision request'}
@@ -335,7 +335,7 @@ function ExtraRow({ co, clientName }) {
           </div>
         )}
 
-        {!isPending && status === 'approved' && (
+        {!isPending && state === 'approved' && (
           <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: '#22c55e' }}>
             <CheckCircleIcon size={12} /> Approved
           </div>
@@ -355,8 +355,10 @@ const BILLING_META = {
 }
 
 function InvoiceRow({ job }) {
+  const toast = useToast()
   const meta = BILLING_META[job.billingStatus] || BILLING_META['not-invoiced']
   const hasInvoice = Boolean(job.invoiceNum)
+  const payHref = safeHttpUrl(job.paymentUrl)
   return (
     <div className="flex items-center gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025]">
       <div className="shrink-0 flex items-center justify-center rounded-lg" style={{ width: 36, height: 36, backgroundColor: '#3b82f622', color: '#3b82f6' }}>
@@ -373,14 +375,14 @@ function InvoiceRow({ job }) {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
-        {job.paymentUrl && job.billingStatus !== 'paid' && (
-          <a href={job.paymentUrl} target="_blank" rel="noopener noreferrer"
+        {payHref && job.billingStatus !== 'paid' && (
+          <a href={payHref} target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] font-bold text-white" style={{ backgroundColor: '#22c55e' }}>
             <CreditCardIcon size={13} /> Pay now
           </a>
         )}
         {hasInvoice && (
-          <Button variant="outline" className="h-8 px-2.5 text-[11px] gap-1.5 border-white/20 hover:bg-white/[0.05] text-zinc-200" onClick={() => generateInvoicePdf(job)}>
+          <Button variant="outline" className="h-8 px-2.5 text-[11px] gap-1.5 border-white/20 hover:bg-white/[0.05] text-zinc-200" onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }}>
             <DownloadIcon size={13} /> PDF
           </Button>
         )}
@@ -409,9 +411,13 @@ function JobFiles({ job }) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file || !job._docId) return
+    const check = validateUpload(file)
+    if (!check.ok) { setUploadErr(check.reason); return }
     setUploading(true); setUploadErr('')
     try {
-      const path = `jobs/${job._docId}/client-uploads/${Date.now()}-${file.name}`
+      const user = auth.currentUser
+      if (!user) throw new Error('You must be signed in.')
+      const path = `jobs/${job._docId}/client-uploads/${Date.now()}-${sanitizeFileName(file.name)}`
       const sref = storageRef(storage, path)
       await uploadBytes(sref, file)
       const url = await getDownloadURL(sref)
@@ -421,6 +427,8 @@ function JobFiles({ job }) {
         type: file.type || 'application/octet-stream',
         size: file.size,
         source: 'client-upload',
+        uploadedBy: user.uid,
+        uploadedByName: user.displayName || user.email || 'P2 Team',
       })
     } catch (err) {
       console.error('[Client] Upload failed:', err)
@@ -437,7 +445,7 @@ function JobFiles({ job }) {
           <p className="font-bold text-sm text-white truncate">{jobName(job)}</p>
           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">{job.id}</span>
           <div className="ml-auto shrink-0">
-            <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
+            <input ref={fileInputRef} type="file" accept={ALLOWED_UPLOAD_TYPES.join(',')} className="hidden" onChange={handleUpload} />
             <Button variant="outline" className="h-7 px-2 text-[11px] gap-1.5 border-white/20 text-zinc-200" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
               <UploadIcon size={12} /> {uploading ? 'Uploading…' : 'Upload'}
             </Button>
@@ -461,12 +469,20 @@ function JobFiles({ job }) {
                   <ImageIcon size={11} /> Photos · {photos.length}
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                  {photos.map(p => (
-                    <a key={p._docId} href={p.url} target="_blank" rel="noopener noreferrer"
-                      className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 block">
-                      <img src={p.url} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
-                    </a>
-                  ))}
+                  {photos.map(p => {
+                    const href = safeHttpUrl(p.url)
+                    return href ? (
+                      <a key={p._docId} href={href} target="_blank" rel="noopener noreferrer"
+                        className="aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/5 block">
+                        <img src={href} alt={p.name || 'Jobsite photo'} className="w-full h-full object-cover" loading="lazy" />
+                      </a>
+                    ) : (
+                      <div key={p._docId}
+                        className="aspect-square rounded-lg border border-white/10 bg-white/5 flex items-center justify-center p-1 text-center">
+                        <span className="text-[10px] text-zinc-400">Preview unavailable</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -476,14 +492,24 @@ function JobFiles({ job }) {
                   <FileTextIcon size={11} /> Documents · {docs.length}
                 </p>
                 <div className="space-y-1.5">
-                  {docs.map(d => (
-                    <a key={d._docId} href={d.url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
-                      <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
-                      <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
-                      <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
-                    </a>
-                  ))}
+                  {docs.map(d => {
+                    const href = safeHttpUrl(d.url)
+                    return href ? (
+                      <a key={d._docId} href={href} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                        <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
+                        <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
+                        <DownloadIcon size={13} className="shrink-0 text-zinc-400" />
+                      </a>
+                    ) : (
+                      <div key={d._docId}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.02]">
+                        <FileTextIcon size={14} className="shrink-0 text-zinc-400" />
+                        <span className="text-xs text-zinc-200 truncate flex-1">{d.name || 'Document'}</span>
+                        <span className="text-[10px] text-zinc-400 shrink-0">Link unavailable</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -497,7 +523,8 @@ function JobFiles({ job }) {
 // ── Messages / RFI ───────────────────────────────────────────────────────────
 
 function ClientMessages({ jobs, clientName }) {
-  const { submits } = useData()
+  const { submits, uid } = useData()
+  const toast = useToast()
   const [view, setView] = useState('inbox')
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'Question', body: '', jobId: '' })
@@ -508,7 +535,7 @@ function ClientMessages({ jobs, clientName }) {
   const selected = submits.find(s => s._docId === selectedId) || null
   const { replies } = useSubmitReplies(selected?._docId)
 
-  // DataContext already scopes submits to this client's jobs.
+  // The query and the rules already scope submits to this client.
   const myMessages = submits
 
   const CATEGORIES = ['Question', 'Schedule', 'Change Request', 'Issue', 'Other']
@@ -517,19 +544,28 @@ function ClientMessages({ jobs, clientName }) {
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim() || !form.jobId) return
     setSubmitting(true)
-    await addSubmit({
-      subject: form.subject.trim(),
-      category: form.category,
-      priority: 'Medium',
-      body: form.body.trim(),
-      portal: 'Client',
-      clientName: clientName || null,
-      jobId: form.jobId,
-      status: 'Open',
-    })
-    setForm({ subject: '', category: 'Question', body: '', jobId: '' })
-    setSubmitting(false)
-    setView('inbox')
+    try {
+      // A client may create a submission for one of their own jobs that lists only
+      // them and names no tenant; the stamping trigger then gives it the job's scope.
+      await addSubmit({
+        subject: form.subject.trim(),
+        category: form.category,
+        priority: 'Medium',
+        body: form.body.trim(),
+        portal: 'Client',
+        clientName: clientName || null,
+        jobId: form.jobId,
+        status: 'Open',
+        clientUids: [uid],
+      })
+      setForm({ subject: '', category: 'Question', body: '', jobId: '' })
+      setView('inbox')
+    } catch (err) {
+      console.error('[Client] Message failed:', err)
+      toast({ tone: 'error', title: callableMessage(err, 'Could not send your message. Try again.') })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleReply = async () => {
@@ -787,11 +823,12 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
   }, [jobs, projectFilter])
 
   const jobIds = useMemo(() => new Set(visibleJobs.map(j => j.id)), [visibleJobs])
-  const visibleExtras = useMemo(() => extras.filter(e => jobIds.has(e.job)), [extras, jobIds])
+  // A draft has not been sent to the client yet, so it never shows here.
+  const visibleExtras = useMemo(() => extras.filter(e => jobIds.has(e.job) && extraState(e) !== 'draft'), [extras, jobIds])
 
   const activeJobs    = visibleJobs.filter(j => !['complete', 'completed'].includes(j.status))
   const completedJobs = visibleJobs.filter(j => ['complete', 'completed'].includes(j.status))
-  const pendingExtras = visibleExtras.filter(e => e.status === 'pending')
+  const pendingExtras = visibleExtras.filter(e => extraState(e) === 'pending')
   const pendingValue  = pendingExtras.reduce((s, e) => s + (e.amount || 0), 0)
   const openInvoices  = visibleJobs.filter(j => j.invoiceNum && j.billingStatus !== 'paid').length
   const openMessages  = submits.filter(s => s.status === 'Open' || !s.status).length
@@ -873,7 +910,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
       <main className="flex-1 px-4 sm:px-8 py-5 pb-28 sm:pb-8 space-y-5 max-w-3xl w-full mx-auto">
         {activeTab === 'projects' && (
           visibleJobs.length === 0 ? (
-            <EmptyState Icon={HomeIcon} title="No projects yet" description="Your projects will appear here once P2 assigns them to your account." />
+            <EmptyState Icon={HomeIcon} title="No projects yet" description="No projects are linked to your account yet. Contact P2 if you expected to see one here." />
           ) : (
             <>
               {activeJobs.length > 0 && (
@@ -935,12 +972,12 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
               <>
                 <AllClearState title="No approvals pending" description="No change orders are waiting for your decision right now." />
                 <div className="space-y-2">
-                  {visibleExtras.map(co => <ExtraRow key={co._docId || co.id} co={co} clientName={userName || clientName} />)}
+                  {visibleExtras.map(co => <ExtraRow key={co._docId || co.id} co={co} />)}
                 </div>
               </>
             ) : (
               <div className="space-y-2">
-                {visibleExtras.map(co => <ExtraRow key={co._docId || co.id} co={co} clientName={userName || clientName} />)}
+                {visibleExtras.map(co => <ExtraRow key={co._docId || co.id} co={co} />)}
               </div>
             )}
           </div>

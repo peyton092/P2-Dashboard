@@ -1,21 +1,22 @@
-﻿import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
+﻿import { useState, useEffect, useMemo, useId, useRef, lazy, Suspense } from 'react'
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
-  createUserWithEmailAndPassword, sendPasswordResetEmail,
+  sendPasswordResetEmail,
 } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
-import { auth, secondaryAuth, db, functions } from './firebase'
+import { auth, db, functions } from './firebase'
 import { httpsCallable } from 'firebase/functions'
-import { DataProvider, useData } from './DataContext'
+import { DataProvider } from './DataContext'
+import { useData } from './use-data'
 import {
-  addExtra, updateNotification, updateJob, updateExtra,
-  sendExtraToQBS, approveExtra, rejectExtra,
-  passInspection, failInspection, createJob, addSubmit,
+  updateNotification, updateJob,
+  passInspection, failInspection, createJob,
   addMaterial, updateMaterial, useHistory, addHistory,
 } from './hooks/useFirestore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { useToast } from '@/components/ui/use-toast'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -69,19 +70,22 @@ import PMDashboardComponent from './components/PMDashboard'
 import AlertsPageComponent from './components/AlertsPage'
 import BillingQueueComponent from './components/BillingQueue'
 import ErrorBoundary from './components/ErrorBoundary'
+import NoAccessScreen from './components/NoAccessScreen'
+import { resolveSession } from './lib/session'
+import { callableMessage } from './lib/callableError'
 import {
   PageHeader, MetricTile, DataPanel, Pill,
   EmptyState, AllClearState, FilterBar, PageSkeleton,
   // Phase 19 — primitives extracted from App.jsx
   ProgressBar, StatCard,
-  inspMeta, iMeta, statusMeta, sMeta,
+  iMeta,
   InspBadge, JobBadge,
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,
 } from './components/shared'
 // daysSince is defined locally in this file with identical semantics, so we
 // don't re-import it from agent/scoring (would be a duplicate declaration).
-import { classifyRisk, hasFailedInspection, isBillingReady, isHvacStartupBlocked } from './agent/scoring'
+import { classifyRisk, hasFailedInspection, isBillingReady } from './agent/scoring'
 import { ZONES, getZoneId } from './agent/zones'
 
 // Phase 18 — Domain helpers extracted from App.jsx into src/lib/.
@@ -113,8 +117,8 @@ import {
   fmtSubDate, subJobKey,
 } from './lib/subs'
 import {
-  jobName, phaseLabel,
-  JOB_FILTERS, JOB_FORM_INITIAL,
+  jobName,
+  JOB_FILTERS, JOB_TENANTS, jobFormFor,
   isJobComplete, jobStaleness, jobMatchesFilter,
   jobNextAction, jobRiskMeta, fmtJobDate,
 } from './lib/jobs'
@@ -122,7 +126,6 @@ import {
   BRIEF_CATEGORY_META, SEVERITY_RANK,
   severityTone, severityColor, buildBriefingItems,
 } from './lib/briefing'
-import { generateInvoicePdf } from './lib/generateInvoicePdf'
 import { exportToCsv } from './lib/exportCsv'
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
@@ -221,8 +224,6 @@ const MOBILE_MORE = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const fmt$ = (n) => `$${Number(n).toLocaleString()}`
-
 // jobName moved to src/lib/jobs.js (Phase 18).
 // BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR moved to
 // src/lib/billing.js (Phase 18).
@@ -261,7 +262,7 @@ const daysSince = (date) => {
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
 
-function LoginScreen({ onSignup }) {
+function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -383,136 +384,205 @@ function LoginScreen({ onSignup }) {
               </p>
             )}
           </form>
-          <button
-            className="mt-4 text-xs text-muted-foreground hover:text-foreground w-full text-center transition-colors"
-            onClick={onSignup}>
-            Create account (owner setup)
-          </button>
         </CardContent>
       </Card>
     </div>
   )
 }
 
-// ── Create User Modal (owner / internal only) ─────────────────────────────────
+// ── Create User Modal (owner only) ────────────────────────────────────────────
+//
+// The account is created by the createUser callable, which only an owner can
+// call and which uses the Admin SDK for the Auth user, its claims and its users
+// document. The browser then asks Firebase to email the person a link to choose
+// their own password, so no password is typed, shown or stored here.
 
-function CreateUserModal({ onClose }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [role, setRole] = useState('internal')
-  const [tenantId, setTenantId] = useState('qbs')
+const ROLE_OPTIONS = [
+  { value: 'owner',    label: 'Owner' },
+  { value: 'internal', label: 'Internal (P2 staff)' },
+  { value: 'builder',  label: 'Builder (portal access)' },
+  { value: 'client',   label: 'Client (project owner)' },
+]
+const BUILDER_TENANTS = TENANTS.filter(t => t.id !== 'p2-core')
+
+// "QBS-018, qbs-032 QBS-041" becomes ['QBS-018', 'QBS-032', 'QBS-041'].
+const parseJobIds = (text) => text.split(/[\s,]+/).map(s => s.toUpperCase()).filter(Boolean)
+
+const CREATE_FAILED = 'Could not create the account. Try again.'
+
+// What the owner reads when createUser fails: the function's own sentence, or the
+// plain fallback when only a bare status came back (see callableMessage).
+const createFailureMessage = (err) => callableMessage(err, CREATE_FAILED)
+
+const FIELD_CLASS = 'bg-white/5 border-white/20'
+// A native select, styled like Input. The solid background keeps the option
+// list readable in browsers that draw it from the select's own colors.
+const SELECT_CLASS = 'h-8 w-full rounded-lg border border-white/20 bg-zinc-900 px-2.5 text-sm text-zinc-100 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50'
+
+export function CreateUserModal({ onClose }) {
+  const formId = useId()
+  const nameRef = useRef(null)
+  const onCloseRef = useRef(onClose)
   const [displayName, setDisplayName] = useState('')
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState('internal')
+  const [tenantId, setTenantId] = useState(BUILDER_TENANTS[0].id)
   const [clientJobs, setClientJobs] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [warning, setWarning] = useState('')
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  // On open: remember what had focus (the button that opened this), focus the
+  // first field, and close on Escape. On close: hand focus back.
+  useEffect(() => {
+    const opener = document.activeElement
+    nameRef.current?.focus()
+    const onKeyDown = (e) => { if (e.key === 'Escape') onCloseRef.current() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      if (opener instanceof HTMLElement) opener.focus()
+    }
+  }, [])
 
   const handleCreate = async (e) => {
     e.preventDefault()
+    if (loading) return
     setError('')
     setSuccess('')
+    setWarning('')
     setLoading(true)
+    const address = email.trim()
+
     try {
-      const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password)
-      const parsedClientJobs = clientJobs
-        .split(/[\s,]+/)
-        .map(s => s.trim().toUpperCase())
-        .filter(Boolean)
-      await setDoc(doc(db, 'users', cred.user.uid), {
-        email: email.trim(),
-        displayName: displayName.trim() || email.trim(),
+      await httpsCallable(functions, 'createUser')({
+        email: address,
+        displayName: displayName.trim(),
         role,
-        tenantId: role === 'builder' ? tenantId : 'p2-core',
-        ...(role === 'client' ? {
-          clientName: displayName.trim() || email.trim(),
-          clientJobIds: parsedClientJobs,
-        } : {}),
-        createdAt: new Date().toISOString(),
+        ...(role === 'builder' ? { tenantId } : {}),
+        ...(role === 'client' ? { clientJobIds: parseJobIds(clientJobs) } : {}),
       })
-      await signOut(secondaryAuth)
-      setSuccess(`Account created for ${email.trim()}.`)
-      setEmail(''); setPassword(''); setDisplayName(''); setClientJobs('')
     } catch (err) {
-      const msg = {
-        'auth/email-already-in-use': 'An account with that email already exists.',
-        'auth/invalid-email':        'Enter a valid email address.',
-        'auth/weak-password':        'Password must be at least 6 characters.',
-      }[err.code] || err.message
-      setError(msg)
-    } finally {
+      setError(createFailureMessage(err))
       setLoading(false)
+      return
     }
+
+    // The account exists from here on, so the form is cleared whatever happens
+    // next: submitting it again could only report that the email is taken.
+    setEmail('')
+    setDisplayName('')
+    setClientJobs('')
+    try {
+      await sendPasswordResetEmail(auth, address)
+      setSuccess(`Account created. ${address} will receive an email to set their password.`)
+    } catch {
+      setWarning(`Account created for ${address}, but the email did not send. Ask them to use Forgot password on the sign in screen.`)
+    }
+    setLoading(false)
   }
 
+  // This renders outside AppShell, so it brings its own `dark` scope and
+  // foreground color; without them the text inherits the light theme's near
+  // black and cannot be read on the dark card.
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <Card className="w-96 border-white/10 bg-zinc-900">
+    <div className="dark fixed inset-0 bg-black/70 text-foreground flex items-center justify-center z-50 p-4">
+      <Card
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${formId}-title`}
+        className="w-96 max-w-full max-h-full overflow-y-auto border-white/10 bg-zinc-900"
+      >
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <UsersIcon size={14} style={{ color: O }} /> Create User Account
+          <CardTitle id={`${formId}-title`} className="text-sm flex items-center gap-2">
+            <UsersIcon size={14} style={{ color: O }} aria-hidden="true" /> Create User Account
           </CardTitle>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><XIcon size={16} /></button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <XIcon size={16} aria-hidden="true" />
+          </button>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="space-y-3">
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Name</label>
-              <Input value={displayName} onChange={e => setDisplayName(e.target.value)}
-                placeholder="Mike Rodriguez" className="bg-white/5 border-white/20" />
+              <label htmlFor={`${formId}-name`} className="text-xs text-muted-foreground">Name</label>
+              <Input
+                id={`${formId}-name`}
+                ref={nameRef}
+                value={displayName}
+                onChange={e => setDisplayName(e.target.value)}
+                placeholder="Mike Rodriguez"
+                autoComplete="off"
+                className={FIELD_CLASS}
+              />
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Email</label>
-              <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="user@p2em.com" className="bg-white/5 border-white/20" required />
+              <label htmlFor={`${formId}-email`} className="text-xs text-muted-foreground">Email</label>
+              <Input
+                id={`${formId}-email`}
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="user@p2em.com"
+                autoComplete="off"
+                className={FIELD_CLASS}
+                required
+              />
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Password</label>
-              <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="Min 6 characters" className="bg-white/5 border-white/20" required />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Role</label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger className="w-full bg-white/5 border-white/20">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="owner">Owner</SelectItem>
-                  <SelectItem value="internal">Internal (P2 staff)</SelectItem>
-                  <SelectItem value="builder">Builder (portal access)</SelectItem>
-                  <SelectItem value="client">Client (project owner)</SelectItem>
-                </SelectContent>
-              </Select>
+              <label htmlFor={`${formId}-role`} className="text-xs text-muted-foreground">Role</label>
+              <select
+                id={`${formId}-role`}
+                value={role}
+                onChange={e => setRole(e.target.value)}
+                className={SELECT_CLASS}
+              >
+                {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
             </div>
             {role === 'builder' && (
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Workspace</label>
-                <Select value={tenantId} onValueChange={setTenantId}>
-                  <SelectTrigger className="w-full bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {TENANTS.filter(t => t.id !== 'p2-core').map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <label htmlFor={`${formId}-tenant`} className="text-xs text-muted-foreground">Tenant</label>
+                <select
+                  id={`${formId}-tenant`}
+                  value={tenantId}
+                  onChange={e => setTenantId(e.target.value)}
+                  className={SELECT_CLASS}
+                >
+                  {BUILDER_TENANTS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
               </div>
             )}
             {role === 'client' && (
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Project IDs (comma-separated)</label>
+                <label htmlFor={`${formId}-jobs`} className="text-xs text-muted-foreground">Client job ids</label>
                 <Input
+                  id={`${formId}-jobs`}
                   value={clientJobs}
                   onChange={e => setClientJobs(e.target.value)}
                   placeholder="QBS-018, QBS-032, QBS-041"
-                  className="bg-white/5 border-white/20"
+                  autoComplete="off"
+                  aria-describedby={`${formId}-jobs-hint`}
+                  className={FIELD_CLASS}
+                  required
                 />
-                <p className="text-[11px] text-muted-foreground">
-                  The client will only see these projects. The Name above is shown as the client/company name in their portal.
+                <p id={`${formId}-jobs-hint`} className="text-[11px] text-muted-foreground">
+                  Separate ids with commas or spaces. The client will see only these projects, and the Name above is shown as their company name in the portal.
                 </p>
               </div>
             )}
-            {error   && <p className="text-xs text-red-400 font-medium">{error}</p>}
-            {success && <p className="text-xs text-green-400 font-medium">{success}</p>}
+            {error   && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
+            {success && <p role="status" className="text-xs text-green-400 font-medium">{success}</p>}
+            {warning && <p role="status" className="text-xs text-amber-400 font-medium">{warning}</p>}
             <Button type="submit" className="w-full text-white" style={{ backgroundColor: O }} disabled={loading}>
               {loading ? 'Creating…' : 'Create Account'}
             </Button>
@@ -528,12 +598,14 @@ function CreateUserModal({ onClose }) {
 function TermsGate({ tenantId, tenantName, onAccept }) {
   const [checked, setChecked] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const version = 'v2026.04.16'
 
   const handleAccept = async () => {
     if (!checked) return
     const u = auth.currentUser
     setSaving(true)
+    setError('')
     try {
       if (u) {
         await setDoc(
@@ -547,12 +619,13 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
           { merge: true },
         )
       }
+      onAccept()
     } catch (err) {
-      // Don't block portal entry if logging fails — but record it.
+      // The gate stays closed unless the acceptance was recorded.
       console.error('[TermsGate] Could not persist acceptance:', err)
+      setError('Could not record your acceptance. Check your connection and try again.')
     } finally {
       setSaving(false)
-      onAccept()
     }
   }
 
@@ -601,6 +674,7 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
             onClick={handleAccept}>
             {saving ? 'Recording acceptance…' : 'Accept & Enter Portal'}
           </Button>
+          {error && <p className="text-xs text-red-400 text-center font-medium">{error}</p>}
         </CardContent>
       </Card>
     </div>
@@ -929,15 +1003,16 @@ function BriefingGroup({ category, items }) {
 // jobMatchesFilter, jobNextAction, jobRiskMeta, fmtJobDate moved to
 // src/lib/jobs.js (Phase 18).
 
-function JobStatus() {
-  const { jobs = [], subs = [] } = useData()
+export function JobStatus() {
+  const { jobs = [], subs = [], tenantId: workspace } = useData()
+  const toast = useToast()
   const [search, setSearch]         = useState('')
   const [filter, setFilter]         = useState('all')
   const [pmFilter, setPmFilter]     = useState('all')
   const [zoneFilter, setZoneFilter] = useState('all')
   const [expanded, setExpanded]     = useState(null)
   const [showNewJob, setShowNewJob] = useState(false)
-  const [jobForm, setJobForm]       = useState(JOB_FORM_INITIAL)
+  const [jobForm, setJobForm]       = useState(() => jobFormFor(workspace))
   const [creating, setCreating]     = useState(false)
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -1032,36 +1107,46 @@ function JobStatus() {
   const hvacSubs  = (subs || []).filter(s => s.trade === 'HVAC')
 
   const handleCreateJob = async () => {
-    if (!jobForm.id || !jobForm.address || !jobForm.client) return
+    if (!jobForm.id || !jobForm.address || !jobForm.client || !jobForm.tenantId) return
     setCreating(true)
-    await createJob({
-      id:           jobForm.id,
-      address:      jobForm.address,
-      city:         jobForm.city,
-      client:       jobForm.client,
-      type:         jobForm.type,
-      pm:           jobForm.pm,
-      status:       'active',
-      progress:     0,
-      extras:       0,
-      tenantId:     'qbs',
-      lead:         '',
-      start:        new Date().toISOString().slice(0, 10),
-      target:       jobForm.target || '',
-      county:       '',
-      billingStatus:'not-invoiced',
-      permitNumber: jobForm.permitNumber || '',
-      subs:    { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
-      permits: { electrical: 'pending', plumbing: 'pending', hvac: 'pending' },
-      insp: {
-        electrical: { roughIn: 'pending', trim: 'blocked', final: 'blocked' },
-        plumbing:   { roughIn: 'pending', final: 'blocked' },
-        hvac:       { roughIn: 'pending', final: 'blocked' },
-      },
-    })
-    setJobForm(JOB_FORM_INITIAL)
-    setShowNewJob(false)
-    setCreating(false)
+    try {
+      await createJob({
+        id:           jobForm.id,
+        address:      jobForm.address,
+        city:         jobForm.city,
+        client:       jobForm.client,
+        type:         jobForm.type,
+        pm:           jobForm.pm,
+        status:       'active',
+        progress:     0,
+        extras:       0,
+        tenantId:     jobForm.tenantId,
+        lead:         '',
+        start:        new Date().toISOString().slice(0, 10),
+        target:       jobForm.target || '',
+        county:       '',
+        billingStatus:'not-invoiced',
+        permitNumber: jobForm.permitNumber || '',
+        subs:    { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
+        permits: { electrical: 'pending', plumbing: 'pending', hvac: 'pending' },
+        insp: {
+          electrical: { roughIn: 'pending', trim: 'blocked', final: 'blocked' },
+          plumbing:   { roughIn: 'pending', final: 'blocked' },
+          hvac:       { roughIn: 'pending', final: 'blocked' },
+        },
+      })
+      setJobForm(jobFormFor(workspace))
+      setShowNewJob(false)
+    } catch (err) {
+      // The form stays open with what was typed, so it can be corrected and sent again.
+      toast({
+        tone: 'error',
+        title: 'Could not create the job',
+        description: callableMessage(err, 'Check your connection and try again.'),
+      })
+    } finally {
+      setCreating(false)
+    }
   }
 
   const exportVisibleCsv = () => {
@@ -1115,7 +1200,7 @@ function JobStatus() {
             </button>
             <button
               type="button"
-              onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(JOB_FORM_INITIAL) }}
+              onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(jobFormFor(workspace)) }}
               className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
               style={{ backgroundColor: O }}
             >
@@ -1187,6 +1272,14 @@ function JobStatus() {
             <JobFormField label="Client *">
               <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
             </JobFormField>
+            <JobFormField label="Tenant">
+              <Select required items={JOB_TENANTS} value={jobForm.tenantId} onValueChange={v => setJobForm(f => ({ ...f, tenantId: v }))}>
+                <SelectTrigger aria-label="Tenant" className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {JOB_TENANTS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </JobFormField>
             <JobFormField label="Project type">
               <Input className="bg-white/[0.04] border-white/10 text-white" value={jobForm.type} onChange={e => setJobForm(f => ({ ...f, type: e.target.value }))} />
             </JobFormField>
@@ -1239,7 +1332,7 @@ function JobStatus() {
             <button
               type="button"
               onClick={handleCreateJob}
-              disabled={creating || !jobForm.id || !jobForm.address || !jobForm.client}
+              disabled={creating || !jobForm.id || !jobForm.address || !jobForm.client || !jobForm.tenantId}
               className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{ backgroundColor: O }}
             >
@@ -1247,7 +1340,7 @@ function JobStatus() {
             </button>
             <button
               type="button"
-              onClick={() => { setShowNewJob(false); setJobForm(JOB_FORM_INITIAL) }}
+              onClick={() => { setShowNewJob(false); setJobForm(jobFormFor(workspace)) }}
               className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
             >
               Cancel
@@ -1586,10 +1679,31 @@ function Extras() {
 // INSP_STATUSES, TRADE_META, PHASE_LABEL, inspection* helpers moved to
 // src/lib/inspections.js (Phase 18).
 
-function PhaseRow({ label, status, note, docId, field }) {
+export function PhaseRow({ label, status, note, docId, field }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
   const canEdit = !!docId
   const [, trade, phase] = field ? field.split('.') : []
   const meta = iMeta(status)
+
+  // Passing or failing a phase goes through a Cloud Function: it checks that the
+  // caller is staff, dates the result, and writes the notification and the
+  // history entry. One call at a time, since each call raises an alert.
+  const record = async (action) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await action(docId, trade, phase)
+    } catch (err) {
+      toast({
+        tone: 'error',
+        title: 'Could not record the inspection result',
+        description: callableMessage(err, 'Check your connection and try again.'),
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <div className="flex items-center justify-between py-2 border-b border-white/5 gap-2">
       <span className="text-sm text-zinc-300 shrink-0">{label}</span>
@@ -1603,8 +1717,16 @@ function PhaseRow({ label, status, note, docId, field }) {
           <>
             <select
               value={status || 'pending'}
-              onChange={e => updateJob(docId, { [field]: e.target.value })}
-              className="text-[11px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none"
+              onChange={e => {
+                // Passed and failed are recorded by the Cloud Functions, like the two
+                // buttons beside this list. Any other status is a plain edit of the job.
+                const next = e.target.value
+                if (next === 'passed') record(passInspection)
+                else if (next === 'failed') record(failInspection)
+                else updateJob(docId, { [field]: next })
+              }}
+              disabled={busy}
+              className="text-[11px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none disabled:opacity-50"
               style={{
                 color: meta.color,
                 backgroundColor: meta.color + '22',
@@ -1620,20 +1742,22 @@ function PhaseRow({ label, status, note, docId, field }) {
             </select>
             <button
               type="button"
-              onClick={() => passInspection(docId, trade, phase)}
+              onClick={() => record(passInspection)}
+              disabled={busy}
               title="Mark passed"
               aria-label={`Mark ${label} passed`}
-              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors"
+              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
               style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}
             >
               <CheckIcon size={13} strokeWidth={2.5} />
             </button>
             <button
               type="button"
-              onClick={() => failInspection(docId, trade, phase)}
+              onClick={() => record(failInspection)}
+              disabled={busy}
               title="Mark failed"
               aria-label={`Mark ${label} failed`}
-              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors"
+              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
               style={{ backgroundColor: '#ef444422', color: '#ef4444', border: '1px solid #ef444444' }}
             >
               <XIcon size={13} strokeWidth={2.5} />
@@ -2535,8 +2659,8 @@ function SubAssignmentRow({ job: j }) {
 // ── Materials tab ────────────────────────────────────────────────────────────
 
 function Materials() {
-  const { jobs = [], materials: MATERIALS = [] } = useData()
-  const { history: HISTORY = [] } = useHistory()
+  const { jobs = [], materials: MATERIALS = [], scope } = useData()
+  const { history: HISTORY = [] } = useHistory(scope)
   const [filter, setFilter]               = useState('all')
   const [filterJob, setFilterJob]         = useState('all')
   const [showForm, setShowForm]           = useState(false)
@@ -3545,7 +3669,7 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
     'analytics':     wrap(<AnalyticsComponent />),
     'team':           wrap(<TeamLeaderboardComponent />),
     'invoice-auditor': wrap(<Suspense fallback={<div className="p-8 text-muted-foreground text-sm">Loading…</div>}><InvoiceAuditorComponent /></Suspense>),
-    'settings':       wrap(<SettingsPageComponent onLogout={onLogout} />),
+    'settings':       wrap(<SettingsPageComponent onLogout={onLogout} role={role} />),
     'job-detail':     wrap(<JobDetail jobId={selectedJobId} onBack={() => setActiveTab('jobs')} />),
     'calendar':       wrap(<CalendarComponent />),
     'activity':       wrap(<ActivityComponent />),
@@ -3618,9 +3742,7 @@ export default function P2DashboardV4() {
   const [role, setRole]               = useState(null)
   const [tenantId, setTenantId]       = useState('p2-core')
   const [clientName, setClientName]   = useState('')
-  const [clientJobIds, setClientJobIds] = useState([])
   const [termsAccepted, setTermsAccepted] = useState(false)
-  const [showSignup, setShowSignup]   = useState(false)
   const [showCreateUser, setShowCreateUser] = useState(false)
   const [oauthState, setOauthState]   = useState(null) // null | 'loading' | 'success' | { error: string }
   const [oauthProvider, setOauthProvider] = useState(null) // 'QuickBooks' | 'CompanyCam'
@@ -3636,12 +3758,6 @@ export default function P2DashboardV4() {
     return realmId
       ? { provider: 'QuickBooks', fn: 'qbCallback', data: { code, state, realmId } }
       : { provider: 'CompanyCam', fn: 'ccCallback', data: { code, state } }
-  })
-
-  // ?portal=qbs forces builder QBS portal view (bypasses auth/terms — for demos/links)
-  const [forcedPortal] = useState(() => {
-    const p = new URLSearchParams(window.location.search)
-    return p.get('portal')
   })
 
   // Process the OAuth callback once user is authenticated
@@ -3666,43 +3782,35 @@ export default function P2DashboardV4() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
-        setUser(null); setRole(null); setAuthLoading(false)
+        // Nobody is signed in, whether the person chose Sign out or the session
+        // ended some other way (another tab, access revoked). Clear what belongs
+        // to the last person, and what they left open: a sign in sets the session
+        // again, but not the accepted terms or the Create User dialog, and the
+        // next person must not inherit those. The tenant stays as it is; every
+        // sign in sets it, and nothing reads it while signed out.
+        setUser(null); setRole(null); setUserName(''); setClientName('')
+        setTermsAccepted(false); setShowCreateUser(false); setAuthLoading(false)
         return
       }
-      // Check custom claims first, fall back to Firestore users doc
+      // Custom claims first; the users doc fills in whatever claims lack.
       const tokenResult = await firebaseUser.getIdTokenResult()
-      let r  = tokenResult.claims.role     || null
-      let tid = tokenResult.claims.tenantId || 'p2-core'
-      let dn = firebaseUser.displayName || ''
-      let cName = tokenResult.claims.clientName || ''
-      let cJobs = Array.isArray(tokenResult.claims.clientJobIds) ? tokenResult.claims.clientJobIds : null
-
-      // Always consult the users doc when claims are incomplete (client scoping
-      // and tenant/role are commonly stored there rather than as custom claims).
-      if (!r || cJobs === null) {
+      const claims = tokenResult.claims
+      let userDoc = null
+      if (!claims.role || !Array.isArray(claims.clientJobIds)) {
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid))
-          if (snap.exists()) {
-            const u = snap.data()
-            r   = r   || u.role     || 'internal'
-            tid = u.tenantId || tid
-            dn  = u.displayName || dn
-            cName = cName || u.clientName || u.displayName || ''
-            if (cJobs === null) cJobs = Array.isArray(u.clientJobIds) ? u.clientJobIds : []
-          } else if (!r) {
-            r = 'internal'
-          }
+          userDoc = snap.exists() ? snap.data() : null
         } catch {
-          if (!r) r = 'internal'
+          userDoc = null
         }
       }
+      const session = resolveSession(claims, userDoc, firebaseUser)
 
       setUser(firebaseUser)
-      setUserName(dn)
-      setRole(r)
-      setTenantId(tid)
-      setClientName(cName)
-      setClientJobIds(cJobs || [])
+      setUserName(session.displayName)
+      setRole(session.role)
+      setTenantId(session.tenantId)
+      setClientName(session.clientName)
       setAuthLoading(false)
     })
     return unsub
@@ -3755,51 +3863,37 @@ export default function P2DashboardV4() {
     )
   }
 
-  // ?portal=qbs URL bypass — ALWAYS forces builder portal, even if logged in as internal.
-  // This is what gets shared with QBS coordinators — they should never see internal P2 data.
-  if (forcedPortal === 'qbs') {
-    return (
-      <DataProvider tenantId="qbs" role="builder">
-        <Suspense fallback={<PortalLoading />}>
-          <QBSBuilderPortalComponent
-            tenantName="QBS Builder Portal"
-            userName={userName}
-            onLogout={user ? handleLogout : null}
-          />
-        </Suspense>
-      </DataProvider>
-    )
+  // The login screen and the terms gate below render without a DataProvider.
+  // Its hooks subscribe when it mounts, and Firestore ends a listener the rules
+  // refuse and never restarts it, so a provider mounted before sign in would stay
+  // empty for the whole session: React keeps the same instance when the signed in
+  // branches render a DataProvider in the same place.
+  if (!user) {
+    return <LoginScreen />
   }
 
-  if (!user) {
-    if (showSignup) {
-      return (
-        <div className="dark min-h-screen bg-background">
-          <CreateUserModal onClose={() => setShowSignup(false)} />
-          <LoginScreen onSignup={() => setShowSignup(false)} />
-        </div>
-      )
-    }
-    return (
-      <DataProvider>
-        <LoginScreen onSignup={() => setShowSignup(true)} />
-      </DataProvider>
-    )
+  if (role === null) {
+    return <NoAccessScreen email={user.email} onLogout={handleLogout} />
   }
 
   const tenant = TENANTS.find(t => t.id === tenantId)
 
   if (role === 'builder' && !termsAccepted) {
-    return (
-      <DataProvider>
-        <TermsGate tenantId={tenantId} tenantName={tenant?.name} onAccept={() => setTermsAccepted(true)} />
-      </DataProvider>
-    )
+    return <TermsGate tenantId={tenantId} tenantName={tenant?.name} onAccept={() => setTermsAccepted(true)} />
   }
+
+  // Each signed in provider is keyed by who is signed in and in what role, so a
+  // different user or role gets a new provider whose hooks subscribe again. The
+  // tenant is left out on purpose: internal staff switch it from the sidebar,
+  // staff queries read every document whatever it is, and the provider narrows
+  // what it shows by it without new subscriptions, so the dashboard and the page
+  // they have open must stay as they are. The hooks query with the scope, and the
+  // rules check the same fields, so a builder or a client gets only their own.
+  const dataKey = `${user.uid}:${role}`
 
   if (role === 'client') {
     return (
-      <DataProvider role="client" clientJobIds={clientJobIds}>
+      <DataProvider key={dataKey} scope={{ role, tenantId: null, uid: user.uid }}>
         {showCreateUser && <CreateUserModal onClose={() => setShowCreateUser(false)} />}
         <Suspense fallback={<PortalLoading />}>
           <ClientPortalComponent
@@ -3813,7 +3907,7 @@ export default function P2DashboardV4() {
   }
 
   return (
-    <DataProvider tenantId={tenantId} role={role}>
+    <DataProvider key={dataKey} scope={{ role, tenantId, uid: user.uid }} tenantId={tenantId}>
       {showCreateUser && <CreateUserModal onClose={() => setShowCreateUser(false)} />}
       {role === 'builder'
         ? (
