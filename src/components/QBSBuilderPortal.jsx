@@ -5,10 +5,9 @@ import {
   useSubmitReplies, addSubmitReply, updateNotification,
 } from '../hooks/useFirestore'
 import { extraState } from '../lib/extraStatus'
-import { callableMessage } from '../lib/callableError'
 import { daysSince, toDate } from '../lib/dates'
 import { useNow } from '../hooks/useNow'
-import { useToast } from '@/components/ui/use-toast'
+import { useMutation } from '../hooks/useMutation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -407,9 +406,9 @@ function JobCard({ job, extras, now }) {
 // ── Extra Row (with approve/reject) ──────────────────────────────────────────
 
 function ExtraRow({ co, compact = false }) {
+  const { run, busy } = useMutation()
   const [showReject, setShowReject] = useState(false)
   const [rejectNotes, setRejectNotes] = useState('')
-  const [busy, setBusy] = useState(false)
   const [errMsg, setErrMsg] = useState('')
 
   const state = extraState(co)
@@ -420,36 +419,32 @@ function ExtraRow({ co, compact = false }) {
 
   // The approval, the notification and the history entry are all written by the
   // Cloud Function, which also checks that this person may act on the change order.
+  // A refusal is told in a toast and, since the buttons stay where they were, on the row.
   const handleApprove = async () => {
     if (!co._docId) {
       setErrMsg('This change order is missing an ID. Refresh and try again.')
       return
     }
-    setBusy(true)
     setErrMsg('')
-    try {
-      await approveExtra(co._docId, total)
-    } catch (err) {
-      console.error('[QBS] Approve failed:', err)
-      setErrMsg(callableMessage(err, 'Could not save approval. Check your connection and try again.'))
-    } finally {
-      setBusy(false)
-    }
+    const { ok, error } = await run(() => approveExtra(co._docId, total), {
+      success: `${co.id || 'The change order'} approved for ${fmt$(total)}.`,
+      error: 'Could not save approval. Check your connection and try again.',
+    })
+    if (!ok) setErrMsg(error)
   }
 
   const handleReject = async () => {
     if (!co._docId || !rejectNotes.trim()) return
-    setBusy(true)
     setErrMsg('')
-    try {
-      await rejectExtra(co._docId, rejectNotes.trim(), total)
+    const { ok, error } = await run(() => rejectExtra(co._docId, rejectNotes.trim(), total), {
+      success: `Revision requested. P2 has been notified about ${co.id || 'this change order'}.`,
+      error: 'Could not save rejection. Check your connection and try again.',
+    })
+    if (ok) {
       setShowReject(false)
       setRejectNotes('')
-    } catch (err) {
-      console.error('[QBS] Reject failed:', err)
-      setErrMsg(callableMessage(err, 'Could not save rejection. Check your connection and try again.'))
-    } finally {
-      setBusy(false)
+    } else {
+      setErrMsg(error)
     }
   }
 
@@ -591,13 +586,13 @@ function ExtraRow({ co, compact = false }) {
 
 function QBSSubmit({ qbsPM, jobs }) {
   const { submits, scope } = useData()
-  const toast = useToast()
+  const { run: runSend, busy: submitting } = useMutation()
+  const { run: runReply, busy: replying } = useMutation()
+  const { run: runStatus } = useMutation()
   const [view, setView] = useState('inbox')
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'RFI', priority: 'Medium', body: '', jobId: '' })
-  const [submitting, setSubmitting] = useState(false)
   const [replyText, setReplyText] = useState('')
-  const [replying, setReplying] = useState(false)
 
   const selected = submits.find(s => s._docId === selectedId) || null
   const { replies } = useSubmitReplies(selected?._docId)
@@ -613,46 +608,50 @@ function QBSSubmit({ qbsPM, jobs }) {
 
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim()) return
-    setSubmitting(true)
-    try {
-      await addSubmit({
-        subject: form.subject.trim(),
-        category: form.category,
-        priority: form.priority,
-        body: form.body.trim(),
-        portal: 'Builder',
-        qbsPM: qbsPM || null,
-        jobId: form.jobId || null,
-        status: 'Open',
-        // A builder may create a submission that carries their own tenant and
-        // lists no client. It keeps that tenant: the stamping trigger gives it its
-        // job's clients only when the job is in the same tenant.
-        tenantId: scope.tenantId,
-        clientUids: [],
-      })
+    const { ok } = await runSend(() => addSubmit({
+      subject: form.subject.trim(),
+      category: form.category,
+      priority: form.priority,
+      body: form.body.trim(),
+      portal: 'Builder',
+      qbsPM: qbsPM || null,
+      jobId: form.jobId || null,
+      status: 'Open',
+      // A builder may create a submission that carries their own tenant and
+      // lists no client. It keeps that tenant: the stamping trigger gives it its
+      // job's clients only when the job is in the same tenant.
+      tenantId: scope.tenantId,
+      clientUids: [],
+    }), {
+      success: 'Message sent to P2.',
+      error: 'Could not send your message. Try again.',
+    })
+    // A refused message leaves the form ready to send again.
+    if (ok) {
       setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', jobId: '' })
       setView('inbox')
-    } catch (err) {
-      console.error('[QBS] Message failed:', err)
-      toast({ tone: 'error', title: callableMessage(err, 'Could not send your message. Try again.') })
-    } finally {
-      setSubmitting(false)
     }
   }
 
+  // A reply is two writes: the reply, and then moving an open message to In Progress. The
+  // box is cleared once the reply is in, and the second write says so on its own if it fails.
   const handleReply = async () => {
     if (!replyText.trim() || !selected?._docId) return
-    setReplying(true)
-    await addSubmitReply(selected._docId, {
+    const { ok } = await runReply(() => addSubmitReply(selected._docId, {
       body: replyText.trim(),
       author: qbsPM || 'QBS Coordinator',
       authorRole: 'builder',
+    }), {
+      success: 'Reply sent.',
+      error: 'Could not send your reply. Try again.',
     })
-    if (selected.status === 'Open') {
-      await updateSubmit(selected._docId, { status: 'In Progress' })
-    }
+    if (!ok) return
     setReplyText('')
-    setReplying(false)
+    if (selected.status === 'Open') {
+      await runReply(() => updateSubmit(selected._docId, { status: 'In Progress' }), {
+        error: 'The reply was sent, but the message did not move to In Progress.',
+      })
+    }
   }
 
   if (view === 'thread' && selected) {
@@ -739,7 +738,10 @@ function QBSSubmit({ qbsPM, jobs }) {
           <span className="text-[10px] text-muted-foreground">Status:</span>
           <Select
             value={selected.status || 'Open'}
-            onValueChange={v => selected._docId && updateSubmit(selected._docId, { status: v })}
+            onValueChange={v => selected._docId && runStatus(() => updateSubmit(selected._docId, { status: v }), {
+              success: `Status set to ${v.toLowerCase()}.`,
+              error: 'Could not change the status. Try again.',
+            })}
           >
             <SelectTrigger
               className="h-7 py-0 px-3 text-[10px] font-bold border rounded-full w-auto gap-1"
@@ -923,6 +925,7 @@ function QBSSubmit({ qbsPM, jobs }) {
 // ── Notifications view ───────────────────────────────────────────────────────
 
 function QBSNotifications({ notifs }) {
+  const { run } = useMutation()
   const typeIcon  = { error: AlertCircleIcon, warn: TriangleAlertIcon, info: InfoIcon, success: CheckCircleIcon }
   const typeColor = { error: SEMANTIC.critical, warn: SEMANTIC.warning, info: SEMANTIC.info, success: SEMANTIC.success }
   const unreadCount = notifs.filter(n => !n.read).length
@@ -957,7 +960,9 @@ function QBSNotifications({ notifs }) {
                     ? 'border-white/5 bg-transparent'
                     : 'border-white/15 bg-white/[0.04]'
                 }`}
-                onClick={() => n._docId && !n.read && updateNotification(n._docId, { read: true })}
+                onClick={() => n._docId && !n.read && run(() => updateNotification(n._docId, { read: true }), {
+                  error: 'Could not mark the update read. Try again.',
+                })}
               >
                 <div
                   className="shrink-0 flex items-center justify-center rounded-lg"

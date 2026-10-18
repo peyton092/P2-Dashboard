@@ -102,10 +102,14 @@ afterEach(() => {
 
 // What Firestore throws when the rules refuse a write, as the browser SDK reports it:
 // the code permission-denied with the sentence "Missing or insufficient permissions."
-// callableMessage shows a sentence that is not just the code, so that is what the
-// toast says, rather than the portal's own fallback.
+// callableMessage shows a sentence that is not just the code, so the toast says what
+// failed and, under it, that sentence.
 const refused = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
-const REFUSED_TOAST = { tone: 'error', title: 'Missing or insufficient permissions.' }
+const REFUSED_TOAST = {
+  tone: 'error',
+  title: 'Could not send your message. Try again.',
+  description: 'Missing or insufficient permissions.',
+}
 
 describe('a portal with no projects', () => {
   it('the client portal says that none are linked to the account yet', () => {
@@ -147,7 +151,6 @@ describe('a submission created in the client portal', () => {
   })
 
   it('says so when the message is refused, and leaves the form ready to send again', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
     mocks.data = portalData(CLIENT, { jobs: [JOB] })
     mocks.addSubmit.mockRejectedValue(refused())
     await sendMessage()
@@ -175,7 +178,6 @@ describe('a submission created in the builder portal', () => {
   })
 
   it('says so when the message is refused, and leaves the form ready to send again', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
     mocks.data = portalData(BUILDER, { jobs: [JOB] })
     mocks.addSubmit.mockRejectedValue(refused())
     await sendMessage()

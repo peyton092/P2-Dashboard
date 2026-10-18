@@ -10,11 +10,11 @@ import { TONE_HEX, hexToRgb } from '@/lib/tokens'
 // Firebase is replaced: the helpers module records each call, and the three
 // writers the portals used to call are there as spies to prove they stay unused.
 //
-// Nothing in the console is muted for the whole file. Each portal shows Brand, which asks
-// the server whether the logo files exist and takes the answer a moment later: that answer
-// is stubbed to arrive at once, and every render is wrapped in act() so the update it causes
-// is part of the render. The one line a portal logs when a decision fails is expected by the
-// tests that make one fail, which check it was logged (failWith), and by no other.
+// Nothing in the console is muted. Each portal shows Brand, which asks the server whether
+// the logo files exist and takes the answer a moment later: that answer is stubbed to arrive
+// at once, and every render is wrapped in act() so the update it causes is part of the
+// render. A decision that fails is told to the person twice, on the row where they pressed
+// the button and in an error toast, and the toast is the spy the portal is given.
 const mocks = vi.hoisted(() => ({
   data: { jobs: [], extras: [], submits: [], notifs: [], loading: false },
   approveExtra: vi.fn(),
@@ -66,7 +66,8 @@ const sdkError = (code, message) => Object.assign(new Error(message), { code: `f
 const PORTALS = [
   {
     name: 'ClientPortal',
-    log: '[Client]',
+    approveFailed: 'Could not save approval. Check your connection and try again.',
+    rejectFailed: 'Could not save your request. Check your connection and try again.',
     async open() {
       await act(async () => {
         render(
@@ -81,7 +82,8 @@ const PORTALS = [
   },
   {
     name: 'QBSBuilderPortal',
-    log: '[QBS]',
+    approveFailed: 'Could not save approval. Check your connection and try again.',
+    rejectFailed: 'Could not save rejection. Check your connection and try again.',
     async open() {
       await act(async () => {
         render(
@@ -115,19 +117,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-// Makes a decision fail. A portal logs a failed call before it shows the message, so a test
-// that makes one fail swallows exactly that line and gets the spy back to check it was
-// logged. Anything else sent to console.error, a React warning included, goes on to the real
-// console and shows up in the output.
-const LOGGED_FAILURE = /^\[(Client|QBS)\] (Approve|Reject) failed:$/
+// Makes a decision fail.
 function failWith(mock, error, { once = false } = {}) {
-  const real = console.error
-  const logged = vi.spyOn(console, 'error').mockImplementation((...args) => {
-    if (!LOGGED_FAILURE.test(String(args[0]))) real(...args)
-  })
   if (once) mock.mockRejectedValueOnce(error)
   else mock.mockRejectedValue(error)
-  return logged
 }
 
 const requestRevision = () => screen.getByRole('button', { name: 'Request revision' })
@@ -204,47 +197,68 @@ describe.each(PORTALS)('$name change orders', (portal) => {
       await waitFor(() => expect(mocks.approveExtra).toHaveBeenCalledWith('x1', expectedTotal))
     })
 
-    it('shows the sentence the function wrote when it refuses, and logs the error', async () => {
+    it('shows the sentence the function wrote when it refuses, on the row and in an error toast', async () => {
       const refusal = sdkError('failed-precondition', 'This change order has already been decided.')
-      const logged = failWith(mocks.approveExtra, refusal)
+      failWith(mocks.approveExtra, refusal)
       mocks.data.extras = [extra()]
       await portal.open()
       fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
       expect(await screen.findByText('This change order has already been decided.')).toBeTruthy()
-      expect(logged).toHaveBeenCalledWith(`${portal.log} Approve failed:`, refusal)
+      expect(mocks.toast).toHaveBeenCalledTimes(1)
+      expect(mocks.toast).toHaveBeenCalledWith({
+        tone: 'error',
+        title: portal.approveFailed,
+        description: 'This change order has already been decided.',
+      })
       noOtherWriters()
     })
 
     it('shows the permission message to someone who may not act on it', async () => {
       const refusal = sdkError('permission-denied', 'You can only act on change orders for your own projects.')
-      const logged = failWith(mocks.approveExtra, refusal)
+      failWith(mocks.approveExtra, refusal)
       mocks.data.extras = [extra()]
       await portal.open()
       fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
       expect(await screen.findByText('You can only act on change orders for your own projects.')).toBeTruthy()
-      expect(logged).toHaveBeenCalledWith(`${portal.log} Approve failed:`, refusal)
     })
 
     it('shows a plain message when no reply came back, not the bare code', async () => {
-      const failure = sdkError('internal', 'internal')
-      const logged = failWith(mocks.approveExtra, failure)
+      failWith(mocks.approveExtra, sdkError('internal', 'internal'))
       mocks.data.extras = [extra()]
       await portal.open()
       fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
       expect(await screen.findByText('Could not save approval. Check your connection and try again.')).toBeTruthy()
       expect(screen.queryByText('internal')).toBeNull()
-      expect(logged).toHaveBeenCalledWith(`${portal.log} Approve failed:`, failure)
+      expect(mocks.toast).toHaveBeenCalledWith({ tone: 'error', title: portal.approveFailed })
     })
 
     it('lets the person try again after a failure', async () => {
-      const logged = failWith(mocks.approveExtra, sdkError('internal', 'internal'), { once: true })
+      failWith(mocks.approveExtra, sdkError('internal', 'internal'), { once: true })
       mocks.data.extras = [extra()]
       await portal.open()
       fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
       await screen.findByText('Could not save approval. Check your connection and try again.')
       fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
       await waitFor(() => expect(mocks.approveExtra).toHaveBeenCalledTimes(2))
-      expect(logged).toHaveBeenCalledTimes(1)
+      expect(mocks.toast.mock.calls.map(([opts]) => opts.tone)).toEqual(['error', 'success'])
+    })
+
+    it('clears the message on the row once the next try goes through', async () => {
+      failWith(mocks.approveExtra, sdkError('internal', 'internal'), { once: true })
+      mocks.data.extras = [extra()]
+      await portal.open()
+      fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
+      await screen.findByText('Could not save approval. Check your connection and try again.')
+      fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
+      await waitFor(() => expect(screen.queryByText('Could not save approval. Check your connection and try again.')).toBeNull())
+    })
+
+    it('says the change order was approved, by its number and the total it shows', async () => {
+      mocks.data.extras = [extra()]
+      await portal.open()
+      fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
+      await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+      expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'CO-004 approved for $4,100.' })
     })
 
     it('refuses to call the function for a change order with no document id, and says so without a dash', async () => {
@@ -306,59 +320,41 @@ describe.each(PORTALS)('$name change orders', (portal) => {
 
     it('keeps the form and the note, and shows the message, when the function refuses', async () => {
       const refusal = sdkError('failed-precondition', 'This change order has already been decided.')
-      const logged = failWith(mocks.rejectExtra, refusal)
+      failWith(mocks.rejectExtra, refusal)
       const note = await open()
       fireEvent.change(note, { target: { value: 'Use the 200A panel' } })
       fireEvent.click(send())
       expect(await screen.findByText('This change order has already been decided.')).toBeTruthy()
       expect(screen.getByPlaceholderText('What should be revised? (required)').value).toBe('Use the 200A panel')
-      expect(logged).toHaveBeenCalledWith(`${portal.log} Reject failed:`, refusal)
+      expect(mocks.toast).toHaveBeenCalledWith({
+        tone: 'error',
+        title: portal.rejectFailed,
+        description: 'This change order has already been decided.',
+      })
       noOtherWriters()
     })
 
     it('shows a plain message when no reply came back', async () => {
-      const failure = sdkError('internal', 'internal')
-      const logged = failWith(mocks.rejectExtra, failure)
+      failWith(mocks.rejectExtra, sdkError('internal', 'internal'))
       const note = await open()
       fireEvent.change(note, { target: { value: 'Use the 200A panel' } })
       fireEvent.click(send())
       const message = await screen.findByText(/Check your connection and try again\./)
       expect(message.textContent).not.toBe('internal')
-      expect(logged).toHaveBeenCalledWith(`${portal.log} Reject failed:`, failure)
+      expect(mocks.toast).toHaveBeenCalledWith({ tone: 'error', title: portal.rejectFailed })
+    })
+
+    it('says the revision was requested and that P2 was told', async () => {
+      const note = await open()
+      fireEvent.change(note, { target: { value: 'Use the 200A panel' } })
+      fireEvent.click(send())
+      await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+      expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Revision requested. P2 has been notified about CO-004.' })
     })
   })
 })
 
 describe('ClientPortal', () => {
-  it('thanks the client with a toast when an approval goes through, as before', async () => {
-    mocks.data.extras = [extra()]
-    await PORTALS[0].open()
-    fireEvent.click(screen.getByRole('button', { name: /^Approve$/ }))
-    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
-    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Change order approved', description: 'CO-004 · $4,100' })
-  })
-
-  it('tells the client the revision request went through', async () => {
-    mocks.data.extras = [extra()]
-    await PORTALS[0].open()
-    fireEvent.click(requestRevision())
-    fireEvent.change(screen.getByPlaceholderText('What should be revised? (required)'), { target: { value: 'Use the 200A panel' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send revision request' }))
-    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
-    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'info', title: 'Revision requested', description: 'P2 has been notified about CO-004.' })
-  })
-
-  it('does not toast a failed approval', async () => {
-    const failure = sdkError('internal', 'internal')
-    const logged = failWith(mocks.approveExtra, failure)
-    mocks.data.extras = [extra()]
-    await PORTALS[0].open()
-    fireEvent.click(screen.getByRole('button', { name: /^Approve$/ }))
-    await screen.findByText(/Check your connection/)
-    expect(mocks.toast).not.toHaveBeenCalled()
-    expect(logged).toHaveBeenCalledWith('[Client] Approve failed:', failure)
-  })
-
   it('counts a change order as awaiting approval in either casing, and leaves out drafts and decided ones', async () => {
     mocks.data.extras = [
       extra({ _docId: 'a', id: 'CO-001', status: 'Sent to Builder' }),

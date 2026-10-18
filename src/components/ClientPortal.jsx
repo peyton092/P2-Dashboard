@@ -4,10 +4,10 @@ import { storage, auth } from '../firebase'
 import { safeHttpUrl } from '../lib/safeUrl'
 import { validateUpload, sanitizeFileName, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
 import { extraState } from '../lib/extraStatus'
-import { callableMessage } from '../lib/callableError'
 import { daysSince, toDate } from '../lib/dates'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
+import { useMutation } from '../hooks/useMutation'
 import {
   approveExtra, rejectExtra, useJobFiles,
   addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile,
@@ -230,10 +230,9 @@ function ProjectCard({ job, extras, now }) {
 // ── Change Order row (approve / request revision) ────────────────────────────
 
 function ExtraRow({ co }) {
-  const toast = useToast()
+  const { run, busy } = useMutation()
   const [showReject, setShowReject] = useState(false)
   const [rejectNotes, setRejectNotes] = useState('')
-  const [busy, setBusy] = useState(false)
   const [errMsg, setErrMsg] = useState('')
 
   const state = extraState(co)
@@ -244,29 +243,26 @@ function ExtraRow({ co }) {
 
   // The approval, the notification and the history entry are all written by the
   // Cloud Function, which also checks that this person may act on the change order.
+  // A refusal is told in a toast and, since the buttons stay where they were, on the row.
   const handleApprove = async () => {
     if (!co._docId) { setErrMsg('This change order is missing an ID. Refresh and try again.'); return }
-    setBusy(true); setErrMsg('')
-    try {
-      await approveExtra(co._docId, total)
-      toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(total)}` })
-    } catch (err) {
-      console.error('[Client] Approve failed:', err)
-      setErrMsg(callableMessage(err, 'Could not save approval. Check your connection and try again.'))
-    } finally { setBusy(false) }
+    setErrMsg('')
+    const { ok, error } = await run(() => approveExtra(co._docId, total), {
+      success: `${co.id || 'The change order'} approved for ${fmt$(total)}.`,
+      error: 'Could not save approval. Check your connection and try again.',
+    })
+    if (!ok) setErrMsg(error)
   }
 
   const handleReject = async () => {
     if (!co._docId || !rejectNotes.trim()) return
-    setBusy(true); setErrMsg('')
-    try {
-      await rejectExtra(co._docId, rejectNotes.trim(), total)
-      toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
-      setShowReject(false); setRejectNotes('')
-    } catch (err) {
-      console.error('[Client] Reject failed:', err)
-      setErrMsg(callableMessage(err, 'Could not save your request. Check your connection and try again.'))
-    } finally { setBusy(false) }
+    setErrMsg('')
+    const { ok, error } = await run(() => rejectExtra(co._docId, rejectNotes.trim(), total), {
+      success: `Revision requested. P2 has been notified about ${co.id || 'this change order'}.`,
+      error: 'Could not save your request. Check your connection and try again.',
+    })
+    if (ok) { setShowReject(false); setRejectNotes('') }
+    else setErrMsg(error)
   }
 
   // The pill says where the change order stands, in the words every screen uses.
@@ -537,13 +533,12 @@ function JobFiles({ job }) {
 
 function ClientMessages({ jobs, clientName }) {
   const { submits, uid } = useData()
-  const toast = useToast()
+  const { run: runSend, busy: submitting } = useMutation()
+  const { run: runReply, busy: replying } = useMutation()
   const [view, setView] = useState('inbox')
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'Question', body: '', jobId: '' })
-  const [submitting, setSubmitting] = useState(false)
   const [replyText, setReplyText] = useState('')
-  const [replying, setReplying] = useState(false)
 
   const selected = submits.find(s => s._docId === selectedId) || null
   const { replies } = useSubmitReplies(selected?._docId)
@@ -556,42 +551,48 @@ function ClientMessages({ jobs, clientName }) {
 
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim() || !form.jobId) return
-    setSubmitting(true)
-    try {
-      // A client may create a submission for one of their own jobs that lists only
-      // them and names no tenant; the stamping trigger then gives it the job's scope.
-      await addSubmit({
-        subject: form.subject.trim(),
-        category: form.category,
-        priority: 'Medium',
-        body: form.body.trim(),
-        portal: 'Client',
-        clientName: clientName || null,
-        jobId: form.jobId,
-        status: 'Open',
-        clientUids: [uid],
-      })
+    // A client may create a submission for one of their own jobs that lists only
+    // them and names no tenant; the stamping trigger then gives it the job's scope.
+    const { ok } = await runSend(() => addSubmit({
+      subject: form.subject.trim(),
+      category: form.category,
+      priority: 'Medium',
+      body: form.body.trim(),
+      portal: 'Client',
+      clientName: clientName || null,
+      jobId: form.jobId,
+      status: 'Open',
+      clientUids: [uid],
+    }), {
+      success: 'Message sent to P2.',
+      error: 'Could not send your message. Try again.',
+    })
+    // A refused message leaves the form ready to send again.
+    if (ok) {
       setForm({ subject: '', category: 'Question', body: '', jobId: '' })
       setView('inbox')
-    } catch (err) {
-      console.error('[Client] Message failed:', err)
-      toast({ tone: 'error', title: callableMessage(err, 'Could not send your message. Try again.') })
-    } finally {
-      setSubmitting(false)
     }
   }
 
+  // A reply is two writes: the reply, and then moving an open message to In Progress. The
+  // box is cleared once the reply is in, and the second write says so on its own if it fails.
   const handleReply = async () => {
     if (!replyText.trim() || !selected?._docId) return
-    setReplying(true)
-    await addSubmitReply(selected._docId, {
+    const { ok } = await runReply(() => addSubmitReply(selected._docId, {
       body: replyText.trim(),
       author: clientName || 'Client',
       authorRole: 'client',
+    }), {
+      success: 'Reply sent.',
+      error: 'Could not send your reply. Try again.',
     })
-    if (selected.status === 'Open') await updateSubmit(selected._docId, { status: 'In Progress' })
+    if (!ok) return
     setReplyText('')
-    setReplying(false)
+    if (selected.status === 'Open') {
+      await runReply(() => updateSubmit(selected._docId, { status: 'In Progress' }), {
+        error: 'The reply was sent, but the message did not move to In Progress.',
+      })
+    }
   }
 
   if (view === 'thread' && selected) {
