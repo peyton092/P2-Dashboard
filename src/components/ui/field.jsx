@@ -9,12 +9,13 @@ import { cn } from "@/lib/utils"
 // can be an Input, a Textarea or a plain element, as long as it passes id and the
 // aria attributes on to the element a person types in.
 //
-// id is the control's id. It is made up when it is not given, so a label is never
-// left loose.
+// id is the control's id. When it is not given the control's own id is kept, so
+// whatever else points at the control by that id still finds it, and when the control
+// has none either, one is made up, so a label is never left loose.
 function Field({ id, label, hint, error, required = false, className, children }) {
   const generated = useId()
-  const fieldId = id ?? generated
   const control = Children.only(children)
+  const fieldId = id ?? control.props.id ?? generated
 
   const hintId = hint ? `${fieldId}-hint` : undefined
   const errorId = error ? `${fieldId}-error` : undefined

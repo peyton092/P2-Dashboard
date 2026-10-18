@@ -34,6 +34,35 @@ describe('Field', () => {
     expect(input.id).not.toBe('')
   })
 
+  it('keeps the id the control already has when Field is not given one', () => {
+    render(<Field label="Phone" hint="With the area code."><Input id="phone-input" /></Field>)
+
+    // Whatever else points at the control by that id, a script or a link, still works.
+    const input = screen.getByLabelText('Phone')
+    expect(input.id).toBe('phone-input')
+    expect(screen.getByText('Phone').getAttribute('for')).toBe('phone-input')
+    const hint = screen.getByText('With the area code.')
+    expect(hint.id).toBe('phone-input-hint')
+    expect(input.getAttribute('aria-describedby')).toBe(hint.id)
+  })
+
+  it('uses its own id before the control id, and the control id before a made up one', () => {
+    render(
+      <>
+        <Field id="from-field" label="First"><Input id="from-control" /></Field>
+        <Field label="Second"><Input id="from-control-2" /></Field>
+        <Field label="Third"><Input /></Field>
+      </>,
+    )
+
+    expect(screen.getByLabelText('First').id).toBe('from-field')
+    expect(screen.getByLabelText('Second').id).toBe('from-control-2')
+    const third = screen.getByLabelText('Third').id
+    expect(third).not.toBe('')
+    expect(third).not.toBe('from-field')
+    expect(third).not.toBe('from-control-2')
+  })
+
   it('points aria-describedby at the hint', () => {
     render(<Field id="po" label="PO number" hint="Printed on the invoice."><Input /></Field>)
 
