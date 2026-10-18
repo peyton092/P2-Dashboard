@@ -49,3 +49,6 @@ src-tauri/gen/
 /ios/
 /android/
 .capacitor/
+
+# Subagent driven development scratch
+.superpowers/
