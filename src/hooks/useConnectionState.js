@@ -11,7 +11,8 @@ import { useData } from '../use-data'
 //            signed in user's own document has not been confirmed by the server and
 //            is still the copy in the cache. That is how it reads at start up, after
 //            the network comes back, while a write waits to be sent, and when the
-//            browser says it is online but no server answers.
+//            browser says it is online but no server answers. It is also how it reads
+//            with nobody signed in, because there is nothing to ask the server about.
 //   online   Everything else.
 //
 // The first word comes from the browser. The other two come from a probe, which is
@@ -30,31 +31,44 @@ import { useData } from '../use-data'
 //                                    once the server has answered for it. A probe
 //                                    with no server reports false.
 //   { type: 'sync' }                 Every listener has seen the change so far. A probe
-//                                    reports it at least once, after its snapshot.
+//                                    reports it after each snapshot it reports, the
+//                                    answer to a refusal included.
 //
-// With no uid there is no document to probe, and only the second is reported.
+// With no uid there is nobody to ask about, so the probe registers nothing, reports
+// nothing, and the state stays syncing.
 export function probeConnection(database, uid, onChange) {
-  const stops = []
-  if (uid) {
-    stops.push(onSnapshot(
+  if (!uid) return () => {}
+  const stops = [
+    onSnapshot(
       doc(database, 'users', uid),
       { includeMetadataChanges: true },
       (snapshot) => onChange({ type: 'snapshot', fromCache: snapshot.metadata.fromCache }),
-      // A refusal came from the server, so the server answered.
-      () => onChange({ type: 'snapshot', fromCache: false }),
-    ))
-  }
-  stops.push(onSnapshotsInSync(database, () => onChange({ type: 'sync' })))
+      // A refusal came from the server, so the server answered. The SDK drops the listener
+      // and raises no in sync event after it, so the probe reports that one itself.
+      () => {
+        onChange({ type: 'snapshot', fromCache: false })
+        onChange({ type: 'sync' })
+      },
+    ),
+    onSnapshotsInSync(database, () => onChange({ type: 'sync' })),
+  ]
   return () => stops.forEach((stop) => stop())
 }
 
 // What the probe has said for one user. caughtUp is true from a sync until the next
-// snapshot, which is a change, and confirmed is true while the last snapshot came
-// from the server. With no uid there is nothing to confirm.
-const fresh = (uid) => ({ caughtUp: false, confirmed: uid == null })
+// change, and confirmed is true while the last snapshot came from the server.
+const fresh = () => ({ caughtUp: false, confirmed: false })
+
+const isSettled = (facts) => facts.caughtUp && facts.confirmed
 
 function reduce(facts, event) {
   if (event.type === 'sync') return { ...facts, caughtUp: true }
+  // The server sending a snapshot to a probe that is already settled changes nothing the
+  // person needs to see. The SDK follows a snapshot with the in sync event in a task of
+  // its own, so resetting here would commit Syncing in between and the status region
+  // would read it out. A snapshot from the cache is a change the server has not
+  // confirmed, and it reads Syncing at once.
+  if (!event.fromCache && isSettled(facts)) return facts
   return { caughtUp: false, confirmed: !event.fromCache }
 }
 
@@ -73,7 +87,7 @@ const probes = new Map()
 function retain(uid, onChange) {
   let held = probes.get(uid)
   if (!held) {
-    const started = { facts: fresh(uid), watchers: new Set(), holds: 0, stop: () => {} }
+    const started = { facts: fresh(), watchers: new Set(), holds: 0, stop: () => {} }
     started.stop = probeConnection(db, uid, (event) => {
       started.facts = reduce(started.facts, event)
       started.watchers.forEach((watcher) => watcher())
@@ -95,8 +109,6 @@ function retain(uid, onChange) {
   }
 }
 
-const isSettled = (facts) => facts.caughtUp && facts.confirmed
-
 function subscribeToBrowser(onChange) {
   window.addEventListener('online', onChange)
   window.addEventListener('offline', onChange)
@@ -114,7 +126,7 @@ export function useConnectionState() {
   const uid = useData()?.uid ?? null
   const online = useSyncExternalStore(subscribeToBrowser, browserIsOnline, () => true)
   const subscribe = useCallback((onChange) => retain(uid, onChange), [uid])
-  const getSnapshot = useCallback(() => isSettled(probes.get(uid)?.facts ?? fresh(uid)), [uid])
+  const getSnapshot = useCallback(() => isSettled(probes.get(uid)?.facts ?? fresh()), [uid])
   const settled = useSyncExternalStore(subscribe, getSnapshot, () => false)
 
   if (!online) return 'offline'

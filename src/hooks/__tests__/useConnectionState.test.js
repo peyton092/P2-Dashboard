@@ -38,6 +38,11 @@ const documentIs = (fromCache, hasPendingWrites = false) =>
 // Every listener has seen the change. The SDK says so after each change.
 const everyoneCaughtUp = () => act(() => liveInSync().next())
 
+// The SDK raises the snapshots in sync event once as soon as a listener for it is
+// added, before it has anything to say. This plays that for every listener there is.
+const theSdkRaisesItsFirstSync = () =>
+  act(() => sdk.inSync.filter((listener) => listener.live).forEach((listener) => listener.next()))
+
 // The probe is shared and stops a moment after the last component goes, at the end of
 // the task, so that a screen replaced by another does not start it again. This lets
 // that moment pass.
@@ -71,42 +76,41 @@ describe('useConnectionState with nobody signed in', () => {
     expect(result.current).toBe('offline')
   })
 
-  it('is syncing until the listeners are in sync, and online after that', () => {
-    const { result } = renderHook(() => useConnectionState())
-    expect(result.current).toBe('syncing')
-
-    everyoneCaughtUp()
-
-    expect(result.current).toBe('online')
-  })
-
-  it('listens for being in sync and reads no document', () => {
+  it('registers no listener of any kind, because there is nothing to ask', () => {
     renderHook(() => useConnectionState())
 
-    expect(sdk.inSync).toHaveLength(1)
-    expect(sdk.inSync[0].database).toEqual({ name: 'the database' })
+    expect(sdk.inSync).toHaveLength(0)
     expect(sdk.documents).toHaveLength(0)
   })
 
-  it('goes offline and comes back as the browser does', () => {
+  it('is syncing and never online, whatever the SDK raises for the listeners it has', () => {
     const { result } = renderHook(() => useConnectionState())
-    everyoneCaughtUp()
-    expect(result.current).toBe('online')
+    expect(result.current).toBe('syncing')
+
+    theSdkRaisesItsFirstSync()
+
+    expect(result.current).toBe('syncing')
+  })
+
+  it('goes offline when the browser does, and comes back to syncing', () => {
+    const { result } = renderHook(() => useConnectionState())
+    expect(result.current).toBe('syncing')
 
     goOffline()
     expect(result.current).toBe('offline')
 
     goOnline()
-    expect(result.current).toBe('online')
+    expect(result.current).toBe('syncing')
   })
 
   it('reads a provider that has no user the same way', () => {
     session.value = { uid: null }
     const { result } = renderHook(() => useConnectionState())
-    everyoneCaughtUp()
+    theSdkRaisesItsFirstSync()
 
-    expect(result.current).toBe('online')
+    expect(result.current).toBe('syncing')
     expect(sdk.documents).toHaveLength(0)
+    expect(sdk.inSync).toHaveLength(0)
   })
 })
 
@@ -170,11 +174,73 @@ describe('useConnectionState with a signed in user', () => {
     expect(result.current).toBe('syncing')
   })
 
-  it('takes a refused listener as an answer from the server', () => {
+  // The SDK calls the error callback of a refused listener and drops the listener. It
+  // raises no in sync event after that, so nothing but the probe can settle the state.
+  // The SDK delivers a snapshot and the in sync event after it as two tasks, so React
+  // commits between them. When the server changes the person's own document the chip must
+  // not go Live, Syncing, Live, which the status region would read out each time.
+  it('stays online when the server sends another snapshot of the user document', () => {
+    const seen = []
+    const { result } = renderHook(() => {
+      const state = useConnectionState()
+      seen.push(state)
+      return state
+    })
+    documentIs(false)
+    everyoneCaughtUp()
+    expect(result.current).toBe('online')
+    seen.length = 0
+
+    documentIs(false)
+    expect(result.current).toBe('online')
+    everyoneCaughtUp()
+    expect(result.current).toBe('online')
+
+    expect(seen).not.toContain('syncing')
+  })
+
+  it('stays online through a write that the server has sent back, a snapshot and then another', () => {
+    const seen = []
+    const { result } = renderHook(() => {
+      const state = useConnectionState()
+      seen.push(state)
+      return state
+    })
+    documentIs(false)
+    everyoneCaughtUp()
+    seen.length = 0
+
+    documentIs(false, true)
+    everyoneCaughtUp()
+    documentIs(false, false)
+    everyoneCaughtUp()
+
+    expect(result.current).toBe('online')
+    expect(seen).not.toContain('syncing')
+  })
+
+  it('reads syncing as soon as a snapshot comes from the cache, and until the server answers again', () => {
     const { result } = renderHook(() => useConnectionState())
+    documentIs(false)
+    everyoneCaughtUp()
+    expect(result.current).toBe('online')
+
+    documentIs(true)
+    expect(result.current).toBe('syncing')
+    everyoneCaughtUp()
+    expect(result.current).toBe('syncing')
+
+    documentIs(false)
+    expect(result.current).toBe('syncing')
+    everyoneCaughtUp()
+    expect(result.current).toBe('online')
+  })
+
+  it('takes a refused listener as an answer from the server, and settles without help from the SDK', () => {
+    const { result } = renderHook(() => useConnectionState())
+    expect(result.current).toBe('syncing')
 
     act(() => liveDocument().error(new Error('permission-denied')))
-    everyoneCaughtUp()
 
     expect(result.current).toBe('online')
   })
@@ -370,21 +436,35 @@ describe('probeConnection', () => {
     expect(onChange.mock.calls).toEqual([[{ type: 'sync' }], [{ type: 'sync' }]])
   })
 
-  it('reports a refusal as a snapshot the server sent', () => {
+  // The SDK raises no in sync event after a refusal, so the probe reports the one that
+  // its contract promises after a snapshot.
+  it('reports a refusal as a snapshot the server sent, and then that the listeners are in sync', () => {
     const onChange = vi.fn()
     probeConnection(database, 'user-1', onChange)
 
     liveDocument().error(new Error('permission-denied'))
 
-    expect(onChange.mock.calls).toEqual([[{ type: 'snapshot', fromCache: false }]])
+    expect(onChange.mock.calls).toEqual([
+      [{ type: 'snapshot', fromCache: false }],
+      [{ type: 'sync' }],
+    ])
   })
 
-  it('reads the document of the user it is given, and none when it is given no user', () => {
+  it('reads the document of the user it is given', () => {
     probeConnection(database, 'user-9', vi.fn())
-    probeConnection(database, null, vi.fn())
 
     expect(sdk.documents.map((listener) => listener.ref.path)).toEqual(['users/user-9'])
-    expect(sdk.inSync).toHaveLength(2)
+    expect(sdk.inSync).toHaveLength(1)
+  })
+
+  it('registers nothing and reports nothing when it is given no user, and its stop does nothing', () => {
+    const onChange = vi.fn()
+    const stop = probeConnection(database, null, onChange)
+
+    expect(sdk.documents).toHaveLength(0)
+    expect(sdk.inSync).toHaveLength(0)
+    expect(stop).not.toThrow()
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('stops everything it started', () => {
