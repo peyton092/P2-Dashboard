@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
+import { daysBetween, daysSince } from '../lib/dates'
 import {
-  scoreJob, classifyRisk, daysSince,
+  scoreJob, classifyRisk,
   hasFailedInspection, isBillingReady, isHvacStartupBlocked,
 } from '../agent/scoring'
 import { ZONES, PM_TO_ZONE } from '../agent/zones'
@@ -23,8 +25,6 @@ import {
 } from 'lucide-react'
 import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
 import { toneText } from '../lib/status'
-
-const TODAY = new Date()
 
 // Roster — preserved from prior implementation. These are the six QBS PMs;
 // any additional PM names that appear in active job data are merged in too,
@@ -59,7 +59,7 @@ function jobBillingBlocker(job, pendingCOCount) {
   return null
 }
 
-function jobNextAction(job) {
+function jobNextAction(job, now) {
   if (job.nextAction?.trim()) return job.nextAction.trim()
   if (hasFailedInspection(job))    return 'Coordinate rework'
   if (isHvacStartupBlocked(job))   return 'Push electrical service release'
@@ -68,7 +68,7 @@ function jobNextAction(job) {
   if (hasUpcomingInspection(job))  return 'Confirm upcoming inspection'
   if (isBillingReady(job) && !hasPermit(job)) return 'Add permit number'
   if (isBillingReady(job))         return 'Submit invoice — milestone earned'
-  const stale = daysSince(job.lastStatusChange || job.start)
+  const stale = daysSince(job.lastStatusChange || job.start, now)
   if (stale !== null && stale >= 7) return 'Field update needed'
   if (stale !== null && stale >= 3) return 'Daily status check-in'
   return 'Continue scheduled work'
@@ -83,20 +83,13 @@ function fmtDateShort(date) {
   } catch { return null }
 }
 
-function daysUntil(dateStr) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return null
-  return Math.ceil((d.getTime() - TODAY.getTime()) / 86400000)
-}
-
 // ── PM workload summary ──────────────────────────────────────────────────────
 //
 // Reduces a PM's active job list + relevant change orders into a single
 // manager-readable workload snapshot. Thresholds here are operational rules
 // of thumb — they don't change the underlying risk model in agent/scoring.js.
 
-function summarizePM(pm, allJobs, allExtras) {
+function summarizePM(pm, allJobs, allExtras, now) {
   const jobs = allJobs.filter(j => j.pm === pm && !isComplete(j))
 
   // Map of jobId → count of in-flight change orders blocking that job.
@@ -117,7 +110,7 @@ function summarizePM(pm, allJobs, allExtras) {
   let openCOs = 0
 
   jobs.forEach(j => {
-    const r = classifyRisk(j)
+    const r = classifyRisk(j, now)
     if (r?.level === 'critical') critical += 1
     else if (r?.level === 'warning') warning += 1
 
@@ -128,7 +121,7 @@ function summarizePM(pm, allJobs, allExtras) {
     if (hasUpcomingInspection(j))  upcomingInsp += 1
     if (jobBillingBlocker(j, pendingCOByJob.get(j.id) || 0)) billingBlockers += 1
 
-    const stale = daysSince(j.lastStatusChange || j.start)
+    const stale = daysSince(j.lastStatusChange || j.start, now)
     if (stale !== null && stale >= 7) stale7 += 1
 
     openCOs += pendingCOByJob.get(j.id) || 0
@@ -218,6 +211,7 @@ function pmMatchesFilter(s, filter) {
 
 export default function PMDashboard() {
   const { jobs = [], extras = [], loading } = useData()
+  const now = useNow()
   const [filter, setFilter]     = useState('all')
   const [search, setSearch]     = useState('')
   const [expanded, setExpanded] = useState({})
@@ -233,8 +227,8 @@ export default function PMDashboard() {
   }, [jobs])
 
   const summaries = useMemo(
-    () => allPMs.map(pm => summarizePM(pm, jobs, extras)),
-    [allPMs, jobs, extras],
+    () => allPMs.map(pm => summarizePM(pm, jobs, extras, now)),
+    [allPMs, jobs, extras, now],
   )
 
   // Aggregate KPI counts across the entire roster.
@@ -393,6 +387,7 @@ export default function PMDashboard() {
                   s={s}
                   expanded={!!expanded[s.pm]}
                   onToggle={() => toggleExpand(s.pm)}
+                  now={now}
                 />
               </li>
             ))}
@@ -458,7 +453,7 @@ function PMEmptyState({ filter, hasSearch }) {
   return <EmptyState title="No PM activity" description="PMs with active work will appear here." />
 }
 
-function PMRow({ s, expanded, onToggle }) {
+function PMRow({ s, expanded, onToggle, now }) {
   const zone = ZONES[PM_TO_ZONE[s.pm]] || ZONES['zone-7']
   const initials = s.pm.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
   const accent = zone.color || BRAND
@@ -529,7 +524,7 @@ function PMRow({ s, expanded, onToggle }) {
         />
       </button>
 
-      {expanded && <PMDetail s={s} />}
+      {expanded && <PMDetail s={s} now={now} />}
     </div>
   )
 }
@@ -544,7 +539,7 @@ function PMStat({ label, value, tone }) {
   )
 }
 
-function PMDetail({ s }) {
+function PMDetail({ s, now }) {
   if (s.activeCount === 0) {
     return (
       <div className="px-4 pb-4">
@@ -559,8 +554,8 @@ function PMDetail({ s }) {
   const ranked = [...s.jobs]
     .map(j => ({
       job: j,
-      score: scoreJob(j),
-      risk: classifyRisk(j),
+      score: scoreJob(j, [], now),
+      risk: classifyRisk(j, now),
       pendingCOs: s.pendingCOByJob.get(j.id) || 0,
     }))
     .sort((a, b) => b.score - a.score)
@@ -575,6 +570,7 @@ function PMDetail({ s }) {
             risk={item.risk}
             score={item.score}
             pendingCOs={item.pendingCOs}
+            now={now}
           />
         ))}
       </div>
@@ -582,12 +578,12 @@ function PMDetail({ s }) {
   )
 }
 
-function PMJobRow({ job, risk, score, pendingCOs }) {
+function PMJobRow({ job, risk, score, pendingCOs, now }) {
   const phaseLabel = (job.phase || job.status || '—')
     .replace(/-/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase())
-  const stale = daysSince(job.lastStatusChange || job.start)
-  const tDays = daysUntil(job.target)
+  const stale = daysSince(job.lastStatusChange || job.start, now)
+  const tDays = daysBetween(now, job.target)
   const billing = jobBillingBlocker(job, pendingCOs)
 
   const insp = job.insp || {}
@@ -599,7 +595,7 @@ function PMJobRow({ job, risk, score, pendingCOs }) {
   )
 
   const cleanQuiet = !failedTrade && !upcomingTrade && !pendingCOs && !billing
-  const recommended = jobNextAction(job)
+  const recommended = jobNextAction(job, now)
 
   return (
     <div className="px-3 py-2.5 sm:px-4 sm:py-3">

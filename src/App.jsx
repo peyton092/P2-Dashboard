@@ -8,6 +8,8 @@ import { auth, db, functions } from './firebase'
 import { httpsCallable } from 'firebase/functions'
 import { DataProvider } from './DataContext'
 import { useData } from './use-data'
+import { useNow } from './hooks/useNow'
+import { daysSince, fmtLongDate, toLocalDateStr } from './lib/dates'
 import {
   updateNotification, updateJob,
   passInspection, failInspection, createJob,
@@ -80,8 +82,6 @@ import {
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,
 } from './components/shared'
-// daysSince is defined locally in this file with identical semantics, so we
-// don't re-import it from agent/scoring (would be a duplicate declaration).
 import { classifyRisk, hasFailedInspection, isBillingReady } from './agent/scoring'
 import { ZONES, getZoneId } from './agent/zones'
 
@@ -228,18 +228,10 @@ const tradeColor = (trade) => {
 }
 
 const CREW_LIST = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
-const TODAY = new Date()
-const _yd = new Date(TODAY); _yd.setDate(_yd.getDate() - 1)
-const YESTERDAY_STR = _yd.toISOString().slice(0, 10)
 
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
+// The day before now, as the date string a crew report is filed under (the local day
+// it was made). It moves on at midnight with the now it is given.
+const yesterdayOf = (now) => toLocalDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
 
 // phaseLabel moved to src/lib/jobs.js (Phase 18).
 
@@ -689,10 +681,12 @@ function MorningBriefing() {
     extras = [],
     materials = [],
   } = useData()
+  const now = useNow()
+  const yesterday = yesterdayOf(now)
 
   const submittedYesterday = useMemo(
-    () => new Set((dailyReports || []).filter(r => r.date === YESTERDAY_STR).map(r => r.crewMember)),
-    [dailyReports],
+    () => new Set((dailyReports || []).filter(r => r.date === yesterday).map(r => r.crewMember)),
+    [dailyReports, yesterday],
   )
 
   const items = useMemo(
@@ -733,9 +727,7 @@ function MorningBriefing() {
   // Top priority list — first ~12 items (already sorted by severity then age).
   const priorityItems = items.slice(0, 12)
 
-  const dateStr = TODAY.toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const dateStr = fmtLongDate(now)
   const submittedCount = CREW_LIST.filter(n => submittedYesterday.has(n)).length
 
   return (
@@ -832,7 +824,7 @@ function MorningBriefing() {
 
       {/* Yesterday's crew reports — preserved daily ritual signal */}
       <DataPanel
-        title={`Yesterday's crew reports — ${YESTERDAY_STR}`}
+        title={`Yesterday's crew reports for ${yesterday}`}
         description={`${submittedCount} of ${CREW_LIST.length} submitted`}
         Icon={ClipboardListIcon}
         badge={
@@ -1100,7 +1092,7 @@ export function JobStatus() {
         extras:       0,
         tenantId:     jobForm.tenantId,
         lead:         '',
-        start:        new Date().toISOString().slice(0, 10),
+        start:        toLocalDateStr(),
         target:       jobForm.target || '',
         county:       '',
         billingStatus:'not-invoiced',
@@ -1743,6 +1735,8 @@ export function PhaseRow({ label, status, note, docId, field }) {
 
 function Inspections() {
   const { jobs = [], dailyReports = [] } = useData()
+  const now = useNow()
+  const yesterday = yesterdayOf(now)
   const [filter, setFilter] = useState('all')
   const [tradeFilter, setTradeFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -1770,7 +1764,7 @@ function Inspections() {
     const allPassed = phases.length > 0 && phases.every(p => p.status === 'passed')
 
     // Readiness gate — mirrors the original 4-check logic.
-    const crewReport = (dailyReports || []).some(r => r.date === YESTERDAY_STR && r.jobId === j.id)
+    const crewReport = (dailyReports || []).some(r => r.date === yesterday && r.jobId === j.id)
     const photosOk   = (j.photoCount || 0) >= 3
     const phaseOk    = ['passed', 'finaled'].some(s =>
       [j.insp?.electrical?.roughIn, j.insp?.plumbing?.roughIn, j.insp?.hvac?.roughIn].includes(s),
@@ -1788,7 +1782,7 @@ function Inspections() {
       ready,
       gate: { crewReport, photosOk, phaseOk, camOk },
     }
-  }), [activeJobs, dailyReports])
+  }), [activeJobs, dailyReports, yesterday])
 
   // KPI counts — aggregated across active jobs.
   const kpis = useMemo(() => {
@@ -2135,6 +2129,7 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
 
 function SubsTab() {
   const { subs: SUBS = [], jobs = [] } = useData()
+  const now = useNow()
   const [filter, setFilter]           = useState('all')
   const [tradeFilter, setTradeFilter] = useState('all')
   const [search, setSearch]           = useState('')
@@ -2161,11 +2156,11 @@ function SubsTab() {
       licState:       subLicenseState(s),
       insDays:        daysUntilDate(s.insExp),
       licDays:        daysUntilDate(s.licExp),
-      lastUpdateDays: daysSince(s.lastUpdate),
+      lastUpdateDays: daysSince(s.lastUpdate, now),
       subJobs,
       activeJobCount: activeJobs.length,
     }
-  }), [SUBS, jobs])
+  }), [SUBS, jobs, now])
 
   // KPI counts — derived from full set, not the filtered list.
   const kpis = useMemo(() => {

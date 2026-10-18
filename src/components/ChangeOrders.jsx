@@ -5,6 +5,8 @@ import { withAuthor, sendExtraToBuilder } from '../hooks/useFirestore'
 import { extraState, statusOnSave } from '../lib/extraStatus'
 import { callableMessage } from '../lib/callableError'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
+import { daysSince, toLocalDateStr } from '../lib/dates'
 import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -49,10 +51,6 @@ function fmt$(n) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10)
-}
-
 function newLine() {
   return { _id: Math.random(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
 }
@@ -74,7 +72,7 @@ function calcTotals(lineItems, markupPct) {
 }
 
 function emptyForm(coNumber) {
-  return { coNumber, job: '', date: todayStr(), status: 'Draft', lineItems: [newLine()], markupPct: 15, notes: '' }
+  return { coNumber, job: '', date: toLocalDateStr(), status: 'Draft', lineItems: [newLine()], markupPct: 15, notes: '' }
 }
 
 // ── Status pill (uses Phase 1 primitive) ──────────────────────────────────────
@@ -88,16 +86,9 @@ function COStatusPill({ status, size = 'xs' }) {
 
 // ── Operational helpers ──────────────────────────────────────────────────────
 
-const TODAY_MS = Date.now()
-
-function coAgeDays(co) {
+function coAgeDays(co, now) {
   // Prefer `sentAt` for sent COs, fall back to `date`, then `createdAt`.
-  const sentTs = co.sentAt?.toDate?.() || (co.sentAt ? new Date(co.sentAt) : null)
-  const dateTs = co.date ? new Date(co.date) : null
-  const createdTs = co.createdAt?.toDate?.() || (co.createdAt ? new Date(co.createdAt) : null)
-  const t = sentTs || dateTs || createdTs
-  if (!t || isNaN(t.getTime())) return null
-  return Math.floor((TODAY_MS - t.getTime()) / 86400000)
+  return daysSince(co.sentAt || co.date || co.createdAt, now)
 }
 
 function fmtDateShort(dateStr) {
@@ -115,10 +106,10 @@ const APPROVAL_REQUIRED_THRESHOLD = 3   // days a CO can sit "Sent to Builder" b
 
 const sumOf = (list) => list.reduce((s, e) => s + Number(e.total ?? e.amount ?? 0), 0)
 
-function nextActionFor(co) {
+function nextActionFor(co, now) {
   if (isDraft(co))     return { text: 'Submit for approval',         tone: 'brand'    }
   if (isSubmitted(co)) {
-    const age = coAgeDays(co)
+    const age = coAgeDays(co, now)
     if (age != null && age >= 7) return { text: 'Escalate — long pending',     tone: 'critical' }
     if (age != null && age >= APPROVAL_REQUIRED_THRESHOLD) {
       return { text: 'Follow up with builder', tone: 'warning' }
@@ -391,6 +382,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
 
 export default function ChangeOrders() {
   const { jobs: JOBS, extras: ALL_EXTRAS, loading } = useData()
+  const now = useNow()
   const toast = useToast()
   const [view, setView] = useState('list')
   const [editingCO, setEditingCO] = useState(null)
@@ -536,7 +528,7 @@ export default function ChangeOrders() {
   const approved          = EXTRAS.filter(isApproved)
   const rejected          = EXTRAS.filter(isRejected)
   const approvalRequired  = submitted.filter(co => {
-    const age = coAgeDays(co)
+    const age = coAgeDays(co, now)
     return age != null && age >= APPROVAL_REQUIRED_THRESHOLD
   })
 
@@ -728,6 +720,7 @@ export default function ChangeOrders() {
                       key={co._docId || i}
                       co={co}
                       job={jobMap.get(co.job)}
+                      now={now}
                       onEdit={openEdit}
                       onPdf={() => generateCOPdf(co, jobLabel(JOBS, co.job))}
                     />
@@ -743,6 +736,7 @@ export default function ChangeOrders() {
                   <COCard
                     co={co}
                     job={jobMap.get(co.job)}
+                    now={now}
                     onEdit={openEdit}
                     onPdf={() => generateCOPdf(co, jobLabel(JOBS, co.job))}
                   />
@@ -783,15 +777,15 @@ function COEmptyState({ filter, hasJobFilter, onNew }) {
   return <EmptyState title="No change orders" />
 }
 
-function CORow({ co, job, onEdit, onPdf }) {
+function CORow({ co, job, now, onEdit, onPdf }) {
   const isNew     = !!co.lineItems
   const locked    = isApproved(co)
   const canEdit   = isNew && !locked
   const coNum     = co.coNumber || co.id || '—'
   const desc      = co.desc || co.lineItems?.[0]?.desc || '—'
   const total     = co.total ?? co.amount ?? 0
-  const next      = nextActionFor(co)
-  const age       = coAgeDays(co)
+  const next      = nextActionFor(co, now)
+  const age       = coAgeDays(co, now)
   const builder   = job?.client || job?.qbsPM || '—'
   const jobName   = job?.name || job?.address || co.job
   const ageTone   =
@@ -875,14 +869,14 @@ function CORow({ co, job, onEdit, onPdf }) {
   )
 }
 
-function COCard({ co, job, onEdit, onPdf }) {
+function COCard({ co, job, now, onEdit, onPdf }) {
   const isNew    = !!co.lineItems
   const locked   = isApproved(co)
   const coNum    = co.coNumber || co.id || '—'
   const desc     = co.desc || co.lineItems?.[0]?.desc || '—'
   const total    = co.total ?? co.amount ?? 0
-  const next     = nextActionFor(co)
-  const age      = coAgeDays(co)
+  const next     = nextActionFor(co, now)
+  const age      = coAgeDays(co, now)
   const builder  = job?.client || job?.qbsPM || '—'
   const jobName  = job?.name || job?.address || co.job
   const accent   = toneText(next.tone)

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
 import { updateJob } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
+import { daysSince, monthKey } from '../lib/dates'
 import { contractValue, fmtMoney, sumContracts, sumInvoices, missingNote } from '../lib/money'
 import { ZONES, getZoneId } from '../agent/zones'
 import {
@@ -25,8 +27,6 @@ import {
 } from 'lucide-react'
 import { BRAND, SEMANTIC } from '@/lib/tokens'
 import { BILLING_STATUS, statusLabel, statusTone, toneHex, toneText } from '../lib/status'
-
-const TODAY = new Date()
 
 // ── Billing readiness — preserved from main ───────────────────────────────────
 
@@ -67,12 +67,6 @@ function parseInvoiceDate(dateStr) {
   const ms = m ? Date.parse(`${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`)
                : Date.parse(dateStr)
   return isNaN(ms) ? null : new Date(ms)
-}
-
-function daysSinceDate(date) {
-  const d = date instanceof Date ? date : (date?.toDate ? date.toDate() : new Date(date))
-  if (!d || isNaN(d.getTime())) return null
-  return Math.floor((TODAY.getTime() - d.getTime()) / 86400000)
 }
 
 function invoiceMonthKey(dateStr) {
@@ -127,6 +121,7 @@ const SORTS = [
 
 export default function BillingQueue() {
   const { jobs = [], extras = [], loading } = useData()
+  const now = useNow()
   const [search, setSearch]     = useState('')
   const [filter, setFilter]     = useState('all')
   const [pmFilter, setPmFilter] = useState('all')
@@ -149,8 +144,8 @@ export default function BillingQueue() {
     const hasDocs       = hasPermit(j)
     const hasPendingCO  = (pendingCOByJob.get(j.id) || 0) > 0
     const invDate       = parseInvoiceDate(j.invoiceDate)
-    const agingDays     = invDate ? daysSinceDate(invDate) : null
-    const readySince    = j.lastStatusChange ? daysSinceDate(j.lastStatusChange) : null
+    const agingDays     = invDate ? daysSince(invDate, now) : null
+    const readySince    = j.lastStatusChange ? daysSince(j.lastStatusChange, now) : null
     const billable      = isReady ? contractValue(j) : null
     return {
       job: j,
@@ -164,16 +159,16 @@ export default function BillingQueue() {
       invDate,
       milestone: getMilestone(j),
     }
-  }), [jobs, pendingCOByJob])
+  }), [jobs, pendingCOByJob, now])
 
   // KPI tiles — all real numbers
+  const thisMonthKey = monthKey(now)
   const kpis = useMemo(() => {
     const ready = enriched.filter(e => e.isReady && e.hasDocs && e.job.billingStatus !== 'hold')
     const missingDocs = enriched.filter(e => e.isReady && !e.hasDocs)
     const pendingApproval = enriched.filter(e =>
       e.job.billingStatus === 'hold' || (e.isReady && e.hasPendingCO)
     )
-    const thisMonthKey = `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, '0')}`
     const invoicedThisMonth = enriched.filter(e => invoiceMonthKey(e.job.invoiceDate) === thisMonthKey)
     const aging = enriched.filter(e =>
       e.job.billingStatus === 'invoiced' && e.agingDays !== null && e.agingDays >= 30,
@@ -191,7 +186,7 @@ export default function BillingQueue() {
       invoicedThisMonth: { count: invoicedThisMonth.length, ...sumOf(invoicedThisMonth, sumInvoices, 'invoice') },
       aging:             { count: aging.length,             ...sumOf(aging, sumInvoices, 'invoice') },
     }
-  }, [enriched])
+  }, [enriched, thisMonthKey])
 
   // Filter + chip counts
   const matchesFilter = (e, f) => {

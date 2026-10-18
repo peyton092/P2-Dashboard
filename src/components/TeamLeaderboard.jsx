@@ -3,6 +3,8 @@ import { doc, onSnapshot, setDoc, updateDoc, getDoc, serverTimestamp } from 'fir
 import { db } from '../firebase'
 import { useDailyReports } from '../hooks/useFirestore'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
+import { monthKey } from '../lib/dates'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,11 +41,6 @@ function RankBadge({ idx, size = 16 }) {
   if (!Icon) return null
   return <Icon size={size} strokeWidth={2.25} className="inline" />
 }
-
-const CURRENT_MONTH = (() => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-})()
 
 function getMonthBounds(monthStr) {
   const [y, m] = monthStr.split('-').map(Number)
@@ -379,6 +376,7 @@ function PodiumCard({ name, pts, rank }) {
 
 export default function TeamLeaderboard() {
   const { scope } = useData()
+  const now = useNow()
   const { dailyReports, loading: reportsLoading } = useDailyReports(scope)
   const { scores, loading: scoresLoading } = useCrewScores()
   const { url: reviewUrl, saveUrl } = useReviewUrl()
@@ -392,7 +390,10 @@ export default function TeamLeaderboard() {
 
   const loading = reportsLoading || scoresLoading
 
-  const { start: monthStart, end: monthEnd } = getMonthBounds(CURRENT_MONTH)
+  // The month on the board moves on at midnight on the last day of the month. Its
+  // bounds are made once a month, so the ranking is not worked out again on every render.
+  const month = monthKey(now)
+  const { start: monthStart, end: monthEnd } = useMemo(() => getMonthBounds(month), [month])
 
   const ranked = useMemo(() => {
     return CREW.map(name => {
@@ -413,7 +414,7 @@ export default function TeamLeaderboard() {
   const totalReviews   = ranked.reduce((s, r) => s + (r.man.googleReviews || 0), 0)
   const totalReferrals = ranked.reduce((s, r) => s + (r.man.referrals || 0), 0)
   const totalReports   = ranked.reduce((s, r) => s + r.auto.reportCount, 0)
-  const monthLabel = new Date(CURRENT_MONTH + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
   async function logReferral(name) {
     const man = scores[name] || {}

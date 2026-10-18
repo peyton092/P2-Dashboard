@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
+import { toLocalDateStr } from '../lib/dates'
 import { PageHeader, Pill } from './shared'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon } from 'lucide-react'
 import { BRAND } from '@/lib/tokens'
@@ -34,8 +36,10 @@ function jobEvents(job) {
 
 export default function Calendar() {
   const { jobs = [] } = useData()
-  const today = useMemo(() => new Date(), [])
-  const [cursor, setCursor] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() } })
+  // The day that is marked moves on at midnight, with the tab left open.
+  const now = useNow()
+  const todayKey = toLocalDateStr(now)
+  const [cursor, setCursor] = useState(() => ({ year: now.getFullYear(), month: now.getMonth() }))
 
   const byDay = useMemo(() => {
     const map = {}
@@ -53,16 +57,16 @@ export default function Calendar() {
     return Array.from({ length: 42 }, (_, i) => {
       const d = new Date(gridStart)
       d.setDate(gridStart.getDate() + i)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const key = toLocalDateStr(d)
       return {
         key,
         day: d.getDate(),
         inMonth: d.getMonth() === cursor.month,
-        isToday: key === `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+        isToday: key === todayKey,
         events: byDay[key] || [],
       }
     })
-  }, [cursor, byDay, today])
+  }, [cursor, byDay, todayKey])
 
   const monthEventCount = cells.filter(c => c.inMonth).reduce((s, c) => s + c.events.length, 0)
 
@@ -70,7 +74,7 @@ export default function Calendar() {
     const m = c.month + delta
     return { year: c.year + Math.floor(m / 12), month: ((m % 12) + 12) % 12 }
   })
-  const goToday = () => setCursor({ year: today.getFullYear(), month: today.getMonth() })
+  const goToday = () => setCursor({ year: now.getFullYear(), month: now.getMonth() })
 
   return (
     <div className="space-y-6">

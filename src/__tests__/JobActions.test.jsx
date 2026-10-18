@@ -1,3 +1,4 @@
+import process from 'node:process'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
@@ -58,9 +59,14 @@ beforeEach(() => {
   mocks.data = { jobs: [], subs: [] }
 })
 
+const originalZone = process.env.TZ
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.useRealTimers()
+  if (originalZone === undefined) delete process.env.TZ
+  else process.env.TZ = originalZone
 })
 
 const withToast = (ui) => <ToastContext.Provider value={mocks.toast}>{ui}</ToastContext.Provider>
@@ -106,6 +112,20 @@ describe('New job form', () => {
     expect(job.insp.electrical).toEqual({ roughIn: 'pending', trim: 'blocked', final: 'blocked' })
     expect(job.insp.plumbing).toEqual({ roughIn: 'pending', final: 'blocked' })
     expect(job.subs).toEqual({ electrical: null, plumbing: null, hvac: null })
+  })
+
+  it('starts the job on the local day, in the evening when UTC is already tomorrow', async () => {
+    // Half past nine at night on the 18th in Nashville is half past two in the morning
+    // on the 19th in UTC. Only the clock is faked, so the screen can still wait for its call.
+    process.env.TZ = 'America/Chicago'
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 18, 21, 30))
+    open()
+    fill()
+    fireEvent.click(create())
+    await waitFor(() => expect(mocks.createJob).toHaveBeenCalledTimes(1))
+
+    expect(mocks.createJob.mock.calls[0][0].start).toBe('2026-10-18')
   })
 
   it('shows Creating while the call is out, and one call only', async () => {

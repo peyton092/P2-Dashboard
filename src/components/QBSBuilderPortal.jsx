@@ -6,6 +6,8 @@ import {
 } from '../hooks/useFirestore'
 import { extraState } from '../lib/extraStatus'
 import { callableMessage } from '../lib/callableError'
+import { daysSince } from '../lib/dates'
+import { useNow } from '../hooks/useNow'
 import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -40,16 +42,6 @@ import {
 
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 const jobName = (j) => j.name || (j.client || '').split(' ')[0] || j.id
-
-const TODAY = new Date()
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
 
 const fmtDate = (d) => {
   if (!d) return ''
@@ -241,7 +233,7 @@ function nextMilestoneFor(job) {
   return 'In progress'
 }
 
-function JobCard({ job, extras }) {
+function JobCard({ job, extras, now }) {
   const [expanded, setExpanded] = useState(false)
   const jobExtras = extras.filter(e => e.job === job.id)
   const approvedTotal = jobExtras.filter(e => extraState(e) === 'approved').reduce((s, e) => s + (e.amount || 0), 0)
@@ -249,7 +241,7 @@ function JobCard({ job, extras }) {
   const pendingCount  = jobExtras.filter(e => extraState(e) === 'pending').length
 
   const phaseLabel = (job.phase || 'unknown').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-  const daysInPhase = daysSince(job.lastStatusChange)
+  const daysInPhase = daysSince(job.lastStatusChange, now)
   const milestone = nextMilestoneFor(job)
   const status = builderStatus(job)
   const hasInvoice = Boolean(job.invoiceNum && job.invoiceDate)
@@ -995,6 +987,7 @@ function QBSNotifications({ notifs }) {
 
 export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', onLogout }) {
   const { jobs, extras, notifs, loading } = useData()
+  const now = useNow()
 
   // Read URL param for initial qbsPM (?qbsPM=Taylor%20Hensley)
   const urlPM = useMemo(() => {
@@ -1251,7 +1244,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                       <Pill tone="brand" size="xs">{activeJobs.length}</Pill>
                     </div>
                     {activeJobs.map(j => (
-                      <JobCard key={j._docId || j.id} job={j} extras={myExtras} />
+                      <JobCard key={j._docId || j.id} job={j} extras={myExtras} now={now} />
                     ))}
                   </section>
                 )}
@@ -1266,7 +1259,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                       <Pill tone="success" size="xs">{completedJobs.length}</Pill>
                     </div>
                     {completedJobs.map(j => (
-                      <JobCard key={j._docId || j.id} job={j} extras={myExtras} />
+                      <JobCard key={j._docId || j.id} job={j} extras={myExtras} now={now} />
                     ))}
                   </section>
                 )}

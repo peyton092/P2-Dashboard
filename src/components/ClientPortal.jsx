@@ -5,7 +5,9 @@ import { safeHttpUrl } from '../lib/safeUrl'
 import { validateUpload, sanitizeFileName, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
 import { extraState } from '../lib/extraStatus'
 import { callableMessage } from '../lib/callableError'
+import { daysSince } from '../lib/dates'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
 import {
   approveExtra, rejectExtra, useJobFiles,
   addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile,
@@ -39,16 +41,6 @@ import {
 
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 const jobName = (j) => j.name || (j.client || '').split(' ')[0] || j.id
-
-const TODAY = new Date()
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
 
 const fmtDate = (d) => {
   if (!d) return ''
@@ -171,11 +163,11 @@ function InspectionTimeline({ job }) {
 
 // ── Project Card ─────────────────────────────────────────────────────────────
 
-function ProjectCard({ job, extras }) {
+function ProjectCard({ job, extras, now }) {
   const jobExtras = extras.filter(e => e.job === job.id)
   const pendingCount = jobExtras.filter(e => extraState(e) === 'pending').length
   const phaseLabel = (job.phase || 'unknown').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-  const daysInPhase = daysSince(job.lastStatusChange)
+  const daysInPhase = daysSince(job.lastStatusChange, now)
   const milestone = nextMilestoneFor(job)
   const status = clientStatus(job)
 
@@ -836,6 +828,7 @@ function PortalStat({ label, value, sub, Icon, accent }) {
 
 export default function ClientPortal({ clientName = 'Client', userName = '', onLogout }) {
   const { jobs, extras, submits = [], loading } = useData()
+  const now = useNow()
   const [activeTab, setActiveTab] = useState('projects')
   const [projectFilter, setProjectFilter] = useState('__ALL__')
 
@@ -945,7 +938,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
                   badge={pendingExtras.length > 0 ? <Pill tone="warning" size="xs">Action needed</Pill> : <Pill tone="success" size="xs">On track</Pill>}
                 >
                   <div className="space-y-3">
-                    {activeJobs.map(j => <ProjectCard key={j._docId || j.id} job={j} extras={visibleExtras} />)}
+                    {activeJobs.map(j => <ProjectCard key={j._docId || j.id} job={j} extras={visibleExtras} now={now} />)}
                   </div>
                 </DataPanel>
               )}
@@ -955,7 +948,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
                     <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Completed</h2>
                     <Pill tone="success" size="xs">{completedJobs.length}</Pill>
                   </div>
-                  {completedJobs.map(j => <ProjectCard key={j._docId || j.id} job={j} extras={visibleExtras} />)}
+                  {completedJobs.map(j => <ProjectCard key={j._docId || j.id} job={j} extras={visibleExtras} now={now} />)}
                 </section>
               )}
             </>

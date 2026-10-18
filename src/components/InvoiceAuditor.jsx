@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
 import { useSupplierInvoices, addSupplierInvoice, updateSupplierInvoice } from '../hooks/useFirestore'
+import { toLocalDateStr } from '../lib/dates'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -27,8 +28,6 @@ const STATUS_META = {
 }
 
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-
-function todayStr() { return new Date().toISOString().slice(0, 10) }
 
 function newLine() {
   return { _id: Math.random(), desc: '', qty: 1, unit: 'EA', unitPrice: '', extPrice: 0 }
@@ -104,7 +103,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
   const [form, setForm] = useState({
     vendor: '',
     invoiceNum: '',
-    invoiceDate: todayStr(),
+    invoiceDate: toLocalDateStr(),
     jobId: '',
     lineItems: [newLine()],
     notes: '',

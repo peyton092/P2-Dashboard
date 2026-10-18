@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
   PageHeader,
@@ -20,22 +21,12 @@ import {
   FilePenLineIcon, FolderOpenIcon, BarChart3Icon,
 } from 'lucide-react'
 import { classifyRisk } from '../agent/scoring'
+import { daysSince, fmtLongDate, monthKey } from '../lib/dates'
 import { sumContracts, sumInvoices, missingNote } from '../lib/money'
 import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
 import { INSPECTION_STATUS, statusColor, statusLabel, toneText } from '../lib/status'
 
-const TODAY = new Date()
-
 const isComplete = (j) => ['complete', 'completed'].includes(j.status)
-
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
 
 const jobLabel = (j) => j.name || j.client?.split(' ')[0] || j.id
 
@@ -93,6 +84,7 @@ function useQuickBooksStatus() {
 
 export default function CommandCenter() {
   const { jobs = [], extras = [] } = useData()
+  const now = useNow()
   const qb = useQuickBooksStatus()
 
   // ── Derived data ────────────────────────────────────────────────────────────
@@ -100,6 +92,7 @@ export default function CommandCenter() {
   const activeJobs = useMemo(() => jobs.filter(j => !isComplete(j)), [jobs])
 
   // KPI: financial pipeline
+  const thisMonth = monthKey(now)
   const kpis = useMemo(() => {
     const totalRevenue = sumContracts(jobs)
 
@@ -115,7 +108,6 @@ export default function CommandCenter() {
       .filter(e => e.status === 'Approved' || e.status === 'approved')
       .reduce((s, e) => s + Number(e.total ?? e.amount ?? 0), 0)
 
-    const thisMonth = TODAY.toISOString().slice(0, 7)
     const invoicedThisMonthJobs = jobs
       .filter(j => invoiceMonth(j.invoiceDate) === thisMonth)
     const invoicedThisMonthAmt = sumInvoices(invoicedThisMonthJobs)
@@ -129,13 +121,13 @@ export default function CommandCenter() {
       invoicedThisMonthAmt,
       invoicedThisMonthCount,
     }
-  }, [jobs, extras])
+  }, [jobs, extras, thisMonth])
 
   // Needs Action — 4 categories like the mockup
   const needsAction = useMemo(() => {
     const atRisk = activeJobs.filter(j => {
       if (j.status === 'at-risk' || j.status === 'blocked' || j.status === 'needs-action') return true
-      const stale = daysSince(j.lastStatusChange || j.start)
+      const stale = daysSince(j.lastStatusChange || j.start, now)
       return stale !== null && stale >= 7
     })
 
@@ -162,14 +154,14 @@ export default function CommandCenter() {
       { key: 'missing-docs',    label: 'Missing Documentation',   count: missingDocs.length,        target: 'permits' },
       { key: 'builder-approval', label: 'Builder Approval Required', count: builderApproval.length, target: 'extras' },
     ]
-  }, [activeJobs, extras])
+  }, [activeJobs, extras, now])
 
   // Jobs At Risk — top 5 ranked
   const jobsAtRisk = useMemo(() => {
     return activeJobs
       .map(j => {
-        const risk = classifyRisk(j)
-        const stale = daysSince(j.lastStatusChange || j.start)
+        const risk = classifyRisk(j, now)
+        const stale = daysSince(j.lastStatusChange || j.start, now)
         let reason = null, severity = null
         if (risk?.level === 'critical') { severity = 'High';   reason = risk.reason || 'Critical' }
         else if (j.status === 'blocked')      { severity = 'High';   reason = 'Blocked' }
@@ -186,7 +178,7 @@ export default function CommandCenter() {
         return (order[a.severity] ?? 3) - (order[b.severity] ?? 3)
       })
       .slice(0, 5)
-  }, [activeJobs])
+  }, [activeJobs, now])
 
   // PM Workload — count active jobs per PM, weighted by issues
   const pmWorkload = useMemo(() => {
@@ -201,7 +193,7 @@ export default function CommandCenter() {
       if (j.status === 'needs-action' || j.status === 'blocked' || j.status === 'at-risk') {
         row.issues += 1
       }
-      const stale = daysSince(j.lastStatusChange || j.start)
+      const stale = daysSince(j.lastStatusChange || j.start, now)
       if (stale !== null && stale >= 7) row.issues += 1
     })
     const list = Array.from(map.values())
@@ -209,7 +201,7 @@ export default function CommandCenter() {
       .slice(0, 6)
     const max = list.length > 0 ? Math.max(...list.map(r => r.jobs)) : 1
     return list.map(r => ({ ...r, fill: Math.max(8, Math.round((r.jobs / max) * 100)) }))
-  }, [activeJobs])
+  }, [activeJobs, now])
 
   // Inspection Summary — counts across all trades, every active job
   const inspSummary = useMemo(() => {
@@ -225,7 +217,7 @@ export default function CommandCenter() {
             // Treat scheduled-but-old as overdue — we approximate "old" as
             // "the job has been stalled 5+ days", since inspection scheduling
             // dates are not stored on every record.
-            const stale = daysSince(j.lastStatusChange || j.start)
+            const stale = daysSince(j.lastStatusChange || j.start, now)
             if (stale !== null && stale >= 5) overdue += 1
             else                              pending += 1
           }
@@ -234,7 +226,7 @@ export default function CommandCenter() {
     })
     const total = passed + pending + failed + overdue
     return { passed, pending, failed, overdue, total }
-  }, [activeJobs])
+  }, [activeJobs, now])
 
   // Billing Opportunities — three slices
   const billingOpps = useMemo(() => {
@@ -250,7 +242,7 @@ export default function CommandCenter() {
     const readyAmt = sumContracts(ready)
 
     // Recently Invoiced: invoiceDate in last 30 days, not yet paid
-    const cutoff = new Date(TODAY); cutoff.setDate(cutoff.getDate() - 30)
+    const cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 30)
     const cutoffMs = cutoff.getTime()
     const recentlyInvoiced = jobs.filter(j => {
       if (!j.invoiceDate) return false
@@ -275,7 +267,7 @@ export default function CommandCenter() {
       recentlyInvoiced: { count: recentlyInvoiced.length, amount: recentlyInvoicedAmt.total, note: missingNote(recentlyInvoicedAmt.missing, 'invoice') },
       approvedPending:  { count: approvedPending.length,  amount: approvedPendingAmt, note: '' },
     }
-  }, [jobs, extras])
+  }, [jobs, extras, now])
 
   const navigate = (id) => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id } }))
 
@@ -289,7 +281,7 @@ export default function CommandCenter() {
         subtitle="Live across the active portfolio. Money, risk, inspections, approvals."
         meta={
           <>
-            <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
+            <span>{fmtLongDate(now)}</span>
             <span>{activeJobs.length} active jobs</span>
             <span>Middle Tennessee</span>
           </>

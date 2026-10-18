@@ -3,7 +3,9 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { storage } from '../firebase'
 import { addDailyReport } from '../hooks/useFirestore'
 import { validateUpload, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
+import { fmtLongDate, toLocalDateStr } from '../lib/dates'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -44,10 +46,6 @@ const BLOCKER_OPTIONS = [
   'Owner decision',
   'Other',
 ]
-
-const TODAY_LABEL = new Date().toLocaleDateString('en-US', {
-  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-})
 
 // ── Local primitives ─────────────────────────────────────────────────────────
 
@@ -149,6 +147,8 @@ function fmtReportDate(r) {
 
 export default function CrewReport() {
   const { jobs = [], dailyReports = [] } = useData()
+  const now = useNow()
+  const todayLabel = fmtLongDate(now)
   const activeJobs = useMemo(
     () => jobs.filter(j => !['complete', 'completed'].includes(j.status)),
     [jobs],
@@ -241,7 +241,8 @@ export default function CrewReport() {
     setSubmitting(true)
 
     try {
-      const dateStr = new Date().toISOString().slice(0, 10)
+      // The day of the report is the day it is submitted, where the crew member is.
+      const dateStr = toLocalDateStr()
       const photoUrls = await uploadPhotos(dateStr, jobId)
       const job = activeJobs.find(j => j.id === jobId)
 
@@ -293,7 +294,7 @@ export default function CrewReport() {
         <PageHeader
           eyebrow="Field Report"
           title="Daily report"
-          subtitle={TODAY_LABEL}
+          subtitle={todayLabel}
         />
         <DataPanel title="Field update received" Icon={CheckCircleIcon}>
           <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
@@ -333,7 +334,7 @@ export default function CrewReport() {
           <>
             <span className="inline-flex items-center gap-1.5">
               <CalendarDaysIcon size={12} />
-              {TODAY_LABEL}
+              {todayLabel}
             </span>
             {crewMember && <span>Reporter: <span className="text-zinc-200 font-semibold">{crewMember}</span></span>}
             {selectedJob && (

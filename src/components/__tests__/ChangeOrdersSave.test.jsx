@@ -1,3 +1,4 @@
+import process from 'node:process'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
@@ -53,9 +54,14 @@ beforeEach(() => {
   mocks.data = { jobs: [JOB], extras: [], loading: false }
 })
 
+const originalZone = process.env.TZ
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.useRealTimers()
+  if (originalZone === undefined) delete process.env.TZ
+  else process.env.TZ = originalZone
 })
 
 const open = () => render(<ToastContext.Provider value={mocks.toast}><ChangeOrders /></ToastContext.Provider>)
@@ -90,6 +96,20 @@ describe('saving a change order', () => {
     expect('sentAt' in data).toBe(false)
     expect('qbsSentAt' in data).toBe(false)
     expect(mocks.sendExtraToBuilder).not.toHaveBeenCalled()
+  })
+
+  it('dates a new change order with the local day, in the evening when UTC is already tomorrow', async () => {
+    // Half past nine at night on the 18th in Nashville is half past two in the morning
+    // on the 19th in UTC. Only the clock is faked, so the screen can still wait for its list.
+    process.env.TZ = 'America/Chicago'
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 18, 21, 30))
+
+    await startNew()
+    fireEvent.click(saveDraft())
+    await waitFor(() => expect(mocks.addDoc).toHaveBeenCalledTimes(1))
+
+    expect(mocks.addDoc.mock.calls[0][1].date).toBe('2026-10-18')
   })
 
   it('describes the change order with its number, a colon and the first line, and no dash', async () => {
