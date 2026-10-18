@@ -159,20 +159,20 @@ function InspectionTimeline({ job }) {
 // One mark of the per trade pills, for one phase of one trade. A result that is in
 // gets its letter in a circle of the status color: P passed, F failed, S
 // scheduled, B blocked. A result not in yet (pending, pending verification, not
-// started) gets a dot in a circle. A phase that does not apply gets the plain text
-// n/a in the mute tone and no circle. What a mark means is in its letter or its
-// words, never in its color alone.
+// started) gets a dot in a circle. A phase that does not apply is plain text, n/a,
+// in the status's own color with no circle. What a mark means is in its letter or
+// its words, never in its color alone.
 const INSPECTION_LETTER = { passed: 'P', failed: 'F', scheduled: 'S', blocked: 'B' }
 
 function InspectionMark({ status }) {
+  const color = statusColor(INSPECTION_STATUS, status)
   if (status === 'n/a') {
     return (
-      <span className="min-w-3.5 h-3.5 text-[8px] flex items-center justify-center font-black" style={{ color: toneHex('mute') }}>
+      <span className="min-w-3.5 h-3.5 text-[8px] flex items-center justify-center font-black" style={{ color }}>
         n/a
       </span>
     )
   }
-  const color = statusColor(INSPECTION_STATUS, status)
   return (
     <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
       style={{ backgroundColor: withAlpha(color, 0.2), color }}>

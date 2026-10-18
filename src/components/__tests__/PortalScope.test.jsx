@@ -187,8 +187,9 @@ describe('a submission created in the builder portal', () => {
 
 // Each phase of a trade is one mark on the job card. A result that is in gets its
 // letter in a circle of the status color, a result not in yet gets a dot in a
-// circle, and a phase that does not apply gets plain text and no circle. What a
-// mark means is always in its letter or its words, never in its color alone.
+// circle, and a phase that does not apply gets plain text in its own status color
+// and no circle. What a mark means is always in its letter or its words, never in
+// its color alone.
 describe('the inspection marks on a job card in the builder portal', () => {
   const rgb = (tone) => `rgb(${hexToRgb(TONE_HEX[tone]).join(', ')})`
   const insp = {
@@ -208,7 +209,10 @@ describe('the inspection marks on a job card in the builder portal', () => {
     const notApplicable = trade('electrical').getByText('n/a')
     expect(notApplicable.className).not.toContain('rounded-full')
     expect(notApplicable.style.backgroundColor).toBe('')
-    expect(notApplicable.style.color).toBe(rgb('mute'))
+    // The color is the one status.js gives n/a, the neutral token, and not the dimmer
+    // mute gray that a result not in yet is drawn in.
+    expect(notApplicable.style.color).toBe(rgb('neutral'))
+    expect(notApplicable.style.color).not.toBe(rgb('mute'))
 
     // The other trade: a result not in yet is a dot in a circle, a passed one a P.
     const circles = [...screen.getByText('plumbing', { selector: 'p' }).parentElement.querySelectorAll('.rounded-full')]
