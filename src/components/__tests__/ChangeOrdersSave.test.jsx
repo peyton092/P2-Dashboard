@@ -28,6 +28,9 @@ vi.mock('../../hooks/useFirestore', () => ({
   withAuthor: (data) => ({ ...data, createdBy: 'u1', createdByEmail: 'pat@p2em.com' }),
   sendExtraToBuilder: mocks.sendExtraToBuilder,
 }))
+// The chip in every page header asks this hook for the connection. What it says is
+// not what this file is about, and the real one would start Firestore.
+vi.mock('../../hooks/useConnectionState', () => ({ useConnectionState: () => 'online' }))
 
 import ChangeOrders from '../ChangeOrders'
 

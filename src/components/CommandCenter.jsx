@@ -289,10 +289,6 @@ export default function CommandCenter() {
         subtitle="Live across the active portfolio. Money, risk, inspections, approvals."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
             <span>{activeJobs.length} active jobs</span>
             <span>Middle Tennessee</span>

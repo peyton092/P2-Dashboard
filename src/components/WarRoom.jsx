@@ -318,10 +318,6 @@ export default function WarRoom() {
         subtitle="Live across active projects. Surface blockers, ready jobs, and risk by zone."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
             <span>{kpis.active} active · {completedJobs.length} completed</span>
           </>

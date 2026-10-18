@@ -15,6 +15,7 @@ import {
   CheckCircleIcon,
 } from 'lucide-react'
 import { BRAND, withAlpha } from '@/lib/tokens'
+import { ConnectionChip } from './shared'
 
 const CREW = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 
@@ -467,15 +468,7 @@ export default function TeamLeaderboard() {
             style={{ backgroundColor: showUrlEdit ? withAlpha(BRAND, 0.13) : '#ffffff11', color: showUrlEdit ? BRAND : '#6b7280' }}>
             <SettingsIcon size={14} />
           </button>
-          <span className="inline-flex items-center gap-1.5">
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-            />
-            <span className="tracking-wider text-[10px] uppercase font-semibold" style={{ color: '#22c55e' }}>
-              Live
-            </span>
-          </span>
+          <ConnectionChip />
         </div>
       </div>
 

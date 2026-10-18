@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, cleanup, within } from '@testing-library/react'
 import { axe } from '@/test/axe'
+import { useConnectionState } from '@/hooks/useConnectionState'
 import { PageHeader, SectionHeader } from '../headers'
 import Permits from '../../Permits'
 import ProjectFolders from '../../ProjectFolders'
@@ -23,6 +24,13 @@ vi.mock('../../../hooks/useFirestore', () => ({
   addSubmitReply: vi.fn(),
 }))
 vi.mock('../../../firebase', () => ({ storage: {}, auth: { currentUser: null } }))
+// The chip in every page header asks the hook for the connection. Which state it
+// shows is a test of the chip and of the hook, so here the hook says what a test says.
+vi.mock('@/hooks/useConnectionState', () => ({ useConnectionState: vi.fn() }))
+
+beforeEach(() => {
+  vi.mocked(useConnectionState).mockReturnValue('online')
+})
 
 afterEach(cleanup)
 
@@ -51,6 +59,52 @@ describe('PageHeader', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Permits' })).toBeTruthy()
     expect(screen.getByText('Permit status across all jobs')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy()
+  })
+})
+
+describe('PageHeader and the connection', () => {
+  const headerOf = (name) => screen.getByRole('heading', { level: 1, name }).closest('header')
+
+  it('shows the connection chip, which says what the connection is', () => {
+    vi.mocked(useConnectionState).mockReturnValue('syncing')
+    render(<PageHeader title="Billing" />)
+
+    expect(within(headerOf('Billing')).getByRole('status').textContent).toBe('Syncing')
+  })
+
+  it('puts the chip first in the meta row, ahead of what the page puts there', () => {
+    render(<PageHeader title="Billing" meta={<span>3 ready</span>} />)
+
+    const chip = within(headerOf('Billing')).getByRole('status')
+    const meta = screen.getByText('3 ready')
+    expect(chip.parentElement).toBe(meta.parentElement)
+    expect(chip.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('leaves the chip out when the page says it shows no live data, and still shows its meta', () => {
+    render(<PageHeader title="Architecture" live={false} meta={<span>3 collections</span>} />)
+
+    expect(within(headerOf('Architecture')).queryByRole('status')).toBeNull()
+    expect(screen.getByText('3 collections')).toBeTruthy()
+  })
+
+  it('leaves out the meta row too when there is no chip and no meta', () => {
+    render(<PageHeader title="Architecture" live={false} subtitle="Blueprint" />)
+
+    const title = screen.getByRole('heading', { level: 1, name: 'Architecture' })
+    expect(title.parentElement.children).toHaveLength(2)
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('has no accessibility violations with the chip in it, whatever the connection is', async () => {
+    for (const state of ['online', 'syncing', 'offline']) {
+      vi.mocked(useConnectionState).mockReturnValue(state)
+      const { container, unmount } = render(
+        <PageHeader title="Billing" subtitle="Ready to bill" meta={<span>3 ready</span>} actions={<button type="button">Export</button>} />,
+      )
+      expect(await axe(container), state).toHaveNoViolations()
+      unmount()
+    }
   })
 })
 
@@ -83,6 +137,18 @@ describe('the screens that used to keep their own SectionHeader', () => {
     const headings = screen.getAllByRole('heading', { level: 1 })
     expect(headings.map((heading) => heading.textContent)).toEqual([title])
     expect(screen.getByText(subtitle)).toBeTruthy()
+  })
+
+  it('shows the connection chip in the header of a screen that shows live data', () => {
+    render(<Permits />)
+
+    expect(within(screen.getByRole('heading', { level: 1, name: 'Permits' }).closest('header')).getByRole('status').textContent).toBe('Live')
+  })
+
+  it('leaves the chip out of the Architecture header, which shows documentation and no live data', () => {
+    render(<Architecture />)
+
+    expect(within(screen.getByRole('heading', { level: 1, name: 'Architecture' }).closest('header')).queryByRole('status')).toBeNull()
   })
 
   it('gives Submit Inbox its New Submit action in the page header', () => {

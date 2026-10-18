@@ -270,10 +270,6 @@ export default function BillingQueue() {
         subtitle="What is ready to invoice, what is stuck, and what needs to happen in the next 48 hours."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{kpis.ready.count} ready · {fmtCompact(kpis.ready.amount)} billable</span>
             {kpis.aging.count > 0 && (
               <span className="text-amber-300">{kpis.aging.count} aging 30+ days</span>

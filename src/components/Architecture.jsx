@@ -96,7 +96,7 @@ export default function Architecture() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Architecture" subtitle="Firestore blueprint · Cloud Functions · Security rules" />
+      <PageHeader title="Architecture" subtitle="Firestore blueprint · Cloud Functions · Security rules" live={false} />
 
       <StatBand
         stats={[

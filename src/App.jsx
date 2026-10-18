@@ -746,13 +746,6 @@ function MorningBriefing() {
         subtitle="What needs attention today, ranked by severity and age. Read top to bottom before the day starts."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{dateStr}</span>
             <span>Middle Tennessee</span>
             {kpis.critical > 0 && (
@@ -1160,13 +1153,6 @@ export function JobStatus() {
         subtitle="Active and completed jobs across the portfolio — risk, phase, ownership, next action."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{kpis.active} active · {kpis.completed} complete</span>
             {kpis.atRisk > 0 && (
               <span className="text-amber-300">{kpis.atRisk} at risk</span>
@@ -1890,13 +1876,6 @@ function Inspections() {
         subtitle="Across active jobs. Surface ready-to-call, scheduled, and rework needed."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{activeJobs.length} active jobs</span>
             {kpis.failed > 0 && (
               <span className="text-red-300">
@@ -2248,13 +2227,6 @@ function SubsTab() {
         subtitle="Active subcontractors, compliance status, and live job assignments — protect against insurance lapse."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{kpis.active} subs · {kpis.approved} approved</span>
             {kpis.expired > 0 && (
               <span className="text-red-300">{kpis.expired} expired</span>
@@ -2780,13 +2752,6 @@ function Materials() {
         subtitle="Order, track, and confirm everything the field needs to keep work moving."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{kpis.open} open</span>
             {kpis.urgent > 0 && (
               <span className="text-red-300">{kpis.urgent} overdue</span>
@@ -3335,13 +3300,6 @@ function Notifications() {
         subtitle="Recent activity across active jobs — read, action, or clear from the queue."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{kpis.total} live</span>
             {kpis.unread > 0 && <span>{kpis.unread} unread</span>}
             {kpis.actionNeeded > 0 && (

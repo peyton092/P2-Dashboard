@@ -20,7 +20,7 @@ import { join, relative, resolve } from 'node:path'
 // What is not scanned: the two token files, which own the colors, and every file
 // under a __tests__ directory, because tests hold hex colors on purpose as inputs
 // (src/lib/__tests__/tokenHelpers.test.js hands malformed ones to hexToRgb).
-const BUDGET = 153
+const BUDGET = 150
 
 const srcDir = resolve(import.meta.dirname, '..')
 const SCANNED = /\.(?:jsx?|mjs|cjs|tsx?|css|html|svg|json)$/

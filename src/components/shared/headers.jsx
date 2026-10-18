@@ -1,12 +1,17 @@
 import { cn } from '@/lib/utils'
 import { BRAND } from '@/lib/tokens'
+import { ConnectionChip } from './ConnectionChip'
 
+// A page header carries the connection chip, first in its meta row, because every
+// screen shows live data. A screen that shows none, such as the architecture notes,
+// passes live={false}.
 export function PageHeader({
   eyebrow,
   title,
   subtitle,
   actions,
   meta,
+  live = true,
   className = '',
 }) {
   return (
@@ -34,8 +39,9 @@ export function PageHeader({
             {subtitle}
           </p>
         )}
-        {meta && (
+        {(live || meta) && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-zinc-400">
+            {live && <ConnectionChip />}
             {meta}
           </div>
         )}

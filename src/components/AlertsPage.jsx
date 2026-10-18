@@ -266,13 +266,6 @@ export default function AlertsPage() {
         subtitle="What needs attention now, what is aging, and who owns it."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
-            </span>
             <span>{kpis.total} open · {kpis.critical} critical</span>
             {kpis.aging > 0 && (
               <span className="text-amber-300">{kpis.aging} aging 3+ days</span>

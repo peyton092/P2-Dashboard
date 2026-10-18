@@ -31,6 +31,9 @@ vi.mock('../hooks/useFirestore', async (importOriginal) => ({
   failInspection: mocks.failInspection,
   updateJob: mocks.updateJob,
 }))
+// The chip in every page header asks this hook for the connection. What it says is
+// not what this file is about, and the real one would start Firestore.
+vi.mock('../hooks/useConnectionState', () => ({ useConnectionState: () => 'online' }))
 
 import { JobStatus, PhaseRow } from '../App'
 
