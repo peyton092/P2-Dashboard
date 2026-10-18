@@ -96,6 +96,16 @@ describe.each(ZONES)('the billing queue in %s', (zone) => {
     expect(stat('Aging 30+').figure).toBe(aging)
   })
 
+  // The Date constructor moves a day the month does not have into the next month, so an
+  // invoice dated September 31 would be counted as dated October 1.
+  it('leaves out an invoice dated a day the month does not have, instead of moving it into the next month', () => {
+    at(zone, [2026, 9, 18, 12, 0])
+    showJobs([invoiced('J1', '09/31/2026'), invoiced('J2', '2026-09-31')])
+    render(<BillingQueue />)
+    expect(stat('Invoiced This Month').words).toBe('0 invoices')
+    expect(stat('Aging 30+').figure).toBe('0')
+  })
+
   it('ages an invoice that carries a time from that moment', () => {
     // 11 pm on Sep 18 in Chicago is 4 am on Sep 19 in UTC; it is 29 days and 22 hours old at 9 pm on Oct 18.
     at(zone, [2026, 9, 18, 21, 30])
@@ -122,6 +132,13 @@ describe.each(ZONES)('the Command Center in %s', (zone) => {
     showJobs([invoiced('J1', invoiceDate)])
     render(<CommandCenter />)
     expect(recentlyInvoiced()).toContain(expected)
+  })
+
+  it('leaves out an invoice dated a day the month does not have', () => {
+    at(zone, [2026, 9, 18, 12, 0])
+    showJobs([invoiced('J1', '09/31/2026'), invoiced('J2', '2026-09-31')])
+    render(<CommandCenter />)
+    expect(recentlyInvoiced()).toContain('0 items')
   })
 
   it('leaves out an invoice that is paid, however new it is', () => {

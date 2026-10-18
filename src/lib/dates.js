@@ -51,18 +51,27 @@ export function parseDateStr(text) {
   return null
 }
 
+// A string that is a day, written either way above, is that day or it is nothing. The Date
+// constructor would read 2026-02-30 as March 2, a day of the next month, so it is not asked
+// about a string that has the shape of a day and is not one. Any other string is a moment,
+// or words, and the Date constructor reads it.
+function fromText(text) {
+  if (ISO_DAY.test(text) || US_DAY.test(text)) return parseDateStr(text)
+  return new Date(text)
+}
+
 // A Date from whatever a document or a prop holds: a Date, a Firestore Timestamp,
 // milliseconds, a day written either way above, or another string the Date
 // constructor reads. A day comes back as local midnight, so a screen that shows or
 // compares a saved day reads it here and never through new Date(text). Null when it is
-// none of these or the Date is not a real one. Anything falsy is a field that was never
-// filled in, zero included.
+// none of these or the Date is not a real one, a day the month does not have included.
+// Anything falsy is a field that was never filled in, zero included.
 export function toDate(value) {
   if (!value) return null
   let date = null
   if (value instanceof Date) date = value
   else if (typeof value === 'number') date = new Date(value)
-  else if (typeof value === 'string') date = parseDateStr(value) ?? new Date(value)
+  else if (typeof value === 'string') date = fromText(value)
   else if (typeof value.toDate === 'function') date = value.toDate()
   return date && !Number.isNaN(date.getTime()) ? date : null
 }

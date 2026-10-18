@@ -179,6 +179,29 @@ describe.each(ZONES)('in %s', (zone, offsetMinutes) => {
     ])('gives null for %s', (_what, value) => {
       expect(toDate(value)).toBeNull()
     })
+
+    // The Date constructor reads a day that the month does not have as a day of the next
+    // month, so 2026-02-30 would become March 2 and a count would give a number for a day
+    // that does not exist. A string written as a day is a day or it is nothing.
+    it.each([
+      ['an ISO day the month does not have', '2026-02-30'],
+      ['a US day the month does not have', '02/30/2026'],
+      ['an ISO day in a month past twelve', '2026-13-01'],
+      ['a US day in a month past twelve', '13/01/2026'],
+      ['an ISO leap day in a year that has none', '2027-02-29'],
+      ['a US leap day in a year that has none', '2/29/2027'],
+      ['an ISO day past the end of a short month', '2026-04-31'],
+      ['day zero', '2026-03-00'],
+    ])('gives null for %s, and does not roll it over into the next month', (_what, text) => {
+      expect(toDate(text)).toBeNull()
+    })
+
+    it('still reads a string that carries a time as the moment it names', () => {
+      expect(toDate('2026-02-28T12:00:00Z').getTime()).toBe(Date.UTC(2026, 1, 28, 12))
+      expect(toDate('2026-10-18T21:30:00-05:00').getTime()).toBe(Date.UTC(2026, 9, 19, 2, 30))
+      expect(toDate('2026-10-18T21:30:00').getTime()).toBe(local([2026, 9, 18, 21, 30]).getTime())
+      expect(toDate('Sun Oct 18 2026 21:30:00 GMT-0500').getTime()).toBe(Date.UTC(2026, 9, 19, 2, 30))
+    })
   })
 
   describe('daysBetween', () => {
@@ -206,6 +229,9 @@ describe.each(ZONES)('in %s', (zone, offsetMinutes) => {
       ['a first day that is not a date', 'soon', new Date(2026, 9, 18)],
       ['no second day', new Date(2026, 9, 18), undefined],
       ['an invalid Date', new Date(NaN), new Date(2026, 9, 18)],
+      ['a first day the month does not have', '2026-02-30', new Date(2026, 2, 2)],
+      ['a second day the month does not have', new Date(2026, 1, 27), '02/30/2026'],
+      ['two days the month does not have', '2026-02-30', '2026-02-31'],
     ])('gives null for %s', (_what, a, b) => {
       expect(daysBetween(a, b)).toBeNull()
     })
@@ -254,6 +280,8 @@ describe.each(ZONES)('in %s', (zone, offsetMinutes) => {
       ['an invalid Date', new Date(NaN)],
       ['a Timestamp that cannot be read', { toDate: () => new Date(NaN) }],
       ['an object that is not a date', {}],
+      ['an ISO day the month does not have', '2026-02-30'],
+      ['a US day the month does not have', '02/30/2026'],
     ])('gives null for %s', (_what, value) => {
       expect(daysSince(value, now())).toBeNull()
     })

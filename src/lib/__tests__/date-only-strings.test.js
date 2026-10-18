@@ -67,10 +67,27 @@ describe.each(ZONES)('in %s', (zone) => {
     ])('hands back text that is not a date, in %s', (_what, format) => {
       expect(format('next week')).toBe('next week')
     })
+
+    // The Date constructor would move 2026-02-30 into March and show it as a date.
+    it.each([
+      ['a job date', fmtJobDate],
+      ['a subcontractor date', fmtSubDate],
+      ['a material date', fmtMatDate],
+    ])('hands back a day the month does not have as it was written, in %s', (_what, format) => {
+      expect(format('2026-02-30')).toBe('2026-02-30')
+      expect(format('02/30/2026')).toBe('02/30/2026')
+    })
   })
 
   describe.each(HOURS)('at %i:%i on the 18th', (hour, minute) => {
     beforeEach(() => at(hour, minute))
+
+    it('counts no days to a day the month does not have', () => {
+      expect(daysUntilDate('2026-11-31')).toBeNull()
+      expect(daysUntilDate('02/30/2027')).toBeNull()
+      expect(matDaysUntilNeeded({ dateNeeded: '2026-11-31' })).toBeNull()
+      expect(subInsuranceState({ insExp: '2026-11-31' })).toBe('unknown')
+    })
 
     it('counts the calendar days to a subcontractor expiry', () => {
       expect(daysUntilDate('2026-10-18')).toBe(0)
