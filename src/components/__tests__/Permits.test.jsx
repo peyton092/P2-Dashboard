@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, within, waitFor, act } from '@testing-library/react'
+import { ToastContext } from '@/components/ui/use-toast'
 import { TONE_HEX, hexToRgb } from '@/lib/tokens'
 
 // A permit has its own statuses (pending, applied, approved, finaled, denied),
@@ -8,6 +9,7 @@ import { TONE_HEX, hexToRgb } from '@/lib/tokens'
 const mocks = vi.hoisted(() => ({
   data: { jobs: [] },
   updatePermit: vi.fn(),
+  toast: vi.fn(),
 }))
 
 vi.mock('../../use-data', () => ({ useData: () => mocks.data }))
@@ -24,8 +26,13 @@ const job = (over) => ({
   permits: { electrical: 'approved', plumbing: 'pending', hvac: 'denied' }, ...over,
 })
 
-beforeEach(() => { mocks.updatePermit.mockReset() })
+beforeEach(() => {
+  mocks.updatePermit.mockReset()
+  mocks.toast.mockReset()
+})
 afterEach(cleanup)
+
+const withToast = (ui) => <ToastContext.Provider value={mocks.toast}>{ui}</ToastContext.Provider>
 
 describe('Permits', () => {
   it('offers the five permit statuses in words, and reads the stored one as selected', () => {
@@ -48,11 +55,32 @@ describe('Permits', () => {
     expect(screen.getAllByRole('combobox')[index].style.color).toBe(rgb(tone))
   })
 
-  it('stores the key of the status that was chosen', () => {
+  it('stores the key of the status that was chosen', async () => {
     mocks.data = { jobs: [job()] }
     render(<Permits />)
-    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'applied' } })
+    await act(async () => { fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'applied' } }) })
     expect(mocks.updatePermit).toHaveBeenCalledWith('job3', 'plumbing', 'applied')
+  })
+
+  it('says which permit was set to which status, in words', async () => {
+    mocks.data = { jobs: [job()] }
+    render(withToast(<Permits />))
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'applied' } })
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Plumbing permit set to applied.' })
+  })
+
+  it('says it could not change the permit, with the reason, when the write is refused', async () => {
+    mocks.updatePermit.mockRejectedValue(Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' }))
+    mocks.data = { jobs: [job()] }
+    render(withToast(<Permits />))
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'finaled' } })
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({
+      tone: 'error',
+      title: 'Could not change the permit status. Try again.',
+      description: 'Missing or insufficient permissions.',
+    })
   })
 
   it('shows the status of a job with no document as a badge in the same words', () => {

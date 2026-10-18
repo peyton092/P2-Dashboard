@@ -4,6 +4,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useData } from '../use-data'
 import { updatePermit } from '../hooks/useFirestore'
+import { useMutation } from '../hooks/useMutation'
 import { PageHeader, StatBand, StatusBadge, PermitBadge } from './shared'
 import { BRAND, withAlpha } from '@/lib/tokens'
 import { PERMIT_STATUS, TRADE, statusColor, statusLabel } from '../lib/status'
@@ -12,6 +13,31 @@ import { PERMIT_STATUS, TRADE, statusColor, statusLabel } from '../lib/status'
 
 // The statuses a person can pick for a permit, in the order of the vocabulary.
 const PERMIT_STATUSES = Object.keys(PERMIT_STATUS)
+
+// The list of one trade's permit on one job. It tells the person whether the write went
+// through, so it holds its own mutation.
+function PermitSelect({ job, trade, status, color }) {
+  const { run } = useMutation()
+  const handleChange = (event) => {
+    const next = event.target.value
+    run(() => updatePermit(job._docId, trade, next), {
+      success: `${trade.charAt(0).toUpperCase()}${trade.slice(1)} permit set to ${statusLabel(PERMIT_STATUS, next).toLowerCase()}.`,
+      error: 'Could not change the permit status. Try again.',
+    })
+  }
+  return (
+    <select
+      value={status}
+      onChange={handleChange}
+      className="text-xs font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none"
+      style={{ color, backgroundColor: withAlpha(color, 0.13), border: `1px solid ${withAlpha(color, 0.27)}` }}
+    >
+      {PERMIT_STATUSES.map(s => (
+        <option key={s} value={s} style={{ backgroundColor: '#111', color: '#fff' }}>{statusLabel(PERMIT_STATUS, s)}</option>
+      ))}
+    </select>
+  )
+}
 
 export default function Permits() {
   const { jobs } = useData()
@@ -59,16 +85,7 @@ export default function Permits() {
                       <span className="text-sm capitalize font-medium">{t}</span>
                     </div>
                     {j._docId ? (
-                      <select
-                        value={pStatus}
-                        onChange={e => updatePermit(j._docId, t, e.target.value)}
-                        className="text-xs font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none"
-                        style={{ color: permitColor, backgroundColor: withAlpha(permitColor, 0.13), border: `1px solid ${withAlpha(permitColor, 0.27)}` }}
-                      >
-                        {PERMIT_STATUSES.map(s => (
-                          <option key={s} value={s} style={{ backgroundColor: '#111', color: '#fff' }}>{statusLabel(PERMIT_STATUS, s)}</option>
-                        ))}
-                      </select>
+                      <PermitSelect job={j} trade={t} status={pStatus} color={permitColor} />
                     ) : (
                       <PermitBadge status={pStatus} size="xs" />
                     )}

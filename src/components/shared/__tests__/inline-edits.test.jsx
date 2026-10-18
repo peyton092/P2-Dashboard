@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react'
+import { ToastContext } from '@/components/ui/use-toast'
 import { JOB_STATUS, PHASE, MATERIAL_STATUS, BILLING_STATUS } from '@/lib/status'
 import { TONE_HEX, hexToRgb } from '@/lib/tokens'
 
@@ -11,7 +12,7 @@ vi.hoisted(() => {
   Object.defineProperty(window.navigator, 'vendor', { value: 'Google Inc.', configurable: true })
 })
 
-const mocks = vi.hoisted(() => ({ updateJob: vi.fn() }))
+const mocks = vi.hoisted(() => ({ updateJob: vi.fn(), toast: vi.fn() }))
 vi.mock('../../../hooks/useFirestore', () => ({ updateJob: mocks.updateJob }))
 
 import {
@@ -20,8 +21,16 @@ import {
 
 const rgb = (hex) => `rgb(${hexToRgb(hex).join(', ')})`
 
-beforeEach(() => { mocks.updateJob.mockReset() })
+beforeEach(() => {
+  mocks.updateJob.mockReset()
+  mocks.toast.mockReset()
+})
 afterEach(cleanup)
+
+// The toast a select is given, as a spy, to read what it says about the write.
+const withToast = (ui) => <ToastContext.Provider value={mocks.toast}>{ui}</ToastContext.Provider>
+// What Firestore throws when the rules refuse a write.
+const refused = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
 
 // The closed select, found by its role. There is one per render.
 const trigger = () => screen.getByRole('combobox')
@@ -33,12 +42,13 @@ async function open() {
   await screen.findByRole('listbox')
 }
 // A person points at an option before pressing it, and the list only takes a
-// press on the option it has under the pointer.
-function choose(name) {
+// press on the option it has under the pointer. The write the press starts is
+// finished inside act, or React warns about the update it makes when it is done.
+async function choose(name) {
   const option = screen.getByRole('option', { name })
   fireEvent.pointerMove(option)
   fireEvent.mouseMove(option)
-  fireEvent.click(option)
+  await act(async () => { fireEvent.click(option) })
 }
 
 describe('InlineStatusSelect', () => {
@@ -62,16 +72,38 @@ describe('InlineStatusSelect', () => {
   it('stores the key of the status that was chosen', async () => {
     render(<InlineStatusSelect job={job} />)
     await open()
-    choose('On hold')
+    await choose('On hold')
     expect(mocks.updateJob).toHaveBeenCalledTimes(1)
     expect(mocks.updateJob).toHaveBeenCalledWith('job1', { status: 'hold' })
   })
 
   it('stores nothing for a job with no document', async () => {
-    render(<InlineStatusSelect job={{ status: 'on-track' }} />)
+    render(withToast(<InlineStatusSelect job={{ status: 'on-track' }} />))
     await open()
-    choose('Blocked')
+    await choose('Blocked')
     expect(mocks.updateJob).not.toHaveBeenCalled()
+    expect(mocks.toast).not.toHaveBeenCalled()
+  })
+
+  it('says what the status was set to, in words', async () => {
+    render(withToast(<InlineStatusSelect job={job} />))
+    await open()
+    await choose('On hold')
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Status set to on hold.' })
+  })
+
+  it('says it could not change the status, with the reason, when the write is refused', async () => {
+    mocks.updateJob.mockRejectedValue(refused())
+    render(withToast(<InlineStatusSelect job={job} />))
+    await open()
+    await choose('Blocked')
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({
+      tone: 'error',
+      title: 'Could not change the status. Try again.',
+      description: 'Missing or insufficient permissions.',
+    })
   })
 
   it('says Unknown for a status the vocabulary does not have', () => {
@@ -113,10 +145,31 @@ describe('InlinePhaseSelect', () => {
   it('stores the words of the phase and never its key', async () => {
     render(<InlinePhaseSelect job={{ _docId: 'job1', phase: 'Trim' }} />)
     await open()
-    choose('Service release')
+    await choose('Service release')
     expect(mocks.updateJob).toHaveBeenCalledWith('job1', { phase: 'Service release' })
     expect(JSON.stringify(mocks.updateJob.mock.calls)).not.toContain('service-release')
     expect(Object.keys(PHASE)).toContain('service-release')
+  })
+
+  it('says what the phase was set to, in words', async () => {
+    render(withToast(<InlinePhaseSelect job={{ _docId: 'job1', phase: 'Trim' }} />))
+    await open()
+    await choose('Service release')
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Phase set to service release.' })
+  })
+
+  it('says it could not change the phase, with the reason, when the write is refused', async () => {
+    mocks.updateJob.mockRejectedValue(refused())
+    render(withToast(<InlinePhaseSelect job={{ _docId: 'job1', phase: 'Trim' }} />))
+    await open()
+    await choose('Final')
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({
+      tone: 'error',
+      title: 'Could not change the phase. Try again.',
+      description: 'Missing or insufficient permissions.',
+    })
   })
 })
 
@@ -141,8 +194,29 @@ describe('BillingStatusSelect', () => {
   it('stores the key of the status that was chosen', async () => {
     render(<BillingStatusSelect job={{ _docId: 'job1', billingStatus: 'invoiced' }} />)
     await open()
-    choose('Partial pay')
+    await choose('Partial pay')
     expect(mocks.updateJob).toHaveBeenCalledWith('job1', { billingStatus: 'partial-pay' })
+  })
+
+  it('says what the billing status was set to, in words', async () => {
+    render(withToast(<BillingStatusSelect job={{ _docId: 'job1', billingStatus: 'invoiced' }} />))
+    await open()
+    await choose('Partial pay')
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Billing status set to partial pay.' })
+  })
+
+  it('says it could not change the billing status, with the reason, when the write is refused', async () => {
+    mocks.updateJob.mockRejectedValue(refused())
+    render(withToast(<BillingStatusSelect job={{ _docId: 'job1', billingStatus: 'invoiced' }} />))
+    await open()
+    await choose('Paid')
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({
+      tone: 'error',
+      title: 'Could not change the billing status. Try again.',
+      description: 'Missing or insufficient permissions.',
+    })
   })
 })
 
@@ -170,7 +244,7 @@ describe('MatStatusBadge', () => {
   it('stores the key as the materials screen stores it', async () => {
     render(<MatStatusBadge status="Ordered" docId="m1" onUpdate={onUpdate} />)
     await open()
-    choose('At job site')
+    await choose('At job site')
     expect(onUpdate).toHaveBeenCalledWith('m1', 'At Job Site')
   })
 })

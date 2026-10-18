@@ -10,6 +10,8 @@ import { DataProvider } from './DataContext'
 import { useData } from './use-data'
 import { useNow } from './hooks/useNow'
 import { useConnectionState } from './hooks/useConnectionState'
+import { useMutation } from './hooks/useMutation'
+import { useConfirm } from './hooks/useConfirm'
 import { daysSince, fmtLongDate, toLocalDateStr } from './lib/dates'
 import {
   updateNotification, updateJob,
@@ -18,7 +20,6 @@ import {
 } from './hooks/useFirestore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { useToast } from '@/components/ui/use-toast'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -976,7 +977,7 @@ function BriefingGroup({ category, items }) {
 
 export function JobStatus() {
   const { jobs = [], subs = [], tenantId: workspace } = useData()
-  const toast = useToast()
+  const { run, busy: creating } = useMutation()
   const [search, setSearch]         = useState('')
   const [filter, setFilter]         = useState('all')
   const [pmFilter, setPmFilter]     = useState('all')
@@ -984,7 +985,6 @@ export function JobStatus() {
   const [expanded, setExpanded]     = useState(null)
   const [showNewJob, setShowNewJob] = useState(false)
   const [jobForm, setJobForm]       = useState(() => jobFormFor(workspace))
-  const [creating, setCreating]     = useState(false)
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -1079,44 +1079,38 @@ export function JobStatus() {
 
   const handleCreateJob = async () => {
     if (!jobForm.id || !jobForm.address || !jobForm.client || !jobForm.tenantId) return
-    setCreating(true)
-    try {
-      await createJob({
-        id:           jobForm.id,
-        address:      jobForm.address,
-        city:         jobForm.city,
-        client:       jobForm.client,
-        type:         jobForm.type,
-        pm:           jobForm.pm,
-        status:       'active',
-        progress:     0,
-        extras:       0,
-        tenantId:     jobForm.tenantId,
-        lead:         '',
-        start:        toLocalDateStr(),
-        target:       jobForm.target || '',
-        county:       '',
-        billingStatus:'not-invoiced',
-        permitNumber: jobForm.permitNumber || '',
-        subs:    { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
-        permits: { electrical: 'pending', plumbing: 'pending', hvac: 'pending' },
-        insp: {
-          electrical: { roughIn: 'pending', trim: 'blocked', final: 'blocked' },
-          plumbing:   { roughIn: 'pending', final: 'blocked' },
-          hvac:       { roughIn: 'pending', final: 'blocked' },
-        },
-      })
+    const { ok } = await run(() => createJob({
+      id:           jobForm.id,
+      address:      jobForm.address,
+      city:         jobForm.city,
+      client:       jobForm.client,
+      type:         jobForm.type,
+      pm:           jobForm.pm,
+      status:       'active',
+      progress:     0,
+      extras:       0,
+      tenantId:     jobForm.tenantId,
+      lead:         '',
+      start:        toLocalDateStr(),
+      target:       jobForm.target || '',
+      county:       '',
+      billingStatus:'not-invoiced',
+      permitNumber: jobForm.permitNumber || '',
+      subs:    { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
+      permits: { electrical: 'pending', plumbing: 'pending', hvac: 'pending' },
+      insp: {
+        electrical: { roughIn: 'pending', trim: 'blocked', final: 'blocked' },
+        plumbing:   { roughIn: 'pending', final: 'blocked' },
+        hvac:       { roughIn: 'pending', final: 'blocked' },
+      },
+    }), {
+      success: `Job ${jobForm.id} created.`,
+      error: 'Could not create the job. Try again.',
+    })
+    // A refused job leaves the form open with what was typed, so it can be corrected and sent again.
+    if (ok) {
       setJobForm(jobFormFor(workspace))
       setShowNewJob(false)
-    } catch (err) {
-      // The form stays open with what was typed, so it can be corrected and sent again.
-      toast({
-        tone: 'error',
-        title: 'Could not create the job',
-        description: callableMessage(err, 'Check your connection and try again.'),
-      })
-    } finally {
-      setCreating(false)
     }
   }
 
@@ -1639,8 +1633,13 @@ function Extras() {
 // src/lib/status.js.
 
 export function PhaseRow({ label, status, note, docId, field }) {
-  const toast = useToast()
-  const [busy, setBusy] = useState(false)
+  // Two mutations, because the buttons and the list are switched off only while a result
+  // is being recorded. A plain edit of the status is a Firestore write that is applied on
+  // the screen at once, and it must not hold them off while it waits for the server.
+  const result = useMutation()
+  const edit = useMutation()
+  const { ask, dialog } = useConfirm()
+  const busy = result.busy
   const canEdit = !!docId
   const [, trade, phase] = field ? field.split('.') : []
   // A phase with no recorded result is pending.
@@ -1650,21 +1649,24 @@ export function PhaseRow({ label, status, note, docId, field }) {
   // Passing or failing a phase goes through a Cloud Function: it checks that the
   // caller is staff, dates the result, and writes the notification and the
   // history entry. One call at a time, since each call raises an alert.
-  const record = async (action) => {
-    if (busy) return
-    setBusy(true)
-    try {
-      await action(docId, trade, phase)
-    } catch (err) {
-      toast({
-        tone: 'error',
-        title: 'Could not record the inspection result',
-        description: callableMessage(err, 'Check your connection and try again.'),
-      })
-    } finally {
-      setBusy(false)
-    }
+  const record = (action, success) => {
+    if (busy) return undefined
+    return result.run(() => action(docId, trade, phase), {
+      success,
+      error: 'Could not record the inspection result. Try again.',
+    })
   }
+  const markPassed = () => record(passInspection, `${label} marked passed.`)
+  // A failed result raises an alert for the whole team, so it is asked about first, whether
+  // it comes from the red button or from the list. The dialog stays open while the call is
+  // out, and a refusal leaves it open under the error toast.
+  const markFailed = () => ask({
+    title: `Mark ${label} failed?`,
+    body: 'The failed result is recorded on the job and the team is alerted.',
+    confirmLabel: 'Mark failed',
+    tone: 'critical',
+    onConfirm: () => record(failInspection, `${label} marked failed.`),
+  })
   return (
     <div className="flex items-center justify-between py-2 border-b border-white/5 gap-2">
       <span className="text-sm text-zinc-300 shrink-0">{label}</span>
@@ -1682,9 +1684,14 @@ export function PhaseRow({ label, status, note, docId, field }) {
                 // Passed and failed are recorded by the Cloud Functions, like the two
                 // buttons beside this list. Any other status is a plain edit of the job.
                 const next = e.target.value
-                if (next === 'passed') record(passInspection)
-                else if (next === 'failed') record(failInspection)
-                else updateJob(docId, { [field]: next })
+                if (next === 'passed') markPassed()
+                else if (next === 'failed') markFailed()
+                else {
+                  edit.run(() => updateJob(docId, { [field]: next }), {
+                    success: `${label} set to ${statusLabel(INSPECTION_STATUS, next).toLowerCase()}.`,
+                    error: 'Could not change the inspection status. Try again.',
+                  })
+                }
               }}
               disabled={busy}
               className="text-[11px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none disabled:opacity-50"
@@ -1703,7 +1710,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
             </select>
             <button
               type="button"
-              onClick={() => record(passInspection)}
+              onClick={markPassed}
               disabled={busy}
               title="Mark passed"
               aria-label={`Mark ${label} passed`}
@@ -1714,7 +1721,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
             </button>
             <button
               type="button"
-              onClick={() => record(failInspection)}
+              onClick={markFailed}
               disabled={busy}
               title="Mark failed"
               aria-label={`Mark ${label} failed`}
@@ -1730,6 +1737,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
           </Pill>
         )}
       </div>
+      {dialog}
     </div>
   )
 }
@@ -2532,7 +2540,8 @@ function SubAssignments({ subJobs }) {
   )
 }
 
-function SubAssignmentRow({ job: j }) {
+export function SubAssignmentRow({ job: j }) {
+  const { run } = useMutation()
   const subStatus = (j.subsStatus || {})[j.trade] || 'active'
   const looseEnds = (j.subsLooseEnds || {})[j.trade] || ''
   const sc = statusColor(SUB_STATUS, subStatus)
@@ -2557,7 +2566,10 @@ function SubAssignmentRow({ job: j }) {
         <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
           <Select
             value={subStatus}
-            onValueChange={v => j._docId && updateJob(j._docId, { [`subsStatus.${j.trade}`]: v })}
+            onValueChange={v => j._docId && run(() => updateJob(j._docId, { [`subsStatus.${j.trade}`]: v }), {
+              success: `Sub status set to ${statusLabel(SUB_STATUS, v).toLowerCase()}.`,
+              error: 'Could not change the sub status. Try again.',
+            })}
           >
             <SelectTrigger
               className="h-auto py-0.5 px-2.5 text-[11px] font-bold border rounded-full"
@@ -2574,14 +2586,36 @@ function SubAssignmentRow({ job: j }) {
           {!isComplete && <StatusBadge status={j.status} size="xs" />}
         </div>
       </div>
-      <Textarea
-        className="bg-white/[0.04] border-white/10 text-[12px] resize-none min-h-14 placeholder:text-zinc-500"
-        placeholder="Loose ends — incomplete work, punch list items, notes…"
-        value={looseEnds}
-        onClick={e => e.stopPropagation()}
-        onChange={e => j._docId && updateJob(j._docId, { [`subsLooseEnds.${j.trade}`]: e.target.value })}
-      />
+      <LooseEndsInput key={`${j._docId}:${j.trade}:${looseEnds}`} job={j} stored={looseEnds} />
     </li>
+  )
+}
+
+// The loose ends of one sub on one job. What the person types stays in the box and is saved
+// once, when they leave it, so a write is a finished sentence and not a stream of half
+// words. The box is keyed on what is stored, so a change made elsewhere shows up here and
+// leaving the box never writes an older copy back.
+function LooseEndsInput({ job: j, stored }) {
+  const { run } = useMutation()
+  const [draft, setDraft] = useState(stored)
+
+  const save = () => {
+    if (!j._docId || draft === stored) return
+    run(() => updateJob(j._docId, { [`subsLooseEnds.${j.trade}`]: draft }), {
+      success: 'Loose ends saved.',
+      error: 'Could not save the loose ends. Try again.',
+    })
+  }
+
+  return (
+    <Textarea
+      className="bg-white/[0.04] border-white/10 text-[12px] resize-none min-h-14 placeholder:text-zinc-500"
+      placeholder="Loose ends: incomplete work, punch list items, notes…"
+      value={draft}
+      onClick={e => e.stopPropagation()}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={save}
+    />
   )
 }
 
@@ -2594,16 +2628,19 @@ function SubAssignmentRow({ job: j }) {
 
 // ── Materials tab ────────────────────────────────────────────────────────────
 
-function Materials() {
+export function Materials() {
   const { jobs = [], materials: MATERIALS = [], scope } = useData()
   const { history: HISTORY = [] } = useHistory(scope)
+  // One for the form and one for the status lists, so a status that is changing does not
+  // switch off the Save button of a form that is open.
+  const { run: runSave, busy: saving } = useMutation()
+  const { run: runStatus } = useMutation()
   const [filter, setFilter]               = useState('all')
   const [filterJob, setFilterJob]         = useState('all')
   const [showForm, setShowForm]           = useState(false)
   const [editId, setEditId]               = useState(null)
   const [expandedHistory, setExpandedHistory] = useState(null)
   const [form, setForm]                   = useState(MAT_FORM_INITIAL)
-  const [saving, setSaving]               = useState(false)
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -2670,20 +2707,25 @@ function Materials() {
     const m = MATERIALS.find(x => x._docId === docId)
     if (!m) return
     const oldStatus = normalizeMatStatus(m.status)
-    await updateMaterial(docId, { status: newStatus })
-    await addHistory({
+    const { ok } = await runStatus(() => updateMaterial(docId, { status: newStatus }), {
+      success: `${matName(m)} set to ${statusLabel(MATERIAL_STATUS, newStatus).toLowerCase()}.`,
+      error: 'Could not update the material. Try again.',
+    })
+    if (!ok) return
+    // The status is saved. Its history entry is a second write, and says so on its own if
+    // it fails, so the person is not told the status was not saved.
+    await runStatus(() => addHistory({
       materialDocId: docId,
       materialName:  matName(m),
       jobId:         matJobId(m),
       fromStatus:    oldStatus,
       toStatus:      newStatus,
       type:          'status_change',
-    })
+    }), { error: 'The status changed, but its history entry was not saved.' })
   }
 
   const handleSave = async () => {
     if (!form.name.trim()) return
-    setSaving(true)
     const job = jobs.find(j => j.id === form.jobId)
     const data = {
       name:        form.name.trim(),
@@ -2700,16 +2742,23 @@ function Materials() {
       notes:       form.notes.trim(),
       cost:        0,
     }
-    if (editId) {
-      await updateMaterial(editId, data)
-      await addHistory({ materialDocId: editId, materialName: data.name, jobId: data.jobId, type: 'edited' })
-    } else {
-      await addMaterial(data)
+    const { ok } = await runSave(async () => {
+      if (editId) {
+        await updateMaterial(editId, data)
+        await addHistory({ materialDocId: editId, materialName: data.name, jobId: data.jobId, type: 'edited' })
+      } else {
+        await addMaterial(data)
+      }
+    }, {
+      success: editId ? 'Material updated.' : 'Material requested.',
+      error: 'Could not save the material. Try again.',
+    })
+    // A refused save leaves the form open with what was typed, so it can be sent again.
+    if (ok) {
+      setForm(MAT_FORM_INITIAL)
+      setShowForm(false)
+      setEditId(null)
     }
-    setForm(MAT_FORM_INITIAL)
-    setShowForm(false)
-    setEditId(null)
-    setSaving(false)
   }
 
   const openRequest = () => {
@@ -3232,8 +3281,9 @@ function ProjectFolders() {
 
 // Notification helpers moved to src/lib/notifications.js (Phase 18).
 
-function Notifications() {
+export function Notifications() {
   const { notifs = [] } = useData()
+  const { run } = useMutation()
   const [filter, setFilter] = useState('all')
 
   // Live = not dismissed. Dismiss is the user's "clear" gesture; archived
@@ -3267,17 +3317,31 @@ function Notifications() {
       })
   }, [live, filter])
 
-  // Lifecycle mutations — preserved verbatim from prior implementation.
+  // Lifecycle mutations. Marking one read says nothing when it works, because the dot goes
+  // out. Dismissing and marking all read can be taken back, so they are not asked about
+  // first: the toast carries an Undo that puts back what was there, the read flag included.
   const markRead = (n) => {
     if (n.read || !n._docId) return
-    updateNotification(n._docId, { read: true })
+    run(() => updateNotification(n._docId, { read: true }), {
+      error: 'Could not mark the notification read. Try again.',
+    })
   }
   const dismiss = (n) => {
     if (!n._docId) return
-    updateNotification(n._docId, { dismissed: true, read: true })
+    run(() => updateNotification(n._docId, { dismissed: true, read: true }), {
+      success: 'Notification dismissed.',
+      error: 'Could not dismiss the notification. Try again.',
+      undo: () => updateNotification(n._docId, { dismissed: false, read: !!n.read }),
+    })
   }
   const markAll = () => {
-    live.filter(n => !n.read && n._docId).forEach(n => updateNotification(n._docId, { read: true }))
+    const unread = live.filter(n => !n.read && n._docId)
+    if (unread.length === 0) return
+    run(() => Promise.all(unread.map(n => updateNotification(n._docId, { read: true }))), {
+      success: `Marked ${unread.length} notification${unread.length === 1 ? '' : 's'} read.`,
+      error: 'Could not mark the notifications read. Try again.',
+      undo: () => Promise.all(unread.map(n => updateNotification(n._docId, { read: false }))),
+    })
   }
 
   const filterChips = NOTIF_FILTERS.map(f => ({
