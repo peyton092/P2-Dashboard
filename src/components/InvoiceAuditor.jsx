@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
 import { useSupplierInvoices, addSupplierInvoice, updateSupplierInvoice } from '../hooks/useFirestore'
+import { useMutation } from '../hooks/useMutation'
 import { toLocalDateStr } from '../lib/dates'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -109,7 +110,9 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
     notes: '',
     status: 'pending-review',
   })
-  const [saving, setSaving] = useState(false)
+  const { run, busy: saving } = useMutation()
+  // What the form itself found missing before it wrote anything. A write that fails is
+  // told by the toast.
   const [error, setError] = useState('')
 
   const total = (form.lineItems || []).reduce((s, li) =>
@@ -141,9 +144,8 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
       setError('Add at least one line item.')
       return
     }
-    setSaving(true)
     setError('')
-    try {
+    const { ok } = await run(() => {
       const cleanLines = form.lineItems.map(({ _id, ...li }) => ({
         desc: li.desc,
         qty: parseFloat(li.qty) || 0,
@@ -152,7 +154,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
         extPrice: (parseFloat(li.qty) || 0) * (parseFloat(li.unitPrice) || 0),
       }))
       const flags = auditInvoice({ ...form, total, lineItems: cleanLines, _docId: '__new__' }, allInvoices, materials)
-      await addSupplierInvoice({
+      return addSupplierInvoice({
         vendor: form.vendor,
         invoiceNum: form.invoiceNum,
         invoiceDate: form.invoiceDate,
@@ -163,12 +165,12 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
         status: flags.some(f => f.severity === 'critical') ? 'pending-review' : form.status,
         flags: flags.map(({ _id, ...f }) => f),
       })
-      onClose()
-    } catch (e) {
-      setError('Save failed: ' + (e.message || 'Unknown error'))
-    } finally {
-      setSaving(false)
-    }
+    }, {
+      success: 'Invoice saved.',
+      error: 'Could not save the invoice. Try again.',
+    })
+    // A refused invoice leaves the form with what was typed, so it can be saved again.
+    if (ok) onClose()
   }
 
   return (
@@ -332,6 +334,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
 // ── Invoice Row ───────────────────────────────────────────────────────────────
 
 function InvoiceRow({ inv, jobs, allInvoices, materials }) {
+  const { run } = useMutation()
   const [expanded, setExpanded] = useState(false)
 
   const meta = STATUS_META[inv.status] || STATUS_META['pending-review']
@@ -447,7 +450,10 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
               <span className="text-xs text-muted-foreground">Status:</span>
               <Select
                 value={inv.status || 'pending-review'}
-                onValueChange={v => inv._docId && updateSupplierInvoice(inv._docId, { status: v })}
+                onValueChange={v => inv._docId && run(() => updateSupplierInvoice(inv._docId, { status: v }), {
+                  success: `Status set to ${(STATUS_META[v]?.label || v).toLowerCase()}.`,
+                  error: 'Could not change the status. Try again.',
+                })}
               >
                 <SelectTrigger className="h-7 text-xs px-2 bg-white/5 border-white/20 w-36">
                   <SelectValue />

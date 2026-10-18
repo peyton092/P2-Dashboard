@@ -1,6 +1,6 @@
 import process from 'node:process'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
 
 // The Change Orders screen saves a change order as a draft and, for Send to
@@ -46,7 +46,6 @@ const saved = (over) => ({
 const sdkError = (code, message) => Object.assign(new Error(message), { code: `functions/${code}` })
 
 beforeEach(() => {
-  vi.spyOn(console, 'error').mockImplementation(() => {})
   for (const mock of [mocks.addDoc, mocks.updateDoc, mocks.sendExtraToBuilder, mocks.toast]) mock.mockReset()
   mocks.addDoc.mockResolvedValue({ id: 'new1' })
   mocks.updateDoc.mockResolvedValue(undefined)
@@ -133,7 +132,7 @@ describe('saving a change order', () => {
     fireEvent.click(saveDraft())
     await waitFor(() => expect(screen.queryByPlaceholderText('Describe the work…')).toBeNull())
     expect(mocks.sendExtraToBuilder).not.toHaveBeenCalled()
-    expect(mocks.toast).not.toHaveBeenCalled()
+    expect(mocks.toast.mock.calls).toEqual([[{ tone: 'success', title: 'Change order saved.' }]])
   })
 
   it('Send to Builder saves the draft first and then sends it by the id the save returned', async () => {
@@ -144,7 +143,9 @@ describe('saving a change order', () => {
     expect(mocks.addDoc.mock.calls[0][1].status).toBe('Draft')
     expect(mocks.addDoc.mock.invocationCallOrder[0]).toBeLessThan(mocks.sendExtraToBuilder.mock.invocationCallOrder[0])
     await waitFor(() => expect(screen.queryByPlaceholderText('Describe the work…')).toBeNull())
-    expect(mocks.toast).not.toHaveBeenCalled()
+    // One toast for the whole of it: the draft was saved on the way, and nothing is said
+    // about that until it is known whether the send worked.
+    expect(mocks.toast.mock.calls).toEqual([[{ tone: 'success', title: 'Change order sent to the builder.' }]])
   })
 
   it('sends an existing change order by its document id after updating it, writing no status', async () => {
@@ -254,7 +255,8 @@ describe('an approved change order is read only', () => {
     fireEvent.change(screen.getByPlaceholderText('Describe the work…'), { target: { value: 'Backflow preventer, revised' } })
     fireEvent.click(saveDraft())
     await waitFor(() => expect(mocks.updateDoc).toHaveBeenCalledTimes(1))
-    expect(mocks.toast).not.toHaveBeenCalled()
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Change order saved.' })
   })
 
   it('does not refuse a new change order, which is not in the live list yet', async () => {
@@ -262,7 +264,8 @@ describe('an approved change order is read only', () => {
     await startNew()
     fireEvent.click(saveDraft())
     await waitFor(() => expect(mocks.addDoc).toHaveBeenCalledTimes(1))
-    expect(mocks.toast).not.toHaveBeenCalled()
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Change order saved.' })
   })
 })
 
@@ -274,7 +277,7 @@ describe('when a save or a send fails', () => {
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
-      title: 'Could not save the change order',
+      title: 'Could not save the change order. Try again.',
       description: 'Missing or insufficient permissions.',
     })
     expect(mocks.sendExtraToBuilder).not.toHaveBeenCalled()
@@ -288,7 +291,7 @@ describe('when a save or a send fails', () => {
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
-      title: 'Saved, but not sent',
+      title: 'Saved, but not sent. Try Send to Builder again.',
       description: 'This change order is already approved.',
     })
     expect(screen.getByPlaceholderText('Describe the work…')).toBeTruthy()
@@ -300,7 +303,7 @@ describe('when a save or a send fails', () => {
     await startNew()
     fireEvent.click(send())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
-    expect(mocks.toast.mock.calls[0][0].description).toBe('Try Send to Builder again.')
+    expect(mocks.toast.mock.calls[0][0]).toEqual({ tone: 'error', title: 'Saved, but not sent. Try Send to Builder again.' })
   })
 
   it('sends the saved draft again instead of adding a second change order', async () => {
@@ -316,5 +319,117 @@ describe('when a save or a send fails', () => {
     expect(mocks.updateDoc).toHaveBeenCalledTimes(1)
     expect(mocks.updateDoc.mock.calls[0][0].path).toBe('extras/new1')
     await waitFor(() => expect(screen.queryByPlaceholderText('Describe the work…')).toBeNull())
+    expect(mocks.toast.mock.calls.map(([opts]) => opts.tone)).toEqual(['error', 'success'])
+    expect(mocks.toast).toHaveBeenLastCalledWith({ tone: 'success', title: 'Change order sent to the builder.' })
+  })
+
+  it('reads Sending and takes no second press while the draft is saved and sent', async () => {
+    let finish
+    mocks.sendExtraToBuilder.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    await startNew()
+    fireEvent.click(send())
+
+    await waitFor(() => expect(mocks.sendExtraToBuilder).toHaveBeenCalledTimes(1))
+    expect(send().textContent).toContain('Sending…')
+    expect(send().disabled).toBe(true)
+    expect(saveDraft().disabled).toBe(true)
+    fireEvent.click(send())
+    expect(mocks.sendExtraToBuilder).toHaveBeenCalledTimes(1)
+
+    await act(async () => { finish({ ok: true }) })
+    await waitFor(() => expect(screen.queryByPlaceholderText('Describe the work…')).toBeNull())
+  })
+
+  it('keeps the form and the reason when a plain save of a draft is refused, and can save again', async () => {
+    mocks.updateDoc.mockRejectedValueOnce(new Error('Missing or insufficient permissions.'))
+    openSaved()
+    fireEvent.click(saveDraft())
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast.mock.calls[0][0]).toEqual({
+      tone: 'error',
+      title: 'Could not save the change order. Try again.',
+      description: 'Missing or insufficient permissions.',
+    })
+    expect(screen.getByPlaceholderText('Describe the work…')).toBeTruthy()
+
+    fireEvent.click(saveDraft())
+    await waitFor(() => expect(screen.queryByPlaceholderText('Describe the work…')).toBeNull())
+    expect(mocks.toast).toHaveBeenLastCalledWith({ tone: 'success', title: 'Change order saved.' })
+  })
+})
+
+// Taking a line off a change order is asked about, because the price on it goes with it.
+// The line is a local change to the form and nothing is written until the form is saved,
+// so the question closes as soon as it is answered.
+describe('removing a line item', () => {
+  async function twoLines() {
+    await startNew()
+    fireEvent.click(screen.getByRole('button', { name: /Add Line/ }))
+    fireEvent.change(screen.getAllByPlaceholderText('Describe the work…')[1], { target: { value: 'Disconnect switch' } })
+  }
+  const ask = async (name) => {
+    const dialog = await screen.findByRole('dialog', { name })
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+    return dialog
+  }
+  const lines = () => screen.getAllByPlaceholderText('Describe the work…').map((input) => input.value)
+  const gone = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  it('offers a remove button on each line once there are two, and names the line', async () => {
+    await startNew()
+    expect(screen.queryByRole('button', { name: /^Remove line/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Add Line/ }))
+    expect(screen.getAllByRole('button', { name: /^Remove line/ }).map((el) => el.getAttribute('aria-label')))
+      .toEqual(['Remove line 1', 'Remove line 2'])
+  })
+
+  it('asks first, names the line and its words, and takes nothing off until it is confirmed', async () => {
+    await twoLines()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove line 2' }))
+    const dialog = await ask('Remove line 2?')
+
+    expect(within(dialog).getByText('Disconnect switch is taken off this change order. Nothing is saved until you save the change order.')).toBeTruthy()
+    expect(lines()).toEqual(['Backflow preventer', 'Disconnect switch'])
+  })
+
+  it('takes the line off and closes at once when it is confirmed, and writes nothing', async () => {
+    await twoLines()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove line 2' }))
+    const dialog = await ask('Remove line 2?')
+
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Remove line' })) })
+
+    expect(lines()).toEqual(['Backflow preventer'])
+    await gone()
+    expect(mocks.addDoc).not.toHaveBeenCalled()
+    expect(mocks.updateDoc).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /^Remove line/ })).toBeNull()
+  })
+
+  it('keeps the line when it is cancelled', async () => {
+    await twoLines()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove line 2' }))
+    const dialog = await ask('Remove line 2?')
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await gone()
+    expect(lines()).toEqual(['Backflow preventer', 'Disconnect switch'])
+  })
+
+  it('says it is a line with no words when the line has none', async () => {
+    await startNew()
+    fireEvent.click(screen.getByRole('button', { name: /Add Line/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove line 2' }))
+    const dialog = await ask('Remove line 2?')
+
+    expect(within(dialog).getByText('This line is taken off this change order. Nothing is saved until you save the change order.')).toBeTruthy()
+  })
+
+  it('paints the confirm button as destructive', async () => {
+    await twoLines()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove line 1' }))
+    const dialog = await ask('Remove line 1?')
+    expect(within(dialog).getByRole('button', { name: 'Remove line' }).classList.contains('text-destructive')).toBe(true)
   })
 })

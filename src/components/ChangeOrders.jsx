@@ -3,9 +3,10 @@ import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/fi
 import { db } from '../firebase'
 import { withAuthor, sendExtraToBuilder } from '../hooks/useFirestore'
 import { extraState, statusOnSave } from '../lib/extraStatus'
-import { callableMessage } from '../lib/callableError'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
+import { useMutation } from '../hooks/useMutation'
+import { useConfirm } from '../hooks/useConfirm'
 import { daysSince, toDate, toLocalDateStr } from '../lib/dates'
 import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
@@ -138,6 +139,22 @@ function jobLabel(jobs, jobId) {
 
 function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
   const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
+  const { ask, dialog } = useConfirm()
+
+  // The price on a line goes with it, so taking one off is asked about first. It is a
+  // change to the form and nothing is written until the form is saved, so the question
+  // closes as soon as it is answered.
+  function removeLine(idx) {
+    const words = form.lineItems[idx].desc.trim()
+    ask({
+      title: `Remove line ${idx + 1}?`,
+      body: `${words || 'This line'} is taken off this change order. Nothing is saved until you save the change order.`,
+      confirmLabel: 'Remove line',
+      tone: 'critical',
+      instant: true,
+      onConfirm: () => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) })),
+    })
+  }
 
   function setLine(idx, field, val) {
     setForm(f => ({
@@ -314,7 +331,9 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     <td className="px-3 py-2">
                       {form.lineItems.length > 1 && (
                         <button
-                          onClick={() => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }))}
+                          type="button"
+                          aria-label={`Remove line ${idx + 1}`}
+                          onClick={() => removeLine(idx)}
                           className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400 transition-colors"
                         >
                           <XIcon size={12} />
@@ -375,6 +394,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
           />
         </CardContent>
       </Card>
+      {dialog}
     </div>
   )
 }
@@ -385,6 +405,7 @@ export default function ChangeOrders() {
   const { jobs: JOBS, extras: ALL_EXTRAS, loading } = useData()
   const now = useNow()
   const toast = useToast()
+  const { run } = useMutation()
   const [view, setView] = useState('list')
   const [editingCO, setEditingCO] = useState(null)
   const [form, setForm] = useState(null)
@@ -420,7 +441,10 @@ export default function ChangeOrders() {
   // Saves the change order as a draft. With sendToBuilder it then asks the Cloud
   // Function to send it: the status, the send times, the notification and the
   // history entry are all written there, so this screen writes none of them (nor
-  // the qbs flag), and it never changes a status itself (see statusOnSave).
+  // the qbs flag), and it never changes a status itself (see statusOnSave). The save
+  // and the send are two writes with a toast each way: a save on its own says it was
+  // saved, and a send says only that it was sent, since the draft that went with it
+  // is no news. A send that fails says the draft was saved, so nobody saves it twice.
   async function saveCO(sendToBuilder) {
     if (!form.job || !form.lineItems.some(li => li.desc.trim())) return
 
@@ -434,61 +458,64 @@ export default function ChangeOrders() {
     }
 
     setSaving(true)
-    let saved = false
     try {
-      const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
-
-      // The constructed object below names every saved field explicitly, so
-      // the UI-only `_id` (used as a React key on the form rows) never lands
-      // in Firestore. No destructuring needed — the explicit shape is the
-      // contract.
-      const cleanLines = form.lineItems.map(li => ({
-        desc: li.desc,
-        qty: parseFloat(li.qty) || 0,
-        unit: li.unit || 'EA',
-        unitPrice: parseFloat(li.unitPrice) || 0,
-        extPrice: (parseFloat(li.qty) || 0) * (parseFloat(li.unitPrice) || 0),
-      }))
-
-      const firstLine = cleanLines.find(l => l.desc)?.desc || ''
-      const data = {
-        coNumber: form.coNumber,
-        job: form.job,
-        date: form.date,
-        ...statusOnSave(editingCO),
-        lineItems: cleanLines,
-        subtotal,
-        markupPct: parseFloat(form.markupPct) || 15,
-        markup,
-        total,
-        notes: form.notes || '',
-        amount: total,
-        desc: `${form.coNumber}${firstLine ? `: ${firstLine}` : ''}`,
-      }
-
       let docId = editingCO?._docId
-      if (docId) {
-        await updateDoc(doc(db, 'extras', docId), data)
-      } else {
-        const created = await addDoc(collection(db, 'extras'), withAuthor({ ...data, createdAt: serverTimestamp() }))
-        docId = created.id
-        // The draft exists now. If sending it fails below, the form stays open on
-        // this saved draft, so trying again updates it and does not add a second.
-        setEditingCO({ ...data, _docId: docId })
-      }
-      saved = true
+      const draft = await run(async () => {
+        const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
 
-      if (sendToBuilder) await sendExtraToBuilder(docId)
+        // The constructed object below names every saved field explicitly, so
+        // the UI-only `_id` (used as a React key on the form rows) never lands
+        // in Firestore. No destructuring needed; the explicit shape is the
+        // contract.
+        const cleanLines = form.lineItems.map(li => ({
+          desc: li.desc,
+          qty: parseFloat(li.qty) || 0,
+          unit: li.unit || 'EA',
+          unitPrice: parseFloat(li.unitPrice) || 0,
+          extPrice: (parseFloat(li.qty) || 0) * (parseFloat(li.unitPrice) || 0),
+        }))
+
+        const firstLine = cleanLines.find(l => l.desc)?.desc || ''
+        const data = {
+          coNumber: form.coNumber,
+          job: form.job,
+          date: form.date,
+          ...statusOnSave(editingCO),
+          lineItems: cleanLines,
+          subtotal,
+          markupPct: parseFloat(form.markupPct) || 15,
+          markup,
+          total,
+          notes: form.notes || '',
+          amount: total,
+          desc: `${form.coNumber}${firstLine ? `: ${firstLine}` : ''}`,
+        }
+
+        if (docId) {
+          await updateDoc(doc(db, 'extras', docId), data)
+        } else {
+          const created = await addDoc(collection(db, 'extras'), withAuthor({ ...data, createdAt: serverTimestamp() }))
+          docId = created.id
+          // The draft exists now. If sending it fails below, the form stays open on
+          // this saved draft, so trying again updates it and does not add a second.
+          setEditingCO({ ...data, _docId: docId })
+        }
+      }, {
+        success: sendToBuilder ? undefined : 'Change order saved.',
+        error: 'Could not save the change order. Try again.',
+      })
+      if (!draft.ok) return
+
+      if (sendToBuilder) {
+        const sent = await run(() => sendExtraToBuilder(docId), {
+          success: 'Change order sent to the builder.',
+          error: 'Saved, but not sent. Try Send to Builder again.',
+        })
+        if (!sent.ok) return
+      }
       setView('list')
       setForm(null)
       setEditingCO(null)
-    } catch (err) {
-      console.error('[ChangeOrders] Save failed:', err)
-      toast({
-        tone: 'error',
-        title: saved ? 'Saved, but not sent' : 'Could not save the change order',
-        description: callableMessage(err, saved ? 'Try Send to Builder again.' : 'Check your connection and try again.'),
-      })
     } finally {
       setSaving(false)
     }

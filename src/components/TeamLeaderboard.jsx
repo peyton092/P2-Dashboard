@@ -4,6 +4,7 @@ import { db } from '../firebase'
 import { useDailyReports } from '../hooks/useFirestore'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
+import { useMutation } from '../hooks/useMutation'
 import { monthKey } from '../lib/dates'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -384,7 +385,8 @@ export default function TeamLeaderboard() {
   const [showUrlEdit, setShowUrlEdit] = useState(false)
   // null until the user edits; falls back to the saved URL.
   const [urlEdit, setUrlEdit] = useState(null)
-  const [savingUrl, setSavingUrl] = useState(false)
+  const { run: runScore } = useMutation()
+  const { run: runUrl, busy: savingUrl } = useMutation()
 
   const urlDraft = urlEdit ?? reviewUrl
 
@@ -416,28 +418,42 @@ export default function TeamLeaderboard() {
   const totalReports   = ranked.reduce((s, r) => s + r.auto.reportCount, 0)
   const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
+  // Each panel closes only when its write went through, so a refusal leaves it open with
+  // what was typed, under the error toast.
   async function logReferral(name) {
     const man = scores[name] || {}
-    await patchScore(name, { referrals: (man.referrals || 0) + 1 })
-    setAdding(null)
+    const { ok } = await runScore(() => patchScore(name, { referrals: (man.referrals || 0) + 1 }), {
+      success: `Referral logged for ${name}.`,
+      error: `Could not log the referral for ${name}. Try again.`,
+    })
+    if (ok) setAdding(null)
   }
 
   async function logBonus(name, pts, note) {
-    if (!Number(pts)) return
+    const points = Number(pts)
+    if (!points) return
     const man = scores[name] || {}
-    await patchScore(name, {
-      bonusPoints: (man.bonusPoints || 0) + Number(pts),
+    const { ok } = await runScore(() => patchScore(name, {
+      bonusPoints: (man.bonusPoints || 0) + points,
       ...(note ? { bonusNote: note } : {}),
+    }), {
+      success: points > 0
+        ? `${points} bonus point${points === 1 ? '' : 's'} awarded to ${name}.`
+        : `${-points} bonus point${points === -1 ? '' : 's'} taken from ${name}.`,
+      error: `Could not award the bonus to ${name}. Try again.`,
     })
-    setAdding(null)
+    if (ok) setAdding(null)
   }
 
   async function handleSaveUrl() {
-    setSavingUrl(true)
-    await saveUrl(urlDraft.trim())
-    setUrlEdit(null)
-    setSavingUrl(false)
-    setShowUrlEdit(false)
+    const { ok } = await runUrl(() => saveUrl(urlDraft.trim()), {
+      success: 'Review link saved.',
+      error: 'Could not save the review link. Try again.',
+    })
+    if (ok) {
+      setUrlEdit(null)
+      setShowUrlEdit(false)
+    }
   }
 
   if (loading) return (
