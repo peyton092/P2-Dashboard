@@ -52,7 +52,7 @@ const press = (el) => act(async () => { fireEvent.click(el) })
 // The toasts are in their own region. The page header has a status of its own, the
 // connection chip, which is not one of them.
 const region = () => screen.getByRole('region', { name: 'Notifications' })
-const toasts = () => [...within(region()).queryAllByRole('status'), ...within(region()).queryAllByRole('alert')]
+const toasts = () => [...region().querySelectorAll('[data-toast]')]
 const toastText = () => region().textContent
 
 describe('clearing a notification', () => {

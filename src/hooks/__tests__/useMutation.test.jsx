@@ -398,10 +398,14 @@ describe('with the real toast', () => {
   }
   const open = (props) => render(<ToastProvider><Harness {...props} /></ToastProvider>)
   const press = () => act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss' })) })
+  // The toasts on the screen. Their words are also in a live element for as long as they are
+  // there, so they are looked for in the toasts themselves.
+  const shown = () => [...document.querySelectorAll('[data-toast]')].map((el) => el.textContent)
 
   it('shows the success words with an Undo button', async () => {
     open({ undo: vi.fn() })
     await press()
+    expect(shown()).toEqual(['Notification dismissed.Undo'])
     expect(screen.getByRole('status').textContent).toContain('Notification dismissed.')
     expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy()
   })
@@ -415,8 +419,7 @@ describe('with the real toast', () => {
 
     expect(undo).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
-    expect(screen.queryByText('Notification dismissed.')).toBeNull()
-    expect(screen.getByText('Undone.')).toBeTruthy()
+    expect(shown()).toEqual(['Undone.'])
   })
 
   it('shows the error as an alert, with the reason, when the write fails', async () => {
@@ -428,7 +431,7 @@ describe('with the real toast', () => {
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
   })
 
-  it('keeps an Undo toast for 8 seconds, where a plain one lasts 4', async () => {
+  it('keeps an Undo toast for 8 seconds', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     open({ undo: vi.fn() })
     await press()
@@ -437,5 +440,16 @@ describe('with the real toast', () => {
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeTruthy()
     act(() => { vi.advanceTimersByTime(1) })
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
+  })
+
+  it('keeps a toast that has no Undo for 4 seconds', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    open()
+    await press()
+
+    act(() => { vi.advanceTimersByTime(3999) })
+    expect(shown()).toEqual(['Notification dismissed.'])
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(shown()).toEqual([])
   })
 })
