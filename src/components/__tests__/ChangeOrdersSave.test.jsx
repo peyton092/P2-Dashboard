@@ -406,6 +406,26 @@ describe('removing a line item', () => {
     expect(screen.queryByRole('button', { name: /^Remove line/ })).toBeNull()
   })
 
+  // Enter pressed twice on the confirm button, or two presses in the same turn: the popup is
+  // still on the screen and focused while it closes. The second used to take off the line that
+  // had moved up into the place of the first.
+  it('takes off the one line, and not the next, when the confirm button is pressed twice in the same turn', async () => {
+    await twoLines()
+    fireEvent.click(screen.getByRole('button', { name: /Add Line/ }))
+    fireEvent.change(screen.getAllByPlaceholderText('Describe the work…')[2], { target: { value: 'Test cock' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove line 2' }))
+    const dialog = await ask('Remove line 2?')
+    const confirm = within(dialog).getByRole('button', { name: 'Remove line' })
+
+    await act(async () => {
+      fireEvent.click(confirm)
+      fireEvent.click(confirm)
+    })
+
+    expect(lines()).toEqual(['Backflow preventer', 'Test cock'])
+    await gone()
+  })
+
   it('keeps the line when it is cancelled', async () => {
     await twoLines()
     fireEvent.click(screen.getByRole('button', { name: 'Remove line 2' }))

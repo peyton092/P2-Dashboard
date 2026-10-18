@@ -143,16 +143,17 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
 
   // The price on a line goes with it, so taking one off is asked about first. It is a
   // change to the form and nothing is written until the form is saved, so the question
-  // closes as soon as it is answered.
-  function removeLine(idx) {
-    const words = (form.lineItems[idx].desc || '').trim()
+  // closes as soon as it is answered. The line is taken off by its own _id and not by its
+  // place, so that a confirm that arrives twice takes off the one line and not the next.
+  function removeLine(line, idx) {
+    const words = (line.desc || '').trim()
     ask({
       title: `Remove line ${idx + 1}?`,
       body: `${words || 'This line'} is taken off this change order. Nothing is saved until you save the change order.`,
       confirmLabel: 'Remove line',
       tone: 'critical',
       instant: true,
-      onConfirm: () => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) })),
+      onConfirm: () => setForm(f => ({ ...f, lineItems: f.lineItems.filter(li => li._id !== line._id) })),
     })
   }
 
@@ -333,7 +334,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                         <button
                           type="button"
                           aria-label={`Remove line ${idx + 1}`}
-                          onClick={() => removeLine(idx)}
+                          onClick={() => removeLine(li, idx)}
                           className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400 transition-colors"
                         >
                           <XIcon size={12} />
