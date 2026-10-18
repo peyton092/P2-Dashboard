@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { TONE_HEX, hexToRgb } from '@/lib/tokens'
 
 // The portals receive only what their queries and the rules allow. With no
 // project they say so in a labelled empty state, and a submission they create
-// carries the signed in user's own scope, which the rules check on create.
+// carries the signed in user's own scope, which the rules check on create. The
+// builder portal also shows how it marks each inspection result on a job card.
 // Everything that would reach Firebase is replaced, and addSubmit records what
 // each portal asked to create.
 const mocks = vi.hoisted(() => ({
@@ -180,5 +182,36 @@ describe('a submission created in the builder portal', () => {
     expect(mocks.toast).toHaveBeenCalledWith(REFUSED_TOAST)
     expect(screen.getByPlaceholderText('Brief summary').value).toBe('Panel location')
     expect(screen.getByRole('button', { name: 'Send to P2' }).disabled).toBe(false)
+  })
+})
+
+// Each phase of a trade is one mark on the job card. A result that is in gets its
+// letter in a circle of the status color, a result not in yet gets a dot in a
+// circle, and a phase that does not apply gets plain text and no circle. What a
+// mark means is always in its letter or its words, never in its color alone.
+describe('the inspection marks on a job card in the builder portal', () => {
+  const rgb = (tone) => `rgb(${hexToRgb(TONE_HEX[tone]).join(', ')})`
+  const insp = {
+    electrical: { roughIn: 'blocked', final: 'n/a' },
+    plumbing: { roughIn: 'pending', final: 'passed' },
+  }
+  const trade = (name) => within(screen.getByText(name, { selector: 'p' }).parentElement)
+
+  it('reads B for a blocked result and plain n/a, with no circle, for a phase that does not apply', () => {
+    mocks.data = portalData(BUILDER, { jobs: [{ ...JOB, insp }] })
+    openBuilderPortal()
+
+    const blocked = trade('electrical').getByText('B')
+    expect(blocked.className).toContain('rounded-full')
+    expect(blocked.style.color).toBe(rgb('info'))
+
+    const notApplicable = trade('electrical').getByText('n/a')
+    expect(notApplicable.className).not.toContain('rounded-full')
+    expect(notApplicable.style.backgroundColor).toBe('')
+    expect(notApplicable.style.color).toBe(rgb('mute'))
+
+    // The other trade: a result not in yet is a dot in a circle, a passed one a P.
+    const circles = [...screen.getByText('plumbing', { selector: 'p' }).parentElement.querySelectorAll('.rounded-full')]
+    expect(circles.map((circle) => circle.textContent)).toEqual(['\u00b7', 'P'])
   })
 })

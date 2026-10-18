@@ -43,6 +43,12 @@ afterEach(cleanup)
 // A status pill is a span that carries its own color; a filter chip is a button.
 const pills = (words) => screen.queryAllByText(words).filter((element) => element.tagName === 'SPAN' && element.style.color)
 
+// The words in the status control of the form that is open.
+function formStatus() {
+  const field = screen.getByText('Status').parentElement
+  return within(field).getByRole('combobox').querySelector('[data-slot="select-value"]').textContent
+}
+
 describe('the status pill of a change order', () => {
   it.each([
     ['Draft', 'Draft', 'mute'],
@@ -70,8 +76,16 @@ describe('the status pill of a change order', () => {
     mocks.data.extras = [saved({ status: 'Sent to Builder' })]
     open()
     fireEvent.click(screen.getAllByTitle('Edit or resend')[0])
-    const field = screen.getByText('Status').parentElement
-    const shown = within(field).getByRole('combobox').querySelector('[data-slot="select-value"]')
-    expect(shown.textContent).toBe('Sent to builder')
+    expect(formStatus()).toBe('Sent to builder')
+  })
+
+  // The list pill, the PDF and statusOnSave all call a change order with no status
+  // a draft, so its form must too, and not read it as waiting for the builder.
+  it('writes a change order with no status as Draft in its form, as the list does', () => {
+    mocks.data.extras = [saved({ status: undefined })]
+    open()
+    expect(pills('Draft').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getAllByTitle('Edit or resend')[0])
+    expect(formStatus()).toBe('Draft')
   })
 })

@@ -156,6 +156,31 @@ function InspectionTimeline({ job }) {
 
 // ── Per-trade inspection pills ───────────────────────────────────────────────
 
+// One mark of the per trade pills, for one phase of one trade. A result that is in
+// gets its letter in a circle of the status color: P passed, F failed, S
+// scheduled, B blocked. A result not in yet (pending, pending verification, not
+// started) gets a dot in a circle. A phase that does not apply gets the plain text
+// n/a in the mute tone and no circle. What a mark means is in its letter or its
+// words, never in its color alone.
+const INSPECTION_LETTER = { passed: 'P', failed: 'F', scheduled: 'S', blocked: 'B' }
+
+function InspectionMark({ status }) {
+  if (status === 'n/a') {
+    return (
+      <span className="min-w-3.5 h-3.5 text-[8px] flex items-center justify-center font-black" style={{ color: toneHex('mute') }}>
+        n/a
+      </span>
+    )
+  }
+  const color = statusColor(INSPECTION_STATUS, status)
+  return (
+    <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
+      style={{ backgroundColor: withAlpha(color, 0.2), color }}>
+      {INSPECTION_LETTER[status] ?? '·'}
+    </span>
+  )
+}
+
 function TradeInspectionPills({ insp }) {
   if (!insp) return null
   const rows = ['electrical', 'plumbing', 'hvac'].map(trade => {
@@ -168,27 +193,16 @@ function TradeInspectionPills({ insp }) {
 
   if (rows.length === 0) return null
 
-  // The letter in each dot, a dot for a result not in yet. The color is the
-  // status color from status.js.
-  const GLYPH = { passed: 'P', failed: 'F', scheduled: 'S' }
-  const meta = (s) => ({ c: statusColor(INSPECTION_STATUS, s), l: GLYPH[s] ?? '·' })
-
   return (
     <div className="grid grid-cols-3 gap-1.5 text-[10px]">
       {rows.map(r => (
         <div key={r.trade} className="rounded-lg bg-white/5 border border-white/10 p-1.5">
           <p className="font-bold capitalize text-[10px] mb-1 text-muted-foreground">{r.trade}</p>
           <div className="flex items-center gap-1">
-            <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
-              style={{ backgroundColor: withAlpha(meta(r.roughIn).c, 0.2), color: meta(r.roughIn).c }}>
-              {meta(r.roughIn).l}
-            </span>
+            <InspectionMark status={r.roughIn} />
             <span className="text-muted-foreground">R</span>
             <span className="text-muted-foreground/40 mx-0.5">·</span>
-            <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
-              style={{ backgroundColor: withAlpha(meta(r.final).c, 0.2), color: meta(r.final).c }}>
-              {meta(r.final).l}
-            </span>
+            <InspectionMark status={r.final} />
             <span className="text-muted-foreground">F</span>
           </div>
         </div>

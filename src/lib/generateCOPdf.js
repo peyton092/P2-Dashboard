@@ -66,8 +66,8 @@ export async function generateCOPdf(co, jobLabel) {
   doc.text(jobLabel || co.job || '—', COLS3[0], y, { maxWidth: 186 })
   doc.text(co.date || '—',           COLS3[1], y)
 
-  // The status is printed as the vocabulary words it, in the vocabulary's color.
-  // A change order with no status is a draft.
+  // The status prints in the words and the color the vocabulary gives it. A change
+  // order with no status is a draft.
   const status = co.status ? normalizeCoStatus(co.status) : 'Draft'
   doc.setTextColor(...hexToRgb(statusColor(CO_STATUS, status)))
   doc.text(statusLabel(CO_STATUS, status).toUpperCase(), COLS3[2], y)

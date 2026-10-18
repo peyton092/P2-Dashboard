@@ -13,6 +13,12 @@ const LIGHT_GRAY = [230, 230, 230]
 const WHITE      = [255, 255, 255]
 const GREEN      = hexToRgb(SEMANTIC.success)
 
+// The billing statuses an invoice prints as themselves. Any other status prints
+// as not invoiced: a job with no billing status, one the app does not know and
+// one on hold. A hold is internal, and a client downloads this invoice from the
+// portal, so a hold never reaches the page.
+const PRINTED_BILLING = ['not-invoiced', 'invoiced', 'partial-pay', 'paid']
+
 function money(n) {
   return `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
@@ -221,8 +227,9 @@ export async function generateInvoicePdf(job) {
   }
 
   // ── Status badge (from job.billingStatus) ────────────────────────────────────
-  // A job with no billing status, or one the app does not know, reads as not invoiced.
-  const billing = Object.hasOwn(BILLING_STATUS, job.billingStatus) ? job.billingStatus : 'not-invoiced'
+  // Only the statuses in PRINTED_BILLING print as themselves; a hold prints as not
+  // invoiced because a hold is internal.
+  const billing = PRINTED_BILLING.includes(job.billingStatus) ? job.billingStatus : 'not-invoiced'
   const badgeLabel = statusLabel(BILLING_STATUS, billing).toUpperCase()
   const statusColor = job.billingStatus === 'paid' ? GREEN
     : job.billingStatus === 'invoiced' ? ORANGE

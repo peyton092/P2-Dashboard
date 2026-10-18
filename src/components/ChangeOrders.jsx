@@ -232,7 +232,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
               <label className="text-xs text-muted-foreground mb-1 block">Status</label>
               <Select value={form.status} disabled>
                 <SelectTrigger className="bg-white/5 border-white/20 w-full">
-                  <SelectValue>{statusLabel(CO_STATUS, normalizeCoStatus(form.status))}</SelectValue>
+                  <SelectValue>{statusLabel(CO_STATUS, normalizeCoStatus(form.status || 'Draft'))}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {CO_STATUSES.map(s => <SelectItem key={s} value={s}>{statusLabel(CO_STATUS, s)}</SelectItem>)}

@@ -12,11 +12,12 @@ import {
 } from '../../lib/status'
 import { withAlpha } from '@/lib/tokens'
 
-// Inline-edit pill-shaped Select primitives. Each one wraps a status field
-// on a job/material document and persists changes to Firestore on change.
-// Behavior preserved exactly. Moved out of src/App.jsx in Phase 19. The words,
-// tones and menus come from status.js. A select shows the words of the chosen
-// status itself, because the stored value is a key such as on-track.
+// Inline edit selects, shaped as pills, for the status fields of a job and of a
+// material. Each one shows the words and the tone of the chosen status, offers
+// the statuses of its menu, and writes the status that was picked to the
+// document in Firestore. The words, tones and menus come from status.js. A select
+// shows the words of the chosen status itself, because the stored value is a key
+// such as on-track. Moved out of src/App.jsx in Phase 19.
 
 export function InlineStatusSelect({ job }) {
   const color = statusColor(JOB_STATUS, job.status)

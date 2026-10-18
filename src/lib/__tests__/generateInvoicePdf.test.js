@@ -31,6 +31,10 @@ describe('generateInvoicePdf', () => {
     ['partial-pay', 'PARTIAL PAY'],
     ['not-invoiced', 'NOT INVOICED'],
     [undefined, 'NOT INVOICED'],
+    // A hold is the office's business, and a client downloads this invoice from the portal.
+    ['hold', 'NOT INVOICED'],
+    // Anything the invoice does not print as itself reads as not invoiced.
+    ['bogus', 'NOT INVOICED'],
   ])('badge for billingStatus %s reads %s', async (billingStatus, label) => {
     await generateInvoicePdf({ id: 'J1', contractValue: 1000, billingStatus })
     expect(texts).toContain(label)
