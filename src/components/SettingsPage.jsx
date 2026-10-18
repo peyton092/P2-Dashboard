@@ -3,10 +3,11 @@ import {
   updatePassword, EmailAuthProvider,
   reauthenticateWithCredential,
 } from 'firebase/auth'
-import { doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore'
+import { doc, setDoc, onSnapshot } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../firebase'
 import { enablePushNotifications } from '../lib/push'
+import { withTimeout } from '../lib/withTimeout'
 import { useData } from '../use-data'
 import { useToast } from '@/components/ui/use-toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -115,13 +116,8 @@ export default function SettingsPage({ onLogout }) {
     setQbConnecting(true)
     setQbError('')
     setQbInfo('')
-    const timeout = setTimeout(() => {
-      setQbConnecting(false)
-      setQbError('Connection timed out — QB auth did not respond. Try again.')
-    }, 10000)
     try {
-      const { data } = await httpsCallable(functions, 'qbAuth')()
-      clearTimeout(timeout)
+      const { data } = await withTimeout(httpsCallable(functions, 'qbAuth')(), 10000)
       if (!data?.authUrl) {
         setQbConnecting(false)
         setQbError('QuickBooks integration is not configured on the server yet. Contact support.')
@@ -129,9 +125,12 @@ export default function SettingsPage({ onLogout }) {
       }
       window.location.href = data.authUrl
     } catch (e) {
-      clearTimeout(timeout)
-      console.error('QB auth error:', e)
       setQbConnecting(false)
+      if (e?.code === 'timeout') {
+        setQbError('Connection timed out. QuickBooks did not respond. Try again.')
+        return
+      }
+      console.error('QB auth error:', e)
       const code = e?.code || ''
       if (code === 'functions/unavailable' || code === 'functions/not-found') {
         setQbError('QuickBooks integration is not deployed on the server yet.')
@@ -148,16 +147,11 @@ export default function SettingsPage({ onLogout }) {
     setQbError('')
     setQbInfo('')
     try {
-      try {
-        await httpsCallable(functions, 'qbDisconnect')()
-      } catch {
-        // Fallback: clear the token doc directly so the UI reflects disconnect.
-        await deleteDoc(doc(db, 'qb_config', 'tokens'))
-      }
+      await httpsCallable(functions, 'qbDisconnect')()
       setQbInfo('QuickBooks disconnected.')
     } catch (e) {
       console.error('QB disconnect error:', e)
-      setQbError('Could not disconnect. Try again.')
+      setQbError('Could not disconnect. The connection is unchanged. Try again.')
     } finally {
       setQbDisconnecting(false)
     }
@@ -167,13 +161,8 @@ export default function SettingsPage({ onLogout }) {
     setCcConnecting(true)
     setCcError('')
     setCcInfo('')
-    const timeout = setTimeout(() => {
-      setCcConnecting(false)
-      setCcError('Connection timed out — CompanyCam auth did not respond. Try again.')
-    }, 10000)
     try {
-      const { data } = await httpsCallable(functions, 'ccAuth')()
-      clearTimeout(timeout)
+      const { data } = await withTimeout(httpsCallable(functions, 'ccAuth')(), 10000)
       if (!data?.authUrl) {
         setCcConnecting(false)
         setCcError('CompanyCam integration is not configured on the server yet. Contact support.')
@@ -181,9 +170,12 @@ export default function SettingsPage({ onLogout }) {
       }
       window.location.href = data.authUrl
     } catch (e) {
-      clearTimeout(timeout)
-      console.error('CompanyCam auth error:', e)
       setCcConnecting(false)
+      if (e?.code === 'timeout') {
+        setCcError('Connection timed out. CompanyCam did not respond. Try again.')
+        return
+      }
+      console.error('CompanyCam auth error:', e)
       const code = e?.code || ''
       if (code === 'functions/unavailable' || code === 'functions/not-found') {
         setCcError('CompanyCam integration is not deployed on the server yet.')
@@ -200,16 +192,11 @@ export default function SettingsPage({ onLogout }) {
     setCcError('')
     setCcInfo('')
     try {
-      try {
-        await httpsCallable(functions, 'ccDisconnect')()
-      } catch {
-        // Fallback: clear the token doc directly so the UI reflects disconnect.
-        await deleteDoc(doc(db, 'cc_config', 'tokens'))
-      }
+      await httpsCallable(functions, 'ccDisconnect')()
       setCcInfo('CompanyCam disconnected.')
     } catch (e) {
       console.error('CompanyCam disconnect error:', e)
-      setCcError('Could not disconnect. Try again.')
+      setCcError('Could not disconnect. The connection is unchanged. Try again.')
     } finally {
       setCcDisconnecting(false)
     }
