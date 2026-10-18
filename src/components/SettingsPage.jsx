@@ -10,6 +10,8 @@ import { enablePushNotifications } from '../lib/push'
 import { withTimeout } from '../lib/withTimeout'
 import { callableMessage } from '../lib/callableError'
 import { useData } from '../use-data'
+import { useMutation } from '../hooks/useMutation'
+import { useConfirm } from '../hooks/useConfirm'
 import { useToast } from '@/components/ui/use-toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -58,11 +60,23 @@ function backfillSummary(result) {
   ].filter(Boolean).join(' ')
 }
 
-function Toggle({ enabled, onChange }) {
+// What a person is told when the password cannot be changed, by the code the sign in
+// service gives. A code that is not here gets no reason, because its own text is for
+// developers.
+const PASSWORD_MESSAGES = {
+  'auth/wrong-password':        'Current password is incorrect.',
+  'auth/invalid-credential':    'Current password is incorrect.',
+  'auth/too-many-requests':     'Too many attempts. Try again later.',
+  'auth/weak-password':         'New password must be at least 6 characters.',
+  'auth/network-request-failed': 'No connection. Check it and try again.',
+}
+
+function Toggle({ label, enabled, onChange }) {
   return (
     <button
       type="button"
       role="switch"
+      aria-label={label}
       aria-checked={enabled}
       onClick={() => onChange(!enabled)}
       className="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 focus:outline-none"
@@ -81,17 +95,22 @@ export default function SettingsPage({ onLogout, role }) {
   const user = auth.currentUser
   const toast = useToast()
 
+  const { ask, dialog } = useConfirm()
+  const { run: runToggle } = useMutation()
+  const { run: runPassword, busy: saving } = useMutation()
+  const { run: runQbDisconnect, busy: qbDisconnecting } = useMutation()
+  const { run: runCcDisconnect, busy: ccDisconnecting } = useMutation()
+
   const [pwMode, setPwMode]   = useState(false)
   const [curPw, setCurPw]     = useState('')
   const [newPw, setNewPw]     = useState('')
-  const [saving, setSaving]   = useState(false)
-  const [pwMsg, setPwMsg]     = useState(null)
+  // What went wrong with the last try, in words, under the boxes. The toast says it too.
+  const [pwError, setPwError] = useState('')
 
   const [qbConnected, setQbConnected] = useState(false)
   const [qbConnectedAt, setQbConnectedAt] = useState(null)
   const [qbCompanyId, setQbCompanyId] = useState(null)
   const [qbConnecting, setQbConnecting] = useState(false)
-  const [qbDisconnecting, setQbDisconnecting] = useState(false)
   const [qbError, setQbError] = useState('')
   const [qbInfo, setQbInfo] = useState('')
 
@@ -99,7 +118,6 @@ export default function SettingsPage({ onLogout, role }) {
   const [ccConnectedAt, setCcConnectedAt] = useState(null)
   const [ccScope, setCcScope] = useState(null)
   const [ccConnecting, setCcConnecting] = useState(false)
-  const [ccDisconnecting, setCcDisconnecting] = useState(false)
   const [ccError, setCcError] = useState('')
   const [ccInfo, setCcInfo] = useState('')
   const [ccSyncing, setCcSyncing] = useState(false)
@@ -165,21 +183,24 @@ export default function SettingsPage({ onLogout, role }) {
     }
   }
 
-  const handleDisconnectQB = async () => {
+  // Disconnecting stops something that was running, so it is asked about first. The
+  // function is the server's, and the question stays open while it runs.
+  const handleDisconnectQB = () => {
     if (!qbConnected) return
-    if (!window.confirm('Disconnect QuickBooks? Auto-sync of invoices will stop until you reconnect.')) return
-    setQbDisconnecting(true)
-    setQbError('')
-    setQbInfo('')
-    try {
-      await httpsCallable(functions, 'qbDisconnect')()
-      setQbInfo('QuickBooks disconnected.')
-    } catch (e) {
-      console.error('QB disconnect error:', e)
-      setQbError('Could not disconnect. The connection is unchanged. Try again.')
-    } finally {
-      setQbDisconnecting(false)
-    }
+    ask({
+      title: 'Disconnect QuickBooks?',
+      body: 'Automatic sync of invoices stops until you reconnect.',
+      confirmLabel: 'Disconnect',
+      tone: 'critical',
+      onConfirm: () => {
+        setQbError('')
+        setQbInfo('')
+        return runQbDisconnect(() => httpsCallable(functions, 'qbDisconnect')(), {
+          success: 'QuickBooks disconnected.',
+          error: 'Could not disconnect QuickBooks. The connection is unchanged. Try again.',
+        })
+      },
+    })
   }
 
   const handleConnectCC = async () => {
@@ -210,21 +231,22 @@ export default function SettingsPage({ onLogout, role }) {
     }
   }
 
-  const handleDisconnectCC = async () => {
+  const handleDisconnectCC = () => {
     if (!ccConnected) return
-    if (!window.confirm('Disconnect CompanyCam? Photo sync will stop until you reconnect.')) return
-    setCcDisconnecting(true)
-    setCcError('')
-    setCcInfo('')
-    try {
-      await httpsCallable(functions, 'ccDisconnect')()
-      setCcInfo('CompanyCam disconnected.')
-    } catch (e) {
-      console.error('CompanyCam disconnect error:', e)
-      setCcError('Could not disconnect. The connection is unchanged. Try again.')
-    } finally {
-      setCcDisconnecting(false)
-    }
+    ask({
+      title: 'Disconnect CompanyCam?',
+      body: 'Photo sync stops until you reconnect.',
+      confirmLabel: 'Disconnect',
+      tone: 'critical',
+      onConfirm: () => {
+        setCcError('')
+        setCcInfo('')
+        return runCcDisconnect(() => httpsCallable(functions, 'ccDisconnect')(), {
+          success: 'CompanyCam disconnected.',
+          error: 'Could not disconnect CompanyCam. The connection is unchanged. Try again.',
+        })
+      },
+    })
   }
 
   const handleSyncCC = async () => {
@@ -279,30 +301,36 @@ export default function SettingsPage({ onLogout, role }) {
   const getVal = (key, def) =>
     settings && key in settings ? settings[key] : def
 
-  const handleToggle = async (key, value) => {
-    await setDoc(doc(db, 'config', 'settings'), { [key]: value }, { merge: true })
-  }
+  const handleToggle = (key, label, value) => runToggle(
+    () => setDoc(doc(db, 'config', 'settings'), { [key]: value }, { merge: true }),
+    {
+      success: `${label} turned ${value ? 'on' : 'off'}.`,
+      error: `Could not change ${label}. Try again.`,
+    },
+  )
 
   const handleChangePw = async () => {
     if (!user || !curPw || !newPw) return
-    setSaving(true)
-    setPwMsg(null)
-    try {
-      const cred = EmailAuthProvider.credential(user.email, curPw)
-      await reauthenticateWithCredential(user, cred)
-      await updatePassword(user, newPw)
-      setPwMsg({ ok: true, text: 'Password updated successfully.' })
-      setCurPw(''); setNewPw(''); setPwMode(false)
-    } catch (e) {
-      const map = {
-        'auth/wrong-password':     'Current password is incorrect.',
-        'auth/invalid-credential': 'Current password is incorrect.',
-        'auth/too-many-requests':  'Too many attempts — try again later.',
-        'auth/weak-password':      'New password must be at least 6 characters.',
+    setPwError('')
+    const { ok, error } = await runPassword(async () => {
+      try {
+        const cred = EmailAuthProvider.credential(user.email, curPw)
+        await reauthenticateWithCredential(user, cred)
+        await updatePassword(user, newPw)
+      } catch (e) {
+        // The sign in service's own text is for developers. A code it has words for gets
+        // them, and any other code gets the plain sentence the toast already has.
+        throw new Error(PASSWORD_MESSAGES[e.code] ?? '')
       }
-      setPwMsg({ ok: false, text: map[e.code] || e.message })
+    }, {
+      success: 'Password updated.',
+      error: 'Could not update the password. Try again.',
+    })
+    if (ok) {
+      setCurPw(''); setNewPw(''); setPwMode(false)
+    } else {
+      setPwError(error)
     }
-    setSaving(false)
   }
 
   return (
@@ -331,7 +359,7 @@ export default function SettingsPage({ onLogout, role }) {
                   <p className="text-xs text-muted-foreground">{desc}</p>
                 </div>
               </div>
-              <Toggle enabled={getVal(key, def)} onChange={v => handleToggle(key, v)} />
+              <Toggle label={label} enabled={getVal(key, def)} onChange={v => handleToggle(key, label, v)} />
             </div>
           ))}
         </CardContent>
@@ -529,7 +557,7 @@ export default function SettingsPage({ onLogout, role }) {
               variant="outline"
               size="sm"
               className="border-white/20 text-xs h-8"
-              onClick={() => { setPwMode(true); setPwMsg(null) }}
+              onClick={() => { setPwMode(true); setPwError('') }}
             >
               Change Password
             </Button>
@@ -549,11 +577,7 @@ export default function SettingsPage({ onLogout, role }) {
                 value={newPw}
                 onChange={e => setNewPw(e.target.value)}
               />
-              {pwMsg && (
-                <p className="text-xs" style={{ color: pwMsg.ok ? '#22c55e' : '#ef4444' }}>
-                  {pwMsg.text}
-                </p>
-              )}
+              {pwError && <p className="text-xs text-critical">{pwError}</p>}
               <div className="flex gap-2">
                 <Button
                   size="sm"
@@ -568,7 +592,7 @@ export default function SettingsPage({ onLogout, role }) {
                   variant="ghost"
                   size="sm"
                   className="text-xs h-7"
-                  onClick={() => { setPwMode(false); setPwMsg(null); setCurPw(''); setNewPw('') }}
+                  onClick={() => { setPwMode(false); setPwError(''); setCurPw(''); setNewPw('') }}
                 >
                   Cancel
                 </Button>
@@ -613,6 +637,7 @@ export default function SettingsPage({ onLogout, role }) {
           </div>
         </CardContent>
       </Card>
+      {dialog}
     </div>
   )
 }
