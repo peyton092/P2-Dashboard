@@ -8,6 +8,7 @@ import {
 } from '../agent/scoring'
 import { ZONES, PM_TO_ZONE } from '../agent/zones'
 import { updateJob } from '../hooks/useFirestore'
+import { useMutation } from '../hooks/useMutation'
 import {
   PageHeader,
   StatBand,
@@ -688,19 +689,27 @@ function PMJobRow({ job, risk, score, pendingCOs, now }) {
   )
 }
 
-// ── Inline next-action input — Firestore write preserved from prior version ──
+// ── Inline next-action input, saved when the person leaves the box ───────────
 
-function NextActionInput({ job, placeholder }) {
+// Keyed on what is stored, so the box is made again whenever the stored next action
+// changes (another person saved one, or this save came back) and leaving it never writes an
+// old copy over a newer one.
+export function NextActionInput({ job, placeholder }) {
+  return <NextActionField key={`${job._docId}:${job.nextAction ?? ''}`} job={job} placeholder={placeholder} />
+}
+
+function NextActionField({ job, placeholder }) {
   const [val, setVal] = useState(job.nextAction || '')
-  const [saving, setSaving] = useState(false)
+  const { run, busy: saving } = useMutation()
 
-  async function handleBlur() {
+  function handleBlur() {
     if (!job._docId) return
     const trimmed = val.trim()
     if (trimmed === (job.nextAction || '').trim()) return
-    setSaving(true)
-    try { await updateJob(job._docId, { nextAction: trimmed }) }
-    finally { setSaving(false) }
+    run(() => updateJob(job._docId, { nextAction: trimmed }), {
+      success: 'Next action saved.',
+      error: 'Could not save the next action. Try again.',
+    })
   }
 
   return (

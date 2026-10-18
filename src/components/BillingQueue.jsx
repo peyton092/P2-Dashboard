@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
 import { updateJob } from '../hooks/useFirestore'
+import { useMutation } from '../hooks/useMutation'
+import { useConfirm } from '../hooks/useConfirm'
 import { exportToCsv } from '../lib/exportCsv'
 import { daysSince, monthKey, toDate } from '../lib/dates'
 import { contractValue, fmtMoney, sumContracts, sumInvoices, missingNote } from '../lib/money'
@@ -515,40 +517,52 @@ function ApprovalStatusPill({ row }) {
 
 // ── Action buttons (preserve all existing Firestore writes) ─────────────────
 
-function BillingActions({ job }) {
-  const [marking, setMarking] = useState(false)
-  const [holding, setHolding] = useState(false)
+export function BillingActions({ job }) {
+  const { run: runInvoice, busy: marking } = useMutation()
+  const { run: runHold, busy: holding } = useMutation()
+  const { ask, dialog } = useConfirm()
   const isInvoiced = job.billingStatus === 'invoiced' || job.billingStatus === 'paid'
   const isHold     = job.billingStatus === 'hold'
 
-  async function handleMarkInvoiced() {
+  // Marking a job invoiced tells the client it was invoiced, so it is asked about first.
+  // The question stays open under the Working button while the write is out, and a refusal
+  // leaves it open under the error toast. Task 11 replaces it with the invoice dialog.
+  function handleMarkInvoiced() {
     if (!job._docId) return
-    setMarking(true)
-    try { await updateJob(job._docId, { billingStatus: 'invoiced' }) }
-    finally { setMarking(false) }
+    ask({
+      title: 'Submit this invoice?',
+      body: `${job.id} is marked invoiced, and the client sees the invoice as submitted.`,
+      confirmLabel: 'Submit invoice',
+      onConfirm: () => runInvoice(() => updateJob(job._docId, { billingStatus: 'invoiced' }), {
+        success: `${job.id} marked invoiced.`,
+        error: 'Could not submit the invoice. Try again.',
+      }),
+    })
   }
-  async function handleHold() {
+  function handleHold() {
     if (!job._docId) return
-    setHolding(true)
-    try { await updateJob(job._docId, { billingStatus: 'hold' }) }
-    finally { setHolding(false) }
+    runHold(() => updateJob(job._docId, { billingStatus: 'hold' }), {
+      success: `${job.id} put on billing hold.`,
+      error: 'Could not place the hold. Try again.',
+    })
   }
-  async function handleRelease() {
+  function handleRelease() {
     if (!job._docId) return
-    setHolding(true)
-    try { await updateJob(job._docId, { billingStatus: 'not-invoiced' }) }
-    finally { setHolding(false) }
+    runHold(() => updateJob(job._docId, { billingStatus: 'not-invoiced' }), {
+      success: `Hold released on ${job.id}.`,
+      error: 'Could not release the hold. Try again.',
+    })
   }
 
+  let actions
   if (isInvoiced) {
-    return (
+    actions = (
       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
         <CheckIcon size={12} /> Invoiced
       </span>
     )
-  }
-  if (isHold) {
-    return (
+  } else if (isHold) {
+    actions = (
       <button
         type="button"
         onClick={handleRelease}
@@ -558,42 +572,54 @@ function BillingActions({ job }) {
         <BanIcon size={11} /> {holding ? '…' : 'Release hold'}
       </button>
     )
+  } else {
+    actions = (
+      <div className="flex items-center gap-1.5 justify-end">
+        <button
+          type="button"
+          onClick={handleMarkInvoiced}
+          disabled={marking}
+          className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-white disabled:opacity-50 transition-colors"
+          style={{ backgroundColor: BRAND }}
+          title="Submit invoice: marks the job invoiced"
+        >
+          <ReceiptIcon size={11} /> {marking ? '…' : 'Submit invoice'}
+        </button>
+        <button
+          type="button"
+          onClick={handleHold}
+          disabled={holding}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:border-white/25 disabled:opacity-40 transition-colors"
+          title="Place billing hold"
+        >
+          <XIcon size={11} /> {holding ? '…' : 'Hold'}
+        </button>
+      </div>
+    )
   }
 
-  return (
-    <div className="flex items-center gap-1.5 justify-end">
-      <button
-        type="button"
-        onClick={handleMarkInvoiced}
-        disabled={marking}
-        className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-white disabled:opacity-50 transition-colors"
-        style={{ backgroundColor: BRAND }}
-        title="Submit invoice — marks job invoiced"
-      >
-        <ReceiptIcon size={11} /> {marking ? '…' : 'Submit invoice'}
-      </button>
-      <button
-        type="button"
-        onClick={handleHold}
-        disabled={holding}
-        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:border-white/25 disabled:opacity-40 transition-colors"
-        title="Place billing hold"
-      >
-        <XIcon size={11} /> {holding ? '…' : 'Hold'}
-      </button>
-    </div>
-  )
+  // The question is part of every state, so that it is still on the screen when the job
+  // turns invoiced under it while the write is being confirmed.
+  return <>{actions}{dialog}</>
 }
 
-function InvoiceNumberInput({ job }) {
-  const [val, setVal]       = useState(job.invoiceNum || '')
-  const [saving, setSaving] = useState(false)
-  async function handleBlur() {
+// Keyed on what is stored, so the box is made again whenever the stored number changes
+// (another person saved one, or this save came back) and leaving it never writes an old
+// copy over a newer one.
+export function InvoiceNumberInput({ job }) {
+  return <InvoiceNumberField key={`${job._docId}:${job.invoiceNum ?? ''}`} job={job} />
+}
+
+function InvoiceNumberField({ job }) {
+  const [val, setVal] = useState(job.invoiceNum || '')
+  const { run, busy: saving } = useMutation()
+  function handleBlur() {
     if (!job._docId) return
     if (val === (job.invoiceNum || '')) return
-    setSaving(true)
-    try { await updateJob(job._docId, { invoiceNum: val }) }
-    finally { setSaving(false) }
+    run(() => updateJob(job._docId, { invoiceNum: val }), {
+      success: 'Invoice number saved.',
+      error: 'Could not save the invoice number. Try again.',
+    })
   }
   return (
     <div className="flex items-center gap-1.5">
