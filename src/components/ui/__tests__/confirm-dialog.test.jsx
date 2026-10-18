@@ -113,17 +113,81 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).not.toHaveBeenCalled()
   })
 
-  it('disables the confirm button and says Working while it is busy', async () => {
+  it('says Working and ignores a press while it is busy, and leaves Cancel alone', async () => {
     const onConfirm = vi.fn()
     render(<Page onConfirm={onConfirm} busy />)
     const dialog = await openIt()
 
     const [cancel, confirm] = actions(dialog)
     expect(confirm.textContent).toBe('Working')
-    expect(confirm.hasAttribute('disabled') || confirm.getAttribute('aria-disabled') === 'true').toBe(true)
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
     fireEvent.click(confirm)
     expect(onConfirm).not.toHaveBeenCalled()
     expect(cancel.hasAttribute('disabled')).toBe(false)
+    expect(cancel.hasAttribute('aria-disabled')).toBe(false)
+  })
+
+  // A button that is natively disabled cannot hold focus, so pressing confirm with the
+  // keyboard would drop focus to the page behind a modal dialog. While busy it is
+  // aria-disabled instead, which keeps it in the tab order and tells a screen reader it
+  // is off, and the press is ignored.
+  it('is not natively disabled while it is busy, so it can keep focus', async () => {
+    render(<Page busy />)
+    const dialog = await openIt()
+
+    const confirm = actions(dialog)[1]
+    expect(confirm.hasAttribute('disabled')).toBe(false)
+    expect(confirm.tabIndex).toBe(0)
+  })
+
+  // A page starts the work from onConfirm and sets busy, as the screens do.
+  function Starts({ onConfirm }) {
+    const [busy, setBusy] = useState(false)
+    return <Page busy={busy} onConfirm={() => { onConfirm(); setBusy(true) }} />
+  }
+
+  it('keeps focus on the confirm button when the work starts', async () => {
+    render(<Starts onConfirm={() => {}} />)
+    await openIt()
+    const confirm = screen.getByRole('button', { name: 'Confirm' })
+    act(() => { confirm.focus() })
+
+    fireEvent.click(confirm)
+
+    await waitFor(() => expect(confirm.textContent).toBe('Working'))
+    expect(document.activeElement).toBe(confirm)
+  })
+
+  it('calls onConfirm once when it is pressed again while the work runs', async () => {
+    const onConfirm = vi.fn()
+    render(<Starts onConfirm={onConfirm} />)
+    await openIt()
+    const confirm = screen.getByRole('button', { name: 'Confirm' })
+
+    fireEvent.click(confirm)
+    await waitFor(() => expect(confirm.textContent).toBe('Working'))
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('announces Working in a status region while it is busy, and is quiet when it is not', async () => {
+    const { rerender } = render(<Page />)
+    await openIt()
+
+    // The region is in the document before the work starts, which is what lets a
+    // screen reader announce the text that arrives in it.
+    const status = screen.getByRole('status')
+    expect(status.textContent).toBe('')
+    expect(status.classList.contains('sr-only')).toBe(true)
+
+    rerender(<Page busy />)
+    expect(screen.getByRole('status')).toBe(status)
+    expect(status.textContent).toBe('Working')
+
+    rerender(<Page busy={false} />)
+    expect(status.textContent).toBe('')
   })
 
   it('keeps the confirm label and an enabled button while it is not busy', async () => {
