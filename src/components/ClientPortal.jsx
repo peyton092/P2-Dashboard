@@ -521,6 +521,7 @@ function JobFiles({ job }) {
 
 function ClientMessages({ jobs, clientName }) {
   const { submits, uid } = useData()
+  const toast = useToast()
   const [view, setView] = useState('inbox')
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'Question', body: '', jobId: '' })
@@ -540,22 +541,28 @@ function ClientMessages({ jobs, clientName }) {
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim() || !form.jobId) return
     setSubmitting(true)
-    // A client may create a submission for one of their own jobs that lists only
-    // them and names no tenant; the stamping trigger then gives it the job's scope.
-    await addSubmit({
-      subject: form.subject.trim(),
-      category: form.category,
-      priority: 'Medium',
-      body: form.body.trim(),
-      portal: 'Client',
-      clientName: clientName || null,
-      jobId: form.jobId,
-      status: 'Open',
-      clientUids: [uid],
-    })
-    setForm({ subject: '', category: 'Question', body: '', jobId: '' })
-    setSubmitting(false)
-    setView('inbox')
+    try {
+      // A client may create a submission for one of their own jobs that lists only
+      // them and names no tenant; the stamping trigger then gives it the job's scope.
+      await addSubmit({
+        subject: form.subject.trim(),
+        category: form.category,
+        priority: 'Medium',
+        body: form.body.trim(),
+        portal: 'Client',
+        clientName: clientName || null,
+        jobId: form.jobId,
+        status: 'Open',
+        clientUids: [uid],
+      })
+      setForm({ subject: '', category: 'Question', body: '', jobId: '' })
+      setView('inbox')
+    } catch (err) {
+      console.error('[Client] Message failed:', err)
+      toast({ tone: 'error', title: callableMessage(err, 'Could not send your message. Try again.') })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleReply = async () => {

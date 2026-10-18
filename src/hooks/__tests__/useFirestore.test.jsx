@@ -289,6 +289,28 @@ describe.each([
   })
 })
 
+// While a hook waits for its first snapshot, and when it may read nothing, it gives
+// the same frozen empty value on every render, so a screen effect keyed on that value
+// does not run again each time the screen renders.
+describe.each([
+  ['useJobs', useJobs, 'jobs', []],
+  ['useSubs', useSubs, 'subs', []],
+  ['useAgentAlerts', useAgentAlerts, 'alerts', []],
+  ['useSettings', useSettings, 'settings', {}],
+])('%s empty value', (_name, hook, key, empty) => {
+  it.each([
+    ['while it waits', STAFF],
+    ['without access', null],
+  ])('is the same frozen value on every render %s', (_label, scope) => {
+    const { result, rerender } = renderHook(() => hook(scope))
+    const first = result.current[key]
+    expect(first).toEqual(empty)
+    rerender()
+    expect(result.current[key]).toBe(first)
+    expect(Object.isFrozen(first)).toBe(true)
+  })
+})
+
 // The table above covers each hook in detail. This one walks everything the
 // module exports, so a hook added later that swallows its error fails here too.
 describe('every hook the module exports', () => {

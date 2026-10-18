@@ -17,21 +17,26 @@ service firebase.storage {
     }
 
     // Role comes from a custom claim when present, otherwise the users doc in
-    // Firestore, the same fallback as userRole() in firestore.rules.
+    // Firestore, the same fallback as userRole() in firestore.rules. Each read
+    // is guarded by a look for the document, so a missing one is no role rather
+    // than an error.
     function userRole() {
       return ('role' in request.auth.token)
         ? request.auth.token.role
-        : firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+        : (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+            ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', null)
+            : null);
     }
 
     function isStaff() {
       return signedIn() && userRole() in ['owner', 'internal'];
     }
 
-    // Whether the job with this document id lists the signed in user in its
-    // clientUids.
+    // Whether the job with this document id exists and lists the signed in user
+    // in its clientUids.
     function listedOnJob(jobDocId) {
-      return request.auth.uid in firestore.get(/databases/(default)/documents/jobs/$(jobDocId)).data.clientUids;
+      return firestore.exists(/databases/(default)/documents/jobs/$(jobDocId))
+        && request.auth.uid in firestore.get(/databases/(default)/documents/jobs/$(jobDocId)).data.get('clientUids', []);
     }
 
     function isUnder25MB() {
@@ -53,9 +58,11 @@ service firebase.storage {
     }
 
     // Every other path is for staff, with the 25 MB cap every upload has
-    // always had. Between them the two rules below match every path except a
-    // job's client uploads folder, so the rule above, with its type and size
-    // limits, is the only one that applies there.
+    // always had. Between them the two rules below allow staff every path except
+    // a job's client uploads folder, so the rule above, with its type and size
+    // limits, is the only one that applies there. An object directly under
+    // jobs/, or a bare object named jobs, is allowed by neither rule, so nobody
+    // may read or write one; that is intended, as nothing writes there.
     match /{top}/{rest=**} {
       allow read: if isStaff() && top != 'jobs';
       allow write: if isStaff() && top != 'jobs' && isUnder25MB();

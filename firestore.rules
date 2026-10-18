@@ -81,13 +81,14 @@ service cloud.firestore {
       // other staff nor rewrite one into a builder or client, which onUserWritten
       // would turn into a demotion and a sign out. A builder record needs a
       // real builder tenant, so a builder cannot be pointed at p2-core or at a
-      // tenant that does not exist.
-      allow write: if isOwner()
+      // tenant that does not exist. Only an owner deletes a record.
+      allow create, update: if isOwner()
         || (isStaff()
             && request.resource.data.role in ['builder', 'client']
             && (resource == null || resource.data.role in ['builder', 'client'])
             && (request.resource.data.role != 'builder'
                 || request.resource.data.tenantId in ['qbs', 'vision']));
+      allow delete: if isOwner();
       // Builders accept Terms of Access as themselves.
       match /termsAcceptances/{version} {
         allow read, write: if signedIn() && (request.auth.uid == uid || isStaff());
@@ -126,11 +127,13 @@ service cloud.firestore {
 
     // Whether the signed in user may read a scoped document, given its data:
     // staff always, a builder when it carries their tenant, a client when its
-    // clientUids list them. A document that was never stamped is staff only.
+    // clientUids list them. A document that was never stamped is staff only,
+    // and nobody signed out reads anything.
     function inScope(data) {
-      return isStaff()
-        || (isTenantBuilder() && data.tenantId == userTenant())
-        || (userRole() == 'client' && 'clientUids' in data && request.auth.uid in data.clientUids);
+      return signedIn()
+        && (isStaff()
+            || (isTenantBuilder() && data.tenantId == userTenant())
+            || (userRole() == 'client' && 'clientUids' in data && request.auth.uid in data.clientUids));
     }
 
     // The data of the job, or of the submission, a subcollection document sits under.
@@ -152,7 +155,8 @@ service cloud.firestore {
       match /files/{fileId} {
         allow read: if inScope(jobData(jobId));
         allow create: if isStaff()
-          || (userRole() == 'client'
+          || (signedIn()
+              && userRole() == 'client'
               && request.auth.uid in jobData(jobId).clientUids
               && request.resource.data.source == 'client-upload'
               && request.resource.data.uploadedBy == request.auth.uid
@@ -185,9 +189,10 @@ service cloud.firestore {
     // signed in, and a builder or a client stamps it with their own scope: a
     // client names one of their jobs, lists only themselves in clientUids and
     // names no tenant, a builder carries their tenant and lists no client. The
-    // stamping trigger then gives a client's submission its job's tenant, and
-    // never moves one that carries a tenant to another. Anyone who may read one
-    // may move its status, and change nothing else about it.
+    // stamping triggers then give it its job's scope, except that a submission
+    // whose creator is a builder (by the role in users/{createdBy}) keeps its
+    // own tenant when its job is in another one. Anyone who may read one may
+    // move its status, and change nothing else about it.
     match /submits/{submitId} {
       allow read: if inScope(resource.data);
       allow create: if signedIn()

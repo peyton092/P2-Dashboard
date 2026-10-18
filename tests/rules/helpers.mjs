@@ -41,5 +41,16 @@ export async function setupEnv() {
     // A Storage instance acting as uid with these claims (none: role from users/{uid}).
     storageAs: (uid, claims) => env.authenticatedContext(uid, claims).storage(),
     storageAnon: () => env.unauthenticatedContext().storage(),
+    // Deletes every object in the bucket. env.clearStorage() lists only the top of
+    // the bucket, so an object in a folder (every upload path the app uses) would
+    // survive it; this walks each folder too.
+    clearStorage: () => env.withSecurityRulesDisabled(async (c) => {
+      const walk = async (folder) => {
+        const { items, prefixes } = await folder.listAll()
+        await Promise.all(items.map((item) => item.delete()))
+        await Promise.all(prefixes.map(walk))
+      }
+      await walk(c.storage().ref())
+    }),
   }
 }

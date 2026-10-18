@@ -93,7 +93,15 @@ beforeEach(() => {
   mocks.toast.mockReset()
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
+
+// What Firestore throws when the rules refuse a write, as the browser SDK reports it
+// with no sentence of its own.
+const refused = () => Object.assign(new Error('permission-denied'), { code: 'permission-denied' })
+const REFUSED_TOAST = { tone: 'error', title: 'Could not send your message. Try again.' }
 
 describe('a portal with no projects', () => {
   it('the client portal says that none are linked to the account yet', () => {
@@ -133,11 +141,20 @@ describe('a submission created in the client portal', () => {
     expect(sent).toMatchObject({ jobId: 'QBS-003', clientUids: ['c1'] })
     expect('tenantId' in sent).toBe(false)
   })
+
+  it('says so when the message is refused, and leaves the form ready to send again', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.data = portalData(CLIENT, { jobs: [JOB] })
+    mocks.addSubmit.mockRejectedValue(refused())
+    await sendMessage()
+    expect(mocks.toast).toHaveBeenCalledWith(REFUSED_TOAST)
+    expect(screen.getByPlaceholderText('Brief summary').value).toBe('Gate code')
+    expect(screen.getByRole('button', { name: 'Send to P2' }).disabled).toBe(false)
+  })
 })
 
 describe('a submission created in the builder portal', () => {
-  it('carries the builder\'s tenant and lists no client', async () => {
-    mocks.data = portalData(BUILDER, { jobs: [JOB] })
+  async function sendMessage() {
     openBuilderPortal()
     fireEvent.click(screen.getAllByRole('button', { name: /Submit/ })[0])
     fireEvent.click(screen.getByRole('button', { name: /New message/ }))
@@ -145,6 +162,21 @@ describe('a submission created in the builder portal', () => {
     fireEvent.change(screen.getByPlaceholderText('Describe in detail…'), { target: { value: 'Where does the panel go?' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send to P2' })) })
     expect(mocks.addSubmit).toHaveBeenCalledTimes(1)
-    expect(mocks.addSubmit.mock.calls[0][0]).toMatchObject({ jobId: null, tenantId: 'qbs', clientUids: [] })
+    return mocks.addSubmit.mock.calls[0][0]
+  }
+
+  it('carries the builder\'s tenant and lists no client', async () => {
+    mocks.data = portalData(BUILDER, { jobs: [JOB] })
+    expect(await sendMessage()).toMatchObject({ jobId: null, tenantId: 'qbs', clientUids: [] })
+  })
+
+  it('says so when the message is refused, and leaves the form ready to send again', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.data = portalData(BUILDER, { jobs: [JOB] })
+    mocks.addSubmit.mockRejectedValue(refused())
+    await sendMessage()
+    expect(mocks.toast).toHaveBeenCalledWith(REFUSED_TOAST)
+    expect(screen.getByPlaceholderText('Brief summary').value).toBe('Panel location')
+    expect(screen.getByRole('button', { name: 'Send to P2' }).disabled).toBe(false)
   })
 })

@@ -29,6 +29,7 @@ describe('storage rules', () => {
   })
 
   beforeEach(async () => {
+    await t.clearStorage()
     await t.env.clearFirestore()
     await t.seed(async (db) => {
       await setDoc(doc(db, 'jobs/qbs1'), { id: 'QBS-001', tenantId: 'qbs', clientUids: ['c1'] })

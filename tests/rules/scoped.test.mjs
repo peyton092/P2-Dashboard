@@ -243,6 +243,19 @@ describe('scoped reads and writes', () => {
     })
   })
 
+  // A builder asking for another tenant's documents, or a client for another client's,
+  // is refused outright, not answered with an empty list.
+  describe('lists of another tenant or another client', () => {
+    for (const name of ['jobs', 'extras', 'notifications', 'submits']) {
+      it(`a qbs builder cannot list the vision ${name}, and a client cannot list another client's`, async () => {
+        await assertFails(list(builderQbs(), name, ofTenant('vision')))
+        await assertFails(list(builderVision(), name, ofTenant('qbs')))
+        await assertFails(list(clientOne(), name, listing('c2')))
+        await assertFails(list(clientTwo(), name, listing('c1')))
+      })
+    }
+  })
+
   describe('notifications', () => {
     it('a client marks a notification about their job as read', async () => {
       await assertSucceeds(updateDoc(doc(clientOne(), 'notifications/n1'), { read: true }))

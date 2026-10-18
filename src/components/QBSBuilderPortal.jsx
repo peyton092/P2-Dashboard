@@ -6,6 +6,7 @@ import {
 } from '../hooks/useFirestore'
 import { extraState } from '../lib/extraStatus'
 import { callableMessage } from '../lib/callableError'
+import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -585,6 +586,7 @@ function ExtraRow({ co, compact = false }) {
 
 function QBSSubmit({ qbsPM, jobs }) {
   const { submits, scope } = useData()
+  const toast = useToast()
   const [view, setView] = useState('inbox')
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'RFI', priority: 'Medium', body: '', jobId: '' })
@@ -607,23 +609,30 @@ function QBSSubmit({ qbsPM, jobs }) {
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim()) return
     setSubmitting(true)
-    await addSubmit({
-      subject: form.subject.trim(),
-      category: form.category,
-      priority: form.priority,
-      body: form.body.trim(),
-      portal: 'Builder',
-      qbsPM: qbsPM || null,
-      jobId: form.jobId || null,
-      status: 'Open',
-      // A builder may create a submission that carries their own tenant and
-      // lists no client; the stamping trigger then gives it its job's scope.
-      tenantId: scope.tenantId,
-      clientUids: [],
-    })
-    setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', jobId: '' })
-    setSubmitting(false)
-    setView('inbox')
+    try {
+      await addSubmit({
+        subject: form.subject.trim(),
+        category: form.category,
+        priority: form.priority,
+        body: form.body.trim(),
+        portal: 'Builder',
+        qbsPM: qbsPM || null,
+        jobId: form.jobId || null,
+        status: 'Open',
+        // A builder may create a submission that carries their own tenant and
+        // lists no client. It keeps that tenant: the stamping trigger gives it its
+        // job's clients only when the job is in the same tenant.
+        tenantId: scope.tenantId,
+        clientUids: [],
+      })
+      setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', jobId: '' })
+      setView('inbox')
+    } catch (err) {
+      console.error('[QBS] Message failed:', err)
+      toast({ tone: 'error', title: callableMessage(err, 'Could not send your message. Try again.') })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleReply = async () => {

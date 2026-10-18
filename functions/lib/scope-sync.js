@@ -47,27 +47,27 @@ export function needsRestamp(doc, job) {
   return doc.tenantId !== want.tenantId || !sameItems(doc.clientUids, want.clientUids)
 }
 
-// Whether stamping this job's scope onto a submission would move it to another
-// tenant: the submission carries a tenant of its own (a builder stamps theirs on
-// the submissions they create) and the job is in a different one, the legacy
-// default counted for a job with no tenant. Such a submission is left where it
-// is, so a builder cannot put one in another tenant's portals by naming a job of
-// that tenant. A document with no tenant, or an empty one, moves nowhere: it
-// simply takes its job's. When either side is missing the answer is false.
-export function movesTenant(doc, job) {
+// The uid a document names in createdBy (the rules make it the signed in author), or
+// null when it names none.
+export const creatorOf = (doc) => (nonEmptyString(doc?.createdBy) ? doc.createdBy : null)
+
+// Whether the creator of a submission decides if it follows its job: it names who
+// created it, and it carries a tenant other than its job's (the legacy default counted
+// for a job with no tenant). Only then is the creator's role looked up; every other
+// submission follows its job without one. False when either side is missing.
+export function creatorDecides(doc, job) {
   if (!isDocument(doc) || !isDocument(job)) return false
-  return nonEmptyString(doc.tenantId) && doc.tenantId !== scopePatchFor(job).tenantId
+  return creatorOf(doc) !== null && nonEmptyString(doc.tenantId) && doc.tenantId !== scopePatchFor(job).tenantId
 }
 
-// Whether a job's fan out may restamp this submission: it carries no tenant (or an
-// empty one), and so takes its job's, or it carries one of the tenants the job was
-// in before (previous, a list; empty for a new job, which was in none). A submission
-// that carries any other tenant is left where it is, as onSubmitWritten leaves it,
-// or a builder could name a job of another tenant and wait for that job's clients
-// to change. False for a missing document.
-export function followsJob(doc, previous) {
-  if (!isDocument(doc)) return false
-  return !nonEmptyString(doc.tenantId) || previous.includes(doc.tenantId)
+// Whether a submission stays in the tenant it carries instead of taking its job's scope:
+// a builder created it (creatorRole is the role in users/{createdBy}) and it carries a
+// tenant other than its job's. A builder stamps their own tenant on the submissions they
+// create and may name any job, so following the job from there would put their
+// submission in another tenant's portals. Every other submission, a client's or staff's,
+// or one whose creator is unknown or has no users document, follows its job.
+export function staysInTenant(doc, job, creatorRole) {
+  return creatorRole === 'builder' && creatorDecides(doc, job)
 }
 
 // The tenant a job is stored with, or null when it has none. Unlike scopeForJob

@@ -57,7 +57,11 @@ export function queryFor(collectionName, scope) {
 // while that source is current, so a changed scope never shows what the one
 // before it loaded; until a snapshot arrives the hook gives empty. Without a
 // source nothing is subscribed, and there is empty, no error and nothing loading.
+// empty is one of the frozen values below, the same on every render, so a screen
+// effect keyed on it does not run again each time the screen renders.
 const NOTHING_YET = { source: null, value: null, error: null }
+const EMPTY_LIST = Object.freeze([])
+const EMPTY_OBJECT = Object.freeze({})
 
 function useListener(source, toValue, empty) {
   const [state, setState] = useState(NOTHING_YET)
@@ -92,7 +96,7 @@ function useScopedList(collectionName, scope) {
     () => queryFor(collectionName, { role, tenantId, uid }),
     [collectionName, role, tenantId, uid],
   )
-  return useListener(q, docRows, [])
+  return useListener(q, docRows, EMPTY_LIST)
 }
 
 // Something only staff read: what makeSource points at, for owner and internal
@@ -103,7 +107,7 @@ function useStaffOnly(scope, makeSource, toValue, empty) {
   return useListener(source, toValue, empty)
 }
 
-const useStaffList = (scope, makeQuery, toRows) => useStaffOnly(scope, makeQuery, toRows, [])
+const useStaffList = (scope, makeQuery, toRows) => useStaffOnly(scope, makeQuery, toRows, EMPTY_LIST)
 
 export function useJobs(scope) {
   const { value, loading, error } = useScopedList('jobs', scope)
@@ -360,7 +364,7 @@ const settingsDoc = () => doc(db, 'config', 'settings')
 const settingsOf = (snap) => (snap.exists() ? snap.data() : {})
 
 export function useSettings(scope) {
-  const { value, loading, error } = useStaffOnly(scope, settingsDoc, settingsOf, {})
+  const { value, loading, error } = useStaffOnly(scope, settingsDoc, settingsOf, EMPTY_OBJECT)
   return { settings: value, loading, error }
 }
 

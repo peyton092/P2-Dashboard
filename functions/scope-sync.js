@@ -3,11 +3,9 @@
 //
 //    onJobWritten     Fires on every write to jobs/{id}. When the job's tenantId or
 //                     its clientUids changed, gives the job's change orders,
-//                     submissions and notifications the new scope; a submission
-//                     follows only from the tenant the job was in before.
+//                     submissions and notifications the new scope.
 //    onExtraWritten   Fire on every write to extras/{id} and submits/{id}. Give the
-//    onSubmitWritten  document its job's scope when it does not carry it, except
-//                     that a submission is never moved to another tenant.
+//    onSubmitWritten  document its job's scope when it does not carry it.
 //    backfillScopes   Owner only. Stamps the scope onto everything that exists now
 //                     and sets the sign in claims of every user, then returns
 //                     what it did.
@@ -19,6 +17,13 @@
 //  `jobId`, both holding the job's own id (like QBS-001) and not its document id.
 //  A submission or notification with no jobId belongs to staff and has no scope to
 //  carry, so it is left alone.
+//
+//  One exception holds everywhere: a submission a builder created stays in the tenant it
+//  carries when its job is in another. A builder stamps their own tenant on the
+//  submissions they create and may name any job, so following the job would let them
+//  put a submission in another tenant's portals. Whether that applies is read from the
+//  users document of the person in its createdBy; every other submission, a client's or
+//  staff's, or one whose creator is unknown, follows its job.
 //
 //  None of these can fire itself. A document is written only when it does not
 //  carry its job's scope, and the write makes it carry it, so the trigger that the
@@ -39,7 +44,9 @@ import { wouldLowerStaff } from './lib/roles.js'
 import { nonEmptyString } from './lib/scope.js'
 import { claimsPatchFor } from './lib/users-sync.js'
 import { BATCH_SIZE, chunks } from './lib/batches.js'
-import { clientLinks, followsJob, jobIdOf, movesTenant, needsRestamp, scopeChanged, scopePatchFor } from './lib/scope-sync.js'
+import {
+  clientLinks, creatorDecides, creatorOf, jobIdOf, needsRestamp, scopeChanged, scopePatchFor, staysInTenant,
+} from './lib/scope-sync.js'
 
 export { needsRestamp, scopePatchFor }
 
@@ -76,13 +83,11 @@ async function commitUpdates(updates, onFailure) {
 // does not carry it already. A job that was deleted writes nothing: the documents
 // that named it keep the scope they were last given.
 //
-// A submission follows its job only when it carries no tenant, or the tenant the job
-// was in before this write (the legacy default counted, and none for a new job). One
-// that carries any other tenant is left where it is and logged, once in each pass:
-// a builder stamps their own tenant on the submissions they create and may name any
-// job, so following the job from there would let them put a submission in another
-// tenant's portals just by waiting for that job's clients to change. Change orders
-// and notifications are written by staff and the functions, so they always follow.
+// A submission a builder created that carries another tenant than the job is left where
+// it is and logged once (see staysInTenant). Its creator's role is read from their users
+// document, once per pass for each creator, and only for a submission whose tenant
+// differs from the job's. Every other submission, change order and notification follows
+// the job.
 //
 // A new job that was written without a tenantId gets the legacy default, qbs,
 // written onto itself once, instead of leaving it implied for ever. That is one
@@ -133,7 +138,7 @@ export const onJobWritten = onDocumentWritten({ document: 'jobs/{id}', region },
   // The two halves do not depend on each other, so one failing must not stop the other.
   const halves = [
     ['its tenant', before === null ? stampOwnTenant(ref) : null],
-    ['its documents', stampDependents(ref, job, before)],
+    ['its documents', stampDependents(ref, job)],
   ]
   const results = await Promise.allSettled(halves.map(([, work]) => work))
   results.forEach((result, i) => {
@@ -160,55 +165,55 @@ async function stampOwnTenant(ref) {
 
 // Gives every document that names the job the job's scope, then looks at the job once
 // more and, if its scope moved while that was going on, gives them the newer one. Every
-// failed batch is collected, and the first is thrown when both passes are done.
-//
-// before is the job as the event had it before the write, or null for a new job. A
-// submission follows from the tenant the job was in then; in the second pass also from
-// the tenant the first pass stamped, which is where the job was until it moved again.
-async function stampDependents(ref, job, before) {
+// failed batch is collected, and the first is thrown when both passes are done. A
+// builder's submission left in its tenant is logged once, whichever pass found it.
+async function stampDependents(ref, job) {
   if (!nonEmptyString(job.id)) {
     console.warn(`[onJobWritten] ${ref.path} has no id, so nothing that names it was stamped.`)
     return
   }
   const failures = []
-  const previous = before === null ? [] : [scopePatchFor(before).tenantId]
-  await stampPass(ref.path, job, previous, failures)
+  const kept = new Set()
+  await stampPass(ref.path, job, failures, kept)
 
   const again = await ref.get()
   if (again.exists && needsRestamp(scopePatchFor(job), again.data())) {
-    const passed = [...new Set([...previous, scopePatchFor(job).tenantId])]
-    await stampPass(ref.path, again.data(), passed, failures)
+    await stampPass(ref.path, again.data(), failures, kept)
   }
   if (failures.length > 0) throw failures[0]
 }
 
-// The line logged when the fan out leaves a submission in its tenant.
-function keptFromJob(path, doc, job, previous) {
-  const before = previous.length > 0 ? previous.join(' or ') : 'none, as the job is new'
-  return `[onJobWritten] ${path} carries tenant ${doc.tenantId}, which is not the tenant its job ${job.id} was in before (${before}), so it was left as it is. The job is now in tenant ${scopePatchFor(job).tenantId}.`
-}
-
 // One pass: the documents that name the job and do not carry its scope are stamped, in
-// batches, except a submission that may not follow the job (see followsJob), which is
-// logged and left alone. A batch that fails is logged and added to failures, and the
-// rest go on.
-async function stampPass(path, job, previous, failures) {
+// batches, except a submission a builder created in another tenant, which is logged
+// (once, by the paths in kept) and left alone. A batch that fails is logged and added to
+// failures, and the rest go on.
+async function stampPass(path, job, failures, kept) {
   if (!nonEmptyString(job.id)) return
   const found = await Promise.all(
     SCOPED.map(({ collection, field }) => db.collection(collection).where(field, '==', job.id).get()),
   )
+  // The role of each creator this pass has had to look up, each read once.
+  const roles = new Map()
+  const roleOf = (uid) => {
+    if (!roles.has(uid)) roles.set(uid, db.doc(`users/${uid}`).get().then(roleIn))
+    return roles.get(uid)
+  }
   const stale = []
-  found.forEach((snap, i) => {
+  for (const [i, snap] of found.entries()) {
     for (const doc of snap.docs) {
       const data = doc.data()
       if (!needsRestamp(data, job)) continue
-      if (SCOPED[i].collection === 'submits' && !followsJob(data, previous)) {
-        console.warn(keptFromJob(doc.ref.path, data, job, previous))
+      if (SCOPED[i].collection === 'submits' && creatorDecides(data, job)
+        && staysInTenant(data, job, await roleOf(creatorOf(data)))) {
+        if (!kept.has(doc.ref.path)) {
+          kept.add(doc.ref.path)
+          console.warn(keptInTenant('onJobWritten', doc.ref.path, data, job.id, job))
+        }
         continue
       }
       stale.push(doc)
     }
-  })
+  }
   await commitUpdates(
     stale.map((doc) => [doc.ref, scopePatchFor(job)]),
     (error, part) => {
@@ -228,12 +233,12 @@ async function stampPass(path, job, previous, failures) {
 // be found is logged and left as it is, and so is one that names no job. A deleted
 // document writes nothing.
 //
-// A submission that carries a tenant is never moved to another one. A builder
-// stamps their own tenant on the submissions they create, and the rules cannot see
-// which tenant the job they name is in, so naming a job of another tenant must not
-// put a submission in that tenant's portals. Such a submission is logged and left
-// exactly as it is, its clients included. A change order is written by staff, who
-// may point it at any job, so it always takes its job's tenant.
+// A submission a builder created that carries another tenant than its job is left
+// exactly as it is, its clients included, and logged (see staysInTenant): the rules
+// cannot see which tenant the job a builder names is in. Its creator is read inside
+// the transaction, after the submission and the job, and only when its tenant differs
+// from the job's. Every other submission follows its job. A change order is written by
+// staff, who may point it at any job, so it always takes its job's scope.
 //
 // The document, the job and the write are one transaction. A change to the job
 // while this runs (a client linked, say) therefore cannot be overwritten by the
@@ -243,14 +248,18 @@ export const onExtraWritten = onDocumentWritten({ document: 'extras/{id}', regio
 )
 
 export const onSubmitWritten = onDocumentWritten({ document: 'submits/{id}', region }, (event) =>
-  stampFromJob('onSubmitWritten', event, 'jobId', { keepTenant: true }),
+  stampFromJob('onSubmitWritten', event, 'jobId', { pinBuilders: true }),
 )
 
-// The line logged when a submission is left in its tenant rather than moved to its job's.
-const keptInTenant = (name, path, doc, jobId, job) =>
-  `[${name}] ${path} carries tenant ${doc.tenantId}, but its job ${jobId} is in tenant ${scopePatchFor(job).tenantId}, so it was left as it is.`
+// The role in a users document snapshot, or null when there is none.
+const roleIn = (snap) => (snap.exists ? (snap.data()?.role ?? null) : null)
 
-async function stampFromJob(name, event, field, { keepTenant = false } = {}) {
+// The line logged when a builder's submission is left in its tenant rather than moved
+// to its job's.
+const keptInTenant = (name, path, doc, jobId, job) =>
+  `[${name}] ${path} was created by a builder and carries tenant ${doc.tenantId}, but its job ${jobId} is in tenant ${scopePatchFor(job).tenantId}, so it was left as it is.`
+
+async function stampFromJob(name, event, field, { pinBuilders = false } = {}) {
   const change = event.data
   if (!change) {
     console.warn(`[${name}] The event carried no data; nothing to stamp.`)
@@ -273,11 +282,15 @@ async function stampFromJob(name, event, field, { keepTenant = false } = {}) {
       return
     }
     const job = found.docs[0].data()
-    if (keepTenant && movesTenant(doc, job)) {
-      console.warn(keptInTenant(name, ref.path, doc, jobId, job))
-      return
+    if (!needsRestamp(doc, job)) return
+    if (pinBuilders && creatorDecides(doc, job)) {
+      const creator = await tx.get(db.collection('users').doc(creatorOf(doc)))
+      if (staysInTenant(doc, job, roleIn(creator))) {
+        console.warn(keptInTenant(name, ref.path, doc, jobId, job))
+        return
+      }
     }
-    if (needsRestamp(doc, job)) tx.update(ref, scopePatchFor(job))
+    tx.update(ref, scopePatchFor(job))
   })
 }
 
@@ -304,10 +317,9 @@ const BACKFILL_FAILED = 'The backfill stopped before it finished. It is safe to 
 //                  right, so the count shows the run covered them.
 //   extras,        Gives every change order (job), submission and notification
 //   submits,       (jobId) the scope of the job it names. One that names no job, or
-//   notifications  a job that does not exist, is left alone, and so is a submission
-//                  that carries a tenant other than its job's, which is logged: like
-//                  onSubmitWritten, the backfill never moves a submission to another
-//                  tenant.
+//   notifications  a job that does not exist, is left alone, and so is a submission a
+//                  builder created that carries a tenant other than its job's, which
+//                  is logged (its creator's role comes from the users scan below).
 // Returns { ok: true, users, jobs, extras, submits, notifications, skipped }, where
 // skipped is how many of those documents were left alone.
 //
@@ -342,6 +354,7 @@ async function runBackfill() {
   // The scope each job ends up with, by the job's own id. The documents that name a job
   // take it from here, so they get the same clientUids the job just did.
   const links = clientLinks(users)
+  const roles = new Map(users.map(({ uid, data }) => [uid, data?.role ?? null]))
   const scopes = new Map()
   const jobWrites = []
   for (const doc of jobDocs) {
@@ -362,7 +375,7 @@ async function runBackfill() {
       const scope = scopes.get(jobId)
       if (!scope) {
         skipped += 1
-      } else if (collection === 'submits' && movesTenant(data, scope)) {
+      } else if (collection === 'submits' && staysInTenant(data, scope, roles.get(creatorOf(data)) ?? null)) {
         console.warn(keptInTenant('backfillScopes', doc.ref.path, data, jobId, scope))
         skipped += 1
       } else {
