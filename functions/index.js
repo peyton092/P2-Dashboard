@@ -13,14 +13,18 @@
 //    extras.js             sendExtraToBuilder, approveExtra, rejectExtra
 //    inspections.js        passInspection, failInspection
 //    jobs.js               createJob
+//    scope-sync.js         onJobWritten, onExtraWritten, onSubmitWritten, backfillScopes
 //
 //  Shared code lives in lib/:
 //    admin.js              initializes the Admin SDK once and exports `db`
 //    secrets.js            the four defineSecret instances
 //    config.js             region and constants used by more than one module
 //    authz.js              requireAuth, requireStaff, requireOwner (callable guards)
-//    roles.js              VALID_ROLES, isStaff, isOwner, claimsOf, mergeUserDoc (pure)
+//    roles.js              VALID_ROLES, isStaff, isOwner, claimsOf, mergeUserDoc, wouldLowerStaff (pure)
 //    scope.js              scopeForJob, canReadJob, canActOnExtra (pure)
+//    scope-sync.js         scopePatchFor, needsRestamp, scopeChanged, clientLinks (pure)
+//    batches.js            chunks, JOB_ID_CHUNK, BATCH_SIZE (pure)
+//    auth-claims.js        currentClaimRole (reads one account's custom claims)
 //    push-targets.js       targetTokens, groupTokens (pure)
 //    users-validate.js     validateNewUser (pure)
 //    users-sync.js         claimsPatchFor (pure)
@@ -69,6 +73,8 @@
 //                   list and out of any job that lists them but no longer
 //                   should (all of them when the document goes), and revokes
 //                   refresh tokens when an existing role changes or is removed.
+//                   A new document never lowers an account that is already owner
+//                   or internal: its claims are left as they are and the log says so.
 //
 //  Privileged actions. The browser no longer writes any of these itself; each
 //  call checks the caller's role, makes the change, and writes the notification
@@ -85,6 +91,26 @@
 //    createJob           Staff only. Takes the job from the New Job form (id like
 //                        QBS-001, address, client, tenantId). Refuses an id that
 //                        is taken. Returns { ok: true, docId }.
+//
+//  Scope stamping. A job's scope is { tenantId, clientUids }, and every change order,
+//  submission and notification that names the job carries a copy, which the Firestore
+//  rules read to decide who may see it. The job is where it comes from.
+//    onJobWritten     Firestore trigger on jobs/{id}. When a job's tenantId or the set
+//                     of uids in its clientUids changed, gives the scope to every change
+//                     order (job), submission and notification (jobId) that names it and
+//                     does not carry it. A new job with no tenantId is stamped qbs on
+//                     itself. A deleted job writes nothing.
+//    onExtraWritten   Firestore triggers on extras/{id} and submits/{id}. Look the job
+//    onSubmitWritten  up by its id and give the document its tenantId and clientUids
+//                     when it lacks them or carries another job scope. A document that
+//                     already carries it, one that names no job and one whose job is
+//                     missing are not written, so none of these can fire itself.
+//    backfillScopes   Owner only callable. Takes no data. Sets the Auth claims of every
+//                     user with a role (never lowering an owner or internal account),
+//                     sets every job's tenantId (qbs when it has none) and clientUids
+//                     (exactly the clients who list it), then stamps the change orders,
+//                     submissions and notifications. Returns { ok: true, users, jobs,
+//                     extras, submits, notifications, skipped }. Safe to run again.
 //
 //  Required Firebase secrets (set with `firebase functions:secrets:set`):
 //    QB_CLIENT_ID       — Intuit app's Client ID
@@ -113,3 +139,4 @@ export { createUser, onUserWritten } from './users.js'
 export { sendExtraToBuilder, approveExtra, rejectExtra } from './extras.js'
 export { passInspection, failInspection } from './inspections.js'
 export { createJob } from './jobs.js'
+export { onJobWritten, onExtraWritten, onSubmitWritten, backfillScopes } from './scope-sync.js'

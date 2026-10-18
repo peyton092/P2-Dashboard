@@ -378,3 +378,37 @@ describe('what leaves the data provider as it is', () => {
     expect(running.jobs).toBe(1)
   })
 })
+
+// The Settings page gets its role from the dashboard, so only the owner is offered
+// the Backfill access scopes button. SettingsPage.test.jsx covers the button itself;
+// this covers the one line that hands the page the signed in role.
+describe('the Settings page reached from the dashboard', () => {
+  // The page shows two build constants that vite defines at build time.
+  beforeEach(() => {
+    vi.stubGlobal('__APP_VERSION__', 'test')
+    vi.stubGlobal('__BUILD_DATE__', 'test')
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const openSettings = async (user) => {
+    await openSignedOut()
+    await authChanges(user)
+    await dashboardShown()
+    await act(async () => { window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'settings' } })) })
+    // Sign out is on the Settings page as well as in the sidebar, so wait for something only the page has.
+    await screen.findByText('Feature Toggles', {}, { timeout: 10000 })
+  }
+
+  it('offers the owner the Backfill access scopes button', async () => {
+    await openSettings(OWNER)
+    expect(screen.getByRole('button', { name: 'Backfill access scopes' })).toBeTruthy()
+  })
+
+  it('does not offer it to internal staff', async () => {
+    await openSettings(signedIn('staff1', 'internal'))
+    expect(screen.queryByRole('button', { name: 'Backfill access scopes' })).toBeNull()
+    expect(screen.queryByText('Access Scopes')).toBeNull()
+  })
+})

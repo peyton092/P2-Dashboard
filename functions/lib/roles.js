@@ -12,6 +12,18 @@ export const isStaff = (claims) => claims?.role === 'owner' || claims?.role === 
 
 export const isOwner = (claims) => claims?.role === 'owner'
 
+// Only the two staff roles are ranked here. Every other value, builder, client,
+// an unknown name or nothing at all, ranks the same, below both.
+const staffRank = (role) => (role === 'owner' ? 2 : role === 'internal' ? 1 : 0)
+
+// Whether giving an account `nextRole` would lower the owner or internal role it
+// has now (existingRole, from its current claims). Claims are set for the first
+// time from a new users document, and by the backfill, and neither may take a
+// role away from staff whose claims were set by hand and who have no users
+// document yet. Raising a role, keeping it, and anything about an account that
+// is not staff are all false.
+export const wouldLowerStaff = (existingRole, nextRole) => staffRank(existingRole) > staffRank(nextRole)
+
 // Maps a callable request's `req.auth` ({ uid, token }) to claims. Returns null
 // when nobody is signed in. A token with no custom claims yields a null role,
 // a null tenantId and an empty clientJobIds array.

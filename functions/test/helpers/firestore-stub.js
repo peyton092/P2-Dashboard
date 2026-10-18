@@ -11,6 +11,11 @@
 // reads once it has staged a write fails its tests as it would fail in production.
 // And a value of undefined in written data throws, as the Admin SDK does unless it
 // is told to ignore undefined properties.
+//
+// The triggers and the backfill read whole collections and write in batches, outside
+// any transaction. The stub does not answer that unless asked
+// (stubFirestore(docs, { outsideTransactions: true })), so a handler that should use a
+// transaction still fails loudly if it reaches for a plain read or a batch.
 
 import assert from 'node:assert/strict'
 import { mock } from 'node:test'
@@ -20,6 +25,9 @@ import { db } from '../../lib/admin.js'
 
 // The message of the Admin SDK's own error (transaction.js).
 export const READ_AFTER_WRITE = 'Firestore transactions require all reads to be executed before all writes.'
+
+// The most writes Firestore takes in one batch.
+export const BATCH_LIMIT = 500
 
 // A matcher for assert.rejects: an HttpsError with this code, and this message when
 // one is given.
@@ -67,10 +75,22 @@ function assertDefined(value, field) {
 //   reads    every document or query it read inside a transaction, in order
 //   writes   committed writes, in order: { op: 'set' | 'update', path, data }
 //   written(prefix)   the committed writes under a path prefix, like 'history/'
-//   clear()  forgets calls, reads and writes (the documents stay)
+//   batches  the committed batches, each the list of writes it held (always empty
+//            unless outsideTransactions is on)
+//   clear()  forgets calls, reads, writes and batches (the documents stay)
+//
+// outsideTransactions: true also stubs what the triggers and the backfill use outside
+// a transaction. collection(name).get() and collection(name).where(field, '==',
+// value).get() answer { empty, size, docs }, each doc { id, ref: { id, path }, data() }
+// in the order the documents are listed. db.batch() stages update and set and commits
+// them as one group on commit(). Staging undefined in the data throws at once, as the
+// Admin SDK does. A commit throws the way Firestore does for more than 500 writes and
+// for an update of a document that does not exist, and a batch that throws commits none
+// of its writes. Documents are never changed by a write, so a later read still answers
+// the documents the test started with.
 // Undo it with mock.restoreAll().
-export function stubFirestore(collections = {}) {
-  const stub = { calls: [], reads: [], writes: [] }
+export function stubFirestore(collections = {}, { outsideTransactions = false } = {}) {
+  const stub = { calls: [], reads: [], writes: [], batches: [] }
   let auto = 0
 
   const dataAt = (path) => {
@@ -78,16 +98,58 @@ export function stubFirestore(collections = {}) {
     return collections[name]?.[id]
   }
 
+  // The documents of a collection, all or those where field equals value, as a
+  // snapshot a plain read answers with.
+  const scan = (name, query) => {
+    if (query) assert.equal(query.op, '==', 'the stub answers == queries only')
+    const found = Object.entries(collections[name] ?? {}).filter(([, data]) => !query || data[query.field] === query.value)
+    return {
+      empty: found.length === 0,
+      size: found.length,
+      docs: found.map(([id, data]) => ({ id, ref: { id, path: `${name}/${id}` }, data: () => data })),
+    }
+  }
+
   mock.method(db, 'collection', (name) => {
     stub.calls.push(`collection:${name}`)
-    return {
+    const collection = {
       doc: (id) => {
         const docId = id ?? `auto${++auto}`
         return { id: docId, path: `${name}/${docId}` }
       },
-      where: (field, op, value) => ({ limit: () => ({ query: { name, field, op, value } }) }),
+      where: (field, op, value) => {
+        const query = { name, field, op, value }
+        const where = { limit: () => ({ query }) }
+        if (outsideTransactions) where.get = async () => scan(name, query)
+        return where
+      },
     }
+    if (outsideTransactions) collection.get = async () => scan(name)
+    return collection
   })
+
+  if (outsideTransactions) {
+    mock.method(db, 'batch', () => {
+      stub.calls.push('batch')
+      const staged = []
+      const stage = (op) => (ref, data) => {
+        assertDefined(data, '')
+        staged.push({ op, path: ref.path, data })
+      }
+      return {
+        update: stage('update'),
+        set: stage('set'),
+        commit: async () => {
+          if (staged.length > BATCH_LIMIT) throw new Error(`maximum ${BATCH_LIMIT} writes allowed per request`)
+          for (const write of staged) {
+            if (write.op === 'update' && dataAt(write.path) === undefined) throw new Error(`No document to update: ${write.path}`)
+          }
+          stub.batches.push([...staged])
+          stub.writes.push(...staged)
+        },
+      }
+    })
+  }
 
   mock.method(db, 'doc', (path) => {
     stub.calls.push(`doc:${path}`)
@@ -138,6 +200,7 @@ export function stubFirestore(collections = {}) {
     stub.calls.length = 0
     stub.reads.length = 0
     stub.writes.length = 0
+    stub.batches.length = 0
   }
   return stub
 }

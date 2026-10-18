@@ -6,6 +6,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { db } from '../lib/admin.js'
 import { validateNewUser as validateFromLib } from '../lib/users-validate.js'
 import { createUser, onUserWritten, validateNewUser } from '../users.js'
+import { assertNoDashes } from './helpers/firestore-stub.js'
 
 // Nothing here reaches a network. The Admin Auth instance and the Firestore
 // instance are the real singletons with the methods the handlers call replaced,
@@ -14,11 +15,13 @@ import { createUser, onUserWritten, validateNewUser } from '../users.js'
 
 const authError = (code) => Object.assign(new Error(`Firebase auth error: ${code}`), { code })
 
-let created, claimed, deleted, revoked // Auth calls, in order
+let created, claimed, deleted, revoked, fetched // Auth calls, in order
 let writes, removed, queries, batches // Firestore calls, in order
 let logged // console.error and console.warn output
 
-function stubAuth({ uid = 'new-uid', createError, claimsError, deleteError, revokeError } = {}) {
+// existing: the custom claims the account has now, like { role: 'owner' }; none by default.
+// getUserError: what reading the account fails with.
+function stubAuth({ uid = 'new-uid', createError, claimsError, deleteError, revokeError, existing, getUserError } = {}) {
   const auth = getAuth()
   mock.method(auth, 'createUser', async (props) => {
     created.push(props)
@@ -36,6 +39,11 @@ function stubAuth({ uid = 'new-uid', createError, claimsError, deleteError, revo
   mock.method(auth, 'revokeRefreshTokens', async (target) => {
     revoked.push(target)
     if (revokeError) throw revokeError
+  })
+  mock.method(auth, 'getUser', async (target) => {
+    fetched.push(target)
+    if (getUserError) throw getUserError
+    return { uid: target, customClaims: existing }
   })
 }
 
@@ -93,6 +101,7 @@ beforeEach(() => {
   claimed = []
   deleted = []
   revoked = []
+  fetched = []
   writes = []
   removed = []
   queries = []
@@ -432,6 +441,153 @@ describe('onUserWritten', () => {
       stubFirestore()
       await run('u1', null, { role: 'superuser', tenantId: 'qbs' })
       assert.deepEqual(claimed[0].claims, { role: null, tenantId: 'p2-core', clientJobIds: [] })
+    })
+  })
+
+  // A new users document is a first assignment of claims. Internal staff can create
+  // one for an owner whose claims were set by hand and who has no document yet, and
+  // that must not take the owner's role away. The claims write is skipped and the
+  // jobs half still runs.
+  describe('a first assignment never lowers staff', () => {
+    const claimsOf = (role) => ({ role, tenantId: 'p2-core', clientJobIds: [] })
+    const warnings = () => logged.filter(([level]) => level === 'warn').map(([, message]) => String(message))
+
+    const LOWERED = [
+      ['owner', { role: 'internal', tenantId: 'p2-core' }],
+      ['owner', { role: 'builder', tenantId: 'qbs' }],
+      ['owner', client(['QBS-001'])],
+      ['owner', { displayName: 'No role yet' }],
+      ['owner', { role: 'superuser', tenantId: 'qbs' }],
+      ['internal', { role: 'builder', tenantId: 'qbs' }],
+      ['internal', client(['QBS-001'])],
+      ['internal', { tenantId: 'qbs' }],
+    ]
+    for (const [had, doc] of LOWERED) {
+      it(`leaves an account that is ${had} now alone when its new document says ${doc.role ?? 'nothing'}`, async () => {
+        stubAuth({ existing: claimsOf(had) })
+        stubFirestore()
+        await run('u1', null, doc)
+        assert.deepEqual(claimed, [])
+        assert.deepEqual(revoked, [])
+        assert.equal(warnings().length, 1)
+      })
+    }
+
+    it('names the uid and both roles in the warning, which has no dash', async () => {
+      stubAuth({ existing: claimsOf('owner') })
+      stubFirestore()
+      await run('u1', null, client(['QBS-001']))
+      const [warning] = warnings()
+      assert.match(warning, /u1/)
+      assert.match(warning, /owner/)
+      assert.match(warning, /client/)
+      assertNoDashes(warning)
+    })
+
+    it('says no role when the document has none', async () => {
+      stubAuth({ existing: claimsOf('internal') })
+      stubFirestore()
+      await run('u1', null, { displayName: 'No role yet' })
+      assert.match(warnings()[0], /no role/)
+    })
+
+    it('still links the jobs of a client document whose claims it leaves alone', async () => {
+      stubAuth({ existing: claimsOf('owner') })
+      stubFirestore({ jobs: [job('jobs/a', 'QBS-001')] })
+      await run('u1', null, client(['QBS-001']))
+      assert.deepEqual(claimed, [])
+      assert.ok(hasOp(batches.flat(), 'jobs/a', FieldValue.arrayUnion('u1')))
+    })
+
+    it('does not clear the claims of staff when the document it just created is already gone', async () => {
+      stubAuth({ existing: claimsOf('owner') })
+      stubFirestore()
+      await run('u1', null, { role: 'owner', tenantId: 'p2-core' }, null)
+      assert.deepEqual(claimed, [])
+      assert.equal(warnings().length, 1)
+    })
+
+    const KEPT = [
+      ['owner', { role: 'owner', tenantId: 'p2-core' }],
+      ['internal', { role: 'internal', tenantId: 'p2-core' }],
+      ['internal', { role: 'owner', tenantId: 'p2-core' }],
+      ['builder', client(['QBS-001'])],
+      ['builder', { role: 'builder', tenantId: 'vision' }],
+      ['client', { role: 'internal', tenantId: 'p2-core' }],
+      ['superuser', { role: 'builder', tenantId: 'qbs' }],
+    ]
+    for (const [had, doc] of KEPT) {
+      it(`sets the claims when the account is ${had} now and its new document says ${doc.role}`, async () => {
+        stubAuth({ existing: claimsOf(had) })
+        stubFirestore()
+        await run('u1', null, doc)
+        assert.equal(claimed.length, 1)
+        assert.equal(claimed[0].claims.role, doc.role)
+        assert.deepEqual(warnings(), [])
+      })
+    }
+
+    it('sets the claims when the account has none yet', async () => {
+      for (const existing of [undefined, {}, { role: null }, { role: 7 }]) {
+        mock.restoreAll()
+        mock.method(console, 'warn', (...args) => logged.push(['warn', ...args]))
+        claimed = []
+        stubAuth({ existing })
+        stubFirestore()
+        await run('u1', null, { role: 'client', tenantId: 'p2-core', clientJobIds: [] })
+        assert.equal(claimed.length, 1, JSON.stringify(existing))
+      }
+      assert.deepEqual(warnings(), [])
+    })
+
+    it('reads the account before it sets any claims', async () => {
+      const order = []
+      stubAuth()
+      stubFirestore()
+      const auth = getAuth()
+      mock.method(auth, 'getUser', async () => {
+        order.push('read')
+        return {}
+      })
+      mock.method(auth, 'setCustomUserClaims', async () => order.push('claims'))
+      await run('u1', null, { role: 'builder', tenantId: 'qbs' })
+      assert.deepEqual(order, ['read', 'claims'])
+    })
+
+    it('treats an account that does not exist as having no claims, and goes on to set them', async () => {
+      stubAuth({ getUserError: authError('auth/user-not-found') })
+      stubFirestore()
+      await run('u1', null, { role: 'builder', tenantId: 'qbs' })
+      assert.deepEqual(fetched, ['u1'])
+      assert.equal(claimed.length, 1)
+      assert.deepEqual(warnings(), [])
+    })
+
+    it('logs one warning and does not fail when the account is missing for the read and the write', async () => {
+      stubAuth({ getUserError: authError('auth/user-not-found'), claimsError: authError('auth/user-not-found') })
+      stubFirestore()
+      await run('ghost', null, { role: 'internal' })
+      assert.equal(warnings().length, 1)
+      assert.match(warnings()[0], /ghost/)
+      assert.ok(!logged.some(([level]) => level === 'error'))
+    })
+
+    it('rethrows any other failure to read the account, sets no claims, and still links the jobs', async () => {
+      stubAuth({ getUserError: authError('auth/internal-error') })
+      stubFirestore({ jobs: [job('jobs/a', 'QBS-001')] })
+      await assert.rejects(run('u1', null, client(['QBS-001'])), /auth\/internal-error/)
+      assert.deepEqual(claimed, [])
+      assert.ok(hasOp(batches.flat(), 'jobs/a', FieldValue.arrayUnion('u1')))
+    })
+
+    it('reads the account for a new document only, not for an update or a deletion', async () => {
+      stubAuth({ existing: claimsOf('owner') })
+      stubFirestore()
+      await run('u1', client(['QBS-001']), client(['QBS-001']))
+      await run('u2', { role: 'internal' }, { role: 'client', clientJobIds: [] })
+      await run('u3', client(['QBS-001']), null)
+      assert.deepEqual(fetched, [])
+      assert.equal(claimed.length, 3, 'an edit to an existing document is how a role is changed, so it is applied')
     })
   })
 

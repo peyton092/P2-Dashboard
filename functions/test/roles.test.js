@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { VALID_ROLES, isStaff, isOwner, claimsOf, mergeUserDoc } from '../lib/roles.js'
+import { VALID_ROLES, isStaff, isOwner, claimsOf, mergeUserDoc, wouldLowerStaff } from '../lib/roles.js'
 
 describe('VALID_ROLES', () => {
   it('lists exactly the four roles', () => {
@@ -177,5 +177,43 @@ describe('mergeUserDoc', () => {
     assert.equal(isStaff(mergeUserDoc(none, { role: 'client' })), false)
     assert.equal(isStaff(mergeUserDoc(none, { role: 'admin' })), false)
     assert.equal(isOwner(mergeUserDoc(none, { role: 'owner' })), true)
+  })
+})
+
+// First assignment of claims (a new users document, or the backfill) must not
+// quietly take a role away from an owner or internal staff member whose claims
+// were set by hand and who has no users document yet.
+describe('wouldLowerStaff', () => {
+  it('is true when an owner would be given any lower role, or none', () => {
+    for (const next of ['internal', 'builder', 'client', null, undefined, 'admin']) {
+      assert.equal(wouldLowerStaff('owner', next), true, `owner to ${next}`)
+    }
+  })
+
+  it('is true when internal staff would be given a builder or client role, or none', () => {
+    for (const next of ['builder', 'client', null, undefined, 'admin']) {
+      assert.equal(wouldLowerStaff('internal', next), true, `internal to ${next}`)
+    }
+  })
+
+  it('is false when the role stays the same or goes up', () => {
+    assert.equal(wouldLowerStaff('owner', 'owner'), false)
+    assert.equal(wouldLowerStaff('internal', 'internal'), false)
+    assert.equal(wouldLowerStaff('internal', 'owner'), false)
+  })
+
+  it('is false when the account is not staff yet, whatever it is given', () => {
+    for (const had of ['builder', 'client', null, undefined, '', 'admin', 'Owner']) {
+      for (const next of ['owner', 'internal', 'builder', 'client', null]) {
+        assert.equal(wouldLowerStaff(had, next), false, `${had} to ${next}`)
+      }
+    }
+  })
+
+  it('is not fooled by role names that exist on every object', () => {
+    for (const had of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      assert.equal(wouldLowerStaff(had, 'client'), false, had)
+      assert.equal(wouldLowerStaff('owner', had), true, had)
+    }
   })
 })

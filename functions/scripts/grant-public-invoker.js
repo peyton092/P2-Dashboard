@@ -16,7 +16,7 @@ const PROJECT  = 'p2-dashboard'
 const REGION   = 'us-central1'
 const SERVICES = [
   'qbauth', 'qbcallback', 'qbdisconnect', 'ccauth', 'cccallback', 'ccdisconnect', 'ccsyncphotos', 'createuser',
-  'approveextra', 'rejectextra', 'sendextratobuilder', 'passinspection', 'failinspection', 'createjob',
+  'approveextra', 'rejectextra', 'sendextratobuilder', 'passinspection', 'failinspection', 'createjob', 'backfillscopes',
 ]
 
 function readFirebaseToken() {

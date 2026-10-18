@@ -31,6 +31,7 @@ const REQUIRED = [
   'passInspection',
   'failInspection',
   'createJob',
+  'backfillScopes',
 ]
 
 // Everything index.js exports that is a callable, found by its deploy metadata,

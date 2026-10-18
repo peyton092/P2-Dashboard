@@ -42,6 +42,7 @@ functions/
   extras.js                    # Change orders (sendExtraToBuilder, approveExtra, rejectExtra callables)
   inspections.js               # Inspection results (passInspection, failInspection callables)
   jobs.js                      # New jobs (createJob callable)
+  scope-sync.js                # Scope stamping (onJobWritten, onExtraWritten, onSubmitWritten triggers, backfillScopes callable)
   lib/                         # Shared code — Admin init, secrets, config, role/scope/push-target rules, authz guards
   test/                        # Unit tests (cd functions && npm test)
   QUICKBOOKS_SETUP.md          # Step-by-step QB connect setup

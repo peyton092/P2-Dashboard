@@ -27,6 +27,10 @@ const EXPECTED = {
   passInspection:        { trigger: 'callableTrigger', secrets: [] },
   failInspection:        { trigger: 'callableTrigger', secrets: [] },
   createJob:             { trigger: 'callableTrigger', secrets: [] },
+  onJobWritten:          { trigger: 'eventTrigger',    secrets: [] },
+  onExtraWritten:        { trigger: 'eventTrigger',    secrets: [] },
+  onSubmitWritten:       { trigger: 'eventTrigger',    secrets: [] },
+  backfillScopes:        { trigger: 'callableTrigger', secrets: [] },
 }
 
 const mod = await import('../index.js')
@@ -54,6 +58,23 @@ describe('index.js exports', () => {
     const trigger = mod.onUserWritten.__endpoint.eventTrigger
     assert.equal(trigger.eventType, 'google.cloud.firestore.document.v1.written')
     assert.equal(trigger.eventFilterPathPatterns.document, 'users/{uid}')
+  })
+
+  // The three scope triggers run on every write to their collection, so a document
+  // that is written is checked whether it was created, changed or deleted.
+  for (const [name, path] of [['onJobWritten', 'jobs/{id}'], ['onExtraWritten', 'extras/{id}'], ['onSubmitWritten', 'submits/{id}']]) {
+    it(`runs ${name} on every write to a document in ${path.split('/')[0]}`, () => {
+      const trigger = mod[name].__endpoint.eventTrigger
+      assert.equal(trigger.eventType, 'google.cloud.firestore.document.v1.written')
+      assert.equal(trigger.eventFilterPathPatterns.document, path)
+    })
+  }
+
+  // The backfill reads whole collections. The Settings button gives its call 540000
+  // milliseconds (src/components/SettingsPage.jsx), and the function must be allowed
+  // as long as that, or the page would wait for a run the server has already cut off.
+  it('lets backfillScopes run for 540 seconds, as long as the Settings button waits for it', () => {
+    assert.equal(mod.backfillScopes.__endpoint.timeoutSeconds, 540)
   })
 
   // onCall does not put cors into the deploy metadata, so it is checked the way a
@@ -91,7 +112,7 @@ describe('index.js exports', () => {
     assert.match(headers['access-control-allow-methods'], /POST/)
   })
 
-  for (const name of ['approveExtra', 'rejectExtra', 'sendExtraToBuilder', 'passInspection', 'failInspection', 'createJob']) {
+  for (const name of ['approveExtra', 'rejectExtra', 'sendExtraToBuilder', 'passInspection', 'failInspection', 'createJob', 'backfillScopes']) {
     it(`lets the hosted app call ${name} across origins (cors: true)`, async () => {
       const { res, headers, origin } = await preflight(mod[name])
       assert.equal(res.statusCode, 204)

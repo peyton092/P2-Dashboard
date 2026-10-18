@@ -188,6 +188,129 @@ describe('stubFirestore bookkeeping', () => {
   })
 })
 
+// The triggers and the backfill read collections and write in batches, outside any
+// transaction. That is opt in, so a handler that is meant to use a transaction still
+// fails loudly if it reaches for either.
+describe('stubFirestore outside a transaction (opt in)', () => {
+  const OPT_IN = { outsideTransactions: true }
+
+  it('is off unless asked for: no plain read of a collection or a query, and the batch is the real one', () => {
+    stubFirestore(DOCS)
+    assert.equal(typeof db.collection('extras').get, 'undefined')
+    assert.equal(typeof db.collection('extras').where('job', '==', 'QBS-003').get, 'undefined')
+    assert.equal(db.batch.mock, undefined, 'db.batch is not replaced')
+  })
+
+  it('reads every document of a collection, each with its id, reference and data', async () => {
+    stubFirestore(DOCS, OPT_IN)
+    const snap = await db.collection('extras').get()
+    assert.equal(snap.empty, false)
+    assert.equal(snap.size, 2)
+    assert.deepEqual(snap.docs.map((doc) => doc.id), ['x1', 'x2'])
+    assert.deepEqual(snap.docs[0].ref, { id: 'x1', path: 'extras/x1' })
+    assert.deepEqual(snap.docs[1].data(), { id: 'CO-005', job: 'QBS-003' })
+  })
+
+  it('reads a collection that has no documents, or does not exist, as empty', async () => {
+    stubFirestore({ extras: {} }, OPT_IN)
+    for (const name of ['extras', 'elsewhere']) {
+      const snap = await db.collection(name).get()
+      assert.deepEqual([snap.empty, snap.size, snap.docs], [true, 0, []])
+    }
+  })
+
+  it('answers an equality query with the matching documents, and refuses any other operator', async () => {
+    stubFirestore(DOCS, OPT_IN)
+    const some = await db.collection('jobs').where('id', '==', 'QBS-004').get()
+    assert.deepEqual(some.docs.map((doc) => doc.id), ['job4'])
+    assert.deepEqual(some.docs[0].ref, { id: 'job4', path: 'jobs/job4' })
+    const none = await db.collection('jobs').where('id', '==', 'QBS-999').get()
+    assert.equal(none.empty, true)
+    await assert.rejects(db.collection('jobs').where('id', 'in', ['QBS-003']).get(), /the stub answers == queries only/)
+  })
+
+  it('still answers the transaction reads and the query the privileged callables use', async () => {
+    const stub = stubFirestore(DOCS, OPT_IN)
+    await db.runTransaction(async (tx) => {
+      assert.equal((await tx.get(db.collection('extras').doc('x1'))).exists, true)
+      assert.equal((await tx.get(db.collection('jobs').where('id', '==', 'QBS-003').limit(1))).size, 1)
+      tx.update(db.collection('extras').doc('x1'), { status: 'Approved' })
+    })
+    assert.equal(stub.writes.length, 1)
+  })
+
+  it('commits a batch as one group, in the order it was staged, and not before commit', async () => {
+    const stub = stubFirestore(DOCS, OPT_IN)
+    const batch = db.batch()
+    batch.update(db.collection('extras').doc('x1'), { tenantId: 'qbs' })
+    batch.set(db.collection('history').doc('h1'), { type: 'job' })
+    batch.update(db.collection('extras').doc('x2'), { tenantId: 'qbs' })
+    assert.deepEqual(stub.writes, [], 'nothing is written until commit')
+    await batch.commit()
+    assert.deepEqual(stub.writes.map((w) => [w.op, w.path]), [
+      ['update', 'extras/x1'], ['set', 'history/h1'], ['update', 'extras/x2'],
+    ])
+    assert.deepEqual(stub.batches.map((group) => group.length), [3])
+    assert.deepEqual(stub.written('extras/').map((w) => w.data), [{ tenantId: 'qbs' }, { tenantId: 'qbs' }])
+  })
+
+  it('keeps each batch as its own group', async () => {
+    const stub = stubFirestore(DOCS, OPT_IN)
+    for (const id of ['x1', 'x2']) {
+      const batch = db.batch()
+      batch.update(db.collection('extras').doc(id), { tenantId: 'qbs' })
+      await batch.commit()
+    }
+    assert.deepEqual(stub.batches.map((group) => group.map((w) => w.path)), [['extras/x1'], ['extras/x2']])
+    assert.equal(stub.writes.length, 2)
+  })
+
+  it('refuses a batch of more than 500 writes, as Firestore does, and commits none of it', async () => {
+    const stub = stubFirestore(DOCS, OPT_IN)
+    const batch = db.batch()
+    for (let i = 0; i < 501; i++) batch.update(db.collection('extras').doc('x1'), { n: i })
+    await assert.rejects(batch.commit(), /maximum 500 writes allowed per request/)
+    assert.deepEqual([stub.writes, stub.batches], [[], []])
+
+    const exactly = db.batch()
+    for (let i = 0; i < 500; i++) exactly.update(db.collection('extras').doc('x1'), { n: i })
+    await exactly.commit()
+    assert.equal(stub.writes.length, 500)
+  })
+
+  it('refuses undefined in staged data, naming the field, as the Admin SDK does', () => {
+    stubFirestore(DOCS, OPT_IN)
+    const batch = db.batch()
+    assert.throws(() => batch.update(db.collection('extras').doc('x1'), { clientUids: [undefined] }), /found in field "clientUids\[0\]"/)
+    assert.throws(() => batch.set(db.collection('history').doc('h1'), { jobId: undefined }), /found in field "jobId"/)
+  })
+
+  it('refuses to update a document that does not exist, as Firestore does, and commits none of the batch', async () => {
+    const stub = stubFirestore(DOCS, OPT_IN)
+    const batch = db.batch()
+    batch.update(db.collection('extras').doc('x1'), { tenantId: 'qbs' })
+    batch.update(db.collection('extras').doc('gone'), { tenantId: 'qbs' })
+    await assert.rejects(batch.commit(), /No document to update: extras\/gone/)
+    assert.deepEqual([stub.writes, stub.batches], [[], []])
+  })
+
+  it('records the batch as an entry point, and forgets it, and the groups, on clear', async () => {
+    const stub = stubFirestore(DOCS, OPT_IN)
+    const batch = db.batch()
+    batch.update(db.collection('extras').doc('x1'), { tenantId: 'qbs' })
+    await batch.commit()
+    assert.deepEqual(stub.calls, ['batch', 'collection:extras'])
+    stub.clear()
+    assert.deepEqual([stub.calls, stub.reads, stub.writes, stub.batches], [[], [], [], []])
+  })
+
+  it('keeps no groups when nothing is batched, so the shape is the same either way', () => {
+    assert.deepEqual(stubFirestore(DOCS).batches, [])
+    mock.restoreAll()
+    assert.deepEqual(stubFirestore(DOCS, OPT_IN).batches, [])
+  })
+})
+
 describe('the shared assertions', () => {
   it('code matches an HttpsError by code and, when given, message', () => {
     const error = new HttpsError('not-found', 'Gone.')
