@@ -5,7 +5,7 @@ const listeners = []
 
 vi.mock('firebase/firestore', () => ({
   collection: (_db, ...path) => ({ path: path.join('/') }),
-  doc: vi.fn(),
+  doc: (_db, ...path) => ({ path: path.join('/') }),
   query: (ref) => ref,
   orderBy: vi.fn(),
   limit: vi.fn(),
@@ -22,7 +22,11 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('firebase/functions', () => ({ httpsCallable: vi.fn() }))
 vi.mock('../../firebase', () => ({ db: {}, functions: {} }))
 
-import { useJobFiles, useSubmitReplies } from '../useFirestore'
+import {
+  useJobs, useAllExtras, useNotifications, useSubs, useMaterials, usePermits, useSubmits,
+  useDailyReports, useUrgentItems, useHistory, useSettings, useAgentAlerts, useSupplierInvoices,
+  useJobFiles, useSubmitReplies,
+} from '../useFirestore'
 
 const snapshot = (...ids) => ({ docs: ids.map(id => ({ id, data: () => ({ name: id }) })) })
 const live = (path) => listeners.filter(l => l.path === path && !l.unsubscribed).at(-1)
@@ -75,5 +79,78 @@ describe.each([
     rerender({ id: 'A' })
     expect(result.current[key]).toEqual([])
     expect(result.current.loading).toBe(true)
+  })
+
+  it('has no error without an id, while loading, or after rows arrive', () => {
+    const { result, rerender } = renderHook(({ id }) => hook(id), { initialProps: { id: null } })
+    expect(result.current.error).toBeNull()
+    rerender({ id: 'A' })
+    expect(result.current.error).toBeNull()
+    act(() => live(path('A')).onNext(snapshot('a1')))
+    expect(result.current.error).toBeNull()
+  })
+
+  it('returns the error of the id that failed, and no error once the id changes', () => {
+    const rendered = []
+    const { result, rerender } = renderHook(({ id }) => {
+      const value = hook(id)
+      rendered.push(value)
+      return value
+    }, { initialProps: { id: 'A' } })
+    const failure = new Error('permission-denied')
+    act(() => live(path('A')).onError(failure))
+    expect(result.current.error).toBe(failure)
+    expect(result.current.loading).toBe(false)
+
+    // Every render after the id changes, the first of them included, which comes
+    // before the old subscription is cleaned up, must be free of A's error.
+    rendered.length = 0
+    rerender({ id: 'B' })
+    expect(rendered.length).toBeGreaterThan(0)
+    expect(rendered.every(value => value.error === null)).toBe(true)
+    expect(result.current.loading).toBe(true)
+
+    rerender({ id: 'A' })
+    expect(result.current.error).toBeNull()
+  })
+})
+
+// A subscription that fails ends for good: Firestore does not retry it, so the
+// hook has to say so, or the screen shows an empty list as if nothing was there.
+describe.each([
+  ['useJobs', useJobs, 'jobs', 'jobs'],
+  ['useAllExtras', useAllExtras, 'extras', 'extras'],
+  ['useNotifications', useNotifications, 'notifs', 'notifications'],
+  ['useSubs', useSubs, 'subs', 'subs'],
+  ['useMaterials', useMaterials, 'materials', 'materials'],
+  ['usePermits', usePermits, 'permits', 'permits'],
+  ['useSubmits', useSubmits, 'submits', 'submits'],
+  ['useDailyReports', useDailyReports, 'dailyReports', 'daily_reports'],
+  ['useUrgentItems', useUrgentItems, 'urgentItems', 'urgent_items'],
+  ['useHistory', useHistory, 'history', 'history'],
+  ['useSettings', useSettings, 'settings', 'config/settings'],
+  ['useAgentAlerts', useAgentAlerts, 'alerts', 'agent_alerts'],
+  ['useSupplierInvoices', useSupplierInvoices, 'invoices', 'supplier_invoices'],
+])('%s error state', (_name, hook, key, path) => {
+  it('has no error while it waits for the first snapshot', () => {
+    const { result } = renderHook(() => hook())
+    expect(result.current.error).toBeNull()
+    expect(result.current.loading).toBe(true)
+  })
+
+  it('returns the error Firestore gives it, stops loading, and keeps returning its data', () => {
+    const { result } = renderHook(() => hook())
+    const before = result.current[key]
+    const failure = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
+    act(() => live(path).onError(failure))
+    expect(result.current.error).toBe(failure)
+    expect(result.current.loading).toBe(false)
+    expect(result.current[key]).toEqual(before)
+  })
+
+  it('stops listening when it unmounts', () => {
+    const { unmount } = renderHook(() => hook())
+    unmount()
+    expect(listeners.filter(l => l.path === path && !l.unsubscribed)).toEqual([])
   })
 })

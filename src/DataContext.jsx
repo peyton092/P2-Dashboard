@@ -4,18 +4,26 @@ import { useJobs, useAllExtras, useNotifications, useSubs, useMaterials, useSubm
 // ── Context ───────────────────────────────────────────────────────────────────
 
 export function DataProvider({ children, tenantId = null, role = null, clientJobIds = null }) {
-  const { jobs: firestoreJobs, loading: jobsLoading }               = useJobs()
-  const { extras: firestoreExtras, loading: extrasLoading }         = useAllExtras()
-  const { notifs: firestoreNotifs, loading: notifsLoading }         = useNotifications()
-  const { subs: firestoreSubs, loading: subsLoading }               = useSubs()
-  const { materials: firestoreMaterials, loading: matsLoading }     = useMaterials()
-  const { submits: firestoreSubmits, loading: submitsLoading }       = useSubmits()
-  const { dailyReports: firestoreDailyReports, loading: drLoading } = useDailyReports()
-  const { urgentItems: firestoreUrgentItems, loading: uiLoading }   = useUrgentItems()
-  const { settings }                                                 = useSettings()
-  const { alerts: agentAlerts }                                      = useAgentAlerts()
+  const { jobs: firestoreJobs, loading: jobsLoading, error: jobsError }                 = useJobs()
+  const { extras: firestoreExtras, loading: extrasLoading, error: extrasError }         = useAllExtras()
+  const { notifs: firestoreNotifs, loading: notifsLoading, error: notifsError }         = useNotifications()
+  const { subs: firestoreSubs, loading: subsLoading, error: subsError }                 = useSubs()
+  const { materials: firestoreMaterials, loading: matsLoading, error: matsError }       = useMaterials()
+  const { submits: firestoreSubmits, loading: submitsLoading, error: submitsError }     = useSubmits()
+  const { dailyReports: firestoreDailyReports, loading: drLoading, error: drError }     = useDailyReports()
+  const { urgentItems: firestoreUrgentItems, loading: uiLoading, error: uiError }       = useUrgentItems()
+  const { settings, error: settingsError }                                              = useSettings()
+  const { alerts: agentAlerts, error: alertsError }                                     = useAgentAlerts()
 
   const loading = jobsLoading || extrasLoading || notifsLoading || subsLoading || matsLoading || submitsLoading || drLoading || uiLoading
+
+  // The first subscription that failed, in the order above, or null. A failed
+  // listener is not restarted, so its collection stays empty until this provider
+  // mounts again; a screen can use this to say so rather than show nothing.
+  const error = [
+    jobsError, extrasError, notifsError, subsError, matsError,
+    submitsError, drError, uiError, settingsError, alertsError,
+  ].find(e => e != null) ?? null
 
   const allJobs   = firestoreJobs
   const allExtras = firestoreExtras
@@ -78,6 +86,7 @@ export function DataProvider({ children, tenantId = null, role = null, clientJob
       agentAlerts,
       loading,
       empty,
+      error,
     }}>
       {children}
     </DataContext.Provider>

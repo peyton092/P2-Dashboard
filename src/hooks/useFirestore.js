@@ -7,20 +7,26 @@ import { httpsCallable } from 'firebase/functions'
 import { db, auth } from '../firebase'
 import { functions } from '../firebase'
 
+// Firestore ends a listener that fails (the rules refuse it, an index is missing)
+// and reports the error once; it never restarts it. The hooks below that return
+// an object keep that error in `error`, null until it happens, so a screen can
+// tell a failed subscription from an empty collection. useExtras and
+// useInspections return bare arrays, have no callers, and report nothing.
 export function useJobs() {
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const q = query(collection(db, 'jobs'), orderBy('id'), limit(200))
     const unsub = onSnapshot(q, snap => {
       setJobs(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
 
-  return { jobs, loading }
+  return { jobs, loading, error }
 }
 
 export function useExtras(jobId) {
@@ -40,33 +46,35 @@ export function useExtras(jobId) {
 export function useAllExtras() {
   const [extras, setExtras] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const q = query(collection(db, 'extras'), orderBy('date'), limit(500))
     const unsub = onSnapshot(q, snap => {
       setExtras(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
 
-  return { extras, loading }
+  return { extras, loading, error }
 }
 
 export function useNotifications() {
   const [notifs, setNotifs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(100))
     const unsub = onSnapshot(q, snap => {
       setNotifs(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
 
-  return { notifs, loading }
+  return { notifs, loading, error }
 }
 
 export function useInspections(jobId) {
@@ -86,6 +94,7 @@ export function useInspections(jobId) {
 export function useSubs() {
   const [subs, setSubs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const q = query(collection(db, 'subs'), limit(100))
@@ -94,16 +103,17 @@ export function useSubs() {
       rows.sort((a, b) => a.trade.localeCompare(b.trade) || a.name.localeCompare(b.name))
       setSubs(rows)
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
 
-  return { subs, loading }
+  return { subs, loading, error }
 }
 
 export function useMaterials() {
   const [materials, setMaterials] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const q = query(collection(db, 'materials'), orderBy('createdAt', 'desc'), limit(200))
@@ -112,48 +122,50 @@ export function useMaterials() {
       rows.sort((a, b) => (a.job || '').localeCompare(b.job || ''))
       setMaterials(rows)
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
 
-  return { materials, loading }
+  return { materials, loading, error }
 }
 
 export function usePermits() {
   const [permits, setPermits] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const q = query(collection(db, 'permits'), orderBy('createdAt', 'desc'), limit(100))
     const unsub = onSnapshot(q, snap => {
       setPermits(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
 
-  return { permits, loading }
+  return { permits, loading, error }
 }
 
 export function useSubmits() {
   const [submits, setSubmits] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const q = query(collection(db, 'submits'), orderBy('createdAt', 'desc'), limit(100))
     const unsub = onSnapshot(q, snap => {
       setSubmits(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
 
-  return { submits, loading }
+  return { submits, loading, error }
 }
 
 // Rows are stored with the id they were loaded for and only returned while that
 // id is still current, so a changed id never shows the previous id's data.
-const EMPTY_SNAPSHOT = { id: null, items: [] }
+const EMPTY_SNAPSHOT = { id: null, items: [], error: null }
 
 function useSubcollection(parentCollection, parentId, subcollection, direction) {
   const [state, setState] = useState(EMPTY_SNAPSHOT)
@@ -169,8 +181,9 @@ function useSubcollection(parentCollection, parentId, subcollection, direction) 
       snap => setState({
         id: parentId,
         items: snap.docs.map(d => ({ ...d.data(), _docId: d.id })),
+        error: null,
       }),
-      () => setState({ id: parentId, items: [] }),
+      err => setState({ id: parentId, items: [], error: err }),
     )
     return () => {
       unsub()
@@ -179,17 +192,21 @@ function useSubcollection(parentCollection, parentId, subcollection, direction) 
   }, [parentCollection, parentId, subcollection, direction])
 
   const current = !!parentId && state.id === parentId
-  return { items: current ? state.items : [], loading: !!parentId && !current }
+  return {
+    items: current ? state.items : [],
+    loading: !!parentId && !current,
+    error: current ? state.error : null,
+  }
 }
 
 export function useJobFiles(jobDocId) {
-  const { items, loading } = useSubcollection('jobs', jobDocId, 'files', 'desc')
-  return { files: items, loading }
+  const { items, loading, error } = useSubcollection('jobs', jobDocId, 'files', 'desc')
+  return { files: items, loading, error }
 }
 
 export function useSubmitReplies(submitDocId) {
-  const { items, loading } = useSubcollection('submits', submitDocId, 'replies', 'asc')
-  return { replies: items, loading }
+  const { items, loading, error } = useSubcollection('submits', submitDocId, 'replies', 'asc')
+  return { replies: items, loading, error }
 }
 
 // ── Basic Mutations ───────────────────────────────────────────────────────────
@@ -348,29 +365,31 @@ export async function createJob(data) {
 export function useDailyReports() {
   const [dailyReports, setDailyReports] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   useEffect(() => {
     const q = query(collection(db, 'daily_reports'), orderBy('createdAt', 'desc'), limit(100))
     const unsub = onSnapshot(q, snap => {
       setDailyReports(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
-  return { dailyReports, loading }
+  return { dailyReports, loading, error }
 }
 
 export function useUrgentItems() {
   const [urgentItems, setUrgentItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   useEffect(() => {
     const q = query(collection(db, 'urgent_items'), orderBy('createdAt', 'desc'), limit(100))
     const unsub = onSnapshot(q, snap => {
       setUrgentItems(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
-  return { urgentItems, loading }
+  return { urgentItems, loading, error }
 }
 
 export async function addUrgentItem(data) {
@@ -395,15 +414,16 @@ export async function addDailyReport(data) {
 export function useHistory() {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   useEffect(() => {
     const q = query(collection(db, 'history'), orderBy('createdAt', 'desc'), limit(200))
     const unsub = onSnapshot(q, snap => {
       setHistory(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => setLoading(false))
+    }, err => { setError(err); setLoading(false) })
     return unsub
   }, [])
-  return { history, loading }
+  return { history, loading, error }
 }
 
 export async function addHistory(data) {
@@ -416,15 +436,16 @@ export async function addHistory(data) {
 export function useSettings() {
   const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   useEffect(() => {
     const ref = doc(db, 'config', 'settings')
     const unsub = onSnapshot(ref, snap => {
       setSettings(snap.exists() ? snap.data() : {})
       setLoading(false)
-    }, () => { setSettings({}); setLoading(false) })
+    }, err => { setSettings({}); setError(err); setLoading(false) })
     return unsub
   }, [])
-  return { settings, loading }
+  return { settings, loading, error }
 }
 
 export async function updateSetting(key, value) {
@@ -434,15 +455,16 @@ export async function updateSetting(key, value) {
 export function useAgentAlerts() {
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   useEffect(() => {
     const q = query(collection(db, 'agent_alerts'), orderBy('createdAt', 'desc'), limit(50))
     const unsub = onSnapshot(q, snap => {
       setAlerts(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => { setAlerts([]); setLoading(false) })
+    }, err => { setAlerts([]); setError(err); setLoading(false) })
     return unsub
   }, [])
-  return { alerts, loading }
+  return { alerts, loading, error }
 }
 
 export async function addAgentAlert(data) {
@@ -456,15 +478,16 @@ export async function updateAgentAlert(docId, data) {
 export function useSupplierInvoices() {
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   useEffect(() => {
     const q = query(collection(db, 'supplier_invoices'), orderBy('createdAt', 'desc'), limit(200))
     const unsub = onSnapshot(q, snap => {
       setInvoices(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
       setLoading(false)
-    }, () => { setInvoices([]); setLoading(false) })
+    }, err => { setInvoices([]); setError(err); setLoading(false) })
     return unsub
   }, [])
-  return { invoices, loading }
+  return { invoices, loading, error }
 }
 
 export async function addSupplierInvoice(data) {

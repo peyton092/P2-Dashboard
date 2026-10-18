@@ -3815,12 +3815,13 @@ export default function P2DashboardV4() {
     )
   }
 
+  // The login screen and the terms gate below render without a DataProvider.
+  // Its hooks subscribe when it mounts, and Firestore ends a listener the rules
+  // refuse and never restarts it, so a provider mounted before sign in would stay
+  // empty for the whole session: React keeps the same instance when the signed in
+  // branches render a DataProvider in the same place.
   if (!user) {
-    return (
-      <DataProvider>
-        <LoginScreen />
-      </DataProvider>
-    )
+    return <LoginScreen />
   }
 
   if (role === null) {
@@ -3830,16 +3831,17 @@ export default function P2DashboardV4() {
   const tenant = TENANTS.find(t => t.id === tenantId)
 
   if (role === 'builder' && !termsAccepted) {
-    return (
-      <DataProvider>
-        <TermsGate tenantId={tenantId} tenantName={tenant?.name} onAccept={() => setTermsAccepted(true)} />
-      </DataProvider>
-    )
+    return <TermsGate tenantId={tenantId} tenantName={tenant?.name} onAccept={() => setTermsAccepted(true)} />
   }
+
+  // Each signed in provider is keyed by who is signed in, in what role, for which
+  // tenant, so a different user, role or tenant gets a new provider whose hooks
+  // subscribe again.
+  const dataKey = `${user.uid}:${role}:${tenantId}`
 
   if (role === 'client') {
     return (
-      <DataProvider role="client" clientJobIds={clientJobIds}>
+      <DataProvider key={dataKey} role="client" clientJobIds={clientJobIds}>
         {showCreateUser && <CreateUserModal onClose={() => setShowCreateUser(false)} />}
         <Suspense fallback={<PortalLoading />}>
           <ClientPortalComponent
@@ -3853,7 +3855,7 @@ export default function P2DashboardV4() {
   }
 
   return (
-    <DataProvider tenantId={tenantId} role={role}>
+    <DataProvider key={dataKey} tenantId={tenantId} role={role}>
       {showCreateUser && <CreateUserModal onClose={() => setShowCreateUser(false)} />}
       {role === 'builder'
         ? (
