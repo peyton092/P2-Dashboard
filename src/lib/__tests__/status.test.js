@@ -73,6 +73,21 @@ describe('what the screens write', () => {
     )
   })
 
+  it('reads needs action as a warning and active as info, so no job status wears the brand color', () => {
+    expect(JOB_STATUS['needs-action'].tone).toBe('warning')
+    expect(JOB_STATUS.active.tone).toBe('info')
+    expect(Object.entries(JOB_STATUS).filter(([, meta]) => meta.tone === 'brand')).toEqual([])
+  })
+
+  it('keeps the brand color off every status, and gives it to the electrical trade alone', () => {
+    // The brand orange is for navigation, actions and the focus ring. Electrical keeps it
+    // as the one recorded exception: a trade is an identity cue, and not a status.
+    for (const [name, map] of Object.entries(MAPS)) {
+      const wearing = Object.entries(map).filter(([, meta]) => meta.tone === 'brand').map(([key]) => key)
+      expect(wearing, name).toEqual(name === 'TRADE' ? ['electrical'] : [])
+    }
+  })
+
   it('knows the inspection statuses a person can pick, and the two the data also holds', () => {
     for (const key of ['pending', 'scheduled', 'passed', 'failed', 'blocked', 'n/a', 'pending-verification', 'not-started']) {
       expect(Object.hasOwn(INSPECTION_STATUS, key), key).toBe(true)

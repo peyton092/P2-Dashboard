@@ -27,14 +27,15 @@ function vocabulary(map) {
   return Object.freeze(map)
 }
 
-// What job.status holds. Needs action and Active read in the brand color, as the
-// job lists always have.
+// What job.status holds. The brand color is for navigation and actions, so no job
+// status wears it: Needs action reads as a warning and Active as info. At risk is a
+// warning too, and its words are what tell the two apart.
 export const JOB_STATUS = vocabulary({
   blocked:        { label: 'Blocked',      tone: 'critical', order: 0 },
   hold:           { label: 'On hold',      tone: 'critical', order: 1 },
   'at-risk':      { label: 'At risk',      tone: 'warning',  order: 2 },
-  'needs-action': { label: 'Needs action', tone: 'brand',    order: 3 },
-  active:         { label: 'Active',       tone: 'brand',    order: 4 },
+  'needs-action': { label: 'Needs action', tone: 'warning',  order: 3 },
+  active:         { label: 'Active',       tone: 'info',     order: 4 },
   'on-track':     { label: 'On track',     tone: 'success',  order: 5 },
   pending:        { label: 'Pending',      tone: 'mute',     order: 6 },
   complete:       { label: 'Complete',     tone: 'success',  order: 7 },
