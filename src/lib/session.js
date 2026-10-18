@@ -13,7 +13,9 @@ export function resolveSession(claims, userDoc, firebaseUser) {
   const role = validRole(c.role) || validRole(u.role)
   const tenantId = c.tenantId || u.tenantId || (role === 'builder' ? 'qbs' : 'p2-core')
   const displayName = c.displayName || u.displayName || fu.displayName || ''
-  const clientName = c.clientName || u.clientName || u.displayName || ''
+  // fu.displayName covers a client whose claims are complete, since the app then
+  // skips the users document: createUser gives the Auth account the same name.
+  const clientName = c.clientName || u.clientName || u.displayName || fu.displayName || ''
   const clientJobIds = Array.isArray(c.clientJobIds)
     ? c.clientJobIds
     : Array.isArray(u.clientJobIds)

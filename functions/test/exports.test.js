@@ -19,6 +19,8 @@ const EXPECTED = {
   ccSyncPhotos:          { trigger: 'callableTrigger', secrets: CC_SECRETS },
   ccSyncPhotosScheduled: { trigger: 'scheduleTrigger', secrets: CC_SECRETS },
   onNotificationCreated: { trigger: 'eventTrigger',    secrets: [] },
+  createUser:            { trigger: 'callableTrigger', secrets: [] },
+  onUserWritten:         { trigger: 'eventTrigger',    secrets: [] },
 }
 
 const mod = await import('../index.js')
@@ -40,5 +42,41 @@ describe('index.js exports', () => {
   it('keeps the schedule and the notifications trigger path', () => {
     assert.equal(mod.ccSyncPhotosScheduled.__endpoint.scheduleTrigger.schedule, 'every 6 hours')
     assert.equal(mod.onNotificationCreated.__endpoint.eventTrigger.eventFilterPathPatterns.document, 'notifications/{id}')
+  })
+
+  it('runs onUserWritten on every write to a users document', () => {
+    const trigger = mod.onUserWritten.__endpoint.eventTrigger
+    assert.equal(trigger.eventType, 'google.cloud.firestore.document.v1.written')
+    assert.equal(trigger.eventFilterPathPatterns.document, 'users/{uid}')
+  })
+
+  it('lets the hosted app call createUser across origins (cors: true)', async () => {
+    // onCall does not put cors into the deploy metadata, so it is checked the
+    // way a browser meets it: a preflight request must be answered for the
+    // caller's origin, with POST allowed.
+    const headers = {}
+    const listeners = {}
+    const res = {
+      statusCode: 200,
+      setHeader: (name, value) => { headers[name.toLowerCase()] = value },
+      getHeader: (name) => headers[name.toLowerCase()],
+      removeHeader: (name) => { delete headers[name.toLowerCase()] },
+      on: (event, fn) => { (listeners[event] ??= []).push(fn) },
+      write: () => {},
+      end() { (listeners.finish ?? []).forEach((fn) => fn()) },
+    }
+    const origin = 'https://p2-dashboard.web.app'
+    const req = {
+      method: 'OPTIONS',
+      headers: {
+        origin,
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type',
+      },
+    }
+    await mod.createUser(req, res)
+    assert.equal(res.statusCode, 204)
+    assert.equal(headers['access-control-allow-origin'], origin)
+    assert.match(headers['access-control-allow-methods'], /POST/)
   })
 })

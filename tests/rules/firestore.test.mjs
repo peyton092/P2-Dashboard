@@ -1,6 +1,6 @@
 import { before, after, beforeEach, describe, it } from 'node:test'
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
 import { setupEnv } from './helpers.mjs'
 
 describe('firestore rules', () => {
@@ -139,6 +139,32 @@ describe('firestore rules', () => {
 
     it('client cannot write own users doc to escalate role', async () => {
       await assertFails(setDoc(doc(t.asClient('c1', []), 'users/c1'), { role: 'owner' }))
+    })
+
+    // Roles reach the app through claims that the onUserWritten function copies
+    // from these documents, and createUser (owner only) is the supported way to
+    // make one. These pin who may write one directly.
+    it('internal writes users/x with role internal fails (only an owner creates staff)', async () => {
+      await assertFails(setDoc(doc(t.asStaff('s1'), 'users/x'), { role: 'internal' }))
+    })
+
+    it('internal writes users/x with no role fails', async () => {
+      await assertFails(setDoc(doc(t.asStaff('s1'), 'users/x'), { displayName: 'No Role' }))
+    })
+
+    it('owner writes users/x with role internal succeeds', async () => {
+      await assertSucceeds(setDoc(doc(t.asOwner('o1'), 'users/x'), { role: 'internal' }))
+    })
+
+    it('builder and client cannot write another users doc, even a client one', async () => {
+      await assertFails(setDoc(doc(t.asBuilder('b1', 'qbs'), 'users/x'), { role: 'client' }))
+      await assertFails(setDoc(doc(t.asClient('c1', ['QBS-001']), 'users/x'), { role: 'client' }))
+    })
+
+    it('owner deletes a users doc succeeds, internal fails', async () => {
+      await t.seed((db) => setDoc(doc(db, 'users/x'), { role: 'client' }))
+      await assertFails(deleteDoc(doc(t.asStaff('s1'), 'users/x')))
+      await assertSucceeds(deleteDoc(doc(t.asOwner('o1'), 'users/x')))
     })
 
     it('user can read own users doc', async () => {

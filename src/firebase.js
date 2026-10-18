@@ -1,4 +1,4 @@
-import { initializeApp, getApps } from 'firebase/app'
+import { initializeApp } from 'firebase/app'
 import {
   initializeFirestore, persistentLocalCache,
   persistentMultipleTabManager, CACHE_SIZE_UNLIMITED,
@@ -19,9 +19,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 
-// Secondary app used to create users without signing out the current session
-const secondaryApp = getApps().find(a => a.name === 'secondary') || initializeApp(firebaseConfig, 'secondary')
-
 // Offline-first local cache. Multi-tab manager keeps data consistent across
 // multiple browser tabs and desktop (Tauri) windows; unlimited cache size lets
 // field crews retain full project data with no connection. Writes made offline
@@ -33,7 +30,6 @@ export const db = initializeFirestore(app, {
   }),
 })
 export const auth = getAuth(app)
-export const secondaryAuth = getAuth(secondaryApp)
 export const storage = getStorage(app)
 export const functions = getFunctions(app)
 

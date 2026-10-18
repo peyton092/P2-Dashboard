@@ -20,7 +20,7 @@ const O = '#F47920'
 //   role: 'internal' | 'owner' | 'builder'
 //   userLabel, roleLabel
 //   onLogout
-//   onCreateUser? — only shown for owner/internal
+//   onCreateUser? (optional, shown for the owner only)
 export default function Sidebar({
   sections = [],
   activeId,
@@ -205,7 +205,7 @@ export default function Sidebar({
             </div>
           )}
 
-          {!collapsed && (role === 'owner' || role === 'internal') && onCreateUser && (
+          {!collapsed && role === 'owner' && onCreateUser && (
             <button
               type="button"
               onClick={onCreateUser}

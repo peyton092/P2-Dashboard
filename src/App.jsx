@@ -1,10 +1,10 @@
-﻿import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
+﻿import { useState, useEffect, useMemo, useId, useRef, lazy, Suspense } from 'react'
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
-  createUserWithEmailAndPassword, sendPasswordResetEmail,
+  sendPasswordResetEmail,
 } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
-import { auth, secondaryAuth, db, functions } from './firebase'
+import { auth, db, functions } from './firebase'
 import { httpsCallable } from 'firebase/functions'
 import { DataProvider } from './DataContext'
 import { useData } from './use-data'
@@ -388,125 +388,204 @@ function LoginScreen() {
   )
 }
 
-// ── Create User Modal (owner / internal only) ─────────────────────────────────
+// ── Create User Modal (owner only) ────────────────────────────────────────────
+//
+// The account is created by the createUser callable, which only an owner can
+// call and which uses the Admin SDK for the Auth user, its claims and its users
+// document. The browser then asks Firebase to email the person a link to choose
+// their own password, so no password is typed, shown or stored here.
 
-function CreateUserModal({ onClose }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [role, setRole] = useState('internal')
-  const [tenantId, setTenantId] = useState('qbs')
+const ROLE_OPTIONS = [
+  { value: 'owner',    label: 'Owner' },
+  { value: 'internal', label: 'Internal (P2 staff)' },
+  { value: 'builder',  label: 'Builder (portal access)' },
+  { value: 'client',   label: 'Client (project owner)' },
+]
+const BUILDER_TENANTS = TENANTS.filter(t => t.id !== 'p2-core')
+
+// "QBS-018, qbs-032 QBS-041" becomes ['QBS-018', 'QBS-032', 'QBS-041'].
+const parseJobIds = (text) => text.split(/[\s,]+/).map(s => s.toUpperCase()).filter(Boolean)
+
+const CREATE_FAILED = 'Could not create the account. Try again.'
+
+// What the owner reads when createUser fails. The function's own errors carry a
+// sentence meant for people (HttpsError messages), so they are shown as they are.
+// When the request never got a reply the Functions SDK uses the bare code as the
+// message ("internal"), which says nothing, so that gets the plain fallback.
+function createFailureMessage(err) {
+  const bareCode = typeof err?.code === 'string' && err.message === err.code.replace(/^functions\//, '')
+  return err?.message && !bareCode ? err.message : CREATE_FAILED
+}
+
+const FIELD_CLASS = 'bg-white/5 border-white/20'
+// A native select, styled like Input. The solid background keeps the option
+// list readable in browsers that draw it from the select's own colors.
+const SELECT_CLASS = 'h-8 w-full rounded-lg border border-white/20 bg-zinc-900 px-2.5 text-sm text-zinc-100 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50'
+
+export function CreateUserModal({ onClose }) {
+  const formId = useId()
+  const nameRef = useRef(null)
+  const onCloseRef = useRef(onClose)
   const [displayName, setDisplayName] = useState('')
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState('internal')
+  const [tenantId, setTenantId] = useState(BUILDER_TENANTS[0].id)
   const [clientJobs, setClientJobs] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [warning, setWarning] = useState('')
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  // On open: remember what had focus (the button that opened this), focus the
+  // first field, and close on Escape. On close: hand focus back.
+  useEffect(() => {
+    const opener = document.activeElement
+    nameRef.current?.focus()
+    const onKeyDown = (e) => { if (e.key === 'Escape') onCloseRef.current() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      if (opener instanceof HTMLElement) opener.focus()
+    }
+  }, [])
 
   const handleCreate = async (e) => {
     e.preventDefault()
+    if (loading) return
     setError('')
     setSuccess('')
+    setWarning('')
     setLoading(true)
+    const address = email.trim()
+
     try {
-      const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password)
-      const parsedClientJobs = clientJobs
-        .split(/[\s,]+/)
-        .map(s => s.trim().toUpperCase())
-        .filter(Boolean)
-      await setDoc(doc(db, 'users', cred.user.uid), {
-        email: email.trim(),
-        displayName: displayName.trim() || email.trim(),
+      await httpsCallable(functions, 'createUser')({
+        email: address,
+        displayName: displayName.trim(),
         role,
-        tenantId: role === 'builder' ? tenantId : 'p2-core',
-        ...(role === 'client' ? {
-          clientName: displayName.trim() || email.trim(),
-          clientJobIds: parsedClientJobs,
-        } : {}),
-        createdAt: new Date().toISOString(),
+        ...(role === 'builder' ? { tenantId } : {}),
+        ...(role === 'client' ? { clientJobIds: parseJobIds(clientJobs) } : {}),
       })
-      await signOut(secondaryAuth)
-      setSuccess(`Account created for ${email.trim()}.`)
-      setEmail(''); setPassword(''); setDisplayName(''); setClientJobs('')
     } catch (err) {
-      const msg = {
-        'auth/email-already-in-use': 'An account with that email already exists.',
-        'auth/invalid-email':        'Enter a valid email address.',
-        'auth/weak-password':        'Password must be at least 6 characters.',
-      }[err.code] || err.message
-      setError(msg)
-    } finally {
+      setError(createFailureMessage(err))
       setLoading(false)
+      return
     }
+
+    // The account exists from here on, so the form is cleared whatever happens
+    // next: submitting it again could only report that the email is taken.
+    setEmail('')
+    setDisplayName('')
+    setClientJobs('')
+    try {
+      await sendPasswordResetEmail(auth, address)
+      setSuccess(`Account created. ${address} will receive an email to set their password.`)
+    } catch {
+      setWarning(`Account created for ${address}, but the email did not send. Ask them to use Forgot password on the sign in screen.`)
+    }
+    setLoading(false)
   }
 
+  // This renders outside AppShell, so it brings its own `dark` scope and
+  // foreground color; without them the text inherits the light theme's near
+  // black and cannot be read on the dark card.
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <Card className="w-96 border-white/10 bg-zinc-900">
+    <div className="dark fixed inset-0 bg-black/70 text-foreground flex items-center justify-center z-50 p-4">
+      <Card
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${formId}-title`}
+        className="w-96 max-w-full max-h-full overflow-y-auto border-white/10 bg-zinc-900"
+      >
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <UsersIcon size={14} style={{ color: O }} /> Create User Account
+          <CardTitle id={`${formId}-title`} className="text-sm flex items-center gap-2">
+            <UsersIcon size={14} style={{ color: O }} aria-hidden="true" /> Create User Account
           </CardTitle>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><XIcon size={16} /></button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <XIcon size={16} aria-hidden="true" />
+          </button>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="space-y-3">
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Name</label>
-              <Input value={displayName} onChange={e => setDisplayName(e.target.value)}
-                placeholder="Mike Rodriguez" className="bg-white/5 border-white/20" />
+              <label htmlFor={`${formId}-name`} className="text-xs text-muted-foreground">Name</label>
+              <Input
+                id={`${formId}-name`}
+                ref={nameRef}
+                value={displayName}
+                onChange={e => setDisplayName(e.target.value)}
+                placeholder="Mike Rodriguez"
+                autoComplete="off"
+                className={FIELD_CLASS}
+              />
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Email</label>
-              <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="user@p2em.com" className="bg-white/5 border-white/20" required />
+              <label htmlFor={`${formId}-email`} className="text-xs text-muted-foreground">Email</label>
+              <Input
+                id={`${formId}-email`}
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="user@p2em.com"
+                autoComplete="off"
+                className={FIELD_CLASS}
+                required
+              />
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Password</label>
-              <Input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="Min 6 characters" className="bg-white/5 border-white/20" required />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Role</label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger className="w-full bg-white/5 border-white/20">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="owner">Owner</SelectItem>
-                  <SelectItem value="internal">Internal (P2 staff)</SelectItem>
-                  <SelectItem value="builder">Builder (portal access)</SelectItem>
-                  <SelectItem value="client">Client (project owner)</SelectItem>
-                </SelectContent>
-              </Select>
+              <label htmlFor={`${formId}-role`} className="text-xs text-muted-foreground">Role</label>
+              <select
+                id={`${formId}-role`}
+                value={role}
+                onChange={e => setRole(e.target.value)}
+                className={SELECT_CLASS}
+              >
+                {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
             </div>
             {role === 'builder' && (
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Workspace</label>
-                <Select value={tenantId} onValueChange={setTenantId}>
-                  <SelectTrigger className="w-full bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {TENANTS.filter(t => t.id !== 'p2-core').map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <label htmlFor={`${formId}-tenant`} className="text-xs text-muted-foreground">Tenant</label>
+                <select
+                  id={`${formId}-tenant`}
+                  value={tenantId}
+                  onChange={e => setTenantId(e.target.value)}
+                  className={SELECT_CLASS}
+                >
+                  {BUILDER_TENANTS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
               </div>
             )}
             {role === 'client' && (
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Project IDs (comma-separated)</label>
+                <label htmlFor={`${formId}-jobs`} className="text-xs text-muted-foreground">Client job ids</label>
                 <Input
+                  id={`${formId}-jobs`}
                   value={clientJobs}
                   onChange={e => setClientJobs(e.target.value)}
                   placeholder="QBS-018, QBS-032, QBS-041"
-                  className="bg-white/5 border-white/20"
+                  autoComplete="off"
+                  aria-describedby={`${formId}-jobs-hint`}
+                  className={FIELD_CLASS}
+                  required
                 />
-                <p className="text-[11px] text-muted-foreground">
-                  The client will only see these projects. The Name above is shown as the client/company name in their portal.
+                <p id={`${formId}-jobs-hint`} className="text-[11px] text-muted-foreground">
+                  Separate ids with commas or spaces. The client will see only these projects, and the Name above is shown as their company name in the portal.
                 </p>
               </div>
             )}
-            {error   && <p className="text-xs text-red-400 font-medium">{error}</p>}
-            {success && <p className="text-xs text-green-400 font-medium">{success}</p>}
+            {error   && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
+            {success && <p role="status" className="text-xs text-green-400 font-medium">{success}</p>}
+            {warning && <p role="status" className="text-xs text-amber-400 font-medium">{warning}</p>}
             <Button type="submit" className="w-full text-white" style={{ backgroundColor: O }} disabled={loading}>
               {loading ? 'Creating…' : 'Create Account'}
             </Button>

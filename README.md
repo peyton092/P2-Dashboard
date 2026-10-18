@@ -38,6 +38,7 @@ functions/
   oauth-companycam.js          # CompanyCam OAuth (ccAuth/ccCallback/ccDisconnect)
   companycam-sync.js           # Photo sync (ccSyncPhotos/ccSyncPhotosScheduled)
   push.js                      # Push fan out (onNotificationCreated)
+  users.js                     # User accounts (createUser callable, onUserWritten claims sync)
   lib/                         # Shared code — Admin init, secrets, config, role/scope/push-target rules, authz guards
   test/                        # Unit tests (cd functions && npm test)
   QUICKBOOKS_SETUP.md          # Step-by-step QB connect setup

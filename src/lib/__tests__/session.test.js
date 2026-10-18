@@ -55,6 +55,20 @@ describe('resolveSession', () => {
     expect(resolveSession({}, null, {}).clientName).toBe('')
   })
 
+  it('names a client from the Firebase user when claims are complete and no document was read', () => {
+    // createUser sets the claims and the Auth display name together, and the app
+    // skips the users document when the claims already carry a role and job ids.
+    const claims = { role: 'client', tenantId: 'p2-core', clientJobIds: ['QBS-001'] }
+    expect(resolveSession(claims, null, { displayName: 'Lee Homes' }).clientName).toBe('Lee Homes')
+  })
+
+  it('still prefers a document name over the Firebase user for clientName', () => {
+    const fu = { displayName: 'Auth Name' }
+    expect(resolveSession({}, { clientName: 'Doc Co' }, fu).clientName).toBe('Doc Co')
+    expect(resolveSession({}, { displayName: 'Doc Name' }, fu).clientName).toBe('Doc Name')
+    expect(resolveSession({ clientName: 'Claims Co' }, null, fu).clientName).toBe('Claims Co')
+  })
+
   it('exports the four valid roles', () => {
     expect([...VALID_ROLES].sort()).toEqual(['builder', 'client', 'internal', 'owner'])
   })

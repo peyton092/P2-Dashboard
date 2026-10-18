@@ -9,6 +9,7 @@
 //    oauth-companycam.js   ccAuth, ccCallback, ccDisconnect
 //    companycam-sync.js    ccSyncPhotos, ccSyncPhotosScheduled
 //    push.js               onNotificationCreated
+//    users.js              createUser, onUserWritten
 //
 //  Shared code lives in lib/:
 //    admin.js              initializes the Admin SDK once and exports `db`
@@ -18,6 +19,8 @@
 //    roles.js              VALID_ROLES, isStaff, isOwner, claimsOf, mergeUserDoc (pure)
 //    scope.js              scopeForJob, canReadJob, canActOnExtra (pure)
 //    push-targets.js       targetTokens, groupTokens (pure)
+//    users-validate.js     validateNewUser (pure)
+//    users-sync.js         claimsPatchFor (pure)
 //
 //  Firebase deploys only what is exported here, and a deployed function that
 //  stops being exported is deleted on the next deploy. Add every new function
@@ -44,6 +47,19 @@
 //                    cc_config/tokens.
 //    ccDisconnect  — Revokes the token at CompanyCam and deletes the doc.
 //
+//  User account functions:
+//    createUser     Owner only callable. Takes { email, displayName, role,
+//                   tenantId, clientJobIds }, creates the Auth user with a
+//                   random password and the matching claims, writes
+//                   users/{uid}, and returns { uid }. The browser then sends
+//                   the person a password reset email so they set their own.
+//    onUserWritten  Firestore trigger on users/{uid}. Sets the Auth custom
+//                   claims { role, tenantId, clientJobIds } from the document,
+//                   adds a client's uid to the clientUids of their jobs (and
+//                   removes it when they lose a job or the document goes), and
+//                   revokes refresh tokens when an existing role changes or is
+//                   removed.
+//
 //  Required Firebase secrets (set with `firebase functions:secrets:set`):
 //    QB_CLIENT_ID       — Intuit app's Client ID
 //    QB_CLIENT_SECRET   — Intuit app's Client Secret
@@ -67,3 +83,4 @@ export { qbAuth, qbCallback, qbDisconnect } from './oauth-quickbooks.js'
 export { ccAuth, ccCallback, ccDisconnect } from './oauth-companycam.js'
 export { ccSyncPhotos, ccSyncPhotosScheduled } from './companycam-sync.js'
 export { onNotificationCreated } from './push.js'
+export { createUser, onUserWritten } from './users.js'
