@@ -1,5 +1,4 @@
 import { Card, CardContent } from '@/components/ui/card'
-import { ArrowUpIcon } from 'lucide-react'
 
 // Legacy stat card — used by Architecture and Permits inline tabs that
 // haven't been redesigned with `MetricTile` yet. Behavior preserved exactly.
@@ -17,14 +16,7 @@ export function StatCard({ label, value, sub, trend, Icon }) {
         </div>
         <p className="text-3xl font-bold tracking-tight">{value}</p>
         {sub && <p className="text-sm text-muted-foreground mt-1">{sub}</p>}
-        {trend !== undefined && (
-          <div className="flex items-center gap-1 mt-2">
-            <ArrowUpIcon size={11} style={{ color: trend ? '#22c55e' : '#ef4444', transform: trend ? 'none' : 'rotate(180deg)' }} />
-            <span className="text-xs" style={{ color: trend ? '#22c55e' : '#ef4444' }}>
-              {trend ? '+8%' : '-3%'} vs last month
-            </span>
-          </div>
-        )}
+        {trend != null && trend !== false && <p className="text-xs text-muted-foreground mt-2">{trend}</p>}
       </CardContent>
     </Card>
   )
