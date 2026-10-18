@@ -44,8 +44,6 @@ const DESCRIPTION = "Writes tenant and client access fields onto every job, chan
 const sdkError = (code, message) => Object.assign(new Error(message), { code: `functions/${code}` })
 
 beforeEach(() => {
-  // The page logs a failed call before it shows it; the tests that make one fail stay quiet.
-  vi.spyOn(console, 'error').mockImplementation(() => {})
   // The System card reads two build constants that vite defines at build time.
   vi.stubGlobal('__APP_VERSION__', 'test')
   vi.stubGlobal('__BUILD_DATE__', 'test')
@@ -67,6 +65,16 @@ const open = (role) =>
     </ToastContext.Provider>,
   )
 const button = () => screen.queryByRole('button', { name: 'Backfill access scopes' })
+
+// Makes the call fail. The page logs a failed call before it shows the message, so the tests
+// that use this keep that quiet, and get the spy to check it was logged. Nothing else is muted:
+// a console.error in any other test shows up in the output.
+function failWith(error, { once = false } = {}) {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  if (once) mocks.call.mockRejectedValueOnce(error)
+  else mocks.call.mockRejectedValue(error)
+  return logged
+}
 const run = async (result = RESULT) => {
   mocks.call.mockResolvedValue({ data: result })
   open('owner')
@@ -176,7 +184,7 @@ describe('the Backfill access scopes button', () => {
     }
     cleanup()
     mocks.toast.mockReset()
-    mocks.call.mockRejectedValue(sdkError('internal', 'internal'))
+    failWith(sdkError('internal', 'internal'))
     open('owner')
     fireEvent.click(button())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
@@ -185,16 +193,18 @@ describe('the Backfill access scopes button', () => {
     expect(failure.description).not.toMatch(DASH)
   })
 
-  it('shows the message the function sent when it refuses, in an error toast', async () => {
-    mocks.call.mockRejectedValue(sdkError('permission-denied', 'Owner access required.'))
+  it('shows the message the function sent when it refuses, in an error toast, and logs the error', async () => {
+    const refusal = sdkError('permission-denied', 'Owner access required.')
+    const logged = failWith(refusal)
     open('owner')
     fireEvent.click(button())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
     expect(mocks.toast).toHaveBeenCalledWith({ tone: 'error', title: 'Backfill failed', description: 'Owner access required.' })
+    expect(logged).toHaveBeenCalledWith('Backfill error:', refusal)
   })
 
   it('shows the message of any error, whether or not it came from the function', async () => {
-    mocks.call.mockRejectedValue(new Error('The backfill stopped before it finished. It is safe to run again.'))
+    failWith(new Error('The backfill stopped before it finished. It is safe to run again.'))
     open('owner')
     fireEvent.click(button())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
@@ -202,7 +212,7 @@ describe('the Backfill access scopes button', () => {
   })
 
   it('shows a plain message, not the bare code, when no reply came back', async () => {
-    mocks.call.mockRejectedValue(sdkError('internal', 'internal'))
+    failWith(sdkError('internal', 'internal'))
     open('owner')
     fireEvent.click(button())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
@@ -210,7 +220,7 @@ describe('the Backfill access scopes button', () => {
   })
 
   it('shows no success toast for a failed run', async () => {
-    mocks.call.mockRejectedValue(sdkError('internal', 'internal'))
+    failWith(sdkError('internal', 'internal'))
     open('owner')
     fireEvent.click(button())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled())
@@ -236,7 +246,7 @@ describe('the Backfill access scopes button', () => {
   })
 
   it('can be run again after a failure', async () => {
-    mocks.call.mockRejectedValueOnce(sdkError('internal', 'internal'))
+    failWith(sdkError('internal', 'internal'), { once: true })
     open('owner')
     fireEvent.click(button())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))

@@ -21,8 +21,8 @@
 //    config.js             region and constants used by more than one module
 //    authz.js              requireAuth, requireStaff, requireOwner (callable guards)
 //    roles.js              VALID_ROLES, isStaff, isOwner, claimsOf, mergeUserDoc, wouldLowerStaff (pure)
-//    scope.js              scopeForJob, canReadJob, canActOnExtra (pure)
-//    scope-sync.js         scopePatchFor, needsRestamp, scopeChanged, clientLinks (pure)
+//    scope.js              scopeForJob, canReadJob, canActOnExtra, nonEmptyString (pure)
+//    scope-sync.js         scopePatchFor, needsRestamp, scopeChanged, jobIdOf, clientLinks (pure)
 //    batches.js            chunks, JOB_ID_CHUNK, BATCH_SIZE (pure)
 //    auth-claims.js        currentClaimRole (reads one account's custom claims)
 //    push-targets.js       targetTokens, groupTokens (pure)
@@ -98,19 +98,22 @@
 //    onJobWritten     Firestore trigger on jobs/{id}. When a job's tenantId or the set
 //                     of uids in its clientUids changed, gives the scope to every change
 //                     order (job), submission and notification (jobId) that names it and
-//                     does not carry it. A new job with no tenantId is stamped qbs on
-//                     itself. A deleted job writes nothing.
+//                     does not carry it, then looks at the job once more and stamps again
+//                     if its scope moved meanwhile. A batch that fails is logged and the
+//                     rest go on. A new job with no tenantId is stamped qbs on itself, in
+//                     a transaction. A deleted job writes nothing.
 //    onExtraWritten   Firestore triggers on extras/{id} and submits/{id}. Look the job
 //    onSubmitWritten  up by its id and give the document its tenantId and clientUids
 //                     when it lacks them or carries another job scope. A document that
 //                     already carries it, one that names no job and one whose job is
 //                     missing are not written, so none of these can fire itself.
 //    backfillScopes   Owner only callable. Takes no data. Sets the Auth claims of every
-//                     user with a role (never lowering an owner or internal account),
-//                     sets every job's tenantId (qbs when it has none) and clientUids
-//                     (exactly the clients who list it), then stamps the change orders,
-//                     submissions and notifications. Returns { ok: true, users, jobs,
-//                     extras, submits, notifications, skipped }. Safe to run again.
+//                     user with a role, from each user's document as it is when their turn
+//                     comes (never lowering an owner or internal account), sets every job's
+//                     tenantId (qbs when it has none) and clientUids (exactly the clients who
+//                     list it, from a scan of the users taken after the claims), then stamps
+//                     the change orders, submissions and notifications. Returns { ok: true,
+//                     users, jobs, extras, submits, notifications, skipped }. Safe to run again.
 //
 //  Required Firebase secrets (set with `firebase functions:secrets:set`):
 //    QB_CLIENT_ID       — Intuit app's Client ID

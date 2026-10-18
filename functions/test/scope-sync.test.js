@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { getAuth } from 'firebase-admin/auth'
 import { db } from '../lib/admin.js'
-import { clientLinks, needsRestamp, scopeChanged, scopePatchFor } from '../lib/scope-sync.js'
+import { clientLinks, jobIdOf, needsRestamp, scopeChanged, scopePatchFor } from '../lib/scope-sync.js'
 import { scopeForJob } from '../lib/scope.js'
 import * as handlers from '../scope-sync.js'
 import { assertNoDashes, code, stubFirestore } from './helpers/firestore-stub.js'
@@ -264,6 +264,29 @@ describe('clientLinks', () => {
   })
 })
 
+describe('jobIdOf', () => {
+  it('is the id the document names in the field it is asked for', () => {
+    assert.equal(jobIdOf({ id: 'CO-001', job: 'QBS-001' }, 'job'), 'QBS-001')
+    assert.equal(jobIdOf({ subject: 'RFI', jobId: 'QBS-002' }, 'jobId'), 'QBS-002')
+  })
+
+  it('reads only that field: a change order names its job in job, the others in jobId', () => {
+    assert.equal(jobIdOf({ jobId: 'QBS-001' }, 'job'), null)
+    assert.equal(jobIdOf({ job: 'QBS-001' }, 'jobId'), null)
+  })
+
+  it('is null when the field is missing, empty or not a string', () => {
+    for (const bad of [undefined, null, '', 0, 7, true, ['QBS-001'], { id: 'QBS-001' }]) {
+      assert.equal(jobIdOf({ jobId: bad }, 'jobId'), null, JSON.stringify(bad))
+    }
+    assert.equal(jobIdOf({}, 'jobId'), null)
+  })
+
+  it('is null for a document that is missing', () => {
+    for (const nothing of [null, undefined]) assert.equal(jobIdOf(nothing, 'jobId'), null)
+  })
+})
+
 // ── The triggers and the backfill ─────────────────────────────────────────────
 // Nothing here reaches a network. Firestore is the shared stub (helpers/firestore-stub.js,
 // with outsideTransactions on, as these read collections and write in batches), and
@@ -278,10 +301,13 @@ const authError = (errorCode) => Object.assign(new Error(`Firebase auth error: $
 
 // existing: { uid: { role } }, the custom claims each account has now.
 // getUserError, claimsError: { uid: error }, what reading or setting one account fails with.
-function stubAuth({ existing = {}, getUserError = {}, claimsError = {} } = {}) {
+// meanwhile: called with the uid whenever an account is read, for a test that has something
+// else change while the handler works through its users (a users document edited, say).
+function stubAuth({ existing = {}, getUserError = {}, claimsError = {}, meanwhile } = {}) {
   const auth = getAuth()
   mock.method(auth, 'getUser', async (uid) => {
     fetched.push(uid)
+    meanwhile?.(uid)
     if (getUserError[uid]) throw getUserError[uid]
     return { uid, customClaims: existing[uid] }
   })
@@ -331,14 +357,54 @@ function restart(documents) {
   reset()
   install(documents)
 }
+
+// Makes the commits with these numbers fail (1 is the first batch committed, 2 the second),
+// and lets the others through to the stub, so a test can lose one batch and see the rest go on.
+function failCommits(...numbers) {
+  const real = db.batch
+  let commits = 0
+  mock.method(db, 'batch', () => {
+    const batch = real()
+    const commit = batch.commit
+    batch.commit = async () => {
+      commits += 1
+      if (numbers.includes(commits)) throw new Error(`commit ${commits} failed`)
+      return commit()
+    }
+    return batch
+  })
+}
+
+// Wraps the transactions the stub runs so that one call inside them fails while the rest runs
+// as the stub does it: `query` is what the read of a query (the job lookup) fails with, `update`
+// what the write fails with.
+function breakTransactions({ query, update }) {
+  const real = db.runTransaction
+  mock.method(db, 'runTransaction', (work) =>
+    real((tx) =>
+      work({
+        ...tx,
+        get: (target) => (query && target.query ? Promise.reject(query) : tx.get(target)),
+        update: (...args) => {
+          if (update) throw update
+          return tx.update(...args)
+        },
+      }),
+    ),
+  )
+}
+
 const warnings = () => logged.filter(([level]) => level === 'warn').map(([, message]) => String(message))
 
 const snap = (data, ref) => ({ exists: data != null, data: () => data, ref })
 
 // A write to jobs/{docId}. before and after are the job as the event reports it (null for
 // none). The handler reads the job again, and `now` is what it finds then: the same as
-// after unless a test says otherwise. ref.update is the job writing to itself.
-function jobEvent(docId, before, after, { now = after, updateError } = {}) {
+// after unless a test says otherwise. It can also be a function of how many times the job
+// has been read so far (1 the first time), for a test where the job moves while the handler
+// works. ref.rereads counts the reads. The job is only ever written inside a transaction, so
+// a plain ref.update fails the test.
+function jobEvent(docId, before, after, { now = after } = {}) {
   const path = `jobs/${docId}`
   const ref = {
     id: docId,
@@ -346,11 +412,10 @@ function jobEvent(docId, before, after, { now = after, updateError } = {}) {
     rereads: 0,
     get: async () => {
       ref.rereads += 1
-      return snap(now, ref)
+      return snap(typeof now === 'function' ? now(ref.rereads) : now, ref)
     },
-    update: async (data) => {
-      if (updateError) throw updateError
-      stub.writes.push({ op: 'update', path, data })
+    update: () => {
+      throw new Error('the job must be written inside a transaction')
     },
   }
   return { params: { id: docId }, data: { before: snap(before, ref), after: snap(after, ref) } }
@@ -408,6 +473,8 @@ describe('onJobWritten', () => {
     },
     ...over,
   })
+  // n notifications that name QBS-001 and carry a scope that is not the job's, as {n0: ..., n1: ...}.
+  const many = (count) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`n${i}`, { msg: `m${i}`, jobId: 'QBS-001', tenantId: 'qbs', clientUids: [] }]))
 
   describe('when nothing about the scope changed', () => {
     it('writes nothing and reads nothing when only something else about the job changed', async () => {
@@ -458,12 +525,12 @@ describe('onJobWritten', () => {
   })
 
   describe('when the tenant or the clients changed', () => {
-    it('reads the job again once, and stamps the change orders by job, and the submissions and notifications by jobId', async () => {
+    it('reads the job again, and stamps the change orders by job, and the submissions and notifications by jobId', async () => {
       const after = { ...JOB, tenantId: 'vision' }
       install({ jobs: { j1: after }, ...dependents() })
       const event = jobEvent('j1', JOB, after)
       await run(event)
-      assert.equal(event.data.after.ref.rereads, 1)
+      assert.equal(event.data.after.ref.rereads, 2, 'once to stamp from, and once more afterwards to see whether it moved')
       const scope = { tenantId: 'vision', clientUids: ['c1'] }
       const written = stub.writes.map((write) => [write.op, write.path, write.data]).sort((a, b) => a[1].localeCompare(b[1]))
       assert.deepEqual(written, [
@@ -610,6 +677,36 @@ describe('onJobWritten', () => {
       assert.deepEqual(stub.written('extras/').map((write) => write.data), [{ tenantId: 'vision', clientUids: [] }])
     })
 
+    it('gives itself the tenant inside a transaction, which reads the job first', async () => {
+      const after = { id: 'QBS-007', clientUids: [] }
+      install({ jobs: { j7: after }, extras: {}, submits: {}, notifications: {} })
+      await run(jobEvent('j7', null, after))
+      assert.ok(stub.calls.includes('runTransaction'))
+      assert.deepEqual(stub.reads, ['jobs/j7'])
+      assert.deepEqual(stub.written('jobs/'), [{ op: 'update', path: 'jobs/j7', data: { tenantId: 'qbs' } }])
+    })
+
+    it('writes nothing to itself when the job is gone by the time the transaction reads it', async () => {
+      const after = { id: 'QBS-007', clientUids: [] }
+      install({ jobs: {}, extras: {}, submits: {}, notifications: {} })
+      await run(jobEvent('j7', null, after))
+      assert.deepEqual(stub.reads, ['jobs/j7'])
+      assert.deepEqual(stub.written('jobs/'), [])
+    })
+
+    it('does not overwrite a tenant that was set after the job was read, and the documents get that tenant', async () => {
+      const read = { id: 'QBS-007', clientUids: [] } // as the event and the first read saw it
+      const set = { ...read, tenantId: 'vision' } // as it is by the time the transaction looks
+      install({ jobs: { j7: set }, extras: { x7: { job: 'QBS-007' } }, submits: {}, notifications: {} })
+      await run(jobEvent('j7', null, read, { now: (n) => (n === 1 ? read : set) }))
+      assert.deepEqual(stub.written('jobs/'), [], 'the tenant that was set is not overwritten')
+      assert.deepEqual(
+        stub.written('extras/').map((write) => write.data.tenantId),
+        ['qbs', 'vision'],
+        'the second pass puts the tenant that was set on the documents',
+      )
+    })
+
     it('finds nothing to write when it runs again for its own write', async () => {
       const created = { id: 'QBS-007', clientUids: [] }
       const documents = { jobs: { j7: created }, extras: { x7: { job: 'QBS-007' } }, submits: { s7: { jobId: 'QBS-007' } }, notifications: {} }
@@ -625,19 +722,38 @@ describe('onJobWritten', () => {
   })
 
   describe('failures', () => {
-    it('still stamps the documents when the job cannot be written to, and then fails the event', async () => {
-      const after = { id: 'QBS-007', clientUids: [] }
-      install({ jobs: { j7: after }, extras: { x7: { job: 'QBS-007' } }, submits: {}, notifications: {} })
-      await assert.rejects(run(jobEvent('j7', null, after, { updateError: new Error('update failed') })), /update failed/)
+    const created = { id: 'QBS-007', clientUids: [] }
+    const installCreated = () => install({ jobs: { j7: created }, extras: { x7: { job: 'QBS-007' } }, submits: {}, notifications: {} })
+    const errorLines = () => logged.filter(([level]) => level === 'error')
+
+    it('still stamps the documents when the job cannot be given its tenant, and then fails the event', async () => {
+      installCreated()
+      breakTransactions({ update: new Error('update failed') })
+      await assert.rejects(run(jobEvent('j7', null, created)), /update failed/)
       assert.equal(stub.written('extras/').length, 1)
+      assert.deepEqual(stub.written('jobs/'), [])
     })
 
     it('still gives the job its tenant when the documents cannot be written, and then fails the event', async () => {
-      const after = { id: 'QBS-007', clientUids: [] }
-      install({ jobs: { j7: after }, extras: { x7: { job: 'QBS-007' } }, submits: {}, notifications: {} })
-      mock.method(db, 'batch', () => ({ update: () => {}, commit: async () => { throw new Error('commit failed') } }))
-      await assert.rejects(run(jobEvent('j7', null, after)), /commit failed/)
+      installCreated()
+      failCommits(1)
+      await assert.rejects(run(jobEvent('j7', null, created)), /commit 1 failed/)
       assert.deepEqual(stub.written('jobs/').map((write) => write.data), [{ tenantId: 'qbs' }])
+    })
+
+    it('logs both halves when both fail, each with the job it was for, and fails the event with the first', async () => {
+      installCreated()
+      breakTransactions({ update: new Error('tenant write failed') })
+      failCommits(1)
+      await assert.rejects(run(jobEvent('j7', null, created)), /tenant write failed/)
+      const tenant = errorLines().find(([, message, cause]) => /its tenant/.test(message) && cause?.message === 'tenant write failed')
+      const documents = errorLines().find(([, message, cause]) => /its documents/.test(message) && cause?.message === 'commit 1 failed')
+      assert.ok(tenant, 'the failed tenant write is logged')
+      assert.ok(documents, 'the failed stamping of the documents is logged')
+      for (const [, message] of [tenant, documents]) {
+        assert.match(String(message), /jobs\/j7/)
+        assertNoDashes(String(message))
+      }
     })
 
     it('fails the event when a collection cannot be read, and writes nothing', async () => {
@@ -656,9 +772,170 @@ describe('onJobWritten', () => {
     })
   })
 
-  describe('many documents', () => {
-    const many = (count) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`n${i}`, { msg: `m${i}`, jobId: 'QBS-001', tenantId: 'qbs', clientUids: [] }]))
+  // A batch that fails (a document deleted between the read and the commit makes Firestore
+  // refuse the whole batch) is lost, and the ones after it still go.
+  describe('a batch that fails', () => {
+    const before = { ...JOB, clientUids: [] }
+    const after = { ...JOB, clientUids: ['c1'] }
+    const installMany = (count) => install({ jobs: { j1: after }, extras: {}, submits: {}, notifications: many(count) })
+    const batchLines = () => logged.filter(([level, message]) => level === 'error' && /could not be stamped/.test(message))
 
+    it('does not stop the batches after it, and the event fails with its error once they are done', async () => {
+      installMany(1003)
+      failCommits(1)
+      await assert.rejects(run(jobEvent('j1', before, after)), /commit 1 failed/)
+      assert.deepEqual(stub.batches.map((group) => group.length), [400, 203], 'the second and third batches were committed')
+      assert.equal(stub.writes.length, 603)
+    })
+
+    it('does not stop the batches before it either', async () => {
+      installMany(1003)
+      failCommits(3)
+      await assert.rejects(run(jobEvent('j1', before, after)), /commit 3 failed/)
+      assert.deepEqual(stub.batches.map((group) => group.length), [400, 400])
+    })
+
+    it('logs the job and the error of every batch that fails, and how many documents it held', async () => {
+      installMany(1003)
+      failCommits(1, 3)
+      await assert.rejects(run(jobEvent('j1', before, after)), /commit 1 failed/)
+      assert.equal(batchLines().length, 2)
+      const [first, second] = batchLines()
+      assert.match(first[1], /jobs\/j1/)
+      assert.match(first[1], /400/)
+      assert.equal(first[2].message, 'commit 1 failed')
+      assert.match(second[1], /203/)
+      assert.equal(second[2].message, 'commit 3 failed')
+      for (const [, message] of batchLines()) assertNoDashes(String(message))
+    })
+
+    it('logs nothing about batches when they all commit', async () => {
+      installMany(450)
+      await run(jobEvent('j1', before, after))
+      assert.equal(batchLines().length, 0)
+      assert.deepEqual(stub.batches.map((group) => group.length), [400, 50])
+    })
+
+    it('still does the second look at the job, so a newer scope is stamped even after a batch was lost', async () => {
+      installMany(5)
+      const newer = { ...JOB, clientUids: ['c1', 'c2'] }
+      failCommits(1)
+      const event = jobEvent('j1', before, after, { now: (n) => (n === 1 ? after : newer) })
+      await assert.rejects(run(event), /commit 1 failed/)
+      assert.equal(event.data.after.ref.rereads, 2)
+      assert.ok(stub.writes.length > 0, 'the second pass went ahead')
+      assert.ok(stub.writes.every((write) => write.data.clientUids.join() === 'c1,c2'))
+    })
+  })
+
+  // The job can move again (a client linked, say) while its documents are being stamped,
+  // and the event for that move may already have run and found them half done.
+  describe('when the job moves while its documents are stamped', () => {
+    const before = { ...JOB, clientUids: [] }
+    const first = { ...JOB, clientUids: ['c1'] } // the scope the event is about
+    const newer = { ...JOB, clientUids: ['c1', 'c2'] } // the scope it has moved to meanwhile
+    const documents = () => ({
+      jobs: { j1: newer },
+      extras: { x1: { job: 'QBS-001', tenantId: 'qbs', clientUids: [] } },
+      submits: {},
+      notifications: {},
+    })
+    const passes = () => stub.calls.filter((entry) => entry === 'collection:extras').length
+
+    it('stamps the newer scope in a second pass', async () => {
+      install(documents())
+      const event = jobEvent('j1', before, first, { now: (n) => (n === 1 ? first : newer) })
+      await run(event)
+      assert.deepEqual(stub.writes.map((write) => write.data.clientUids), [['c1'], ['c1', 'c2']], 'c1 first, then c1 and c2')
+      assert.equal(passes(), 2)
+      assert.equal(event.data.after.ref.rereads, 2)
+    })
+
+    it('stamps the second pass onto every document the newer scope does not match, one the first pass left alone included', async () => {
+      install({
+        jobs: { j1: newer },
+        extras: { x1: { job: 'QBS-001', tenantId: 'qbs', clientUids: ['c1'] }, x2: { job: 'QBS-001' } },
+        submits: {},
+        notifications: {},
+      })
+      await run(jobEvent('j1', before, first, { now: (n) => (n === 1 ? first : newer) }))
+      assert.deepEqual(stub.writes.map((write) => [write.path, write.data.clientUids]), [
+        ['extras/x2', ['c1']], // the first pass: x1 already carries c1, x2 carries nothing
+        ['extras/x1', ['c1', 'c2']], // the second pass: neither carries c2
+        ['extras/x2', ['c1', 'c2']],
+      ])
+    })
+
+    it('does not stamp a second time when the job did not move', async () => {
+      install(documents())
+      const event = jobEvent('j1', before, first, { now: first })
+      await run(event)
+      assert.equal(passes(), 1)
+      assert.equal(stub.writes.length, 1)
+      assert.equal(event.data.after.ref.rereads, 2, 'it did look again')
+    })
+
+    it('does not count something else about the job changing as moving', async () => {
+      install(documents())
+      const edited = { ...first, address: '2 Main St', status: 'complete' }
+      await run(jobEvent('j1', before, first, { now: (n) => (n === 1 ? first : edited) }))
+      assert.equal(passes(), 1)
+    })
+
+    it('does not count the same clients in another order as moving', async () => {
+      install(documents())
+      const wide = { ...JOB, clientUids: ['c1', 'c2'] }
+      await run(jobEvent('j1', before, wide, { now: (n) => (n === 1 ? wide : { ...JOB, clientUids: ['c2', 'c1'] }) }))
+      assert.equal(passes(), 1)
+    })
+
+    it('does not count its own tenant being written as moving', async () => {
+      const created = { id: 'QBS-007', clientUids: [] }
+      install({ jobs: { j7: created }, extras: { x7: { job: 'QBS-007' } }, submits: {}, notifications: {} })
+      await run(jobEvent('j7', null, created, { now: (n) => (n === 1 ? created : { ...created, tenantId: 'qbs' }) }))
+      assert.equal(passes(), 1)
+      assert.equal(stub.written('extras/').length, 1)
+    })
+
+    it('stamps once more at most, however often the job moves', async () => {
+      install(documents())
+      const moving = (n) => ({ ...JOB, clientUids: Array.from({ length: n }, (_, i) => `c${i}`) })
+      const event = jobEvent('j1', before, first, { now: moving })
+      await run(event)
+      assert.equal(passes(), 2)
+      assert.equal(event.data.after.ref.rereads, 2, 'it does not look a third time')
+      assert.deepEqual(stub.writes.at(-1).data.clientUids, ['c0', 'c1'])
+    })
+
+    it('does not stamp again when the job is gone by then', async () => {
+      install(documents())
+      await run(jobEvent('j1', before, first, { now: (n) => (n === 1 ? first : null) }))
+      assert.equal(passes(), 1)
+    })
+
+    it('does not stamp again when the job has lost its id, which would leave nothing to find its documents by', async () => {
+      install(documents())
+      await run(jobEvent('j1', before, first, { now: (n) => (n === 1 ? first : { tenantId: 'vision', clientUids: [] }) }))
+      assert.equal(passes(), 1)
+      assert.deepEqual(warnings(), [])
+    })
+
+    it('fails the event, after the first pass, when the job cannot be read the second time', async () => {
+      install(documents())
+      const event = jobEvent('j1', before, first)
+      const read = event.data.after.ref.get
+      let reads = 0
+      event.data.after.ref.get = async () => {
+        reads += 1
+        if (reads === 2) throw new Error('second read failed')
+        return read()
+      }
+      await assert.rejects(run(event), /second read failed/)
+      assert.equal(stub.writes.length, 1, 'the first pass was done')
+    })
+  })
+
+  describe('many documents', () => {
     it('splits them into batches of at most 400, so none gets near the 500 writes Firestore allows', async () => {
       const after = { ...JOB, clientUids: ['c1'] }
       install({ jobs: { j1: after }, extras: {}, submits: {}, notifications: many(1003) })
@@ -831,11 +1108,20 @@ for (const [name, trigger, collection, field] of [
       assert.deepEqual(stub.writes, [])
     })
 
-    it('fails the event, and writes nothing, when the job cannot be read', async () => {
+    it('fails the event, and writes nothing, when the job lookup inside the transaction fails', async () => {
       install({ jobs: { j3: JOB3 }, [collection]: { d1: unstamped() } })
-      mock.method(db, 'runTransaction', async () => { throw new Error('read failed') })
+      breakTransactions({ query: new Error('read failed') })
       await assert.rejects(trigger.run(documentEvent(collection, 'd1', unstamped())), /read failed/)
       assert.deepEqual(stub.writes, [])
+      assert.deepEqual(stub.reads, [`${collection}/d1`], 'the document was read first, and the lookup of its job is what failed')
+    })
+
+    it('fails the event, having read both, when the write inside the transaction fails', async () => {
+      install({ jobs: { j3: JOB3 }, [collection]: { d1: unstamped() } })
+      breakTransactions({ update: new Error('write failed') })
+      await assert.rejects(trigger.run(documentEvent(collection, 'd1', unstamped())), /write failed/)
+      assert.deepEqual(stub.writes, [])
+      assert.deepEqual(stub.reads, [`${collection}/d1`, 'query:jobs:id==QBS-003'])
     })
   })
 }
@@ -920,14 +1206,19 @@ describe('backfillScopes', () => {
       assert.deepEqual([stub.writes, stub.batches], [[], []])
     })
 
-    it('returns the same counts, and writes the same things, when it is run again', async () => {
-      install(small())
+    it('returns the same counts, and leaves everything as the first run did, when it is run again over what that run wrote', async () => {
+      const documents = small()
+      install(documents)
       stubAuth()
       const first = await call()
-      const firstWrites = structuredClone(stub.writes)
-      stub.clear()
+      const firstClaims = structuredClone(claimed)
+      const next = applied(documents, stub.writes)
+
+      restart(next)
+      stubAuth()
       assert.deepEqual(await call(), first)
-      assert.deepEqual(stub.writes, firstWrites)
+      assert.deepEqual(claimed, firstClaims)
+      assert.deepEqual(applied(next, stub.writes), next, 'the second run changes nothing the first one had not')
     })
   })
 
@@ -957,13 +1248,15 @@ describe('backfillScopes', () => {
       assert.deepEqual(claimed.map((entry) => [entry.uid, entry.claims.tenantId]), [['b1', 'vision'], ['b2', null], ['i1', 'p2-core']])
     })
 
-    it('leaves out a user whose document has no valid role, without counting or reading them', async () => {
+    it('leaves out a user whose document has no valid role, with a line in the log, without counting them or reading their account', async () => {
       install({ users: { a: { displayName: 'No role' }, b: { role: 'superuser' }, c: { role: null }, d: { role: 'builder', tenantId: 'qbs' } }, ...nothingElse })
       stubAuth()
       const result = await call()
       assert.equal(result.users, 1)
       assert.deepEqual(fetched, ['d'])
       assert.deepEqual(claimed.map((entry) => entry.uid), ['d'])
+      assert.equal(warnings().length, 3)
+      for (const uid of ['a', 'b', 'c']) assert.equal(warnings().filter((line) => line.includes(`users/${uid} `)).length, 1, uid)
     })
 
     it('will not lower an owner or internal account, says so, and does not count it', async () => {
@@ -1001,11 +1294,13 @@ describe('backfillScopes', () => {
       assert.deepEqual(warnings(), [])
     })
 
-    it('still lowers nothing for a role the document does not have: a bare document leaves an owner alone', async () => {
+    it('leaves an owner alone when the document has no role: no claims are set, and the log says why', async () => {
       install({ users: { boss: { displayName: 'No role yet' } }, ...nothingElse })
       stubAuth({ existing: { boss: { role: 'owner' } } })
       const result = await call()
-      assert.deepEqual([claimed, result.users, warnings()], [[], 0, []])
+      assert.deepEqual([claimed, result.users, fetched], [[], 0, []], 'nothing is set, and the account is not even read')
+      assert.equal(warnings().length, 1)
+      assert.match(warnings()[0], /users\/boss has no valid role/)
     })
 
     it('skips a users document with no Auth account, logs it, and carries on with the others', async () => {
@@ -1034,6 +1329,123 @@ describe('backfillScopes', () => {
       await assert.rejects(call(), code('internal', 'The backfill stopped before it finished. It is safe to run again.'))
       assert.ok(logged.some(([level, , cause]) => level === 'error' && cause?.code === 'auth/internal-error'))
       assert.deepEqual([stub.writes, stub.batches], [[], []])
+    })
+  })
+
+  // The users are visited one at a time, each with a call to Auth, so a long run can take a while,
+  // and a users document can be edited meanwhile. What it sets must follow the documents as they
+  // are when each is reached, not as the first scan found them. In these, u0 is visited first, and
+  // while its account is read u1 (internal) is demoted to a client of QBS-001 and u2 (a client of
+  // QBS-002) is made internal.
+  describe('users that change while it runs', () => {
+    const documents = () => ({
+      users: {
+        u0: { role: 'owner', tenantId: 'p2-core' },
+        u1: { role: 'internal', tenantId: 'p2-core' },
+        u2: { role: 'client', tenantId: 'p2-core', clientJobIds: ['QBS-002'] },
+      },
+      jobs: {
+        j1: { id: 'QBS-001', tenantId: 'qbs', clientUids: [] },
+        j2: { id: 'QBS-002', tenantId: 'qbs', clientUids: ['u2'] },
+      },
+      extras: {},
+      submits: {},
+      notifications: {},
+    })
+    const afterU0 = (change) => (uid) => {
+      if (uid === 'u0') change()
+    }
+    const demote = (users) =>
+      afterU0(() => {
+        users.u1 = { role: 'client', tenantId: 'p2-core', clientJobIds: ['QBS-001'] }
+        users.u2 = { role: 'internal', tenantId: 'p2-core' }
+      })
+    const links = () => stub.written('jobs/').map((write) => [write.path, write.data.clientUids])
+
+    it('sets the claims from each document as it is when its turn comes, and never puts back the role it had', async () => {
+      const docs = documents()
+      install(docs)
+      stubAuth({ meanwhile: demote(docs.users) })
+      const result = await call()
+      assert.deepEqual(claimed.map((entry) => [entry.uid, entry.claims.role]), [['u0', 'owner'], ['u1', 'client'], ['u2', 'internal']])
+      assert.deepEqual(claimed[1].claims.clientJobIds, ['QBS-001'])
+      assert.equal(result.users, 3)
+      assert.ok(!claimed.some((entry) => entry.uid === 'u1' && entry.claims.role === 'internal'), 'internal is not set on u1 again')
+    })
+
+    it('links the jobs from the documents as they are after the claims, not as the first scan found them', async () => {
+      const docs = documents()
+      install(docs)
+      stubAuth({ meanwhile: demote(docs.users) })
+      await call()
+      assert.deepEqual(links(), [['jobs/j1', ['u1']], ['jobs/j2', []]])
+    })
+
+    it('does not set internal again, or lower the account, when it still has its old claims', async () => {
+      const docs = documents()
+      install(docs)
+      stubAuth({ existing: { u1: { role: 'internal' } }, meanwhile: demote(docs.users) })
+      const result = await call()
+      assert.ok(!claimed.some((entry) => entry.uid === 'u1'), 'nothing is set for u1: onUserWritten applies the demotion and signs them out')
+      assert.equal(result.users, 2)
+      assert.equal(warnings().filter((line) => line.includes('u1')).length, 1)
+      assert.deepEqual(links(), [['jobs/j1', ['u1']], ['jobs/j2', []]], 'but the job links follow the documents')
+    })
+
+    it('skips a user whose document is gone by their turn, with one line in the log, and does not link them', async () => {
+      const docs = documents()
+      install(docs)
+      stubAuth({ meanwhile: afterU0(() => { delete docs.users.u2 }) })
+      const result = await call()
+      assert.deepEqual(claimed.map((entry) => entry.uid), ['u0', 'u1'])
+      assert.equal(result.users, 2)
+      const lines = warnings().filter((line) => line.includes('users/u2'))
+      assert.equal(lines.length, 1)
+      assert.match(lines[0], /users\/u2 is gone/)
+      assertNoDashes(lines[0])
+      assert.deepEqual(links(), [['jobs/j1', []], ['jobs/j2', []]], 'the stale link to u2 goes')
+    })
+
+    it('skips a user whose role is no longer valid by their turn, with one line in the log, and does not read their account', async () => {
+      const docs = documents()
+      install(docs)
+      stubAuth({ meanwhile: afterU0(() => { docs.users.u1 = { displayName: 'Role removed' } }) })
+      const result = await call()
+      assert.deepEqual(claimed.map((entry) => entry.uid), ['u0', 'u2'])
+      assert.equal(result.users, 2)
+      assert.ok(!fetched.includes('u1'))
+      const lines = warnings().filter((line) => line.includes('users/u1'))
+      assert.equal(lines.length, 1)
+      assert.match(lines[0], /users\/u1 has no valid role/)
+      assertNoDashes(lines[0])
+    })
+
+    it('links a client added while it ran, and leaves their claims to the trigger for their document', async () => {
+      const docs = documents()
+      install(docs)
+      stubAuth({ meanwhile: afterU0(() => { docs.users.u3 = { role: 'client', tenantId: 'p2-core', clientJobIds: ['QBS-001'] } }) })
+      const result = await call()
+      assert.deepEqual(claimed.map((entry) => entry.uid), ['u0', 'u1', 'u2'])
+      assert.equal(result.users, 3)
+      assert.deepEqual(links(), [['jobs/j1', ['u3']], ['jobs/j2', ['u2']]])
+    })
+
+    it('reads each user document again when their turn comes, once each', async () => {
+      install(documents())
+      stubAuth()
+      await call()
+      assert.deepEqual(stub.calls.filter((entry) => entry.startsWith('doc:')), ['doc:users/u0', 'doc:users/u1', 'doc:users/u2'])
+    })
+
+    it('scans the users for the job links after it has been through them all, and just before the jobs are written', async () => {
+      install(documents())
+      stubAuth()
+      await call()
+      const scans = stub.calls.flatMap((entry, i) => (entry === 'collection:users' ? [i] : []))
+      assert.equal(scans.length, 2, 'once to know whom to visit, once for the links')
+      assert.ok(scans[1] > stub.calls.lastIndexOf('doc:users/u2'), 'the second scan comes after the last user was visited')
+      assert.ok(scans[1] > stub.calls.indexOf('collection:jobs'), 'and after the jobs were read, so it is as fresh as it can be when they are written')
+      assert.ok(stub.calls.indexOf('batch') > scans[1])
     })
   })
 

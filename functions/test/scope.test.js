@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { scopeForJob, canReadJob, canActOnExtra } from '../lib/scope.js'
+import { scopeForJob, canReadJob, canActOnExtra, nonEmptyString } from '../lib/scope.js'
 
 const owner = { uid: 'o1', role: 'owner', tenantId: null, clientJobIds: [] }
 const internal = { uid: 'i1', role: 'internal', tenantId: null, clientJobIds: [] }
@@ -8,6 +8,20 @@ const qbsBuilder = { uid: 'b1', role: 'builder', tenantId: 'qbs', clientJobIds: 
 const visionBuilder = { uid: 'b2', role: 'builder', tenantId: 'vision', clientJobIds: [] }
 const client = { uid: 'c1', role: 'client', tenantId: null, clientJobIds: ['QBS-001'] }
 const otherClient = { uid: 'c2', role: 'client', tenantId: null, clientJobIds: ['QBS-002'] }
+
+// The one test for "a string with something in it", shared by the scope rules, the stamping
+// rules and the functions that stamp.
+describe('nonEmptyString', () => {
+  it('is true for a string with something in it', () => {
+    for (const text of ['qbs', 'QBS-001', ' ', '0']) assert.equal(nonEmptyString(text), true, JSON.stringify(text))
+  })
+
+  it('is false for an empty string and for everything that is not a string', () => {
+    for (const other of ['', undefined, null, 0, 5, true, false, ['qbs'], {}, { length: 3 }]) {
+      assert.equal(nonEmptyString(other), false, JSON.stringify(other))
+    }
+  })
+})
 
 describe('scopeForJob', () => {
   it('keeps a tenantId and clientUids that are present', () => {

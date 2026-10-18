@@ -6,7 +6,9 @@
 
 import { isStaff } from './roles.js'
 
-const nonEmptyString = (value) => typeof value === 'string' && value !== ''
+// A string with something in it. Shared with the stamping rules in scope-sync.js and the
+// functions that stamp, so that "this field holds an id" is decided in one place.
+export const nonEmptyString = (value) => typeof value === 'string' && value !== ''
 
 // The scope a job should carry, with the legacy defaults applied.
 //

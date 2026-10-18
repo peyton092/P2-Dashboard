@@ -7,11 +7,10 @@
 // submission and a notification carry a copy of it, which is what the Firestore
 // rules read to decide who may see them.
 
-import { scopeForJob } from './scope.js'
+import { nonEmptyString, scopeForJob } from './scope.js'
 import { claimsPatchFor } from './users-sync.js'
 
 const isDocument = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-const nonEmptyString = (value) => typeof value === 'string' && value !== ''
 const uidsOf = (list) => (Array.isArray(list) ? list.filter((uid) => typeof uid === 'string') : [])
 
 // Whether two lists hold the same items, whatever their order or repeats.
@@ -66,6 +65,11 @@ export function scopeChanged(before, after) {
   if (!isDocument(before)) return true
   return storedTenant(before) !== storedTenant(after) || !sameItems(uidsOf(before.clientUids), uidsOf(after.clientUids))
 }
+
+// The id of the job a document names in `field` (like QBS-001), or null when it names none:
+// the field is missing, empty or not a string, or there is no document. A change order names
+// its job in `job`, and a submission or a notification in `jobId`.
+export const jobIdOf = (doc, field) => (nonEmptyString(doc?.[field]) ? doc[field] : null)
 
 // Which clients may see which jobs, read from the users documents: a Map from a
 // job's id (like QBS-001) to the uids of the client accounts that list it, sorted
