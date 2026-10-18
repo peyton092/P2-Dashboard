@@ -5,15 +5,14 @@ import { useData } from '../use-data'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   AllClearState,
   EmptyState,
 } from './shared'
 import {
-  AlertCircleIcon, CheckCircleIcon,
-  DollarSignIcon, ClockIcon,
+  AlertCircleIcon, CheckCircleIcon, DollarSignIcon,
   ArrowRightIcon,
   // Phase 3 QA — preferred lucide names
   RadarIcon, UserRoundCogIcon, TriangleAlertIcon,
@@ -301,49 +300,43 @@ export default function CommandCenter() {
         }
       />
 
-      {/* KPI strip — 5 financial tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Financial pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}
-      >
-        <MetricTile
-          label="Total Revenue"
-          value={fmtCompact(kpis.totalRevenue.total)}
-          Icon={DollarSignIcon}
-          sub={`${jobs.length - kpis.totalRevenue.missing} contracts`}
-          note={missingNote(kpis.totalRevenue.missing, 'contract')}
-        />
-        <MetricTile
-          label="Open Commitments"
-          value={fmtCompact(kpis.openCommitments.total)}
-          Icon={ClockIcon}
-          sub={`${activeJobs.length} active`}
-          note={missingNote(kpis.openCommitments.missing, 'contract')}
-        />
-        <MetricTile
-          label="Approved Extras"
-          value={fmtCompact(kpis.approvedCO)}
-          Icon={CheckCircleIcon}
-          emphasis="success"
-          sub="Approved change orders"
-        />
-        <MetricTile
-          label="Change Order Potential"
-          value={fmtCompact(kpis.pendingCO)}
-          Icon={FilePenLineIcon}
-          emphasis={kpis.pendingCO > 0 ? 'warning' : 'mute'}
-          sub="Awaiting builder approval"
-        />
-        <MetricTile
-          label="Invoiced This Month"
-          value={fmtCompact(kpis.invoicedThisMonthAmt.total)}
-          Icon={BarChart3Icon}
-          emphasis={kpis.invoicedThisMonthCount > 0 ? 'default' : 'mute'}
-          sub={`${kpis.invoicedThisMonthCount} invoice${kpis.invoicedThisMonthCount === 1 ? '' : 's'}`}
-          note={missingNote(kpis.invoicedThisMonthAmt.missing, 'invoice')}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Total Revenue',
+            value: fmtCompact(kpis.totalRevenue.total),
+            sub: `${jobs.length - kpis.totalRevenue.missing} contracts`,
+            note: missingNote(kpis.totalRevenue.missing, 'contract'),
+          },
+          {
+            label: 'Open Commitments',
+            value: fmtCompact(kpis.openCommitments.total),
+            sub: `${activeJobs.length} active`,
+            note: missingNote(kpis.openCommitments.missing, 'contract'),
+          },
+          {
+            label: 'Approved Extras',
+            value: fmtCompact(kpis.approvedCO),
+            sub: 'Approved change orders',
+            tone: 'success',
+          },
+          {
+            label: 'Change Order Potential',
+            value: fmtCompact(kpis.pendingCO),
+            sub: 'Awaiting builder approval',
+            tone: kpis.pendingCO > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Invoiced This Month',
+            value: fmtCompact(kpis.invoicedThisMonthAmt.total),
+            sub: `${kpis.invoicedThisMonthCount} invoice${kpis.invoicedThisMonthCount === 1 ? '' : 's'}`,
+            note: missingNote(kpis.invoicedThisMonthAmt.missing, 'invoice'),
+            tone: kpis.invoicedThisMonthCount > 0 ? undefined : 'mute',
+          },
+        ]}
+      />
 
       {/* Row 1 — Needs Action / Jobs At Risk / PM Workload */}
       <div className="grid gap-4 md:gap-5 lg:grid-cols-3">

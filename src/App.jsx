@@ -23,7 +23,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  ShieldIcon, ShieldCheckIcon, AlertTriangleIcon, CheckCircleIcon, Building2Icon, BanIcon,
+  ShieldIcon, AlertTriangleIcon, CheckCircleIcon, Building2Icon,
   DollarSignIcon, FileTextIcon, BellIcon,
   UsersIcon, PackageIcon, ClipboardIcon, MapPinIcon,
   ZapIcon, TruckIcon, CalendarIcon, ClockIcon, TrendingUpIcon,
@@ -74,10 +74,10 @@ import NoAccessScreen from './components/NoAccessScreen'
 import { resolveSession } from './lib/session'
 import { callableMessage } from './lib/callableError'
 import {
-  PageHeader, MetricTile, DataPanel, Pill, StatusBadge, PermitBadge,
+  PageHeader, StatBand, DataPanel, Pill, StatusBadge, PermitBadge,
   EmptyState, AllClearState, FilterBar, PageSkeleton,
   // Phase 19 — primitives extracted from App.jsx
-  ProgressBar, StatCard,
+  ProgressBar,
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,
 } from './components/shared'
@@ -246,7 +246,7 @@ const daysSince = (date) => {
 
 // ── Reusable components ───────────────────────────────────────────────────────
 //
-// ProgressBar, StatCard, BillingStatusSelect, InlineStatusSelect and
+// ProgressBar, BillingStatusSelect, InlineStatusSelect and
 // InlinePhaseSelect moved to src/components/shared/* (Phase 19) and are imported
 // by name at the top of this file. Their words and menus are in src/lib/status.js.
 // The legacy local SectionHeader (used by Architecture + Permits) moved
@@ -766,48 +766,42 @@ function MorningBriefing() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Briefing summary"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Jobs Needing Action"
-          value={kpis.needsAction}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
-          sub={kpis.needsAction > 0 ? 'Risk + needs action' : 'No PM issues this morning'}
-        />
-        <MetricTile
-          label="Failed Inspections"
-          value={kpis.failedInsp}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.failedInsp > 0 ? 'critical' : 'success'}
-          sub={kpis.failedInsp > 0 ? 'Coordinate rework' : 'No failures'}
-        />
-        <MetricTile
-          label="Billing Blockers"
-          value={kpis.billing}
-          Icon={DollarSignIcon}
-          emphasis={kpis.billing > 0 ? 'warning' : 'success'}
-          sub={kpis.billing > 0 ? 'Hold, missing docs, or CO' : 'Clean billing pipe'}
-        />
-        <MetricTile
-          label="Pending Change Orders"
-          value={kpis.pendingCO}
-          Icon={FilePenLineIcon}
-          emphasis={kpis.pendingCO > 0 ? 'warning' : 'mute'}
-          sub={kpis.pendingCO > 0 ? 'Awaiting approval' : 'No COs in flight'}
-        />
-        <MetricTile
-          label="Materials Blockers"
-          value={kpis.materials}
-          Icon={PackageIcon}
-          emphasis={kpis.materials > 0 ? 'critical' : 'success'}
-          sub={kpis.materials > 0 ? 'Overdue or blocking soon' : 'No materials blocking work'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Jobs Needing Action',
+            value: kpis.needsAction,
+            sub: kpis.needsAction > 0 ? 'Risk + needs action' : 'No PM issues this morning',
+            tone: kpis.needsAction > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Failed Inspections',
+            value: kpis.failedInsp,
+            sub: kpis.failedInsp > 0 ? 'Coordinate rework' : 'No failures',
+            tone: kpis.failedInsp > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Billing Blockers',
+            value: kpis.billing,
+            sub: kpis.billing > 0 ? 'Hold, missing docs, or CO' : 'Clean billing pipe',
+            tone: kpis.billing > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Pending Change Orders',
+            value: kpis.pendingCO,
+            sub: kpis.pendingCO > 0 ? 'Awaiting approval' : 'No COs in flight',
+            tone: kpis.pendingCO > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Materials Blockers',
+            value: kpis.materials,
+            sub: kpis.materials > 0 ? 'Overdue or blocking soon' : 'No materials blocking work',
+            tone: kpis.materials > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Today's priority list — combined feed across all categories */}
       <DataPanel
@@ -1205,47 +1199,41 @@ export function JobStatus() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Portfolio status"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Active Jobs"
-          value={kpis.active}
-          Icon={ActivityIcon}
-          sub={`${kpis.total} on roster`}
-        />
-        <MetricTile
-          label="Completed"
-          value={kpis.completed}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.completed > 0 ? 'success' : 'mute'}
-          sub={kpis.completed > 0 ? 'Lifetime closeouts' : 'No closeouts yet'}
-        />
-        <MetricTile
-          label="At-Risk Jobs"
-          value={kpis.atRisk}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.atRisk > 0 ? 'critical' : 'success'}
-          sub={kpis.atRisk > 0 ? 'Warning + critical' : 'All active jobs are on track'}
-        />
-        <MetricTile
-          label="Needs Action"
-          value={kpis.needsAction}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
-          sub={kpis.needsAction > 0 ? 'Failed inspection or open' : 'Nothing pending'}
-        />
-        <MetricTile
-          label="Blocked / Stale"
-          value={kpis.blockedStale}
-          Icon={BanIcon}
-          emphasis={kpis.blockedStale > 0 ? 'critical' : 'success'}
-          sub={kpis.blockedStale > 0 ? 'Blocked, on hold, or 7+ days stale' : 'No blockers'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Active Jobs',
+            value: kpis.active,
+            sub: `${kpis.total} on roster`,
+          },
+          {
+            label: 'Completed',
+            value: kpis.completed,
+            sub: kpis.completed > 0 ? 'Lifetime closeouts' : 'No closeouts yet',
+            tone: kpis.completed > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'At-Risk Jobs',
+            value: kpis.atRisk,
+            sub: kpis.atRisk > 0 ? 'Warning + critical' : 'All active jobs are on track',
+            tone: kpis.atRisk > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Needs Action',
+            value: kpis.needsAction,
+            sub: kpis.needsAction > 0 ? 'Failed inspection or open' : 'Nothing pending',
+            tone: kpis.needsAction > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Blocked / Stale',
+            value: kpis.blockedStale,
+            sub: kpis.blockedStale > 0 ? 'Blocked, on hold, or 7+ days stale' : 'No blockers',
+            tone: kpis.blockedStale > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* New-job form */}
       {showNewJob && (
@@ -1934,48 +1922,42 @@ function Inspections() {
         </p>
       </DataPanel>
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Inspection pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Ready for Inspection"
-          value={kpis.ready}
-          Icon={BadgeCheckIcon}
-          emphasis={kpis.ready > 0 ? 'success' : 'mute'}
-          sub={kpis.ready > 0 ? 'Gate passed — call in' : 'No jobs cleared yet'}
-        />
-        <MetricTile
-          label="Scheduled"
-          value={kpis.scheduled}
-          Icon={ClockIcon}
-          emphasis={kpis.scheduled > 0 ? 'warning' : 'mute'}
-          sub={kpis.scheduled > 0 ? 'Inspector booked' : 'Nothing on the books'}
-        />
-        <MetricTile
-          label="Passed"
-          value={kpis.passed}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.passed > 0 ? 'success' : 'mute'}
-          sub={kpis.passed > 0 ? 'Phases cleared' : 'No passes yet'}
-        />
-        <MetricTile
-          label="Failed"
-          value={kpis.failed}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.failed > 0 ? 'critical' : 'success'}
-          sub={kpis.failed > 0 ? 'Rework required' : 'No failures'}
-        />
-        <MetricTile
-          label="Rework Needed"
-          value={kpis.rework}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.rework > 0 ? 'critical' : 'success'}
-          sub={kpis.rework > 0 ? 'Failed or blocked jobs' : 'No rework on the board'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Ready for Inspection',
+            value: kpis.ready,
+            sub: kpis.ready > 0 ? 'Gate passed — call in' : 'No jobs cleared yet',
+            tone: kpis.ready > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Scheduled',
+            value: kpis.scheduled,
+            sub: kpis.scheduled > 0 ? 'Inspector booked' : 'Nothing on the books',
+            tone: kpis.scheduled > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Passed',
+            value: kpis.passed,
+            sub: kpis.passed > 0 ? 'Phases cleared' : 'No passes yet',
+            tone: kpis.passed > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Failed',
+            value: kpis.failed,
+            sub: kpis.failed > 0 ? 'Rework required' : 'No failures',
+            tone: kpis.failed > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Rework Needed',
+            value: kpis.rework,
+            sub: kpis.rework > 0 ? 'Failed or blocked jobs' : 'No rework on the board',
+            tone: kpis.rework > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar
@@ -2288,47 +2270,41 @@ function SubsTab() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Subcontractor compliance"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Active Subs"
-          value={kpis.active}
-          Icon={UsersRoundIcon}
-          sub={kpis.tiedToJobs > 0 ? `${kpis.tiedToJobs} tied to active jobs` : 'On the roster'}
-        />
-        <MetricTile
-          label="Approved"
-          value={kpis.approved}
-          Icon={ShieldCheckIcon}
-          emphasis={kpis.approved > 0 ? 'success' : 'mute'}
-          sub={kpis.approved > 0 ? 'Cleared to work' : 'No subs cleared yet'}
-        />
-        <MetricTile
-          label="Missing Documents"
-          value={kpis.missing}
-          Icon={FileTextIcon}
-          emphasis={kpis.missing > 0 ? 'warning' : 'success'}
-          sub={kpis.missing > 0 ? 'W-9 not on file' : 'All W-9s on file'}
-        />
-        <MetricTile
-          label="Expired Insurance"
-          value={kpis.expired}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.expired > 0 ? 'critical' : 'success'}
-          sub={kpis.expired > 0 ? 'Do not assign' : 'No expired coverage'}
-        />
-        <MetricTile
-          label="Expiring Soon"
-          value={kpis.expSoon}
-          Icon={ClockIcon}
-          emphasis={kpis.expSoon > 0 ? 'warning' : 'success'}
-          sub={kpis.expSoon > 0 ? 'Within 60 days' : 'No upcoming expirations'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Active Subs',
+            value: kpis.active,
+            sub: kpis.tiedToJobs > 0 ? `${kpis.tiedToJobs} tied to active jobs` : 'On the roster',
+          },
+          {
+            label: 'Approved',
+            value: kpis.approved,
+            sub: kpis.approved > 0 ? 'Cleared to work' : 'No subs cleared yet',
+            tone: kpis.approved > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Missing Documents',
+            value: kpis.missing,
+            sub: kpis.missing > 0 ? 'W-9 not on file' : 'All W-9s on file',
+            tone: kpis.missing > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Expired Insurance',
+            value: kpis.expired,
+            sub: kpis.expired > 0 ? 'Do not assign' : 'No expired coverage',
+            tone: kpis.expired > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Expiring Soon',
+            value: kpis.expSoon,
+            sub: kpis.expSoon > 0 ? 'Within 60 days' : 'No upcoming expirations',
+            tone: kpis.expSoon > 0 ? 'warning' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters — chips + trade select + search + clear */}
       <FilterBar
@@ -2833,48 +2809,42 @@ function Materials() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Materials pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Open Requests"
-          value={kpis.open}
-          Icon={PackageIcon}
-          emphasis={kpis.open > 0 ? 'default' : 'success'}
-          sub={kpis.open > 0 ? 'Ordered or in transit' : 'Nothing pending'}
-        />
-        <MetricTile
-          label="Urgent"
-          value={kpis.urgent}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.urgent > 0 ? 'critical' : 'success'}
-          sub={kpis.urgent > 0 ? 'Past needed-by date' : 'No overdue items'}
-        />
-        <MetricTile
-          label="Blocking Jobs"
-          value={kpis.blockJobs}
-          Icon={HardHatIcon}
-          emphasis={kpis.blockJobs > 0 ? 'warning' : 'success'}
-          sub={kpis.blockJobs > 0 ? 'Jobs awaiting materials' : 'No materials blocking work'}
-        />
-        <MetricTile
-          label="Delivered / Ready"
-          value={kpis.delivered}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.delivered > 0 ? 'success' : 'mute'}
-          sub={kpis.delivered > 0 ? 'On site or delivered' : 'No deliveries logged'}
-        />
-        <MetricTile
-          label="Recent Updates"
-          value={kpis.recent}
-          Icon={TruckIcon}
-          emphasis={kpis.recent > 0 ? 'default' : 'mute'}
-          sub="Last 24 hours"
-        />
-      </section>
+        stats={[
+          {
+            label: 'Open Requests',
+            value: kpis.open,
+            sub: kpis.open > 0 ? 'Ordered or in transit' : 'Nothing pending',
+            tone: kpis.open > 0 ? undefined : 'success',
+          },
+          {
+            label: 'Urgent',
+            value: kpis.urgent,
+            sub: kpis.urgent > 0 ? 'Past needed-by date' : 'No overdue items',
+            tone: kpis.urgent > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Blocking Jobs',
+            value: kpis.blockJobs,
+            sub: kpis.blockJobs > 0 ? 'Jobs awaiting materials' : 'No materials blocking work',
+            tone: kpis.blockJobs > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Delivered / Ready',
+            value: kpis.delivered,
+            sub: kpis.delivered > 0 ? 'On site or delivered' : 'No deliveries logged',
+            tone: kpis.delivered > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Recent Updates',
+            value: kpis.recent,
+            sub: 'Last 24 hours',
+            tone: kpis.recent > 0 ? undefined : 'mute',
+          },
+        ]}
+      />
 
       {/* Filters — chips + job select */}
       <FilterBar
@@ -3396,48 +3366,42 @@ function Notifications() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Notification pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Unread"
-          value={kpis.unread}
-          Icon={BellIcon}
-          emphasis={kpis.unread > 0 ? 'warning' : 'success'}
-          sub={kpis.unread > 0 ? 'Review and clear' : 'All caught up'}
-        />
-        <MetricTile
-          label="Action Needed"
-          value={kpis.actionNeeded}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.actionNeeded > 0 ? 'critical' : 'success'}
-          sub={kpis.actionNeeded > 0 ? 'Warning + error' : 'Nothing flagged'}
-        />
-        <MetricTile
-          label="Recent Updates"
-          value={kpis.recent}
-          Icon={ActivityIcon}
-          emphasis={kpis.recent > 0 ? 'default' : 'mute'}
-          sub="Last 24 hours"
-        />
-        <MetricTile
-          label="Critical"
-          value={kpis.critical}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.critical > 0 ? 'critical' : 'success'}
-          sub={kpis.critical > 0 ? 'System errors' : 'No errors'}
-        />
-        <MetricTile
-          label="Total Live"
-          value={kpis.total}
-          Icon={ClipboardListIcon}
-          emphasis={kpis.total > 0 ? 'default' : 'success'}
-          sub={`${notifs.length} ever`}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Unread',
+            value: kpis.unread,
+            sub: kpis.unread > 0 ? 'Review and clear' : 'All caught up',
+            tone: kpis.unread > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Action Needed',
+            value: kpis.actionNeeded,
+            sub: kpis.actionNeeded > 0 ? 'Warning + error' : 'Nothing flagged',
+            tone: kpis.actionNeeded > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Recent Updates',
+            value: kpis.recent,
+            sub: 'Last 24 hours',
+            tone: kpis.recent > 0 ? undefined : 'mute',
+          },
+          {
+            label: 'Critical',
+            value: kpis.critical,
+            sub: kpis.critical > 0 ? 'System errors' : 'No errors',
+            tone: kpis.critical > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Total Live',
+            value: kpis.total,
+            sub: `${notifs.length} ever`,
+            tone: kpis.total > 0 ? undefined : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar

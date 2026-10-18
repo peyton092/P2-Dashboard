@@ -31,10 +31,9 @@ const index = readFileSync(resolve(import.meta.dirname, '../../../functions/inde
 const EXPORTED = [...index.matchAll(/^export \{([^}]*)\} from/gm)]
   .flatMap(([, names]) => names.split(',').map((name) => name.trim()).filter(Boolean))
 
-// The StatCard with this label. Its label is a paragraph; a card title with the same
-// words is not.
+// The stat with this label. A card title with the same words is not in the band.
 const statCard = (label) =>
-  screen.getAllByText(label).find((el) => el.tagName === 'P').closest('[data-slot="card"]')
+  screen.getAllByText(label).find((el) => el.closest('[data-slot="stat"]')).closest('[data-slot="stat"]')
 
 // The name that heads a card, which is bold. A chip with the same words (permits is also a
 // field of the jobs card) is not.

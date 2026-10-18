@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select'
 import {
   PlusIcon, XIcon, SendIcon, SaveIcon, ChevronLeftIcon,
-  CheckCircleIcon, ClockIcon, FileTextIcon,
+  CheckCircleIcon, FileTextIcon,
   DollarSignIcon, PencilIcon, DownloadIcon,
   FilePenLineIcon, FileCheckIcon,
 } from 'lucide-react'
@@ -23,7 +23,7 @@ import { generateCOPdf } from '../lib/generateCOPdf'
 import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   EmptyState,
@@ -622,55 +622,41 @@ export default function ChangeOrders() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Change order pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Drafts"
-          value={drafts.length}
-          Icon={FilePenLineIcon}
-          sub={drafts.length > 0 ? `${fmtCompact(totals.drafts)} drafted` : 'Nothing in draft'}
-        />
-        <MetricTile
-          label="Submitted"
-          value={submitted.length}
-          Icon={SendIcon}
-          emphasis={submitted.length > 0 ? 'default' : 'mute'}
-          sub={submitted.length > 0 ? `${fmtCompact(totals.submitted)} awaiting builder` : 'No COs in flight'}
-        />
-        <MetricTile
-          label="Approval Required"
-          value={approvalRequired.length}
-          Icon={ClockIcon}
-          emphasis={approvalRequired.length > 0 ? 'warning' : 'success'}
-          sub={
-            approvalRequired.length > 0
-              ? `${APPROVAL_REQUIRED_THRESHOLD}+ days pending`
-              : 'No follow-ups needed'
-          }
-        />
-        <MetricTile
-          label="Approved Value"
-          value={fmtCompact(totals.approved)}
-          Icon={FileCheckIcon}
-          emphasis="success"
-          sub={`${approved.length} approved CO${approved.length === 1 ? '' : 's'}`}
-        />
-        <MetricTile
-          label="Rejected"
-          value={rejected.length}
-          Icon={XIcon}
-          emphasis={rejected.length > 0 ? 'critical' : 'success'}
-          sub={
-            rejected.length > 0
-              ? `${fmtCompact(totals.rejected)} needs revision`
-              : 'No rejections'
-          }
-        />
-      </section>
+        stats={[
+          {
+            label: 'Drafts',
+            value: drafts.length,
+            sub: drafts.length > 0 ? `${fmtCompact(totals.drafts)} drafted` : 'Nothing in draft',
+          },
+          {
+            label: 'Submitted',
+            value: submitted.length,
+            sub: submitted.length > 0 ? `${fmtCompact(totals.submitted)} awaiting builder` : 'No COs in flight',
+            tone: submitted.length > 0 ? undefined : 'mute',
+          },
+          {
+            label: 'Approval Required',
+            value: approvalRequired.length,
+            sub: approvalRequired.length > 0 ? `${APPROVAL_REQUIRED_THRESHOLD}+ days pending` : 'No follow-ups needed',
+            tone: approvalRequired.length > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Approved Value',
+            value: fmtCompact(totals.approved),
+            sub: `${approved.length} approved CO${approved.length === 1 ? '' : 's'}`,
+            tone: 'success',
+          },
+          {
+            label: 'Rejected',
+            value: rejected.length,
+            sub: rejected.length > 0 ? `${fmtCompact(totals.rejected)} needs revision` : 'No rejections',
+            tone: rejected.length > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar

@@ -5,7 +5,7 @@ import { updateAgentAlert, addAgentAlert } from '../hooks/useFirestore'
 import { ZONES } from '../agent/zones'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   EmptyState,
@@ -18,7 +18,7 @@ import {
   CheckCircleIcon, CheckIcon, XIcon,
   ClockIcon, BellOffIcon, RefreshCwIcon,
   TimerIcon, ReceiptIcon, BadgeCheckIcon,
-  MapPinIcon, UserRoundCogIcon, ActivityIcon,
+  MapPinIcon, UserRoundCogIcon,
 } from 'lucide-react'
 import { SEVERITY, statusLabel, statusOrder, statusTone, toneText } from '../lib/status'
 import { SEMANTIC } from '@/lib/tokens'
@@ -292,48 +292,42 @@ export default function AlertsPage() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Alert pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Critical Alerts"
-          value={kpis.critical}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.critical > 0 ? 'critical' : 'success'}
-          sub={kpis.critical > 0 ? 'Resolve today' : 'No critical alerts'}
-        />
-        <MetricTile
-          label="Needs Action"
-          value={kpis.needsAction}
-          Icon={AlertTriangleIcon}
-          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
-          sub={kpis.needsAction > 0 ? 'Critical + warning' : 'Nothing pending'}
-        />
-        <MetricTile
-          label="Aging Alerts"
-          value={kpis.aging}
-          Icon={TimerIcon}
-          emphasis={kpis.aging > 0 ? 'critical' : 'success'}
-          sub={kpis.aging > 0 ? '3+ days open' : 'No stale alerts'}
-        />
-        <MetricTile
-          label="Resolved Today"
-          value={kpis.resolvedToday}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.resolvedToday > 0 ? 'success' : 'mute'}
-          sub={kpis.resolvedToday > 0 ? 'Closed in last 24h' : 'None resolved yet'}
-        />
-        <MetricTile
-          label="Total Open"
-          value={kpis.total}
-          Icon={ActivityIcon}
-          emphasis={kpis.total > 0 ? 'default' : 'success'}
-          sub={`${merged.length} ever`}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Critical Alerts',
+            value: kpis.critical,
+            sub: kpis.critical > 0 ? 'Resolve today' : 'No critical alerts',
+            tone: kpis.critical > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Needs Action',
+            value: kpis.needsAction,
+            sub: kpis.needsAction > 0 ? 'Critical + warning' : 'Nothing pending',
+            tone: kpis.needsAction > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Aging Alerts',
+            value: kpis.aging,
+            sub: kpis.aging > 0 ? '3+ days open' : 'No stale alerts',
+            tone: kpis.aging > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Resolved Today',
+            value: kpis.resolvedToday,
+            sub: kpis.resolvedToday > 0 ? 'Closed in last 24h' : 'None resolved yet',
+            tone: kpis.resolvedToday > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Total Open',
+            value: kpis.total,
+            sub: `${merged.length} ever`,
+            tone: kpis.total > 0 ? undefined : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar

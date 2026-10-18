@@ -8,7 +8,7 @@ import { ZONES, PM_TO_ZONE } from '../agent/zones'
 import { updateJob } from '../hooks/useFirestore'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   EmptyState,
@@ -17,8 +17,7 @@ import {
   FilterBar,
 } from './shared'
 import {
-  UserRoundCogIcon, TriangleAlertIcon, ActivityIcon,
-  FilePenLineIcon, ReceiptIcon, BadgeCheckIcon,
+  UserRoundCogIcon, FilePenLineIcon, BadgeCheckIcon,
   ChevronDownIcon, MapPinIcon, AlertCircleIcon, BanIcon,
   CheckCircleIcon,
 } from 'lucide-react'
@@ -325,47 +324,41 @@ export default function PMDashboard() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="PM accountability"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Active PMs"
-          value={kpis.activePMs}
-          Icon={UserRoundCogIcon}
-          sub={`${allPMs.length} on roster`}
-        />
-        <MetricTile
-          label="Jobs Needing Action"
-          value={kpis.needsAction}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
-          sub={kpis.needsAction > 0 ? 'Failed inspection or blocked' : 'No PM issues today'}
-        />
-        <MetricTile
-          label="At-Risk Jobs"
-          value={kpis.atRisk}
-          Icon={ActivityIcon}
-          emphasis={kpis.atRisk > 0 ? 'critical' : 'success'}
-          sub={kpis.atRisk > 0 ? 'Stalled or warning level' : 'No at-risk jobs'}
-        />
-        <MetricTile
-          label="Open Change Orders"
-          value={kpis.openCOs}
-          Icon={FilePenLineIcon}
-          emphasis={kpis.openCOs > 0 ? 'warning' : 'mute'}
-          sub={kpis.openCOs > 0 ? 'Pending or sent to builder' : 'No COs in flight'}
-        />
-        <MetricTile
-          label="Billing Blockers"
-          value={kpis.billingBlockers}
-          Icon={ReceiptIcon}
-          emphasis={kpis.billingBlockers > 0 ? 'critical' : 'success'}
-          sub={kpis.billingBlockers > 0 ? 'Hold, missing docs, or CO' : 'Clean billing pipe'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Active PMs',
+            value: kpis.activePMs,
+            sub: `${allPMs.length} on roster`,
+          },
+          {
+            label: 'Jobs Needing Action',
+            value: kpis.needsAction,
+            sub: kpis.needsAction > 0 ? 'Failed inspection or blocked' : 'No PM issues today',
+            tone: kpis.needsAction > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'At-Risk Jobs',
+            value: kpis.atRisk,
+            sub: kpis.atRisk > 0 ? 'Stalled or warning level' : 'No at-risk jobs',
+            tone: kpis.atRisk > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Open Change Orders',
+            value: kpis.openCOs,
+            sub: kpis.openCOs > 0 ? 'Pending or sent to builder' : 'No COs in flight',
+            tone: kpis.openCOs > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Billing Blockers',
+            value: kpis.billingBlockers,
+            sub: kpis.billingBlockers > 0 ? 'Hold, missing docs, or CO' : 'Clean billing pipe',
+            tone: kpis.billingBlockers > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar

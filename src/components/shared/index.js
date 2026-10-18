@@ -1,5 +1,4 @@
 export { PageHeader, SectionHeader } from './headers'
-export { default as MetricTile } from './MetricTile'
 export { StatBand } from './StatBand'
 export { default as DataPanel } from './DataPanel'
 export {
@@ -30,7 +29,6 @@ export {
 // Phase 19 primitives extracted from src/App.jsx. Pure UI; behavior preserved.
 export { Skeleton, PageSkeleton } from './Skeleton'
 export { ProgressBar } from './ProgressBar'
-export { StatCard } from './StatCard'
 export {
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,

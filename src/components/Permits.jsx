@@ -1,11 +1,10 @@
 import {
   ZapIcon, WrenchIcon, HammerIcon,
-  FileTextIcon, ClockIcon, CheckCircleIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useData } from '../use-data'
 import { updatePermit } from '../hooks/useFirestore'
-import { StatCard, StatusBadge, PermitBadge } from './shared'
+import { StatBand, StatusBadge, PermitBadge } from './shared'
 import { BRAND, withAlpha } from '@/lib/tokens'
 import { PERMIT_STATUS, TRADE, statusColor, statusLabel } from '../lib/status'
 
@@ -43,11 +42,13 @@ export default function Permits() {
     <div className="space-y-6">
       <SectionHeader title="Permits" sub="Permit status across all active jobs and trades" />
 
-      <div className="grid grid-cols-3 gap-4">
-        <StatCard label="Approved / Finaled" value={approved} Icon={CheckCircleIcon} />
-        <StatCard label="Applied / Pending"  value={applied + pending} sub="awaiting approval" Icon={ClockIcon} />
-        <StatCard label="Total Permits"      value={allPermits.length} Icon={FileTextIcon} />
-      </div>
+      <StatBand
+        stats={[
+          { label: 'Approved / Finaled', value: approved },
+          { label: 'Applied / Pending', value: applied + pending, sub: 'awaiting approval' },
+          { label: 'Total Permits', value: allPermits.length },
+        ]}
+      />
 
       <div className="grid md:grid-cols-2 gap-4">
         {jobs.map(j => (

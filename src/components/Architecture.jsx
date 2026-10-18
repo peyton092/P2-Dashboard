@@ -2,7 +2,7 @@ import {
   DatabaseIcon, ServerIcon, ShieldIcon, CloudIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { StatCard } from './shared'
+import { StatBand } from './shared'
 import { BRAND } from '@/lib/tokens'
 
 // Extracted from src/App.jsx in Phase 20. The local SectionHeader is inlined on
@@ -112,11 +112,13 @@ export default function Architecture() {
     <div className="space-y-6">
       <SectionHeader title="Architecture" sub="Firestore blueprint · Cloud Functions · Security rules" />
 
-      <div className="grid lg:grid-cols-3 gap-4 mb-6">
-        <StatCard label="Collections"    value={topLevel}            sub={`plus ${underParent} subcollections`} Icon={DatabaseIcon} />
-        <StatCard label="Cloud Functions" value={functions.length}   sub={kinds.map(k => `${countOf(k.kind)} ${k.label.toLowerCase()}`).join(', ')} Icon={ServerIcon} />
-        <StatCard label="Auth Roles"      value={roles.length}       sub={roles.join(', ')} Icon={ShieldIcon} />
-      </div>
+      <StatBand
+        stats={[
+          { label: 'Collections', value: topLevel, sub: `plus ${underParent} subcollections` },
+          { label: 'Cloud Functions', value: functions.length, sub: kinds.map(k => `${countOf(k.kind)} ${k.label.toLowerCase()}`).join(', ') },
+          { label: 'Auth Roles', value: roles.length, sub: roles.join(', ') },
+        ]}
+      />
 
       <div className="grid lg:grid-cols-2 gap-6">
         <Card className="border-white/10">

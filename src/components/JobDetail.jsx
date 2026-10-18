@@ -4,7 +4,7 @@ import { useJobFiles } from '../hooks/useFirestore'
 import { safeHttpUrl } from '../lib/safeUrl'
 import { extraState } from '../lib/extraStatus'
 import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
-import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
+import { DataPanel, StatBand, Pill, ProgressBar, EmptyState } from './shared'
 import { PHASE_LABEL } from '../lib/inspections'
 import {
   JOB_STATUS, INSPECTION_STATUS, BILLING_STATUS, CO_STATUS,
@@ -16,7 +16,7 @@ import {
   ChevronLeftIcon, MapPinIcon, UserRoundCogIcon, HardHatIcon,
   DollarSignIcon, FilePenLineIcon, BoxesIcon, BadgeCheckIcon,
   ClipboardSignatureIcon, FileTextIcon, ImageIcon, DownloadIcon,
-  NotebookPenIcon, ActivityIcon, ReceiptIcon, CalendarIcon,
+  NotebookPenIcon, ReceiptIcon, CalendarIcon,
 } from 'lucide-react'
 import { BRAND, withAlpha } from '@/lib/tokens'
 
@@ -151,12 +151,30 @@ export default function JobDetail({ jobId, onBack }) {
       </div>
 
       {/* KPI row */}
-      <section className="grid gap-2 sm:gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-        <MetricTile label="Progress" value={`${job.progress ?? 0}%`} Icon={ActivityIcon} />
-        <MetricTile label="Open Change Orders" value={pendingCO.length} Icon={FilePenLineIcon} emphasis={pendingCO.length > 0 ? 'warning' : 'success'} sub={pendingCO.length > 0 ? fmt$(pendingCO.reduce((s, e) => s + (e.amount || 0), 0)) : 'None pending'} />
-        <MetricTile label="Materials" value={jobMaterials.length} Icon={BoxesIcon} sub={`${jobMaterials.filter(m => m.status === 'delivered').length} delivered`} />
-        <MetricTile label="Inspections" value={failed ? 'Failed' : complete ? 'Complete' : 'In progress'} Icon={BadgeCheckIcon} emphasis={failed ? 'critical' : complete ? 'success' : 'mute'} />
-      </section>
+      <StatBand
+        stats={[
+          {
+            label: 'Progress',
+            value: `${job.progress ?? 0}%`,
+          },
+          {
+            label: 'Open Change Orders',
+            value: pendingCO.length,
+            sub: pendingCO.length > 0 ? fmt$(pendingCO.reduce((s, e) => s + (e.amount || 0), 0)) : 'None pending',
+            tone: pendingCO.length > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Materials',
+            value: jobMaterials.length,
+            sub: `${jobMaterials.filter(m => m.status === 'delivered').length} delivered`,
+          },
+          {
+            label: 'Inspections',
+            value: failed ? 'Failed' : complete ? 'Complete' : 'In progress',
+            tone: failed ? 'critical' : complete ? 'success' : 'mute',
+          },
+        ]}
+      />
 
       {/* Inspections */}
       <DataPanel title="Inspections" description="Status by trade and phase." Icon={BadgeCheckIcon}>

@@ -11,7 +11,7 @@ import {
 import { ZONES, getZoneId } from '../agent/zones'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   StatusBadge,
@@ -24,9 +24,8 @@ import {
   TableCell,
 } from './shared'
 import {
-  ActivityIcon, AlertCircleIcon,
   // Phase 3 QA — preferred lucide names
-  RadarIcon, CrosshairIcon, TriangleAlertIcon, BadgeCheckIcon,
+  RadarIcon, CrosshairIcon,
 } from 'lucide-react'
 import { BRAND, SEMANTIC } from '@/lib/tokens'
 
@@ -330,39 +329,34 @@ export default function WarRoom() {
       />
 
       {/* KPI strip */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      <StatBand
         aria-label="Field status"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}
-      >
-        <MetricTile
-          label="Active Jobs"
-          value={kpis.active}
-          Icon={ActivityIcon}
-          sub={`${completedJobs.length} completed`}
-        />
-        <MetricTile
-          label="Blocked"
-          value={kpis.blocked}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.blocked > 0 ? 'critical' : 'success'}
-          sub={kpis.blocked > 0 ? 'Failed inspection or stuck' : 'Nothing blocked'}
-        />
-        <MetricTile
-          label="Inspection Ready"
-          value={kpis.inspReady}
-          Icon={BadgeCheckIcon}
-          emphasis={kpis.inspReady > 0 ? 'default' : 'mute'}
-          sub="Scheduled or pending verify"
-        />
-        <MetricTile
-          label="High Risk"
-          value={kpis.highRisk}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.highRisk > 0 ? 'critical' : 'success'}
-          sub={kpis.highRisk > 0 ? 'Critical-level flags' : 'No critical flags'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Active Jobs',
+            value: kpis.active,
+            sub: `${completedJobs.length} completed`,
+          },
+          {
+            label: 'Blocked',
+            value: kpis.blocked,
+            sub: kpis.blocked > 0 ? 'Failed inspection or stuck' : 'Nothing blocked',
+            tone: kpis.blocked > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Inspection Ready',
+            value: kpis.inspReady,
+            sub: 'Scheduled or pending verify',
+            tone: kpis.inspReady > 0 ? undefined : 'mute',
+          },
+          {
+            label: 'High Risk',
+            value: kpis.highRisk,
+            sub: kpis.highRisk > 0 ? 'Critical-level flags' : 'No critical flags',
+            tone: kpis.highRisk > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Top Priority */}
       {topPriority.length > 0 && (

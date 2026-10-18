@@ -6,7 +6,7 @@ import { contractValue, fmtMoney, sumContracts, sumInvoices, missingNote } from 
 import { ZONES, getZoneId } from '../agent/zones'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   BillingBadge,
@@ -20,10 +20,8 @@ import {
   LoadingState,
 } from './shared'
 import {
-  DollarSignIcon, CheckCircleIcon, ClockIcon,
-  FileCheckIcon, FilePenLineIcon,
+  DollarSignIcon, FileCheckIcon,
   ReceiptIcon, BanIcon, DownloadIcon, CheckIcon, XIcon,
-  TimerIcon,
 } from 'lucide-react'
 import { BRAND, SEMANTIC } from '@/lib/tokens'
 import { BILLING_STATUS, statusLabel, statusTone, toneHex, toneText } from '../lib/status'
@@ -304,51 +302,45 @@ export default function BillingQueue() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Billing pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Ready to Invoice"
-          value={fmtCompact(kpis.ready.amount)}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.ready.count > 0 ? 'success' : 'mute'}
-          sub={`${kpis.ready.count} job${kpis.ready.count === 1 ? '' : 's'}`}
-          note={kpis.ready.note}
-        />
-        <MetricTile
-          label="Missing Documentation"
-          value={kpis.missingDocs.count}
-          Icon={FilePenLineIcon}
-          emphasis={kpis.missingDocs.count > 0 ? 'warning' : 'success'}
-          sub={kpis.missingDocs.count > 0 ? fmtCompact(kpis.missingDocs.amount) + ' on hold' : 'All packages clean'}
-          note={kpis.missingDocs.note}
-        />
-        <MetricTile
-          label="Pending Approval"
-          value={kpis.pendingApproval.count}
-          Icon={ClockIcon}
-          emphasis={kpis.pendingApproval.count > 0 ? 'warning' : 'mute'}
-          sub={kpis.pendingApproval.count > 0 ? 'Hold or CO in flight' : 'No approvals waiting'}
-        />
-        <MetricTile
-          label="Invoiced This Month"
-          value={fmtCompact(kpis.invoicedThisMonth.amount)}
-          Icon={ReceiptIcon}
-          sub={`${kpis.invoicedThisMonth.count} invoice${kpis.invoicedThisMonth.count === 1 ? '' : 's'}`}
-          note={kpis.invoicedThisMonth.note}
-        />
-        <MetricTile
-          label="Aging 30+"
-          value={kpis.aging.count}
-          Icon={TimerIcon}
-          emphasis={kpis.aging.count > 0 ? 'critical' : 'success'}
-          sub={kpis.aging.count > 0 ? fmtCompact(kpis.aging.amount) + ' outstanding' : 'No overdue invoices'}
-          note={kpis.aging.note}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Ready to Invoice',
+            value: fmtCompact(kpis.ready.amount),
+            sub: `${kpis.ready.count} job${kpis.ready.count === 1 ? '' : 's'}`,
+            note: kpis.ready.note,
+            tone: kpis.ready.count > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Missing Documentation',
+            value: kpis.missingDocs.count,
+            sub: kpis.missingDocs.count > 0 ? fmtCompact(kpis.missingDocs.amount) + ' on hold' : 'All packages clean',
+            note: kpis.missingDocs.note,
+            tone: kpis.missingDocs.count > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Pending Approval',
+            value: kpis.pendingApproval.count,
+            sub: kpis.pendingApproval.count > 0 ? 'Hold or CO in flight' : 'No approvals waiting',
+            tone: kpis.pendingApproval.count > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Invoiced This Month',
+            value: fmtCompact(kpis.invoicedThisMonth.amount),
+            sub: `${kpis.invoicedThisMonth.count} invoice${kpis.invoicedThisMonth.count === 1 ? '' : 's'}`,
+            note: kpis.invoicedThisMonth.note,
+          },
+          {
+            label: 'Aging 30+',
+            value: kpis.aging.count,
+            sub: kpis.aging.count > 0 ? fmtCompact(kpis.aging.amount) + ' outstanding' : 'No overdue invoices',
+            note: kpis.aging.note,
+            tone: kpis.aging.count > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar
