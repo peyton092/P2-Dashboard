@@ -5,6 +5,7 @@ import { axe } from '@/test/axe'
 import { BRAND, SEMANTIC, hexToRgb } from '@/lib/tokens'
 import { ToastProvider } from '../toast'
 import { useToast } from '../use-toast'
+import { ConfirmDialog } from '../confirm-dialog'
 
 // Every test here runs on fake timers for setTimeout alone, so none of them waits for real
 // time: the clock moves when the test moves it, inside act.
@@ -58,11 +59,27 @@ const region = () => screen.getByRole('region', { name: 'Notifications' })
 const rgb = (hex) => `rgb(${hexToRgb(hex).join(', ')})`
 
 describe('the notifications region', () => {
-  it('is a labelled region that is there before any toast, and has no live region of its own', () => {
+  it('is a labelled region that is there before any toast, and announces nothing itself', () => {
     setup()
     const found = region()
-    expect(found.hasAttribute('aria-live')).toBe(false)
+    expect(found.getAttribute('aria-live')).toBe('off')
     expect(found.textContent).toBe('')
+  })
+
+  // A modal dialog hides what is outside it from a screen reader, except a branch of the
+  // page with an aria-live attribute in it. The toast about the work a dialog started has
+  // to be read while the dialog is still open, or a refusal is shown and never heard.
+  it('stays in view of a screen reader while a modal dialog is open, so a toast raised over it is heard', async () => {
+    vi.useRealTimers()
+    const { show } = setup()
+    render(<ConfirmDialog open onClose={() => {}} onConfirm={() => {}} title="Disconnect QuickBooks?" />)
+    await screen.findByRole('dialog')
+    expect(screen.queryByRole('button', { name: 'Page control' })).toBeNull()
+
+    show({ title: 'Could not disconnect. Try again.', tone: 'error', duration: 0 })
+
+    expect(screen.getByRole('alert').textContent).toContain('Could not disconnect. Try again.')
+    expect(screen.getByRole('region', { name: 'Notifications' })).toBeTruthy()
   })
 
   it('holds the toasts that are shown', () => {
@@ -107,11 +124,12 @@ describe('a toast', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('gives each toast the one role and no live region above it, so nothing is read twice', () => {
+  it('gives each toast the one role and no live region above it that is on, so nothing is read twice', () => {
     const { show, container } = setup()
     show({ title: 'Saved.' })
     show({ title: 'Failed.', tone: 'error' })
-    expect(container.ownerDocument.querySelectorAll('[aria-live]').length).toBe(0)
+    const live = [...container.ownerDocument.querySelectorAll('[aria-live]')]
+    expect(live.map((el) => el.getAttribute('aria-live'))).toEqual(['off'])
     expect(screen.getAllByRole('status')).toHaveLength(1)
     expect(screen.getAllByRole('alert')).toHaveLength(1)
   })
@@ -434,18 +452,20 @@ describe('pausing', () => {
   })
 })
 
+// Axe takes real time, so these run on the real clock, and the toasts stay until the test
+// ends (duration 0) instead of racing the clock.
 describe('accessibility', () => {
   it('has no violations with a success toast that carries an action', async () => {
     vi.useRealTimers()
     const { show, container } = setup()
-    show({ title: 'Notification dismissed.', action: { label: 'Undo', onClick: () => {} } })
+    show({ title: 'Notification dismissed.', action: { label: 'Undo', onClick: () => {} }, duration: 0 })
     expect(await axe(container.ownerDocument.body)).toHaveNoViolations()
   })
 
   it('has no violations with an error toast and a description', async () => {
     vi.useRealTimers()
     const { show, container } = setup()
-    show({ title: 'Could not save. Try again.', description: 'Staff access required.', tone: 'error' })
+    show({ title: 'Could not save. Try again.', description: 'Staff access required.', tone: 'error', duration: 0 })
     expect(await axe(container.ownerDocument.body)).toHaveNoViolations()
   })
 

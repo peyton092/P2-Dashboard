@@ -252,7 +252,7 @@ export default function AlertsPage() {
   function handleDismiss(alert) {
     ask({
       title: 'Dismiss this alert?',
-      body: 'The alert leaves the queue. A re-scan brings it back if the problem is still there.',
+      body: 'The alert leaves the queue. It returns if a scan finds the problem again.',
       confirmLabel: 'Dismiss',
       tone: 'critical',
       instant: true,

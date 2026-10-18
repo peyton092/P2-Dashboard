@@ -25,7 +25,9 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 // and a failure is reported by the toast alone.
 //
 // Focus goes back to the control that asked, which Dialog does when it closes. The words
-// of the question stay on the dialog while it fades out.
+// of the question stay on the dialog while it fades out. Nothing is drawn until the first
+// question is asked, so a list with a row for every phase of every job, each row able to
+// ask, does not carry a dialog for each of them.
 export function useConfirm() {
   const [request, setRequest] = useState(null)
   const [open, setOpen] = useState(false)
@@ -61,16 +63,16 @@ export function useConfirm() {
     if (mounted.current && result?.ok !== false) setOpen(false)
   }, [request])
 
-  const dialog = (
+  const dialog = request && (
     <ConfirmDialog
       open={open}
       onClose={close}
       onConfirm={confirm}
       busy={busy}
-      title={request?.title ?? ''}
-      body={request?.body}
-      confirmLabel={request?.confirmLabel}
-      tone={request?.tone}
+      title={request.title}
+      body={request.body}
+      confirmLabel={request.confirmLabel}
+      tone={request.tone}
     />
   )
 

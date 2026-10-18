@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
+import { render, renderHook, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { axe } from '@/test/axe'
 import { useConfirm } from '../useConfirm'
 
@@ -62,6 +62,22 @@ describe('useConfirm', () => {
   it('shows no dialog until something asks', () => {
     render(<Page />)
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('has nothing to draw until something asks, and the same dialog to draw after', () => {
+    const { result } = renderHook(() => useConfirm())
+    expect(result.current.dialog).toBeFalsy()
+
+    act(() => { result.current.ask({ title: 'Disconnect QuickBooks?', onConfirm: () => {} }) })
+    expect(result.current.dialog).toBeTruthy()
+  })
+
+  it('gives the same ask on every render', () => {
+    const { result, rerender } = renderHook(() => useConfirm())
+    const first = result.current.ask
+    rerender()
+    act(() => { result.current.ask({ title: 'Disconnect QuickBooks?', onConfirm: () => {} }) })
+    expect(result.current.ask).toBe(first)
   })
 
   it('asks with the title and the body it was given, and offers Cancel and the confirm label', async () => {

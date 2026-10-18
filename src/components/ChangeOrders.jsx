@@ -145,7 +145,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
   // change to the form and nothing is written until the form is saved, so the question
   // closes as soon as it is answered.
   function removeLine(idx) {
-    const words = form.lineItems[idx].desc.trim()
+    const words = (form.lineItems[idx].desc || '').trim()
     ask({
       title: `Remove line ${idx + 1}?`,
       body: `${words || 'This line'} is taken off this change order. Nothing is saved until you save the change order.`,

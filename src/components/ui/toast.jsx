@@ -84,6 +84,13 @@ function ToastItem({ t, onDismiss }) {
 // onClick and takes the toast away. A toast that is an error is an alert, which a screen
 // reader reads at once; the others are statuses, read when it is quiet. The region they sit
 // in is named, and is not a live region itself, so that nothing is read twice.
+//
+// That region says aria-live="off", and not nothing, for a reason that has nothing to do
+// with reading. A modal dialog hides everything outside itself from a screen reader, and the
+// one thing it leaves alone is a branch of the page that holds an aria-live attribute. A
+// region with none is hidden when a dialog opens, and then an error toast about the work the
+// dialog started (a disconnect that was refused) would be shown and never read. "off" is
+// the value that keeps the region in view of the dialog and still announces nothing itself.
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
 
@@ -110,6 +117,7 @@ export function ToastProvider({ children }) {
       <div
         role="region"
         aria-label="Notifications"
+        aria-live="off"
         className="fixed z-(--z-toast) bottom-4 right-4 left-4 sm:left-auto flex flex-col gap-2 pointer-events-none"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >

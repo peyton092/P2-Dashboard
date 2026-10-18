@@ -147,7 +147,7 @@ describe('dismissing an alert', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     const dialog = await ask('Dismiss this alert?')
 
-    expect(within(dialog).getByText('The alert leaves the queue. A re-scan brings it back if the problem is still there.')).toBeTruthy()
+    expect(within(dialog).getByText('The alert leaves the queue. It returns if a scan finds the problem again.')).toBeTruthy()
     expect(within(dialog).getByRole('button', { name: 'Dismiss' }).classList.contains('text-destructive')).toBe(true)
     expect(mocks.updateAgentAlert).not.toHaveBeenCalled()
   })
