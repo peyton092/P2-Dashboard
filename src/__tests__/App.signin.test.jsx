@@ -17,7 +17,8 @@ const mocks = vi.hoisted(() => ({
 }))
 
 // What the stand-ins for the data provider's hooks record: how many
-// subscriptions each has started in this test, and how many are running now.
+// subscriptions each has started in this test, how many are running now, and the
+// scope each was last called with.
 const probe = vi.hoisted(() => {
   const names = ['jobs', 'extras', 'notifs', 'subs', 'materials', 'submits', 'dailyReports', 'urgentItems', 'settings', 'agentAlerts']
   const zeros = () => Object.fromEntries(names.map((name) => [name, 0]))
@@ -25,9 +26,11 @@ const probe = vi.hoisted(() => {
     names,
     counter: zeros(),
     running: zeros(),
+    scopes: {},
     reset() {
       Object.assign(this.counter, zeros())
       Object.assign(this.running, zeros())
+      this.scopes = {}
     },
   }
 })
@@ -66,10 +69,12 @@ vi.mock('../hooks/useFirestore', async (importOriginal) => {
 
   // Stands in for one of the real hooks. Those subscribe in an effect that runs
   // when the component using them mounts, so each run of this effect counts as
-  // one subscription, and its cleanup as the end of that subscription.
+  // one subscription, and its cleanup as the end of that subscription. The
+  // collection hooks take the signed in user's scope; it is kept for the tests.
   const subscribing = (name, data) => {
     const result = { ...data, loading: false, error: null }
-    return function useSubscription() {
+    return function useSubscription(scope) {
+      probe.scopes[name] = scope
       useEffect(() => {
         probe.counter[name]++
         probe.running[name]++
@@ -219,6 +224,16 @@ describe('data subscriptions and sign in', () => {
     expect(counter.jobs).toBe(0)
   })
 
+  // The rules give a builder only the documents of their tenant, so one with no
+  // tenant has nothing to see, and is told so instead of shown an empty portal.
+  it('shows a builder with no tenant the No access screen and starts nothing', async () => {
+    await openSignedOut()
+    await authChanges(withClaims('builder9', { role: 'builder', tenantId: null, clientJobIds: [] }))
+    expect(await screen.findByText('No access yet')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Accept & Enter Portal' })).toBeNull()
+    expect(counter.jobs).toBe(0)
+  })
+
   it('starts the subscriptions after sign in for an account whose role is only in its users document', async () => {
     mocks.getDoc.mockResolvedValue({
       exists: () => true,
@@ -282,6 +297,33 @@ describe('data subscriptions and the builder terms gate', () => {
     await termsGate()
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull()
     expect(running.jobs).toBe(0)
+  })
+})
+
+// Every collection hook queries with the signed in user's scope, and the rules
+// check the same fields, so each provider must hand its hooks the right one.
+describe('the scope the data provider hands its hooks', () => {
+  const COLLECTION_HOOKS = ['jobs', 'extras', 'notifs', 'subs', 'materials', 'submits', 'dailyReports', 'urgentItems']
+
+  it.each([
+    ['an owner', OWNER, dashboardShown, { role: 'owner', tenantId: 'p2-core', uid: 'owner1' }],
+    ['internal staff', signedIn('staff1', 'internal'), dashboardShown, { role: 'internal', tenantId: 'p2-core', uid: 'staff1' }],
+    ['a client, with no tenant', CLIENT, clientPortalShown, { role: 'client', tenantId: null, uid: 'client1' }],
+  ])('is the role, tenant and uid of %s', async (_who, user, shown, scope) => {
+    await openSignedOut()
+    await authChanges(user)
+    await shown()
+    for (const name of COLLECTION_HOOKS) expect(probe.scopes[name], name).toEqual(scope)
+  })
+
+  it('is the role, tenant and uid of a builder once the terms are accepted', async () => {
+    await openSignedOut()
+    await authChanges(BUILDER)
+    await termsGate()
+    await acceptTerms()
+    for (const name of COLLECTION_HOOKS) {
+      expect(probe.scopes[name], name).toEqual({ role: 'builder', tenantId: 'qbs', uid: 'builder1' })
+    }
   })
 })
 

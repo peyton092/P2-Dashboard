@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { doc, onSnapshot, setDoc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useDailyReports } from '../hooks/useFirestore'
+import { useData } from '../use-data'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -377,7 +378,8 @@ function PodiumCard({ name, pts, rank }) {
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export default function TeamLeaderboard() {
-  const { dailyReports, loading: reportsLoading } = useDailyReports()
+  const { scope } = useData()
+  const { dailyReports, loading: reportsLoading } = useDailyReports(scope)
   const { scores, loading: scoresLoading } = useCrewScores()
   const { url: reviewUrl, saveUrl } = useReviewUrl()
   const [adding, setAdding] = useState(null)

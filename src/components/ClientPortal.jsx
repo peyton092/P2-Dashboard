@@ -520,7 +520,7 @@ function JobFiles({ job }) {
 // ── Messages / RFI ───────────────────────────────────────────────────────────
 
 function ClientMessages({ jobs, clientName }) {
-  const { submits } = useData()
+  const { submits, uid } = useData()
   const [view, setView] = useState('inbox')
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'Question', body: '', jobId: '' })
@@ -531,7 +531,7 @@ function ClientMessages({ jobs, clientName }) {
   const selected = submits.find(s => s._docId === selectedId) || null
   const { replies } = useSubmitReplies(selected?._docId)
 
-  // DataContext already scopes submits to this client's jobs.
+  // The query and the rules already scope submits to this client.
   const myMessages = submits
 
   const CATEGORIES = ['Question', 'Schedule', 'Change Request', 'Issue', 'Other']
@@ -540,6 +540,9 @@ function ClientMessages({ jobs, clientName }) {
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim() || !form.jobId) return
     setSubmitting(true)
+    // A client may create a submission for one of their own jobs that lists only
+    // them; the stamping trigger then gives it the job's whole scope.
+    const job = jobs.find(j => j.id === form.jobId)
     await addSubmit({
       subject: form.subject.trim(),
       category: form.category,
@@ -549,6 +552,8 @@ function ClientMessages({ jobs, clientName }) {
       clientName: clientName || null,
       jobId: form.jobId,
       status: 'Open',
+      clientUids: [uid],
+      ...(job?.tenantId ? { tenantId: job.tenantId } : {}),
     })
     setForm({ subject: '', category: 'Question', body: '', jobId: '' })
     setSubmitting(false)
@@ -897,7 +902,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
       <main className="flex-1 px-4 sm:px-8 py-5 pb-28 sm:pb-8 space-y-5 max-w-3xl w-full mx-auto">
         {activeTab === 'projects' && (
           visibleJobs.length === 0 ? (
-            <EmptyState Icon={HomeIcon} title="No projects yet" description="Your projects will appear here once P2 assigns them to your account." />
+            <EmptyState Icon={HomeIcon} title="No projects yet" description="No projects are linked to your account yet. Contact P2 if you expected to see one here." />
           ) : (
             <>
               {activeJobs.length > 0 && (

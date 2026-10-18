@@ -1,133 +1,148 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   collection, doc, onSnapshot, addDoc, updateDoc, setDoc,
-  query, orderBy, limit, serverTimestamp,
+  query, where, orderBy, limit, serverTimestamp,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, auth } from '../firebase'
 import { functions } from '../firebase'
 
-export function useJobs() {
-  const [jobs, setJobs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+// Every collection hook takes the signed in user's scope first:
+//   { role, tenantId, uid }
+// Jobs, change orders, notifications and submissions carry a scope of their own
+// (tenantId and clientUids, stamped by the Cloud Functions), and their hooks run
+// the query queryFor builds, which asks for exactly what the rules let that user
+// read. The other collections are staff only. A scope that may read nothing, or
+// no scope at all, subscribes to nothing: the hook reports no rows, no error and
+// nothing loading, and never falls back to reading the whole collection.
 
-  useEffect(() => {
-    const q = query(collection(db, 'jobs'), orderBy('id'), limit(200))
-    const unsub = onSnapshot(q, snap => {
-      setJobs(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
+const isStaffRole = (role) => role === 'owner' || role === 'internal'
+const isFilled = (value) => typeof value === 'string' && value !== ''
 
-  return { jobs, loading, error }
+// The order and the cap each scoped list has always had.
+const SCOPED_LISTS = {
+  jobs: { order: ['id'], max: 200 },
+  extras: { order: ['date'], max: 500 },
+  notifications: { order: ['createdAt', 'desc'], max: 100 },
+  submits: { order: ['createdAt', 'desc'], max: 100 },
 }
 
-export function useAllExtras() {
-  const [extras, setExtras] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    const q = query(collection(db, 'extras'), orderBy('date'), limit(500))
-    const unsub = onSnapshot(q, snap => {
-      setExtras(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
-
-  return { extras, loading, error }
+// The where clauses a scope adds: none for staff, the tenant for a builder, the
+// uid for a client, and null when the scope may read nothing (a builder with no
+// tenant, a client with no uid, any other role, no scope).
+function scopeFilter(scope) {
+  const role = scope?.role
+  if (isStaffRole(role)) return []
+  if (role === 'builder' && isFilled(scope.tenantId)) return [where('tenantId', '==', scope.tenantId)]
+  if (role === 'client' && isFilled(scope.uid)) return [where('clientUids', 'array-contains', scope.uid)]
+  return null
 }
 
-export function useNotifications() {
-  const [notifs, setNotifs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(100))
-    const unsub = onSnapshot(q, snap => {
-      setNotifs(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
-
-  return { notifs, loading, error }
+// The list query this user may run on jobs, extras, notifications or submits, or
+// null when they may run none. Staff read the whole collection, a builder the
+// documents stamped with their tenant, and a client the documents whose
+// clientUids list them: the same test the rules apply, so Firestore lets the
+// query through instead of refusing it for what it might return.
+export function queryFor(collectionName, scope) {
+  const list = SCOPED_LISTS[collectionName]
+  if (!list) throw new Error(`${collectionName} is not one of the scoped collections.`)
+  const filter = scopeFilter(scope)
+  if (filter === null) return null
+  return query(collection(db, collectionName), ...filter, orderBy(...list.order), limit(list.max))
 }
 
-export function useSubs() {
-  const [subs, setSubs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+// Rows are stored with the query they came from and returned only while that
+// query is current, so a changed scope never shows the rows of the one before.
+// Without a query nothing is subscribed, and there are no rows, no error and
+// nothing loading.
+const NO_ROWS = { query: null, rows: [], error: null }
+
+function useRows(q, toRows) {
+  const [state, setState] = useState(NO_ROWS)
 
   useEffect(() => {
-    const q = query(collection(db, 'subs'), limit(100))
-    const unsub = onSnapshot(q, snap => {
-      const rows = snap.docs.map(d => ({ ...d.data(), id: d.id }))
-      rows.sort((a, b) => a.trade.localeCompare(b.trade) || a.name.localeCompare(b.name))
-      setSubs(rows)
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
+    if (!q) return
+    return onSnapshot(
+      q,
+      snap => setState({ query: q, rows: toRows(snap), error: null }),
+      err => setState(prev => ({ query: q, rows: prev.query === q ? prev.rows : [], error: err })),
+    )
+  }, [q, toRows])
 
-  return { subs, loading, error }
+  const current = q !== null && state.query === q
+  return {
+    rows: current ? state.rows : [],
+    loading: q !== null && !current,
+    error: current ? state.error : null,
+  }
 }
 
-export function useMaterials() {
-  const [materials, setMaterials] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+const docRows = (snap) => snap.docs.map(d => ({ ...d.data(), _docId: d.id }))
 
-  useEffect(() => {
-    const q = query(collection(db, 'materials'), orderBy('createdAt', 'desc'), limit(200))
-    const unsub = onSnapshot(q, snap => {
-      const rows = snap.docs.map(d => ({ ...d.data(), _docId: d.id }))
-      rows.sort((a, b) => (a.job || '').localeCompare(b.job || ''))
-      setMaterials(rows)
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
-
-  return { materials, loading, error }
+// One of the four scoped lists. Only the parts of the scope its query depends on
+// are kept: a staff query is the whole collection, so the workspace staff choose
+// in the sidebar is left out and switching it keeps the listener as it is.
+function useScopedList(collectionName, scope) {
+  const role = scope?.role ?? null
+  const tenantId = role === 'builder' ? (scope.tenantId ?? null) : null
+  const uid = role === 'client' ? (scope.uid ?? null) : null
+  const q = useMemo(
+    () => queryFor(collectionName, { role, tenantId, uid }),
+    [collectionName, role, tenantId, uid],
+  )
+  return useRows(q, docRows)
 }
 
-export function usePermits() {
-  const [permits, setPermits] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    const q = query(collection(db, 'permits'), orderBy('createdAt', 'desc'), limit(100))
-    const unsub = onSnapshot(q, snap => {
-      setPermits(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
-
-  return { permits, loading, error }
+// A staff only list: the query makeQuery builds for owner and internal staff, and
+// nothing at all for anyone else.
+function useStaffList(scope, makeQuery, toRows) {
+  const staff = isStaffRole(scope?.role)
+  const q = useMemo(() => (staff ? makeQuery() : null), [staff, makeQuery])
+  return useRows(q, toRows)
 }
 
-export function useSubmits() {
-  const [submits, setSubmits] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+export function useJobs(scope) {
+  const { rows, loading, error } = useScopedList('jobs', scope)
+  return { jobs: rows, loading, error }
+}
 
-  useEffect(() => {
-    const q = query(collection(db, 'submits'), orderBy('createdAt', 'desc'), limit(100))
-    const unsub = onSnapshot(q, snap => {
-      setSubmits(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
+export function useAllExtras(scope) {
+  const { rows, loading, error } = useScopedList('extras', scope)
+  return { extras: rows, loading, error }
+}
 
-  return { submits, loading, error }
+export function useNotifications(scope) {
+  const { rows, loading, error } = useScopedList('notifications', scope)
+  return { notifs: rows, loading, error }
+}
+
+export function useSubmits(scope) {
+  const { rows, loading, error } = useScopedList('submits', scope)
+  return { submits: rows, loading, error }
+}
+
+const subsQuery = () => query(collection(db, 'subs'), limit(100))
+const subsRows = (snap) => {
+  const rows = snap.docs.map(d => ({ ...d.data(), id: d.id }))
+  rows.sort((a, b) => a.trade.localeCompare(b.trade) || a.name.localeCompare(b.name))
+  return rows
+}
+
+export function useSubs(scope) {
+  const { rows, loading, error } = useStaffList(scope, subsQuery, subsRows)
+  return { subs: rows, loading, error }
+}
+
+const materialsQuery = () => query(collection(db, 'materials'), orderBy('createdAt', 'desc'), limit(200))
+const materialsRows = (snap) => {
+  const rows = docRows(snap)
+  rows.sort((a, b) => (a.job || '').localeCompare(b.job || ''))
+  return rows
+}
+
+export function useMaterials(scope) {
+  const { rows, loading, error } = useStaffList(scope, materialsQuery, materialsRows)
+  return { materials: rows, loading, error }
 }
 
 // Rows are stored with the id they were loaded for and only returned while that
@@ -290,34 +305,18 @@ export async function createJob(data) {
   return callCloud('createJob', data)
 }
 
-export function useDailyReports() {
-  const [dailyReports, setDailyReports] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    const q = query(collection(db, 'daily_reports'), orderBy('createdAt', 'desc'), limit(100))
-    const unsub = onSnapshot(q, snap => {
-      setDailyReports(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
-  return { dailyReports, loading, error }
+const dailyReportsQuery = () => query(collection(db, 'daily_reports'), orderBy('createdAt', 'desc'), limit(100))
+
+export function useDailyReports(scope) {
+  const { rows, loading, error } = useStaffList(scope, dailyReportsQuery, docRows)
+  return { dailyReports: rows, loading, error }
 }
 
-export function useUrgentItems() {
-  const [urgentItems, setUrgentItems] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    const q = query(collection(db, 'urgent_items'), orderBy('createdAt', 'desc'), limit(100))
-    const unsub = onSnapshot(q, snap => {
-      setUrgentItems(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
-  return { urgentItems, loading, error }
+const urgentItemsQuery = () => query(collection(db, 'urgent_items'), orderBy('createdAt', 'desc'), limit(100))
+
+export function useUrgentItems(scope) {
+  const { rows, loading, error } = useStaffList(scope, urgentItemsQuery, docRows)
+  return { urgentItems: rows, loading, error }
 }
 
 export async function addUrgentItem(data) {
@@ -339,19 +338,11 @@ export async function addDailyReport(data) {
   }))
 }
 
-export function useHistory() {
-  const [history, setHistory] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    const q = query(collection(db, 'history'), orderBy('createdAt', 'desc'), limit(200))
-    const unsub = onSnapshot(q, snap => {
-      setHistory(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setError(err); setLoading(false) })
-    return unsub
-  }, [])
-  return { history, loading, error }
+const historyQuery = () => query(collection(db, 'history'), orderBy('createdAt', 'desc'), limit(200))
+
+export function useHistory(scope) {
+  const { rows, loading, error } = useStaffList(scope, historyQuery, docRows)
+  return { history: rows, loading, error }
 }
 
 export async function addHistory(data) {
@@ -403,19 +394,11 @@ export async function updateAgentAlert(docId, data) {
   await updateDoc(doc(db, 'agent_alerts', docId), { ...data, updatedAt: serverTimestamp() })
 }
 
-export function useSupplierInvoices() {
-  const [invoices, setInvoices] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  useEffect(() => {
-    const q = query(collection(db, 'supplier_invoices'), orderBy('createdAt', 'desc'), limit(200))
-    const unsub = onSnapshot(q, snap => {
-      setInvoices(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, err => { setInvoices([]); setError(err); setLoading(false) })
-    return unsub
-  }, [])
-  return { invoices, loading, error }
+const supplierInvoicesQuery = () => query(collection(db, 'supplier_invoices'), orderBy('createdAt', 'desc'), limit(200))
+
+export function useSupplierInvoices(scope) {
+  const { rows, loading, error } = useStaffList(scope, supplierInvoicesQuery, docRows)
+  return { invoices: rows, loading, error }
 }
 
 export async function addSupplierInvoice(data) {

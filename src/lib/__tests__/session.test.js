@@ -20,8 +20,22 @@ describe('resolveSession', () => {
     expect(resolveSession({ role: 'admin' }, null, {}).role).toBeNull()
   })
 
-  it('defaults tenantId to qbs for builders', () => {
-    expect(resolveSession({}, { role: 'builder' }, {}).tenantId).toBe('qbs')
+  // The rules give a builder the documents of their tenant, so a builder with no
+  // tenant can read nothing and is shown the No Access screen instead of a portal.
+  it('a builder without a tenant has no access', () => {
+    expect(resolveSession({}, { role: 'builder' }, {})).toMatchObject({ role: null, tenantId: null })
+    expect(resolveSession({ role: 'builder', tenantId: null, clientJobIds: [] }, null, {}))
+      .toMatchObject({ role: null, tenantId: null })
+    expect(resolveSession({ role: 'builder' }, { role: 'builder', tenantId: '' }, {}))
+      .toMatchObject({ role: null, tenantId: null })
+  })
+
+  it('a builder keeps a valid tenant from claims or the document', () => {
+    expect(resolveSession({ role: 'builder', tenantId: 'vision', clientJobIds: [] }, null, {}))
+      .toMatchObject({ role: 'builder', tenantId: 'vision' })
+    expect(resolveSession({}, { role: 'builder', tenantId: 'qbs' }, {}))
+      .toMatchObject({ role: 'builder', tenantId: 'qbs' })
+    expect(resolveSession({ role: 'builder', tenantId: 'vision' }, { tenantId: 'qbs' }, {}).tenantId).toBe('vision')
   })
 
   it('defaults tenantId to p2-core for other roles', () => {

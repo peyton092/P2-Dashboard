@@ -10,8 +10,11 @@ export function resolveSession(claims, userDoc, firebaseUser) {
   const u = userDoc || {}
   const fu = firebaseUser || {}
 
-  const role = validRole(c.role) || validRole(u.role)
-  const tenantId = c.tenantId || u.tenantId || (role === 'builder' ? 'qbs' : 'p2-core')
+  const namedRole = validRole(c.role) || validRole(u.role)
+  const tenantId = c.tenantId || u.tenantId || (namedRole === 'builder' ? null : 'p2-core')
+  // A builder reads only the documents of their own tenant, so a builder with no
+  // tenant has nothing to read: the same as no role, and the app says so.
+  const role = namedRole === 'builder' && !tenantId ? null : namedRole
   const displayName = c.displayName || u.displayName || fu.displayName || ''
   // fu.displayName covers a client whose claims are complete, since the app then
   // skips the users document: createUser gives the Auth account the same name.

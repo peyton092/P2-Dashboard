@@ -584,7 +584,7 @@ function ExtraRow({ co, compact = false }) {
 // ── QBS Submit (RFI) ─────────────────────────────────────────────────────────
 
 function QBSSubmit({ qbsPM, jobs }) {
-  const { submits } = useData()
+  const { submits, scope } = useData()
   const [view, setView] = useState('inbox')
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'RFI', priority: 'Medium', body: '', jobId: '' })
@@ -616,6 +616,10 @@ function QBSSubmit({ qbsPM, jobs }) {
       qbsPM: qbsPM || null,
       jobId: form.jobId || null,
       status: 'Open',
+      // A builder may create a submission that carries their own tenant and
+      // lists no client; the stamping trigger then gives it its job's scope.
+      tenantId: scope.tenantId,
+      clientUids: [],
     })
     setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', jobId: '' })
     setSubmitting(false)
@@ -1137,7 +1141,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                 Icon={HomeIcon}
                 title="No projects yet"
                 description={selectedPM === '__ALL__'
-                  ? 'No QBS projects are present in the system yet.'
+                  ? 'No projects are linked to your account yet. Contact P2 if you expected to see one here.'
                   : `No projects are currently assigned to ${selectedPM}.`}
               />
             ) : (

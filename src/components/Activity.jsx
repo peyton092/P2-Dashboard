@@ -41,8 +41,8 @@ function relTime(ms) {
 const NOTIF_TYPE_MAP = { success: 'inspection', warn: 'job', error: 'job', info: 'notification' }
 
 export default function Activity() {
-  const { notifs = [] } = useData()
-  const { history } = useHistory()
+  const { notifs = [], scope } = useData()
+  const { history } = useHistory(scope)
   const [filter, setFilter] = useState('all')
 
   const feed = useMemo(() => {

@@ -3,15 +3,19 @@ import { useJobs, useAllExtras, useNotifications, useSubs, useMaterials, useSubm
 
 // ── Context ───────────────────────────────────────────────────────────────────
 
-export function DataProvider({ children, tenantId = null, role = null, clientJobIds = null }) {
-  const { jobs: firestoreJobs, loading: jobsLoading, error: jobsError }                 = useJobs()
-  const { extras: firestoreExtras, loading: extrasLoading, error: extrasError }         = useAllExtras()
-  const { notifs: firestoreNotifs, loading: notifsLoading, error: notifsError }         = useNotifications()
-  const { subs: firestoreSubs, loading: subsLoading, error: subsError }                 = useSubs()
-  const { materials: firestoreMaterials, loading: matsLoading, error: matsError }       = useMaterials()
-  const { submits: firestoreSubmits, loading: submitsLoading, error: submitsError }     = useSubmits()
-  const { dailyReports: firestoreDailyReports, loading: drLoading, error: drError }     = useDailyReports()
-  const { urgentItems: firestoreUrgentItems, loading: uiLoading, error: uiError }       = useUrgentItems()
+// scope is the signed in user, { role, tenantId, uid }. Every collection hook
+// queries with it and the rules check the same fields, so a builder or a client
+// receives only their own documents and the provider passes them on as they
+// come. tenantId is the workspace: for staff, the one chosen in the sidebar.
+export function DataProvider({ children, scope, tenantId = null }) {
+  const { jobs: firestoreJobs, loading: jobsLoading, error: jobsError }                 = useJobs(scope)
+  const { extras: firestoreExtras, loading: extrasLoading, error: extrasError }         = useAllExtras(scope)
+  const { notifs: firestoreNotifs, loading: notifsLoading, error: notifsError }         = useNotifications(scope)
+  const { subs: firestoreSubs, loading: subsLoading, error: subsError }                 = useSubs(scope)
+  const { materials: firestoreMaterials, loading: matsLoading, error: matsError }       = useMaterials(scope)
+  const { submits: firestoreSubmits, loading: submitsLoading, error: submitsError }     = useSubmits(scope)
+  const { dailyReports: firestoreDailyReports, loading: drLoading, error: drError }     = useDailyReports(scope)
+  const { urgentItems: firestoreUrgentItems, loading: uiLoading, error: uiError }       = useUrgentItems(scope)
   const { settings, error: settingsError }                                              = useSettings()
   const { alerts: agentAlerts, error: alertsError }                                     = useAgentAlerts()
 
@@ -25,43 +29,37 @@ export function DataProvider({ children, tenantId = null, role = null, clientJob
     submitsError, drError, uiError, settingsError, alertsError,
   ].find(e => e != null) ?? null
 
-  const allJobs   = firestoreJobs
-  const allExtras = firestoreExtras
+  const role = scope?.role ?? null
   const notifs    = firestoreNotifs
   const subs      = firestoreSubs
   const materials = firestoreMaterials
-  const submits   = firestoreSubmits
 
-  // Client portal: scope strictly to the explicit set of job IDs the client owns.
-  const isClient = role === 'client'
-  const clientJobIdSet = isClient ? new Set(Array.isArray(clientJobIds) ? clientJobIds : []) : null
+  // Staff read every document. When they switch the sidebar workspace to a
+  // builder tenant, the dashboard shows that tenant's jobs and what hangs off
+  // them. This is a view preference, not access: builders and clients are
+  // scoped by their queries and the rules, and nothing here filters for them.
+  const workspace = (role === 'owner' || role === 'internal') && tenantId && tenantId !== 'p2-core'
+    ? tenantId
+    : null
 
-  const shouldFilter = !isClient && tenantId && (role === 'builder' || (role === 'internal' && tenantId !== 'p2-core'))
+  const jobs = workspace
+    ? firestoreJobs.filter(j => (j.tenantId || 'qbs') === workspace)
+    : firestoreJobs
 
-  const jobs = isClient
-    ? allJobs.filter(j => clientJobIdSet.has(j.id))
-    : shouldFilter
-      ? allJobs.filter(j => (j.tenantId || 'qbs') === tenantId)
-      : allJobs
+  const jobIdSet = workspace ? new Set(jobs.map(j => j.id)) : null
 
-  // Once jobs are scoped (builder tenancy OR client ownership), everything else
-  // hangs off the visible job-id set.
-  const scoped = isClient || shouldFilter
-  const jobIdSet = scoped ? new Set(jobs.map(j => j.id)) : null
+  const extras = workspace ? firestoreExtras.filter(e => jobIdSet.has(e.job)) : firestoreExtras
 
-  const extras = scoped ? allExtras.filter(e => jobIdSet.has(e.job)) : allExtras
-
-  const matchesScopedJob = (rec) => {
-    if (!jobIdSet) return true
+  // A record that names no job belongs to no builder workspace, so it is hidden there.
+  const inWorkspace = (rec) => {
     const id = rec?.jobId || rec?.job
-    // Records with no job association are internal-only — hide them in any scoped portal.
     if (!id) return false
     return jobIdSet.has(id)
   }
 
-  const dailyReports = scoped ? firestoreDailyReports.filter(matchesScopedJob) : firestoreDailyReports
-  const urgentItems  = scoped ? firestoreUrgentItems.filter(matchesScopedJob)  : firestoreUrgentItems
-  const submitsScoped = scoped ? submits.filter(matchesScopedJob) : submits
+  const dailyReports = workspace ? firestoreDailyReports.filter(inWorkspace) : firestoreDailyReports
+  const urgentItems  = workspace ? firestoreUrgentItems.filter(inWorkspace)  : firestoreUrgentItems
+  const submits      = workspace ? firestoreSubmits.filter(inWorkspace)      : firestoreSubmits
 
   // True only once every collection has finished loading and none holds a document.
   const empty = !loading
@@ -79,7 +77,7 @@ export function DataProvider({ children, tenantId = null, role = null, clientJob
       jobs, extras, notifs,
       subs,
       materials,
-      submits: submitsScoped,
+      submits,
       dailyReports,
       urgentItems,
       settings,
@@ -87,6 +85,10 @@ export function DataProvider({ children, tenantId = null, role = null, clientJob
       loading,
       empty,
       error,
+      role,
+      tenantId,
+      uid: scope?.uid ?? null,
+      scope,
     }}>
       {children}
     </DataContext.Provider>

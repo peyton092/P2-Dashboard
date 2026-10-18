@@ -2651,8 +2651,8 @@ function SubAssignmentRow({ job: j }) {
 // ── Materials tab ────────────────────────────────────────────────────────────
 
 function Materials() {
-  const { jobs = [], materials: MATERIALS = [] } = useData()
-  const { history: HISTORY = [] } = useHistory()
+  const { jobs = [], materials: MATERIALS = [], scope } = useData()
+  const { history: HISTORY = [] } = useHistory(scope)
   const [filter, setFilter]               = useState('all')
   const [filterJob, setFilterJob]         = useState('all')
   const [showForm, setShowForm]           = useState(false)
@@ -3734,7 +3734,6 @@ export default function P2DashboardV4() {
   const [role, setRole]               = useState(null)
   const [tenantId, setTenantId]       = useState('p2-core')
   const [clientName, setClientName]   = useState('')
-  const [clientJobIds, setClientJobIds] = useState([])
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showCreateUser, setShowCreateUser] = useState(false)
   const [oauthState, setOauthState]   = useState(null) // null | 'loading' | 'success' | { error: string }
@@ -3781,7 +3780,7 @@ export default function P2DashboardV4() {
         // again, but not the accepted terms or the Create User dialog, and the
         // next person must not inherit those. The tenant stays as it is; every
         // sign in sets it, and nothing reads it while signed out.
-        setUser(null); setRole(null); setUserName(''); setClientName(''); setClientJobIds([])
+        setUser(null); setRole(null); setUserName(''); setClientName('')
         setTermsAccepted(false); setShowCreateUser(false); setAuthLoading(false)
         return
       }
@@ -3804,7 +3803,6 @@ export default function P2DashboardV4() {
       setRole(session.role)
       setTenantId(session.tenantId)
       setClientName(session.clientName)
-      setClientJobIds(session.clientJobIds)
       setAuthLoading(false)
     })
     return unsub
@@ -3878,14 +3876,16 @@ export default function P2DashboardV4() {
 
   // Each signed in provider is keyed by who is signed in and in what role, so a
   // different user or role gets a new provider whose hooks subscribe again. The
-  // tenant is left out on purpose: internal staff switch it from the sidebar, and
-  // the provider scopes what it shows by it without new subscriptions, so the
-  // dashboard and the page they have open must stay as they are.
+  // tenant is left out on purpose: internal staff switch it from the sidebar,
+  // staff queries read every document whatever it is, and the provider narrows
+  // what it shows by it without new subscriptions, so the dashboard and the page
+  // they have open must stay as they are. The hooks query with the scope, and the
+  // rules check the same fields, so a builder or a client gets only their own.
   const dataKey = `${user.uid}:${role}`
 
   if (role === 'client') {
     return (
-      <DataProvider key={dataKey} role="client" clientJobIds={clientJobIds}>
+      <DataProvider key={dataKey} scope={{ role, tenantId: null, uid: user.uid }}>
         {showCreateUser && <CreateUserModal onClose={() => setShowCreateUser(false)} />}
         <Suspense fallback={<PortalLoading />}>
           <ClientPortalComponent
@@ -3899,7 +3899,7 @@ export default function P2DashboardV4() {
   }
 
   return (
-    <DataProvider key={dataKey} tenantId={tenantId} role={role}>
+    <DataProvider key={dataKey} scope={{ role, tenantId, uid: user.uid }} tenantId={tenantId}>
       {showCreateUser && <CreateUserModal onClose={() => setShowCreateUser(false)} />}
       {role === 'builder'
         ? (

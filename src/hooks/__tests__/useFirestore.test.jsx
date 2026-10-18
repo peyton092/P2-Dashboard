@@ -6,7 +6,8 @@ const listeners = []
 vi.mock('firebase/firestore', () => ({
   collection: (_db, ...path) => ({ path: path.join('/') }),
   doc: (_db, ...path) => ({ path: path.join('/') }),
-  query: (ref) => ref,
+  query: (ref, ...constraints) => ({ path: ref.path, constraints }),
+  where: (...args) => ({ where: args }),
   orderBy: vi.fn(),
   limit: vi.fn(),
   addDoc: vi.fn(),
@@ -14,7 +15,7 @@ vi.mock('firebase/firestore', () => ({
   setDoc: vi.fn(),
   serverTimestamp: vi.fn(),
   onSnapshot: (q, onNext, onError) => {
-    const entry = { path: q.path, onNext, onError, unsubscribed: false }
+    const entry = { path: q.path, constraints: q.constraints ?? [], onNext, onError, unsubscribed: false }
     listeners.push(entry)
     return () => { entry.unsubscribed = true }
   },
@@ -23,7 +24,7 @@ vi.mock('firebase/functions', () => ({ httpsCallable: vi.fn() }))
 vi.mock('../../firebase', () => ({ db: {}, functions: {} }))
 
 import {
-  useJobs, useAllExtras, useNotifications, useSubs, useMaterials, usePermits, useSubmits,
+  useJobs, useAllExtras, useNotifications, useSubs, useMaterials, useSubmits,
   useDailyReports, useUrgentItems, useHistory, useSettings, useAgentAlerts, useSupplierInvoices,
   useJobFiles, useSubmitReplies,
 } from '../useFirestore'
@@ -31,6 +32,12 @@ import * as firestoreModule from '../useFirestore'
 
 const snapshot = (...ids) => ({ docs: ids.map(id => ({ id, data: () => ({ name: id }) })) })
 const live = (path) => listeners.filter(l => l.path === path && !l.unsubscribed).at(-1)
+const filters = (listener) => listener.constraints.filter(c => c?.where).map(c => c.where)
+
+// The scope each signed in provider hands its hooks: { role, tenantId, uid }.
+const STAFF = { role: 'owner', tenantId: 'p2-core', uid: 'o1' }
+const BUILDER = { role: 'builder', tenantId: 'qbs', uid: 'b1' }
+const CLIENT = { role: 'client', tenantId: null, uid: 'c1' }
 
 beforeEach(() => { listeners.length = 0 })
 
@@ -124,7 +131,6 @@ describe.each([
   ['useNotifications', useNotifications, 'notifs', 'notifications'],
   ['useSubs', useSubs, 'subs', 'subs'],
   ['useMaterials', useMaterials, 'materials', 'materials'],
-  ['usePermits', usePermits, 'permits', 'permits'],
   ['useSubmits', useSubmits, 'submits', 'submits'],
   ['useDailyReports', useDailyReports, 'dailyReports', 'daily_reports'],
   ['useUrgentItems', useUrgentItems, 'urgentItems', 'urgent_items'],
@@ -134,13 +140,13 @@ describe.each([
   ['useSupplierInvoices', useSupplierInvoices, 'invoices', 'supplier_invoices'],
 ])('%s error state', (_name, hook, key, path) => {
   it('has no error while it waits for the first snapshot', () => {
-    const { result } = renderHook(() => hook())
+    const { result } = renderHook(() => hook(STAFF))
     expect(result.current.error).toBeNull()
     expect(result.current.loading).toBe(true)
   })
 
   it('returns the error Firestore gives it, stops loading, and keeps returning its data', () => {
-    const { result } = renderHook(() => hook())
+    const { result } = renderHook(() => hook(STAFF))
     const before = result.current[key]
     const failure = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
     act(() => live(path).onError(failure))
@@ -150,9 +156,133 @@ describe.each([
   })
 
   it('stops listening when it unmounts', () => {
-    const { unmount } = renderHook(() => hook())
+    const { unmount } = renderHook(() => hook(STAFF))
     unmount()
     expect(listeners.filter(l => l.path === path && !l.unsubscribed)).toEqual([])
+  })
+})
+
+// A scope that can read nothing must never fall back to an unscoped query: the
+// rules would refuse it, and a refused listener is an error on the screen.
+const NO_ACCESS = [
+  ['a builder whose tenant is null', { role: 'builder', tenantId: null, uid: 'b1' }],
+  ['a builder whose tenant is empty', { role: 'builder', tenantId: '', uid: 'b1' }],
+  ['a client whose uid is null', { role: 'client', tenantId: null, uid: null }],
+  ['an unknown role', { role: 'admin', tenantId: 'p2-core', uid: 'u1' }],
+  ['an empty scope', {}],
+  ['a null scope', null],
+  ['no scope at all', undefined],
+]
+
+// Jobs, change orders, notifications and submissions carry a scope, and the query
+// each hook runs is the one queryFor builds for the signed in user.
+describe.each([
+  ['useJobs', useJobs, 'jobs', 'jobs'],
+  ['useAllExtras', useAllExtras, 'extras', 'extras'],
+  ['useNotifications', useNotifications, 'notifs', 'notifications'],
+  ['useSubmits', useSubmits, 'submits', 'submits'],
+])('%s scope', (_name, hook, key, path) => {
+  it('listens to the documents of a builder\'s tenant', () => {
+    renderHook(() => hook(BUILDER))
+    expect(filters(live(path))).toEqual([['tenantId', '==', 'qbs']])
+  })
+
+  it('listens to the documents whose clientUids list a client', () => {
+    renderHook(() => hook(CLIENT))
+    expect(filters(live(path))).toEqual([['clientUids', 'array-contains', 'c1']])
+  })
+
+  it('listens to the whole collection for staff', () => {
+    renderHook(() => hook({ role: 'internal', tenantId: 'qbs', uid: 's1' }))
+    expect(filters(live(path))).toEqual([])
+  })
+
+  it.each(NO_ACCESS)('listens to nothing for %s, and reports no rows, no error and nothing loading', (_label, scope) => {
+    const { result } = renderHook(() => hook(scope))
+    expect(listeners).toHaveLength(0)
+    expect(result.current).toEqual({ [key]: [], loading: false, error: null })
+  })
+
+  it('keeps its listener when given an equal scope again, as each render of the app does', () => {
+    const { rerender } = renderHook(({ scope }) => hook(scope), { initialProps: { scope: { ...BUILDER } } })
+    const first = live(path)
+    rerender({ scope: { ...BUILDER } })
+    expect(live(path)).toBe(first)
+    expect(listeners).toHaveLength(1)
+  })
+
+  it('keeps its listener and its rows when staff switch workspace', () => {
+    const { result, rerender } = renderHook(({ scope }) => hook(scope), {
+      initialProps: { scope: { role: 'internal', tenantId: 'p2-core', uid: 's1' } },
+    })
+    const first = live(path)
+    act(() => first.onNext(snapshot('a1')))
+    rerender({ scope: { role: 'internal', tenantId: 'qbs', uid: 's1' } })
+    expect(live(path)).toBe(first)
+    expect(listeners).toHaveLength(1)
+    expect(result.current[key].map(r => r._docId)).toEqual(['a1'])
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('starts over, showing none of the old rows, when the scope changes', () => {
+    const { result, rerender } = renderHook(({ scope }) => hook(scope), { initialProps: { scope: BUILDER } })
+    act(() => live(path).onNext(snapshot('q1')))
+    expect(result.current[key].map(r => r._docId)).toEqual(['q1'])
+
+    rerender({ scope: { ...BUILDER, tenantId: 'vision' } })
+    expect(result.current[key]).toEqual([])
+    expect(result.current.loading).toBe(true)
+    expect(filters(live(path))).toEqual([['tenantId', '==', 'vision']])
+    expect(listeners.filter(l => !l.unsubscribed)).toHaveLength(1)
+
+    act(() => live(path).onNext(snapshot('v1')))
+    expect(result.current[key].map(r => r._docId)).toEqual(['v1'])
+  })
+
+  it('keeps the rows it had when its listener fails later', () => {
+    const { result } = renderHook(() => hook(CLIENT))
+    act(() => live(path).onNext(snapshot('c1row')))
+    const failure = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
+    act(() => live(path).onError(failure))
+    expect(result.current[key].map(r => r._docId)).toEqual(['c1row'])
+    expect(result.current.error).toBe(failure)
+  })
+})
+
+// Subcontractors, materials, daily reports, urgent items, history and supplier
+// invoices are staff only. For anyone else the hooks listen to nothing at all.
+describe.each([
+  ['useSubs', useSubs, 'subs', 'subs'],
+  ['useMaterials', useMaterials, 'materials', 'materials'],
+  ['useDailyReports', useDailyReports, 'dailyReports', 'daily_reports'],
+  ['useUrgentItems', useUrgentItems, 'urgentItems', 'urgent_items'],
+  ['useHistory', useHistory, 'history', 'history'],
+  ['useSupplierInvoices', useSupplierInvoices, 'invoices', 'supplier_invoices'],
+])('%s for staff only', (_name, hook, key, path) => {
+  it.each(['owner', 'internal'])('listens for %s staff', (role) => {
+    renderHook(() => hook({ role, tenantId: 'p2-core', uid: 'u1' }))
+    expect(live(path)).toBeDefined()
+    expect(filters(live(path))).toEqual([])
+  })
+
+  it.each([
+    ['a builder', BUILDER],
+    ['a client', CLIENT],
+    ...NO_ACCESS,
+  ])('listens to nothing for %s, and reports no rows, no error and nothing loading', (_label, scope) => {
+    const { result } = renderHook(() => hook(scope))
+    expect(listeners).toHaveLength(0)
+    expect(result.current).toEqual({ [key]: [], loading: false, error: null })
+  })
+
+  it('keeps its listener when staff switch workspace', () => {
+    const { rerender } = renderHook(({ scope }) => hook(scope), {
+      initialProps: { scope: { role: 'internal', tenantId: 'p2-core', uid: 's1' } },
+    })
+    const first = live(path)
+    rerender({ scope: { role: 'internal', tenantId: 'vision', uid: 's1' } })
+    expect(live(path)).toBe(first)
+    expect(listeners).toHaveLength(1)
   })
 })
 
@@ -160,6 +290,11 @@ describe.each([
 // module exports, so a hook added later that swallows its error fails here too.
 describe('every hook the module exports', () => {
   const hookNames = Object.keys(firestoreModule).filter(name => /^use[A-Z]/.test(name))
+  // Hooks that listen to one record take its id. Every other hook takes the signed
+  // in user's scope first (useSettings and useAgentAlerts read what everyone may
+  // read and ignore it), and staff may read everything.
+  const RECORD_HOOKS = ['useJobFiles', 'useSubmitReplies']
+  const argumentFor = (name) => (RECORD_HOOKS.includes(name) ? 'some-id' : STAFF)
 
   it('includes the ones this test is meant to cover', () => {
     expect(hookNames).toContain('useJobs')
@@ -167,8 +302,7 @@ describe('every hook the module exports', () => {
   })
 
   it.each(hookNames)('%s returns the error its subscription fails with', (name) => {
-    // Hooks that listen to one record take its id; the others ignore the argument.
-    const { result } = renderHook(() => firestoreModule[name]('some-id'))
+    const { result } = renderHook(() => firestoreModule[name](argumentFor(name)))
     expect(listeners.length).toBeGreaterThan(0)
     const failure = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
     act(() => { for (const listener of listeners) listener.onError(failure) })

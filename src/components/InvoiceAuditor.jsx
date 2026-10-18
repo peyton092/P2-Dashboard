@@ -479,8 +479,8 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function InvoiceAuditor() {
-  const { jobs, materials } = useData()
-  const { invoices, loading } = useSupplierInvoices()
+  const { jobs, materials, scope } = useData()
+  const { invoices, loading } = useSupplierInvoices(scope)
   const [showForm, setShowForm] = useState(false)
   const [vendorFilter, setVendorFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')

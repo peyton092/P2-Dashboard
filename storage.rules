@@ -1,18 +1,69 @@
 rules_version = '2';
 
-// P2 Field Control — Cloud Storage rules.
+// P2 Field Control: Cloud Storage rules.
 //
-// Client document uploads land under jobs/{jobDocId}/client-uploads/ and
-// CompanyCam photos are referenced by URL (not stored here). Require auth for
-// all access and cap upload size; tighten per-path once query scoping lands
-// (see SECURITY.md).
+// Clients upload photos and documents for their own jobs under
+// jobs/{jobDocId}/client-uploads/. A client may write there when the job's
+// clientUids list them, staff may write there for any job, and every upload
+// there is an image or a PDF under 25 MB. Anyone signed in may read those
+// uploads. Every other path is for staff only. CompanyCam photos are
+// referenced by URL and are not stored here.
 
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
-                   && request.resource.size < 25 * 1024 * 1024;
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Role comes from a custom claim when present, otherwise the users doc in
+    // Firestore, the same fallback as userRole() in firestore.rules.
+    function userRole() {
+      return ('role' in request.auth.token)
+        ? request.auth.token.role
+        : firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isStaff() {
+      return signedIn() && userRole() in ['owner', 'internal'];
+    }
+
+    // Whether the job with this document id lists the signed in user in its
+    // clientUids.
+    function listedOnJob(jobDocId) {
+      return request.auth.uid in firestore.get(/databases/(default)/documents/jobs/$(jobDocId)).data.clientUids;
+    }
+
+    function isUnder25MB() {
+      return request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // An image or a PDF under 25 MB.
+    function isAllowedUpload() {
+      return isUnder25MB()
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType.matches('application/pdf'));
+    }
+
+    match /jobs/{jobDocId}/client-uploads/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && (isStaff() || listedOnJob(jobDocId))
+        && isAllowedUpload();
+    }
+
+    // Every other path is for staff, with the 25 MB cap every upload has
+    // always had. Between them the two rules below match every path except a
+    // job's client uploads folder, so the rule above, with its type and size
+    // limits, is the only one that applies there.
+    match /{top}/{rest=**} {
+      allow read: if isStaff() && top != 'jobs';
+      allow write: if isStaff() && top != 'jobs' && isUnder25MB();
+    }
+
+    match /jobs/{jobDocId}/{folder}/{rest=**} {
+      allow read: if isStaff() && folder != 'client-uploads';
+      allow write: if isStaff() && folder != 'client-uploads' && isUnder25MB();
     }
   }
 }
