@@ -53,6 +53,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "espree": "^10.4.0",
     "firebase-admin": "^12.7.0",
     "firebase-tools": "^14.27.0",
     "globals": "^17.4.0",
