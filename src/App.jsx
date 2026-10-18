@@ -3740,7 +3740,12 @@ export default function P2DashboardV4() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
-        setUser(null); setRole(null); setAuthLoading(false)
+        // Nobody is signed in, whether the person chose Sign out or the session
+        // ended some other way (another tab, access revoked), so nothing of the
+        // last person may carry over to the next. A sign in sets all of this again
+        // except the accepted terms, which only a builder's terms gate sets.
+        setUser(null); setRole(null); setUserName(''); setClientName(''); setClientJobIds([])
+        setTermsAccepted(false); setAuthLoading(false)
         return
       }
       // Custom claims first; the users doc fills in whatever claims lack.
@@ -3834,10 +3839,12 @@ export default function P2DashboardV4() {
     return <TermsGate tenantId={tenantId} tenantName={tenant?.name} onAccept={() => setTermsAccepted(true)} />
   }
 
-  // Each signed in provider is keyed by who is signed in, in what role, for which
-  // tenant, so a different user, role or tenant gets a new provider whose hooks
-  // subscribe again.
-  const dataKey = `${user.uid}:${role}:${tenantId}`
+  // Each signed in provider is keyed by who is signed in and in what role, so a
+  // different user or role gets a new provider whose hooks subscribe again. The
+  // tenant is left out on purpose: internal staff switch it from the sidebar, and
+  // the provider scopes what it shows by it without new subscriptions, so the
+  // dashboard and the page they have open must stay as they are.
+  const dataKey = `${user.uid}:${role}`
 
   if (role === 'client') {
     return (

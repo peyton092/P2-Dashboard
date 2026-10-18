@@ -233,30 +233,65 @@ describe('data subscriptions and sign in', () => {
   })
 })
 
+// Ticks the box and accepts; the builder portal is on screen once its Sign out button is.
+async function acceptTerms() {
+  fireEvent.click(await screen.findByText(/I have read and agree/))
+  fireEvent.click(screen.getByRole('button', { name: 'Accept & Enter Portal' }))
+  await screen.findByRole('button', { name: 'Sign out' }, { timeout: 10000 })
+}
+const termsGate = () => screen.findByRole('button', { name: 'Accept & Enter Portal' })
+
 describe('data subscriptions and the builder terms gate', () => {
   it('starts nothing while the terms are shown, and subscribes once they are accepted', async () => {
     await openSignedOut()
     await authChanges(BUILDER)
-    const accept = await screen.findByRole('button', { name: 'Accept & Enter Portal' })
+    await termsGate()
     expect(counter.jobs).toBe(0)
 
-    fireEvent.click(screen.getByText(/I have read and agree/))
-    fireEvent.click(accept)
-    expect(await screen.findByRole('button', { name: 'Sign out' }, { timeout: 10000 })).toBeTruthy()
+    await acceptTerms()
     expect(screen.queryByRole('button', { name: 'Accept & Enter Portal' })).toBeNull()
     expect(counter.jobs).toBe(1)
   })
+
+  it('shows the terms to a builder who signs in after an owner session ended', async () => {
+    await openSignedOut()
+    await authChanges(OWNER)
+    await dashboardShown()
+
+    await authChanges(null)
+    await authChanges(BUILDER)
+    await termsGate()
+    expect(running.jobs).toBe(0)
+  })
+
+  // The Sign out button clears the accepted flag itself. A session can also end
+  // without it (signed out in another tab, access revoked), and then Firebase
+  // only reports that nobody is signed in.
+  it.each([
+    ['the same builder', BUILDER],
+    ['another builder', signedIn('builder2', 'builder', 'qbs')],
+  ])('shows the terms again to %s who signs in after a session that ended without Sign out', async (_who, next) => {
+    await openSignedOut()
+    await authChanges(BUILDER)
+    await termsGate()
+    await acceptTerms()
+    expect(counter.jobs).toBe(1)
+
+    await authChanges(null)
+    await authChanges(next)
+    await termsGate()
+    expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull()
+    expect(running.jobs).toBe(0)
+  })
 })
 
-// The provider is keyed by who is signed in, in what role, for which tenant, so
-// a change in any of the three starts new subscriptions and no change does not.
+// The provider is keyed by who is signed in and in what role, so a different user
+// or role starts new subscriptions. The tenant is not part of the key (see below).
 describe('what makes the data provider start over', () => {
   it.each([
-    ['a different user with the same role and tenant', signedIn('owner1', 'owner'), signedIn('owner2', 'owner'), 2],
-    ['the same user in a different role', signedIn('owner1', 'owner'), signedIn('owner1', 'internal'), 2],
-    ['the same user and role in a different tenant', signedIn('staff1', 'internal'), signedIn('staff1', 'internal', 'qbs'), 2],
-    ['the same user, role and tenant reported again', signedIn('owner1', 'owner'), signedIn('owner1', 'owner'), 1],
-  ])('%s', async (_label, first, second, subscriptions) => {
+    ['a different user with the same role', signedIn('owner1', 'owner'), signedIn('owner2', 'owner')],
+    ['the same user in a different role', signedIn('owner1', 'owner'), signedIn('owner1', 'internal')],
+  ])('%s', async (_label, first, second) => {
     await openSignedOut()
     await authChanges(first)
     await dashboardShown()
@@ -264,7 +299,7 @@ describe('what makes the data provider start over', () => {
 
     await authChanges(second)
     await dashboardShown()
-    expect(counter.jobs).toBe(subscriptions)
+    expect(counter.jobs).toBe(2)
     expect(running.jobs).toBe(1)
   })
 
@@ -277,6 +312,48 @@ describe('what makes the data provider start over', () => {
     await authChanges(signedIn('client2', 'client', 'p2-core', ['QBS-002']))
     await clientPortalShown()
     expect(counter.jobs).toBe(2)
+    expect(running.jobs).toBe(1)
+  })
+})
+
+// The provider takes the tenant as a prop and scopes what it shows by it in
+// JavaScript, so a new tenant needs no new subscriptions, and starting over for
+// it would throw away the page the person has open.
+describe('what leaves the data provider as it is', () => {
+  it.each([
+    ['the same user, role and tenant reported again', signedIn('owner1', 'owner'), signedIn('owner1', 'owner')],
+    ['the same user and role with another tenant', signedIn('staff1', 'internal'), signedIn('staff1', 'internal', 'qbs')],
+  ])('%s', async (_label, first, second) => {
+    await openSignedOut()
+    await authChanges(first)
+    await dashboardShown()
+    expect(counter.jobs).toBe(1)
+
+    await authChanges(second)
+    await dashboardShown()
+    expect(counter.jobs).toBe(1)
+    expect(running.jobs).toBe(1)
+  })
+
+  it('keeps the open page and its subscriptions when internal staff switch workspace in the sidebar', async () => {
+    await openSignedOut()
+    await authChanges(signedIn('staff1', 'internal'))
+    await dashboardShown()
+    await act(async () => { window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'jobs' } })) })
+    await waitFor(() => expect(firstPage().textContent).toMatch(/^Job Status/))
+
+    // The Workspace selector is only shown to internal staff. A real pointer
+    // moves over an option before it clicks, and the option ignores a click until then.
+    const workspace = () => document.querySelector('aside[aria-label="Primary"] [role="combobox"]')
+    expect(workspace().textContent).toContain('p2-core')
+    await act(async () => { fireEvent.mouseDown(workspace()) })
+    const option = await screen.findByRole('option', { name: 'QBS Builder Portal' })
+    await act(async () => { fireEvent.mouseMove(option) })
+    await act(async () => { fireEvent.click(option) })
+
+    await waitFor(() => expect(workspace().textContent).toContain('qbs'))
+    expect(firstPage().textContent).toMatch(/^Job Status/)
+    expect(counter.jobs).toBe(1)
     expect(running.jobs).toBe(1)
   })
 })
