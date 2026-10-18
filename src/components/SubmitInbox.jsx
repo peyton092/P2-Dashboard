@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useData } from '../use-data'
 import { addSubmit, updateSubmit, useSubmitReplies, addSubmitReply } from '../hooks/useFirestore'
+import { useMutation } from '../hooks/useMutation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -16,12 +17,13 @@ import { PageHeader } from './shared'
 
 export default function SubmitInbox() {
   const { submits } = useData()
+  const { run: runSend, busy: submitting } = useMutation()
+  const { run: runReply, busy: replying } = useMutation()
+  const { run: runStatus } = useMutation()
   const [view, setView] = useState('inbox')
   const [selectedSubmitId, setSelectedSubmitId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
-  const [submitting, setSubmitting] = useState(false)
   const [replyText, setReplyText] = useState('')
-  const [replying, setReplying] = useState(false)
 
   const selectedSubmit = submits.find(s => s._docId === selectedSubmitId) || null
   const { replies } = useSubmitReplies(selectedSubmit?._docId)
@@ -33,33 +35,43 @@ export default function SubmitInbox() {
 
   const handleNewSubmit = async () => {
     if (!form.subject || !form.body) return
-    setSubmitting(true)
-    await addSubmit({
+    const { ok } = await runSend(() => addSubmit({
       subject: form.subject,
       category: form.category,
       priority: form.priority,
       body: form.body,
       portal: form.portal,
       status: 'Open',
+    }), {
+      success: 'Submit created.',
+      error: 'Could not create the submit. Try again.',
     })
-    setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
-    setSubmitting(false)
-    setView('inbox')
+    // A refused submit leaves the form with what was typed, so it can be sent again.
+    if (ok) {
+      setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
+      setView('inbox')
+    }
   }
 
+  // A reply is two writes: the reply, and then moving an open submit to In Progress. The
+  // box is cleared once the reply is in, and the second write says so on its own if it fails.
   const handleReply = async () => {
     if (!replyText.trim() || !selectedSubmit?._docId) return
-    setReplying(true)
-    await addSubmitReply(selectedSubmit._docId, {
+    const { ok } = await runReply(() => addSubmitReply(selectedSubmit._docId, {
       body: replyText,
       author: 'P2 Team',
       authorRole: 'internal',
+    }), {
+      success: 'Reply sent.',
+      error: 'Could not send the reply. Try again.',
     })
-    if (selectedSubmit.status === 'Open') {
-      await updateSubmit(selectedSubmit._docId, { status: 'In Progress' })
-    }
+    if (!ok) return
     setReplyText('')
-    setReplying(false)
+    if (selectedSubmit.status === 'Open') {
+      await runReply(() => updateSubmit(selectedSubmit._docId, { status: 'In Progress' }), {
+        error: 'The reply was sent, but the submit did not move to In Progress.',
+      })
+    }
   }
 
   if (view === 'thread' && selectedSubmit) {
@@ -82,7 +94,10 @@ export default function SubmitInbox() {
           </div>
           <Select
             value={selectedSubmit.status || 'Open'}
-            onValueChange={v => selectedSubmit._docId && updateSubmit(selectedSubmit._docId, { status: v })}>
+            onValueChange={v => selectedSubmit._docId && runStatus(() => updateSubmit(selectedSubmit._docId, { status: v }), {
+              success: `Status set to ${v.toLowerCase()}.`,
+              error: 'Could not change the status. Try again.',
+            })}>
             <SelectTrigger
               className="h-auto py-1 px-3 text-xs font-bold border rounded-full w-auto gap-1 shrink-0"
               style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}>

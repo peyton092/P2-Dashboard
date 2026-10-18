@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
 import { generateAlerts, ALERT_TYPE_LABEL } from '../agent/alerts'
 import { updateAgentAlert, addAgentAlert } from '../hooks/useFirestore'
+import { useMutation } from '../hooks/useMutation'
+import { useConfirm } from '../hooks/useConfirm'
 import { ZONES } from '../agent/zones'
 import {
   PageHeader,
@@ -135,7 +137,9 @@ export default function AlertsPage() {
   const { jobs = [], extras = [], agentAlerts = [], loading } = useData()
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [rescanning, setRescanning] = useState(false)
+  const { run } = useMutation()
+  const { run: runScan, busy: rescanning } = useMutation()
+  const { ask, dialog } = useConfirm()
 
   // Merge Firestore alerts + client-generated alerts. Firestore is
   // authoritative for lifecycle; client-only alerts are added with
@@ -215,7 +219,7 @@ export default function AlertsPage() {
 
   const hasActiveFilters = filter !== 'all' || search.trim() !== ''
 
-  // ── Lifecycle mutations (preserved verbatim from prior implementation) ────
+  // ── Lifecycle mutations ────────────────────────────────────────────────────
   async function applyAction(alert, newStatus, extra = {}) {
     const patch = { status: newStatus, ...extra }
     if (alert._docId) {
@@ -224,24 +228,47 @@ export default function AlertsPage() {
       await addAgentAlert({ ...alert, ...patch })
     }
   }
+  // Resolving and dismissing each take the alert out of the queue, so they are asked about
+  // first. Firestore applies the write on the screen at once, so the question closes when
+  // it is answered (instant), and a refusal is told by the toast alone.
   function handleResolve(alert) {
-    applyAction(alert, 'resolved', { resolvedAt: new Date().toISOString() })
+    ask({
+      title: 'Resolve this alert?',
+      body: 'The alert is marked resolved and moves to the Resolved filter.',
+      confirmLabel: 'Resolve',
+      instant: true,
+      onConfirm: () => run(() => applyAction(alert, 'resolved', { resolvedAt: new Date().toISOString() }), {
+        success: 'Alert resolved.',
+        error: 'Could not resolve the alert. Try again.',
+      }),
+    })
   }
   function handleSnooze(alert) {
-    applyAction(alert, 'snoozed', { snoozeUntil: new Date(Date.now() + 86400000).toISOString() })
+    run(() => applyAction(alert, 'snoozed', { snoozeUntil: new Date(Date.now() + 86400000).toISOString() }), {
+      success: 'Alert snoozed for 24 hours.',
+      error: 'Could not snooze the alert. Try again.',
+    })
   }
   function handleDismiss(alert) {
-    applyAction(alert, 'dismissed')
+    ask({
+      title: 'Dismiss this alert?',
+      body: 'The alert leaves the queue. A re-scan brings it back if the problem is still there.',
+      confirmLabel: 'Dismiss',
+      tone: 'critical',
+      instant: true,
+      onConfirm: () => run(() => applyAction(alert, 'dismissed'), {
+        success: 'Alert dismissed.',
+        error: 'Could not dismiss the alert. Try again.',
+      }),
+    })
   }
 
-  async function handleRescan() {
-    setRescanning(true)
-    try {
-      const fresh = generateAlerts(jobs, extras)
-      await Promise.all(fresh.map(a => addAgentAlert({ ...a, status: a.status || 'open' })))
-    } finally {
-      setRescanning(false)
-    }
+  function handleRescan() {
+    const fresh = generateAlerts(jobs, extras)
+    return runScan(() => Promise.all(fresh.map(a => addAgentAlert({ ...a, status: a.status || 'open' }))), {
+      success: `Scan finished. ${fresh.length} alert${fresh.length === 1 ? '' : 's'} refreshed.`,
+      error: 'Could not scan the jobs. Try again.',
+    })
   }
 
   // ── Loading branch ─────────────────────────────────────────────────────────
@@ -382,6 +409,7 @@ export default function AlertsPage() {
           )}
         </div>
       )}
+      {dialog}
     </div>
   )
 }
