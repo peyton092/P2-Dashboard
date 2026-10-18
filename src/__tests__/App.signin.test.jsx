@@ -165,6 +165,14 @@ const dashboardShown = () => waitFor(() => {
 }, { timeout: 10000 })
 const clientPortalShown = () => screen.findByText('Client Portal', {}, { timeout: 10000 })
 
+// The data hooks subscribe in an effect, and React runs that effect after the commit
+// that put the screen on screen, which on a busy runner is a task later. A count that
+// a test reads the moment the screen shows up can be a render behind, so a count is
+// waited for and not read once. The same goes for subscriptions that end: a cleanup
+// runs after the unmount. The wait has the timeout the screens' own waits have, and
+// every expectation inside it is the one the test always made.
+const settled = (check) => waitFor(check, { timeout: 10000 })
+
 describe('data subscriptions and sign in', () => {
   it('starts no subscription while nobody is signed in', async () => {
     await openSignedOut()
@@ -179,20 +187,24 @@ describe('data subscriptions and sign in', () => {
     probe.reset()
     await authChanges(OWNER)
     await dashboardShown()
-    for (const name of probe.names) expect(counter[name], name).toBe(1)
-    expect(running.jobs).toBe(1)
+    await settled(() => {
+      for (const name of probe.names) expect(counter[name], name).toBe(1)
+      expect(running.jobs).toBe(1)
+    })
   })
 
   it('starts the subscriptions again when a different user signs in without a reload', async () => {
     await openSignedOut()
     await authChanges(OWNER)
     await dashboardShown()
-    expect(counter.jobs).toBe(1)
+    await settled(() => expect(counter.jobs).toBe(1))
 
     await authChanges(CLIENT)
     await clientPortalShown()
-    expect(counter.jobs).toBe(2)
-    expect(running.jobs).toBe(1)
+    await settled(() => {
+      expect(counter.jobs).toBe(2)
+      expect(running.jobs).toBe(1)
+    })
   })
 
   it.each([
@@ -205,16 +217,20 @@ describe('data subscriptions and sign in', () => {
     await openSignedOut()
     await authChanges(OWNER)
     await dashboardShown()
-    expect(running.jobs).toBe(1)
+    await settled(() => expect(running.jobs).toBe(1))
 
     await signOut()
     expect(screen.getByRole('button', { name: 'Sign In' })).toBeTruthy()
-    for (const name of probe.names) expect(running[name], name).toBe(0)
+    await settled(() => {
+      for (const name of probe.names) expect(running[name], name).toBe(0)
+    })
 
     await authChanges(OWNER)
     await dashboardShown()
-    expect(counter.jobs).toBe(2)
-    expect(running.jobs).toBe(1)
+    await settled(() => {
+      expect(counter.jobs).toBe(2)
+      expect(running.jobs).toBe(1)
+    })
   })
 
   it('starts nothing for a signed in user who has no role', async () => {
@@ -256,7 +272,7 @@ describe('data subscriptions and sign in', () => {
     await authChanges(withClaims('staff1', {}))
     await dashboardShown()
     expect(mocks.getDoc).toHaveBeenCalledTimes(1)
-    expect(counter.jobs).toBe(1)
+    await settled(() => expect(counter.jobs).toBe(1))
   })
 })
 
@@ -277,7 +293,7 @@ describe('data subscriptions and the builder terms gate', () => {
 
     await acceptTerms()
     expect(screen.queryByRole('button', { name: 'Accept & Enter Portal' })).toBeNull()
-    expect(counter.jobs).toBe(1)
+    await settled(() => expect(counter.jobs).toBe(1))
   })
 
   it('shows the terms to a builder who signs in after an owner session ended', async () => {
@@ -288,7 +304,7 @@ describe('data subscriptions and the builder terms gate', () => {
     await authChanges(null)
     await authChanges(BUILDER)
     await termsGate()
-    expect(running.jobs).toBe(0)
+    await settled(() => expect(running.jobs).toBe(0))
   })
 
   // The Sign out button clears the accepted flag itself. A session can also end
@@ -302,13 +318,13 @@ describe('data subscriptions and the builder terms gate', () => {
     await authChanges(BUILDER)
     await termsGate()
     await acceptTerms()
-    expect(counter.jobs).toBe(1)
+    await settled(() => expect(counter.jobs).toBe(1))
 
     await authChanges(null)
     await authChanges(next)
     await termsGate()
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull()
-    expect(running.jobs).toBe(0)
+    await settled(() => expect(running.jobs).toBe(0))
   })
 })
 
@@ -370,24 +386,28 @@ describe('what makes the data provider start over', () => {
     await openSignedOut()
     await authChanges(first)
     await dashboardShown()
-    expect(counter.jobs).toBe(1)
+    await settled(() => expect(counter.jobs).toBe(1))
 
     await authChanges(second)
     await dashboardShown()
-    expect(counter.jobs).toBe(2)
-    expect(running.jobs).toBe(1)
+    await settled(() => {
+      expect(counter.jobs).toBe(2)
+      expect(running.jobs).toBe(1)
+    })
   })
 
   it('starts over for a different client too', async () => {
     await openSignedOut()
     await authChanges(CLIENT)
     await clientPortalShown()
-    expect(counter.jobs).toBe(1)
+    await settled(() => expect(counter.jobs).toBe(1))
 
     await authChanges(signedIn('client2', 'client', 'p2-core', ['QBS-002']))
     await clientPortalShown()
-    expect(counter.jobs).toBe(2)
-    expect(running.jobs).toBe(1)
+    await settled(() => {
+      expect(counter.jobs).toBe(2)
+      expect(running.jobs).toBe(1)
+    })
   })
 })
 
@@ -402,7 +422,7 @@ describe('what leaves the data provider as it is', () => {
     await openSignedOut()
     await authChanges(first)
     await dashboardShown()
-    expect(counter.jobs).toBe(1)
+    await settled(() => expect(counter.jobs).toBe(1))
 
     await authChanges(second)
     await dashboardShown()
@@ -414,6 +434,7 @@ describe('what leaves the data provider as it is', () => {
     await openSignedOut()
     await authChanges(signedIn('staff1', 'internal'))
     await dashboardShown()
+    await settled(() => expect(counter.jobs).toBe(1))
     await act(async () => { window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'jobs' } })) })
     await waitFor(() => expect(firstPage().textContent).toMatch(/^Job Status/))
 
