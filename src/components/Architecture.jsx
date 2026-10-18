@@ -33,11 +33,13 @@ export default function Architecture() {
 
   // Chips list the fields a document carries. For config, qb_config and cc_config
   // they are the documents themselves, app_settings lists the fields of its
-  // google_review document, and permits and urgent_items show the author stamp only.
+  // google_review document, permits shows the author stamp only (createdBy,
+  // createdByEmail and createdAt), and urgent_items shows resolved, createdBy and
+  // createdAt.
   const collections = [
     { name: 'jobs', desc: 'Job records. Staff write. A builder reads the jobs of their tenant and a client the jobs that list them.', fields: ['id', 'tenantId', 'clientUids', 'address', 'client', 'status', 'pm', 'billingStatus', 'permits', 'insp'] },
     { name: 'jobs/{jobId}/files', desc: 'Photo and document records, read with their job. Staff write, and a client listed on the job may add their own upload.', fields: ['name', 'url', 'type', 'source', 'uploadedBy', 'createdBy', 'createdAt'] },
-    { name: 'extras', desc: 'Change orders. Staff write drafts, which are never stamped (the backfill deletes an older stamp), and sending, approving and rejecting go through callables. Read by staff, and once sent by the builders of the tenant and the clients of the job.', fields: ['coNumber', 'job', 'date', 'status', 'total', 'tenantId', 'clientUids', 'approvedBy', 'rejectedBy', 'rejectNotes'] },
+    { name: 'extras', desc: 'Change orders. Staff write drafts, which are never stamped (a scope one carries is deleted), and sending, approving and rejecting go through callables. Read by staff, and once sent by the builders of the tenant and the clients of the job.', fields: ['coNumber', 'job', 'date', 'status', 'total', 'tenantId', 'clientUids', 'approvedBy', 'rejectedBy', 'rejectNotes'] },
     { name: 'notifications', desc: 'Alerts written by the Cloud Functions and by staff. Anyone who may read one may mark it read.', fields: ['type', 'msg', 'jobId', 'tenantId', 'clientUids', 'read', 'createdBy', 'createdAt'] },
     { name: 'submits', desc: 'Questions, RFIs and issues. Each is created as the person signed in, and anyone who may read one may move its status.', fields: ['subject', 'category', 'priority', 'body', 'jobId', 'status', 'tenantId', 'clientUids', 'createdBy'] },
     { name: 'submits/{submitId}/replies', desc: 'The thread under a submission. Each reply is written as the person signed in, under their own role.', fields: ['body', 'author', 'authorRole', 'createdBy', 'createdAt'] },
@@ -87,7 +89,7 @@ export default function Architecture() {
     { name: 'onNotificationCreated', kind: 'Trigger', module: 'push.js', when: 'Firestore create on notifications/{id}', desc: 'Sends a push to the devices of the people the notification is in scope for, and prunes dead tokens.' },
     { name: 'onUserWritten', kind: 'Trigger', module: 'users.js', when: 'Firestore write on users/{uid}', desc: 'Copies a users document into the Auth claims, links a client to the jobs they list, and revokes refresh tokens when a role changes.' },
     { name: 'onJobWritten', kind: 'Trigger', module: 'scope-sync.js', when: 'Firestore write on jobs/{id}', desc: 'When the tenant or clients of a job change, stamps the new scope onto its change orders, submissions and notifications. A draft change order is left as it is.' },
-    { name: 'onExtraWritten', kind: 'Trigger', module: 'scope-sync.js', when: 'Firestore write on extras/{id}', desc: 'Gives a change order the scope of its job when it lacks it. A draft is left as it is until it is sent.' },
+    { name: 'onExtraWritten', kind: 'Trigger', module: 'scope-sync.js', when: 'Firestore write on extras/{id}', desc: 'Gives a change order the scope of its job when it lacks it. A draft is not stamped until it is sent, and a scope it carries is deleted.' },
     { name: 'onSubmitWritten', kind: 'Trigger', module: 'scope-sync.js', when: 'Firestore write on submits/{id}', desc: 'Gives a submission the scope of its job when it lacks it. A submission a builder created keeps its own tenant when its job is in another, and lists no clients.' },
     { name: 'ccSyncPhotosScheduled', kind: 'Scheduled', module: 'companycam-sync.js', when: 'Every 6 hours', desc: 'Runs the CompanyCam photo sync when CompanyCam is connected.' },
   ]
@@ -100,7 +102,7 @@ export default function Architecture() {
     { title: 'Reads', text: 'Staff read every collection. A builder reads the documents of their tenant, and a client the documents whose clientUids list them. The portals query with exactly that filter, so Firestore can prove each query stays in scope.' },
     { title: 'Portal writes', text: 'Builders and clients may mark a notification read, create a submission with their own scope, move its status and reply as themselves. A client listed on a job may also record their own upload. They also register their own push token, accept the Terms for themselves and report their own errors. Everything else is staff only, or goes through a callable.' },
     { title: 'Staff only', text: 'qb_config, cc_config, config, agent_alerts, crew_scores, app_settings, materials, subs, permits, daily_reports, urgent_items, history and supplier_invoices.' },
-    { title: 'Storage', text: 'Client uploads sit under jobs/{jobDocId}/client-uploads/: a JPEG, PNG, HEIC, WebP or PDF under 25 MB, written by staff or by a client the job lists, and read by any signed in user. Every other path is staff only.' },
+    { title: 'Storage', text: 'Client uploads sit under jobs/{jobDocId}/client-uploads/: a JPEG, PNG, HEIC, WebP or PDF under 25 MB, written by staff or by a client the job lists, and listable by any signed in account that knows the job id. Every other path is staff only.' },
   ]
 
   const underParent = collections.filter(c => c.name.includes('/')).length

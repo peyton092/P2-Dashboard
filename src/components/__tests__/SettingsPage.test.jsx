@@ -174,8 +174,39 @@ describe('the Backfill access scopes button', () => {
     expect(one.description).toMatch(/ 1 document has no matching job and was left alone\.$/)
   })
 
+  it('adds how many drafts stay staff only when there were any', async () => {
+    const many = await run({ ...RESULT, drafts: 3 })
+    expect(many.description).toBe(
+      'Stamped 44 jobs, 12 change orders, 3 submissions and 8 notifications. Claims set for 5 users. 3 drafts stay staff only until they are sent.',
+    )
+    cleanup()
+    mocks.toast.mockReset()
+    const one = await run({ ...RESULT, drafts: 1 })
+    expect(one.description).toBe(
+      'Stamped 44 jobs, 12 change orders, 3 submissions and 8 notifications. Claims set for 5 users. 1 draft stays staff only until it is sent.',
+    )
+  })
+
+  it.each([[0], [undefined], [null], ['3'], [NaN]])('says nothing about drafts when the count is %p', async (drafts) => {
+    const toast = await run({ ...RESULT, drafts })
+    expect(toast.description).toBe('Stamped 44 jobs, 12 change orders, 3 submissions and 8 notifications. Claims set for 5 users.')
+    expect(toast.description).not.toMatch(/draft/)
+  })
+
+  it('puts the sentence about drafts after the one about documents left alone', async () => {
+    const toast = await run({ ...RESULT, skipped: 2, drafts: 4 })
+    expect(toast.description).toBe(
+      'Stamped 44 jobs, 12 change orders, 3 submissions and 8 notifications. Claims set for 5 users. 2 documents have no matching job and were left alone. 4 drafts stay staff only until they are sent.',
+    )
+  })
+
+  it('does not count the drafts whose scope was deleted among the ones that stay staff only until sent', async () => {
+    const toast = await run({ ...RESULT, draftsCleared: 6 })
+    expect(toast.description).not.toMatch(/draft/)
+  })
+
   it('has no dash in any toast it shows', async () => {
-    for (const result of [RESULT, { ...RESULT, skipped: 3 }, { ...RESULT, jobs: 1, skipped: 1 }]) {
+    for (const result of [RESULT, { ...RESULT, skipped: 3 }, { ...RESULT, jobs: 1, skipped: 1 }, { ...RESULT, drafts: 1 }, { ...RESULT, skipped: 2, drafts: 5 }]) {
       cleanup()
       mocks.toast.mockReset()
       const toast = await run(result)

@@ -39,18 +39,23 @@ const TOGGLE_DEFS = [
 const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 // What the access scopes backfill did, as the sentence the toast shows. A count the
-// result leaves out is shown as zero. Documents left alone are only mentioned when
-// there were some.
+// result leaves out is shown as zero. Documents left alone, and drafts that stay staff
+// only until they are sent, are only mentioned when there were some.
 function backfillSummary(result) {
   const n = key => (Number.isFinite(result?.[key]) ? result[key] : 0)
   const skipped = n('skipped')
+  const drafts = n('drafts')
   const left = skipped === 1
     ? '1 document has no matching job and was left alone.'
     : `${skipped} documents have no matching job and were left alone.`
+  const staffOnly = drafts === 1
+    ? '1 draft stays staff only until it is sent.'
+    : `${drafts} drafts stay staff only until they are sent.`
   return [
     `Stamped ${count(n('jobs'), 'job')}, ${count(n('extras'), 'change order')}, ${count(n('submits'), 'submission')} and ${count(n('notifications'), 'notification')}.`,
     `Claims set for ${count(n('users'), 'user')}.`,
     skipped > 0 ? left : '',
+    drafts > 0 ? staffOnly : '',
   ].filter(Boolean).join(' ')
 }
 

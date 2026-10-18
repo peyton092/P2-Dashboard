@@ -75,6 +75,12 @@ export function staysInTenant(doc, job, creatorRole) {
 // tenant) has them emptied, because a builder creates a submission with none.
 export const listsClients = (doc) => Array.isArray(doc?.clientUids) && doc.clientUids.length > 0
 
+// Whether a document has a tenantId or a clientUids field at all, whatever either holds.
+// A draft change order has not been sent, so it is meant to carry neither: one that does
+// (it was stamped before it became a draft, say) is readable by the tenant and clients it
+// names, and has both fields deleted. Only the fields count, not the prototype's.
+export const carriesScope = (doc) => isDocument(doc) && (Object.hasOwn(doc, 'tenantId') || Object.hasOwn(doc, 'clientUids'))
+
 // The tenant a job is stored with, or null when it has none. Unlike scopeForJob
 // this does not fill in the qbs default: here the question is whether the stored
 // value changed, and a job that gets its tenantId written down has changed.

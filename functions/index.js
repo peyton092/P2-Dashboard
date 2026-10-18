@@ -23,7 +23,7 @@
 //    roles.js              VALID_ROLES, isStaff, isOwner, claimsOf, mergeUserDoc, wouldLowerStaff (pure)
 //    scope.js              scopeForJob, canReadJob, canActOnExtra, nonEmptyString (pure)
 //    scope-sync.js         scopePatchFor, needsRestamp, scopeChanged, jobIdOf, clientLinks,
-//                          creatorOf, creatorDecides, staysInTenant, listsClients (pure)
+//                          creatorOf, creatorDecides, staysInTenant, listsClients, carriesScope (pure)
 //    batches.js            chunks, JOB_ID_CHUNK, BATCH_SIZE (pure)
 //    auth-claims.js        currentClaimRole (reads one account's custom claims)
 //    push-targets.js       targetTokens, groupTokens (pure)
@@ -116,7 +116,8 @@
 //                     when it lacks them or carries another job scope. A document that
 //                     already carries it, one that names no job and one whose job is
 //                     missing are not written, so none of these can fire itself.
-//                     None of the three stamps a draft change order, and a submission
+//                     None of the three stamps a draft change order, and onExtraWritten
+//                     deletes the tenantId and clientUids a draft carries. A submission
 //                     a builder created keeps its own tenant when its job is in
 //                     another, with its clientUids emptied once if it lists any.
 //    backfillScopes   Owner only callable. Takes no data. Sets the Auth claims of every
@@ -126,8 +127,9 @@
 //                     list it, from a scan of the users taken after the claims), then stamps
 //                     the change orders, submissions and notifications, and deletes the
 //                     scope a draft change order carries. Returns { ok: true, users, jobs,
-//                     extras, submits, notifications, skipped, draftsCleared }. Safe to run
-//                     again.
+//                     extras, submits, notifications, skipped, draftsCleared, drafts }, where
+//                     draftsCleared counts the drafts that carried a scope and drafts those
+//                     that carried none. Safe to run again.
 //
 //  Required Firebase secrets (set with `firebase functions:secrets:set`):
 //    QB_CLIENT_ID       — Intuit app's Client ID
