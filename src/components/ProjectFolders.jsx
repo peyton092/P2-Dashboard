@@ -14,17 +14,7 @@ import {
   FolderIcon, FileTextIcon, ClipboardIcon, DownloadIcon, UploadCloudIcon, ImageIcon,
 } from 'lucide-react'
 import { BRAND, withAlpha } from '@/lib/tokens'
-
-function SectionHeader({ title, sub }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  )
-}
+import { SectionHeader } from './shared'
 
 export default function ProjectFolders() {
   const { jobs } = useData()
@@ -90,7 +80,7 @@ export default function ProjectFolders() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Project Folders" sub="Per-job file management — plans, photos, PDFs, notes" />
+      <SectionHeader title="Project Folders" description="File management for each job: plans, photos, PDFs and notes" />
 
       <Card className="border-white/10">
         <CardContent className="p-4 space-y-3">

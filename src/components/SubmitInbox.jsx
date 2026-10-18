@@ -12,18 +12,7 @@ import {
   ChevronLeftIcon, ChevronRightIcon, PlusIcon, SendIcon, MessageSquareIcon,
 } from 'lucide-react'
 import { BRAND, withAlpha } from '@/lib/tokens'
-
-function SectionHeader({ title, sub, action }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-      {action}
-    </div>
-  )
-}
+import { SectionHeader } from './shared'
 
 export default function SubmitInbox() {
   const { submits } = useData()
@@ -258,8 +247,8 @@ export default function SubmitInbox() {
     <div className="space-y-6">
       <SectionHeader
         title="Submit / Inbox"
-        sub={`${openCount} open · ${submits.length} total`}
-        action={
+        description={`${openCount} open · ${submits.length} total`}
+        actions={
           <Button style={{ backgroundColor: BRAND }} className="text-white gap-2" onClick={() => setView('new')}>
             <PlusIcon size={14} /> New Submit
           </Button>

@@ -248,9 +248,6 @@ const daysSince = (date) => {
 // ProgressBar, BillingStatusSelect, InlineStatusSelect and
 // InlinePhaseSelect moved to src/components/shared/* (Phase 19) and are imported
 // by name at the top of this file. Their words and menus are in src/lib/status.js.
-// The legacy local SectionHeader (used by Architecture + Permits) moved
-// alongside those tabs in Phase 20 — see src/components/Architecture.jsx
-// and src/components/Permits.jsx.
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
 

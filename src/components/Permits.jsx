@@ -4,25 +4,11 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useData } from '../use-data'
 import { updatePermit } from '../hooks/useFirestore'
-import { StatBand, StatusBadge, PermitBadge } from './shared'
+import { SectionHeader, StatBand, StatusBadge, PermitBadge } from './shared'
 import { BRAND, withAlpha } from '@/lib/tokens'
 import { PERMIT_STATUS, TRADE, statusColor, statusLabel } from '../lib/status'
 
-// Phase 20 — extracted from src/App.jsx. Behavior preserved exactly. The
-// local SectionHeader is intentionally inlined here (it differs from the
-// modern shared/headers SectionHeader and is only used by legacy tabs).
-
-function SectionHeader({ title, sub, action }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-      {action}
-    </div>
-  )
-}
+// Extracted from src/App.jsx in Phase 20. Behavior preserved exactly.
 
 // The statuses a person can pick for a permit, in the order of the vocabulary.
 const PERMIT_STATUSES = Object.keys(PERMIT_STATUS)
@@ -40,7 +26,7 @@ export default function Permits() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Permits" sub="Permit status across all active jobs and trades" />
+      <SectionHeader title="Permits" description="Permit status across all active jobs and trades" />
 
       <StatBand
         stats={[

@@ -2,29 +2,15 @@ import {
   DatabaseIcon, ServerIcon, ShieldIcon, CloudIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { StatBand } from './shared'
+import { SectionHeader, StatBand } from './shared'
 import { BRAND } from '@/lib/tokens'
 
-// Extracted from src/App.jsx in Phase 20. The local SectionHeader is inlined on
-// purpose: it differs from the modern shared/headers SectionHeader and only legacy
-// tabs use it.
+// Extracted from src/App.jsx in Phase 20.
 //
 // The collections, functions and rules below describe firestore.rules,
 // storage.rules and functions/index.js as deployed. __tests__/Architecture.test.jsx
 // reads index.js and fails when the list here and the exports there disagree, so a
 // function added there has to be listed here too. Copy has no dashes.
-
-function SectionHeader({ title, sub, action }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-      {action}
-    </div>
-  )
-}
 
 export default function Architecture() {
   // Roles are exactly these four, and staff means owner or internal.
@@ -110,7 +96,7 @@ export default function Architecture() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Architecture" sub="Firestore blueprint · Cloud Functions · Security rules" />
+      <SectionHeader title="Architecture" description="Firestore blueprint · Cloud Functions · Security rules" />
 
       <StatBand
         stats={[
