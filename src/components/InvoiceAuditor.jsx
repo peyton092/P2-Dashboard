@@ -512,14 +512,12 @@ export default function InvoiceAuditor() {
 
   if (showForm) {
     return (
-      <div className="max-w-5xl mx-auto">
-        <InvoiceForm
-          jobs={jobs}
-          allInvoices={invoices}
-          materials={materials}
-          onClose={() => setShowForm(false)}
-        />
-      </div>
+      <InvoiceForm
+        jobs={jobs}
+        allInvoices={invoices}
+        materials={materials}
+        onClose={() => setShowForm(false)}
+      />
     )
   }
 

@@ -143,7 +143,7 @@ export default function Analytics() {
   // renders (an early return above the useMemo calls would change hook count).
   if (loading && jobs.length === 0) {
     return (
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-9 h-9 rounded-full border-2 animate-spin"
             style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
@@ -162,7 +162,7 @@ export default function Analytics() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight" style={{ color: BRAND }}>Analytics</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Portfolio overview across {totalJobs} jobs</p>
