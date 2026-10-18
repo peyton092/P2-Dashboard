@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils'
 import { AlertTriangleIcon, CheckCircleIcon, InboxIcon, RefreshCwIcon } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 export function EmptyState({
   Icon = InboxIcon,
@@ -11,7 +10,7 @@ export function EmptyState({
   tone = 'neutral',
   className = '',
 }) {
-  const accent = tone === 'success' ? '#22c55e' : O
+  const accent = tone === 'success' ? '#22c55e' : BRAND
   return (
     <div
       className={cn(
@@ -25,7 +24,7 @@ export function EmptyState({
         style={{
           width: 44,
           height: 44,
-          backgroundColor: accent + '22',
+          backgroundColor: withAlpha(accent, 0.13),
           color: accent,
         }}
       >
@@ -57,7 +56,7 @@ export function LoadingState({ label = 'Loading…', className = '' }) {
     <div className={cn('flex items-center justify-center gap-3 py-10', className)}>
       <span
         className="w-5 h-5 rounded-full border-2 animate-spin"
-        style={{ borderColor: O + '33', borderTopColor: O }}
+        style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }}
       />
       <p className="text-sm text-zinc-300">{label}</p>
     </div>

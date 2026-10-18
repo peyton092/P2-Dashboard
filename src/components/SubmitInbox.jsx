@@ -11,8 +11,7 @@ import {
 import {
   ChevronLeftIcon, ChevronRightIcon, PlusIcon, SendIcon, MessageSquareIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 function SectionHeader({ title, sub, action }) {
   return (
@@ -40,8 +39,8 @@ export default function SubmitInbox() {
 
   const CATEGORIES = ['RFI', 'Issue', 'Question', 'Change Order', 'Approval', 'Other']
   const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
-  const priorityColor = { Low: '#22c55e', Medium: '#eab308', High: O, Critical: '#ef4444' }
-  const statusColor = { Open: '#ef4444', 'In Progress': O, Resolved: '#22c55e' }
+  const priorityColor = { Low: '#22c55e', Medium: '#eab308', High: BRAND, Critical: '#ef4444' }
+  const statusColor = { Open: '#ef4444', 'In Progress': BRAND, Resolved: '#22c55e' }
 
   const handleNewSubmit = async () => {
     if (!form.subject || !form.body) return
@@ -97,7 +96,7 @@ export default function SubmitInbox() {
             onValueChange={v => selectedSubmit._docId && updateSubmit(selectedSubmit._docId, { status: v })}>
             <SelectTrigger
               className="h-auto py-1 px-3 text-xs font-bold border rounded-full w-auto gap-1 shrink-0"
-              style={{ backgroundColor: sc + '22', color: sc, borderColor: sc + '55' }}>
+              style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -113,7 +112,7 @@ export default function SubmitInbox() {
             <div className="flex items-start gap-3">
               <div
                 className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                style={{ backgroundColor: O + '33', color: O }}>
+                style={{ backgroundColor: withAlpha(BRAND, 0.2), color: BRAND }}>
                 {(selectedSubmit.portal || 'P2').slice(0, 2).toUpperCase()}
               </div>
               <div className="flex-1">
@@ -124,7 +123,7 @@ export default function SubmitInbox() {
                   </span>
                   <span
                     className="text-xs px-1.5 py-0.5 rounded-full ml-auto"
-                    style={{ backgroundColor: pc + '22', color: pc }}>
+                    style={{ backgroundColor: withAlpha(pc, 0.13), color: pc }}>
                     {selectedSubmit.priority}
                   </span>
                 </div>
@@ -169,7 +168,7 @@ export default function SubmitInbox() {
               onChange={e => setReplyText(e.target.value)}
             />
             <Button
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
               className="text-white gap-2"
               onClick={handleReply}
               disabled={replying || !replyText.trim()}>
@@ -190,7 +189,7 @@ export default function SubmitInbox() {
           </Button>
           <h2 className="text-xl font-bold">New Submit</h2>
         </div>
-        <Card className="border-white/10 max-w-2xl" style={{ borderColor: O + '33' }}>
+        <Card className="border-white/10 max-w-2xl" style={{ borderColor: withAlpha(BRAND, 0.2) }}>
           <CardContent className="p-6 space-y-4">
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Subject *</label>
@@ -242,7 +241,7 @@ export default function SubmitInbox() {
             </div>
             <Button
               className="w-full text-white"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
               onClick={handleNewSubmit}
               disabled={submitting || !form.subject || !form.body}>
               {submitting ? 'Submitting…' : 'Submit'}
@@ -261,7 +260,7 @@ export default function SubmitInbox() {
         title="Submit / Inbox"
         sub={`${openCount} open · ${submits.length} total`}
         action={
-          <Button style={{ backgroundColor: O }} className="text-white gap-2" onClick={() => setView('new')}>
+          <Button style={{ backgroundColor: BRAND }} className="text-white gap-2" onClick={() => setView('new')}>
             <PlusIcon size={14} /> New Submit
           </Button>
         }
@@ -271,7 +270,7 @@ export default function SubmitInbox() {
         <div className="text-center py-20 text-muted-foreground">
           <MessageSquareIcon size={48} className="mx-auto mb-4 opacity-20" />
           <p className="mb-4">No submits yet</p>
-          <Button className="text-white" style={{ backgroundColor: O }} onClick={() => setView('new')}>
+          <Button className="text-white" style={{ backgroundColor: BRAND }} onClick={() => setView('new')}>
             Create First Submit
           </Button>
         </div>
@@ -285,15 +284,15 @@ export default function SubmitInbox() {
                 key={s._docId}
                 className="flex items-start gap-4 p-4 rounded-xl border border-white/10 hover:bg-white/5 transition-colors cursor-pointer"
                 onClick={() => { setSelectedSubmitId(s._docId); setView('thread') }}>
-                <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: O + '22' }}>
-                  <MessageSquareIcon size={14} style={{ color: O }} />
+                <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: withAlpha(BRAND, 0.13) }}>
+                  <MessageSquareIcon size={14} style={{ color: BRAND }} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-medium text-sm">{s.subject}</span>
                     <span
                       className="text-xs px-1.5 py-0.5 rounded-full"
-                      style={{ backgroundColor: pc + '22', color: pc }}>
+                      style={{ backgroundColor: withAlpha(pc, 0.13), color: pc }}>
                       {s.priority}
                     </span>
                   </div>
@@ -309,7 +308,7 @@ export default function SubmitInbox() {
                 <div className="flex items-center gap-2 shrink-0">
                   <span
                     className="text-xs font-bold px-2 py-1 rounded-full"
-                    style={{ backgroundColor: sc + '22', color: sc }}>
+                    style={{ backgroundColor: withAlpha(sc, 0.13), color: sc }}>
                     {s.status || 'Open'}
                   </span>
                   <ChevronRightIcon size={14} className="text-muted-foreground" />

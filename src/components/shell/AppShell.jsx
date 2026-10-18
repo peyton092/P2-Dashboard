@@ -7,12 +7,11 @@ import { cn } from '@/lib/utils'
 //     {pageContent}
 //   </AppShell>
 export default function AppShell({ sidebar, mobileNav, children, className = '' }) {
-  // `text-foreground` is intentional: body sits outside the `.dark` scope,
-  // so anything that doesn't set its own color inherits the light theme's
-  // near-black foreground. Re-declaring inside `.dark` propagates the
-  // correct near-white foreground down the tree.
+  // The dark theme is on the document root (see index.html), so this shell
+  // does not set it. `text-foreground` stays so the shell names its own text
+  // color instead of relying on what body happens to set.
   return (
-    <div className={cn('dark flex h-screen bg-background text-foreground overflow-hidden', className)}>
+    <div className={cn('flex h-screen bg-background text-foreground overflow-hidden', className)}>
       {sidebar}
       <main
         className="flex-1 min-w-0 overflow-y-auto"

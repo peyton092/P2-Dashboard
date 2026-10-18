@@ -130,8 +130,7 @@ import { exportToCsv } from './lib/exportCsv'
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
 import MobileNav from './components/shell/MobileNav'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 const TENANTS = [
   { id: 'p2-core', name: 'P2 Internal',          slug: 'p2'     },
@@ -232,7 +231,7 @@ const MOBILE_MORE = [
 // src/components/shared/legacy-badges.jsx (Phase 19) and re-exported here
 // via the named imports at the top of this file.
 
-const tradeColor = { HVAC: '#3b82f6', Plumbing: '#06b6d4', Electrical: O }
+const tradeColor = { HVAC: '#3b82f6', Plumbing: '#06b6d4', Electrical: BRAND }
 
 const CREW_LIST = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 const TODAY = new Date()
@@ -319,13 +318,13 @@ function LoginScreen() {
   }
 
   return (
-    <div className="dark min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: O }}>
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: BRAND }}>
           <ZapIcon size={22} color="#fff" />
         </div>
         <div>
-          <p className="font-semibold text-2xl leading-none" style={{ color: O }}>P2</p>
+          <p className="font-semibold text-2xl leading-none" style={{ color: BRAND }}>P2</p>
           <p className="text-xs text-zinc-400 leading-tight">Electrical &amp; Mechanical</p>
         </div>
       </div>
@@ -333,7 +332,7 @@ function LoginScreen() {
       <Card className="w-80 border-white/10 bg-white/5">
         <CardHeader>
           <CardTitle className="text-sm flex items-center gap-2">
-            <LockIcon size={14} style={{ color: O }} /> Sign In
+            <LockIcon size={14} style={{ color: BRAND }} /> Sign In
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -366,14 +365,14 @@ function LoginScreen() {
             <Button
               type="submit"
               className="w-full text-white"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
               disabled={loading}>
               {loading ? 'Signing in…' : 'Sign In'}
             </Button>
             <button
               type="button"
               className="w-full text-center text-xs transition-colors"
-              style={{ color: O, opacity: resetLoading ? 0.5 : 1 }}
+              style={{ color: BRAND, opacity: resetLoading ? 0.5 : 1 }}
               disabled={resetLoading}
               onClick={handleForgotPassword}>
               Forgot Password?
@@ -487,11 +486,11 @@ export function CreateUserModal({ onClose }) {
     setLoading(false)
   }
 
-  // This renders outside AppShell, so it brings its own `dark` scope and
-  // foreground color; without them the text inherits the light theme's near
-  // black and cannot be read on the dark card.
+  // This renders outside AppShell. The dark theme comes from the document
+  // root (see index.html), and the overlay names its own foreground color so
+  // the text on the dark card never depends on what is behind the dialog.
   return (
-    <div className="dark fixed inset-0 bg-black/70 text-foreground flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/70 text-foreground flex items-center justify-center z-50 p-4">
       <Card
         role="dialog"
         aria-modal="true"
@@ -500,7 +499,7 @@ export function CreateUserModal({ onClose }) {
       >
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle id={`${formId}-title`} className="text-sm flex items-center gap-2">
-            <UsersIcon size={14} style={{ color: O }} aria-hidden="true" /> Create User Account
+            <UsersIcon size={14} style={{ color: BRAND }} aria-hidden="true" /> Create User Account
           </CardTitle>
           <button
             type="button"
@@ -583,7 +582,7 @@ export function CreateUserModal({ onClose }) {
             {error   && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
             {success && <p role="status" className="text-xs text-green-400 font-medium">{success}</p>}
             {warning && <p role="status" className="text-xs text-amber-400 font-medium">{warning}</p>}
-            <Button type="submit" className="w-full text-white" style={{ backgroundColor: O }} disabled={loading}>
+            <Button type="submit" className="w-full text-white" style={{ backgroundColor: BRAND }} disabled={loading}>
               {loading ? 'Creating…' : 'Create Account'}
             </Button>
           </form>
@@ -630,9 +629,9 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
   }
 
   return (
-    <div className="dark min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: O }}>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: BRAND }}>
           <ShieldIcon size={20} color="#fff" />
         </div>
         <div>
@@ -644,7 +643,7 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
       <Card className="w-full max-w-lg border-white/10 bg-white/5">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <FileTextIcon size={16} style={{ color: O }} /> Terms of Access · {version}
+            <FileTextIcon size={16} style={{ color: BRAND }} /> Terms of Access · {version}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -661,7 +660,7 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
 
           <div className="flex items-center gap-3 p-3 rounded-xl border border-white/10 cursor-pointer" onClick={() => setChecked(c => !c)}>
             <div className="w-5 h-5 rounded border flex items-center justify-center shrink-0"
-              style={{ borderColor: checked ? O : '#6b7280', backgroundColor: checked ? O : 'transparent' }}>
+              style={{ borderColor: checked ? BRAND : '#6b7280', backgroundColor: checked ? BRAND : 'transparent' }}>
               {checked && <CheckIcon size={12} color="#fff" />}
             </div>
             <span className="text-sm">I have read and agree to the P2 Field Control Terms of Access ({version})</span>
@@ -669,7 +668,7 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
 
           <Button
             className="w-full text-white"
-            style={{ backgroundColor: checked ? O : '#374151' }}
+            style={{ backgroundColor: checked ? BRAND : '#374151' }}
             disabled={!checked || saving}
             onClick={handleAccept}>
             {saving ? 'Recording acceptance…' : 'Accept & Enter Portal'}
@@ -877,13 +876,13 @@ function MorningBriefing() {
                 key={name}
                 className="flex flex-col items-center gap-2 px-3 py-3 rounded-xl border min-w-0"
                 style={{
-                  borderColor: tone + '44',
-                  backgroundColor: tone + '0a',
+                  borderColor: withAlpha(tone, 0.27),
+                  backgroundColor: withAlpha(tone, 0.04),
                 }}
               >
                 <div
                   className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: tone + '22' }}
+                  style={{ backgroundColor: withAlpha(tone, 0.13) }}
                 >
                   {submitted
                     ? <CheckIcon size={18} color={tone} />
@@ -1202,7 +1201,7 @@ export function JobStatus() {
               type="button"
               onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(jobFormFor(workspace)) }}
               className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
             >
               <PlusIcon size={13} /> New job
             </button>
@@ -1334,7 +1333,7 @@ export function JobStatus() {
               onClick={handleCreateJob}
               disabled={creating || !jobForm.id || !jobForm.address || !jobForm.client || !jobForm.tenantId}
               className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
             >
               {creating ? 'Creating…' : 'Create job'}
             </button>
@@ -1452,7 +1451,7 @@ function JobStatusRow({
                     : (risk?.level === 'critical' ? '#ef4444'
                     : risk?.level === 'warning'  ? '#eab308'
                     : billRdy                    ? '#22c55e'
-                    : O)
+                    : BRAND)
   const progress    = Math.max(0, Math.min(100, Number(job.progress) || 0))
   const progressMuted = complete || (risk?.level === 'critical')
   const handleKey = (e) => {
@@ -1543,12 +1542,12 @@ function JobStatusRow({
                 <span className="truncate">{job.type || 'Project'}</span>
                 <span
                   className="font-semibold tabular-nums"
-                  style={{ color: progressMuted ? '#9ca3af' : O }}
+                  style={{ color: progressMuted ? '#9ca3af' : BRAND }}
                 >
                   {progress}%
                 </span>
               </div>
-              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : O} />
+              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : BRAND} />
             </div>
           </div>
 
@@ -1556,12 +1555,12 @@ function JobStatusRow({
           <div className="hidden sm:flex flex-col items-end shrink-0 w-40">
             <p
               className="text-2xl font-semibold tabular-nums leading-none"
-              style={{ color: progressMuted ? '#9ca3af' : O }}
+              style={{ color: progressMuted ? '#9ca3af' : BRAND }}
             >
               {progress}%
             </p>
             <div className="w-full mt-1.5">
-              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : O} />
+              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : BRAND} />
             </div>
             <p className="text-[10px] text-zinc-400 mt-1.5 truncate max-w-full" title={job.type}>
               {job.type || 'Project'}
@@ -1645,7 +1644,7 @@ function JobStatusDetail({ job }) {
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: job.id } }))}
           className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white"
-          style={{ backgroundColor: O }}
+          style={{ backgroundColor: BRAND }}
         >
           Open full view →
         </button>
@@ -1729,8 +1728,8 @@ export function PhaseRow({ label, status, note, docId, field }) {
               className="text-[11px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none disabled:opacity-50"
               style={{
                 color: meta.color,
-                backgroundColor: meta.color + '22',
-                border: `1px solid ${meta.color}44`,
+                backgroundColor: withAlpha(meta.color, 0.13),
+                border: `1px solid ${withAlpha(meta.color, 0.27)}`,
               }}
               aria-label={`Update ${label} status`}
             >
@@ -2443,7 +2442,7 @@ function SubRow({ item, expanded, onToggle }) {
   const score = s.score ?? null
   const scoreColor = score === null ? '#9ca3af'
                    : score >= 90 ? '#22c55e'
-                   : score >= 80 ? O
+                   : score >= 80 ? BRAND
                    : '#ef4444'
 
   const updateColor = lastUpdateDays === null ? '#9ca3af'
@@ -2480,7 +2479,7 @@ function SubRow({ item, expanded, onToggle }) {
           {/* Avatar with trade color */}
           <div
             className="shrink-0 mt-0.5 flex items-center justify-center rounded-full text-[11px] font-bold"
-            style={{ width: 36, height: 36, backgroundColor: tColor + '22', color: tColor }}
+            style={{ width: 36, height: 36, backgroundColor: withAlpha(tColor, 0.13), color: tColor }}
           >
             {initials}
           </div>
@@ -2492,7 +2491,7 @@ function SubRow({ item, expanded, onToggle }) {
               <span className="text-sm font-semibold text-white truncate">{s.name || '—'}</span>
               <span
                 className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
-                style={{ color: tColor, backgroundColor: tColor + '22', border: `1px solid ${tColor}55` }}
+                style={{ color: tColor, backgroundColor: withAlpha(tColor, 0.13), border: `1px solid ${withAlpha(tColor, 0.33)}` }}
               >
                 {s.trade}
               </span>
@@ -2614,7 +2613,7 @@ function SubAssignmentRow({ job: j }) {
           <span className="text-sm font-semibold text-white truncate">{jobName(j)}</span>
           <span
             className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full capitalize whitespace-nowrap"
-            style={{ color: tColor, backgroundColor: tColor + '22', border: `1px solid ${tColor}55` }}
+            style={{ color: tColor, backgroundColor: withAlpha(tColor, 0.13), border: `1px solid ${withAlpha(tColor, 0.33)}` }}
           >
             {j.trade}
           </span>
@@ -2626,7 +2625,7 @@ function SubAssignmentRow({ job: j }) {
           >
             <SelectTrigger
               className="h-auto py-0.5 px-2.5 text-[11px] font-bold border rounded-full"
-              style={{ backgroundColor: sc + '22', color: sc, borderColor: sc + '55' }}
+              style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}
             >
               <SelectValue />
             </SelectTrigger>
@@ -2830,7 +2829,7 @@ function Materials() {
             type="button"
             onClick={openRequest}
             className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
-            style={{ backgroundColor: O }}
+            style={{ backgroundColor: BRAND }}
           >
             <PlusIcon size={13} /> Request material
           </button>
@@ -2985,7 +2984,7 @@ function MaterialsEmptyState({ filter, hasJobFilter, onRequest }) {
           type="button"
           onClick={onRequest}
           className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
-          style={{ backgroundColor: O }}
+          style={{ backgroundColor: BRAND }}
         >
           <PlusIcon size={13} /> Request material
         </button>
@@ -3258,7 +3257,7 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
           onClick={onSave}
           disabled={saving || !form.name.trim()}
           className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          style={{ backgroundColor: O }}
+          style={{ backgroundColor: BRAND }}
         >
           {saving ? 'Saving…' : editing ? 'Save changes' : 'Submit request'}
         </button>
@@ -3520,7 +3519,7 @@ function NotificationCard({ n, onRead, onDismiss }) {
       {/* Type icon tile */}
       <div
         className="shrink-0 mt-0.5 flex items-center justify-center rounded-lg"
-        style={{ width: 32, height: 32, backgroundColor: meta.color + '22', color: meta.color }}
+        style={{ width: 32, height: 32, backgroundColor: withAlpha(meta.color, 0.13), color: meta.color }}
       >
         <TypeIcon size={16} strokeWidth={2} />
       </div>
@@ -3546,7 +3545,7 @@ function NotificationCard({ n, onRead, onDismiss }) {
         {!n.read && (
           <span
             className="w-2 h-2 rounded-full mt-2"
-            style={{ backgroundColor: O }}
+            style={{ backgroundColor: BRAND }}
             aria-label="Unread"
           />
         )}
@@ -3637,10 +3636,10 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
 
   if (loading) {
     return (
-      <div className="dark flex h-screen items-center justify-center bg-background">
+      <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 rounded-full border-2 animate-spin"
-            style={{ borderColor: O + '33', borderTopColor: O }} />
+            style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
           <p className="text-sm text-muted-foreground">Loading field data…</p>
         </div>
       </div>
@@ -3823,9 +3822,9 @@ export default function P2DashboardV4() {
 
   if (authLoading || oauthState === 'loading') {
     return (
-      <div className="dark min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center animate-pulse" style={{ backgroundColor: O }}>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center animate-pulse" style={{ backgroundColor: BRAND }}>
             <ZapIcon size={18} color="#fff" />
           </div>
           <p className="text-muted-foreground text-sm">
@@ -3839,7 +3838,7 @@ export default function P2DashboardV4() {
   if (oauthState === 'success' || (oauthState && oauthState.error)) {
     const ok = oauthState === 'success'
     return (
-      <div className="dark min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-center px-6">
           <div className="w-12 h-12 rounded-full flex items-center justify-center"
             style={{ backgroundColor: ok ? '#22c55e22' : '#ef444422' }}>
@@ -3934,9 +3933,9 @@ export default function P2DashboardV4() {
 
 function PortalLoading() {
   return (
-    <div className="dark min-h-screen bg-background flex items-center justify-center">
+    <div className="min-h-screen bg-background flex items-center justify-center">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center animate-pulse" style={{ backgroundColor: O }}>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center animate-pulse" style={{ backgroundColor: BRAND }}>
           <ZapIcon size={18} color="#fff" />
         </div>
         <p className="text-muted-foreground text-sm">Loading portal…</p>

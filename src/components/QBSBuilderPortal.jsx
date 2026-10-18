@@ -30,8 +30,7 @@ import {
   EmptyState,
   AllClearState,
 } from './shared'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -124,12 +123,12 @@ function InspectionTimeline({ job }) {
               className="flex flex-col items-center text-center gap-1 px-2 py-2 rounded-lg flex-1 border min-w-0"
               style={{
                 backgroundColor: meta.bg,
-                borderColor: meta.color + '55',
+                borderColor: withAlpha(meta.color, 0.33),
               }}
             >
               <div
                 className="w-7 h-7 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: meta.color + '33' }}
+                style={{ backgroundColor: withAlpha(meta.color, 0.2) }}
               >
                 <Icon size={14} style={{ color: meta.color }} />
               </div>
@@ -179,13 +178,13 @@ function TradeInspectionPills({ insp }) {
           <p className="font-bold capitalize text-[10px] mb-1 text-muted-foreground">{r.trade}</p>
           <div className="flex items-center gap-1">
             <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
-              style={{ backgroundColor: meta(r.roughIn).c + '33', color: meta(r.roughIn).c }}>
+              style={{ backgroundColor: withAlpha(meta(r.roughIn).c, 0.2), color: meta(r.roughIn).c }}>
               {meta(r.roughIn).l}
             </span>
             <span className="text-muted-foreground">R</span>
             <span className="text-muted-foreground/40 mx-0.5">·</span>
             <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
-              style={{ backgroundColor: meta(r.final).c + '33', color: meta(r.final).c }}>
+              style={{ backgroundColor: withAlpha(meta(r.final).c, 0.2), color: meta(r.final).c }}>
               {meta(r.final).l}
             </span>
             <span className="text-muted-foreground">F</span>
@@ -206,7 +205,7 @@ function builderStatus(job) {
   if (job.status === 'blocked')    return { tone: 'critical', text: 'Needs attention',  color: '#ef4444' }
   if (job.status === 'at-risk')    return { tone: 'warning',  text: 'Watch list',       color: '#eab308' }
   if (job.status === 'needs-action') return { tone: 'warning', text: 'Action needed',   color: '#eab308' }
-  return                           { tone: 'success', text: 'Project on track', color: O }
+  return                           { tone: 'success', text: 'Project on track', color: BRAND }
 }
 
 // Read the inspection timeline and produce a "next milestone" sentence —
@@ -344,7 +343,7 @@ function JobCard({ job, extras }) {
         <div className="flex items-center gap-3 text-left min-w-0">
           <div
             className="shrink-0 flex items-center justify-center rounded-lg"
-            style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}
+            style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
           >
             <FilePenLineIcon size={16} />
           </div>
@@ -478,7 +477,7 @@ function ExtraRow({ co, compact = false }) {
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="text-xs font-bold" style={{ color: O }}>{co.id || co.coNumber || '—'}</span>
+              <span className="text-xs font-bold" style={{ color: BRAND }}>{co.id || co.coNumber || '—'}</span>
               <Pill tone={stateTone} size="xs">{stateLabel}</Pill>
               {!compact && <span className="text-[10px] text-zinc-400">{co.job}</span>}
             </div>
@@ -505,7 +504,7 @@ function ExtraRow({ co, compact = false }) {
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="font-semibold text-base tabular-nums" style={{ color: O }}>{fmt$(total)}</p>
+            <p className="font-semibold text-base tabular-nums" style={{ color: BRAND }}>{fmt$(total)}</p>
             <p className="text-[10px] text-zinc-400">{co.date || fmtDate(co.createdAt)}</p>
           </div>
         </div>
@@ -606,8 +605,8 @@ function QBSSubmit({ qbsPM, jobs }) {
 
   const CATEGORIES = ['RFI', 'Issue', 'Question', 'Change Request', 'Approval', 'Other']
   const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
-  const priorityColor = { Low: '#22c55e', Medium: '#eab308', High: O, Critical: '#ef4444' }
-  const statusColor = { Open: '#ef4444', 'In Progress': O, Resolved: '#22c55e' }
+  const priorityColor = { Low: '#22c55e', Medium: '#eab308', High: BRAND, Critical: '#ef4444' }
+  const statusColor = { Open: '#ef4444', 'In Progress': BRAND, Resolved: '#22c55e' }
 
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim()) return
@@ -677,13 +676,13 @@ function QBSSubmit({ qbsPM, jobs }) {
           <CardContent className="p-3">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
-                style={{ backgroundColor: O + '33', color: O }}>QB</div>
+                style={{ backgroundColor: withAlpha(BRAND, 0.2), color: BRAND }}>QB</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-semibold">{selected.qbsPM || 'QBS'}</span>
                   <span className="text-[10px] text-muted-foreground">{fmtDate(selected.createdAt)}</span>
                   <span className="text-[9px] px-1.5 py-0.5 rounded-full ml-auto"
-                    style={{ backgroundColor: pc + '22', color: pc }}>{selected.priority}</span>
+                    style={{ backgroundColor: withAlpha(pc, 0.13), color: pc }}>{selected.priority}</span>
                 </div>
                 <p className="text-xs whitespace-pre-wrap">{selected.body}</p>
               </div>
@@ -724,7 +723,7 @@ function QBSSubmit({ qbsPM, jobs }) {
             />
             <Button
               className="w-full h-9 text-white text-xs gap-1.5"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
               disabled={replying || !replyText.trim()}
               onClick={handleReply}
             >
@@ -741,7 +740,7 @@ function QBSSubmit({ qbsPM, jobs }) {
           >
             <SelectTrigger
               className="h-7 py-0 px-3 text-[10px] font-bold border rounded-full w-auto gap-1"
-              style={{ backgroundColor: sc + '22', color: sc, borderColor: sc + '55' }}
+              style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}
             >
               <SelectValue />
             </SelectTrigger>
@@ -765,13 +764,13 @@ function QBSSubmit({ qbsPM, jobs }) {
             <ChevronLeftIcon size={13} /> Back
           </Button>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
               Contact P2
             </p>
             <h2 className="text-lg font-semibold tracking-tight text-white mt-0.5">New message</h2>
           </div>
         </div>
-        <Card className="border-white/10" style={{ borderColor: O + '33' }}>
+        <Card className="border-white/10" style={{ borderColor: withAlpha(BRAND, 0.2) }}>
           <CardContent className="p-4 space-y-3">
             <div>
               <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Subject *</label>
@@ -824,7 +823,7 @@ function QBSSubmit({ qbsPM, jobs }) {
               />
             </div>
             <Button className="w-full h-9 text-white text-xs"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
               disabled={submitting || !form.subject.trim() || !form.body.trim()}
               onClick={handleNew}>
               {submitting ? 'Submitting…' : 'Send to P2'}
@@ -841,7 +840,7 @@ function QBSSubmit({ qbsPM, jobs }) {
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
             Contact P2
           </p>
           <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Messages & RFIs</h2>
@@ -851,7 +850,7 @@ function QBSSubmit({ qbsPM, jobs }) {
         </div>
         <Button
           className="h-9 text-white text-xs gap-1.5 font-bold shrink-0"
-          style={{ backgroundColor: O }}
+          style={{ backgroundColor: BRAND }}
           onClick={() => setView('new')}
         >
           <PlusIcon size={13} /> New message
@@ -866,7 +865,7 @@ function QBSSubmit({ qbsPM, jobs }) {
           action={
             <Button
               className="text-white text-xs h-9 font-bold gap-1.5"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
               onClick={() => setView('new')}
             >
               <PlusIcon size={13} /> Create first message
@@ -885,7 +884,7 @@ function QBSSubmit({ qbsPM, jobs }) {
                 onClick={() => { setSelectedId(s._docId); setView('thread') }}
               >
                 <div className="shrink-0 flex items-center justify-center rounded-lg"
-                  style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}
+                  style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
                 >
                   <MessageSquareIcon size={14} />
                 </div>
@@ -894,7 +893,7 @@ function QBSSubmit({ qbsPM, jobs }) {
                     <span className="text-sm font-semibold text-zinc-100 truncate">{s.subject}</span>
                     <span
                       className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold"
-                      style={{ backgroundColor: pc + '22', color: pc, border: `1px solid ${pc}44` }}
+                      style={{ backgroundColor: withAlpha(pc, 0.13), color: pc, border: `1px solid ${withAlpha(pc, 0.27)}` }}
                     >
                       {s.priority}
                     </span>
@@ -905,7 +904,7 @@ function QBSSubmit({ qbsPM, jobs }) {
                 </div>
                 <span
                   className="text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0"
-                  style={{ backgroundColor: sc + '22', color: sc, border: `1px solid ${sc}44` }}
+                  style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, border: `1px solid ${withAlpha(sc, 0.27)}` }}
                 >
                   {s.status || 'Open'}
                 </span>
@@ -928,7 +927,7 @@ function QBSNotifications({ notifs }) {
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
           Project updates
         </p>
         <h2 className="text-xl font-semibold tracking-tight text-white mt-1">All updates</h2>
@@ -959,7 +958,7 @@ function QBSNotifications({ notifs }) {
               >
                 <div
                   className="shrink-0 flex items-center justify-center rounded-lg"
-                  style={{ width: 30, height: 30, backgroundColor: color + '22', color }}
+                  style={{ width: 30, height: 30, backgroundColor: withAlpha(color, 0.13), color }}
                 >
                   <Icon size={14} strokeWidth={2} />
                 </div>
@@ -971,7 +970,7 @@ function QBSNotifications({ notifs }) {
                     {n.time || fmtDate(n.createdAt)}
                   </p>
                 </div>
-                {!n.read && <div className="w-2 h-2 rounded-full mt-2 shrink-0" style={{ backgroundColor: O }} />}
+                {!n.read && <div className="w-2 h-2 rounded-full mt-2 shrink-0" style={{ backgroundColor: BRAND }} />}
               </button>
             )
           })}
@@ -1055,9 +1054,9 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
 
   if (loading && jobs.length === 0) {
     return (
-      <div className="dark min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full border-2 animate-spin" style={{ borderColor: O + '33', borderTopColor: O }} />
+          <div className="w-9 h-9 rounded-full border-2 animate-spin" style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
           <p className="text-sm text-muted-foreground">Loading your projects…</p>
         </div>
       </div>
@@ -1065,14 +1064,14 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
   }
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Sticky header — brand + tenant + PM selector */}
       <header className="sticky top-0 z-20 border-b border-white/10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="px-4 sm:px-8 pt-4 pb-3 flex items-center gap-3 sm:gap-4">
           <Brand size={32} tone="light" className="shrink-0" />
           <div className="hidden sm:block w-px h-7 bg-white/10" />
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
               Builder Portal
             </p>
             <p className="font-bold text-base text-white leading-tight truncate mt-0.5">{tenantName}</p>
@@ -1106,7 +1105,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
             className="grid gap-2"
             style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}
           >
-            <PortalStat label="Active"           value={activeJobs.length}      Icon={ActivityIcon}     accent={O} />
+            <PortalStat label="Active"           value={activeJobs.length}      Icon={ActivityIcon}     accent={BRAND} />
             <PortalStat label="Pending approval" value={pendingExtras.length}   Icon={FilePenLineIcon}  accent="#eab308" sub={fmt$(pendingValue)} />
             <PortalStat label="Inspection issue" value={failedInsp.length}      Icon={TriangleAlertIcon} accent={failedInsp.length > 0 ? '#ef4444' : '#9ca3af'} />
             <PortalStat label="Completed"        value={completedJobs.length}   Icon={BadgeCheckIcon}    accent="#22c55e" />
@@ -1125,8 +1124,8 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
               onClick={() => setActiveTab(t.id)}
               className="flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0"
               style={{
-                borderColor: active ? O : 'transparent',
-                color: active ? O : '#9ca3af',
+                borderColor: active ? BRAND : 'transparent',
+                color: active ? BRAND : '#9ca3af',
               }}
             >
               <t.Icon size={14} strokeWidth={active ? 2.25 : 2} />
@@ -1134,7 +1133,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
               {t.count > 0 && (
                 <span
                   className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                  style={{ backgroundColor: O + '22', color: O }}
+                  style={{ backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
                 >
                   {t.count}
                 </span>
@@ -1222,7 +1221,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                           type="button"
                           onClick={() => setActiveTab('extras')}
                           className="w-full text-center text-[11px] font-semibold py-2 transition-colors"
-                          style={{ color: O }}
+                          style={{ color: BRAND }}
                         >
                           View all {pendingExtras.length} pending approvals →
                         </button>
@@ -1235,7 +1234,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                 {activeJobs.length > 0 && (
                   <section className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <h2 className="text-[11px] font-bold uppercase tracking-wider" style={{ color: O }}>
+                      <h2 className="text-[11px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
                         Active projects
                       </h2>
                       <Pill tone="brand" size="xs">{activeJobs.length}</Pill>
@@ -1292,14 +1291,14 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                 type="button"
                 onClick={() => setActiveTab(t.id)}
                 className="flex flex-col items-center justify-center gap-0.5 py-2.5 relative transition-colors"
-                style={{ color: active ? O : '#9ca3af' }}
+                style={{ color: active ? BRAND : '#9ca3af' }}
               >
                 <t.Icon size={20} strokeWidth={active ? 2.25 : 2} />
                 <span className="text-[10px] font-semibold leading-none">{t.label}</span>
                 {t.count > 0 && (
                   <span
                     className="absolute top-1 right-[26%] text-[9px] text-white font-black rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: O, minWidth: 14, height: 14, padding: '0 3px' }}
+                    style={{ backgroundColor: BRAND, minWidth: 14, height: 14, padding: '0 3px' }}
                   >
                     {t.count > 99 ? '99+' : t.count}
                   </span>
@@ -1339,7 +1338,7 @@ function OverviewMetric({ label, value, sub, Icon, emphasis = 'default', valueCl
     emphasis === 'warning'  ? '#eab308' :
     emphasis === 'critical' ? '#ef4444' :
     emphasis === 'success'  ? '#22c55e' :
-    O
+    BRAND
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.025] p-3">
       <div className="flex items-start justify-between gap-2">
@@ -1349,7 +1348,7 @@ function OverviewMetric({ label, value, sub, Icon, emphasis = 'default', valueCl
         {Icon && (
           <div
             className="shrink-0 flex items-center justify-center rounded-lg"
-            style={{ width: 28, height: 28, backgroundColor: accent + '22', color: accent }}
+            style={{ width: 28, height: 28, backgroundColor: withAlpha(accent, 0.13), color: accent }}
           >
             <Icon size={14} strokeWidth={2} />
           </div>
@@ -1395,7 +1394,7 @@ function ExtrasTab({ extras, jobs }) {
     { id: 'pending', label: 'Pending', color: '#eab308', count: extras.filter(e => extraState(e) === 'pending').length },
     { id: 'approved', label: 'Approved', color: '#22c55e', count: extras.filter(e => extraState(e) === 'approved').length },
     { id: 'rejected', label: 'Rejected', color: '#ef4444', count: extras.filter(e => extraState(e) === 'rejected').length },
-    { id: 'all', label: 'All', color: O, count: extras.length },
+    { id: 'all', label: 'All', color: BRAND, count: extras.length },
   ]
 
   const jobLookup = (jobId) => jobs.find(j => j.id === jobId)
@@ -1403,7 +1402,7 @@ function ExtrasTab({ extras, jobs }) {
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
           Change Orders
         </p>
         <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Approve & track extras</h2>
@@ -1423,8 +1422,8 @@ function ExtrasTab({ extras, jobs }) {
               onClick={() => setFilter(f.id)}
               className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
               style={{
-                borderColor: active ? f.color + '88' : 'rgba(255,255,255,0.10)',
-                backgroundColor: active ? f.color + '22' : 'transparent',
+                borderColor: active ? withAlpha(f.color, 0.53) : 'rgba(255,255,255,0.10)',
+                backgroundColor: active ? withAlpha(f.color, 0.13) : 'transparent',
                 color: active ? f.color : '#d4d4d8',
               }}
             >

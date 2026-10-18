@@ -13,8 +13,7 @@ import {
   DollarSignIcon, FileTextIcon, ChevronDownIcon, ChevronUpIcon,
   ShieldAlertIcon, ReceiptIcon, SearchIcon, PencilIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 const KNOWN_VENDORS = ['Graybar', 'Ferguson', 'Johnstone', 'ADT Supply', 'Other']
 const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS', 'BOX', 'ROLL', 'STICK']
@@ -179,7 +178,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
         <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10">
           <XIcon size={16} />
         </button>
-        <h2 className="text-lg font-semibold" style={{ color: O }}>New Supplier Invoice</h2>
+        <h2 className="text-lg font-semibold" style={{ color: BRAND }}>New Supplier Invoice</h2>
       </div>
 
       {/* Meta */}
@@ -287,7 +286,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
                           value={li.unitPrice} onChange={e => setLine(idx, 'unitPrice', e.target.value)} />
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right text-sm font-semibold" style={{ color: O }}>
+                    <td className="px-3 py-2 text-right text-sm font-semibold" style={{ color: BRAND }}>
                       {fmt$(li.extPrice)}
                     </td>
                     <td className="px-3 py-2">
@@ -306,7 +305,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
           <div className="border-t border-white/10 p-4 flex justify-end">
             <div className="flex justify-between items-center gap-12">
               <span className="text-sm text-muted-foreground">TOTAL</span>
-              <span className="text-xl font-semibold" style={{ color: O }}>{fmt$(total)}</span>
+              <span className="text-xl font-semibold" style={{ color: BRAND }}>{fmt$(total)}</span>
             </div>
           </div>
         </CardContent>
@@ -322,7 +321,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
       {error && <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">{error}</p>}
 
       <div className="flex gap-3">
-        <Button className="text-white" style={{ backgroundColor: O }} onClick={handleSave} disabled={saving}>
+        <Button className="text-white" style={{ backgroundColor: BRAND }} onClick={handleSave} disabled={saving}>
           {saving ? 'Saving…' : 'Save Invoice'}
         </Button>
         <Button variant="outline" className="border-white/20" onClick={onClose}>Cancel</Button>
@@ -370,11 +369,11 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
             ) : <span className="text-muted-foreground">—</span>}</p>
           </div>
           <div>
-            <p className="text-sm font-semibold" style={{ color: O }}>{fmt$(inv.total)}</p>
+            <p className="text-sm font-semibold" style={{ color: BRAND }}>{fmt$(inv.total)}</p>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
-              style={{ color: meta.color, backgroundColor: meta.color + '22' }}>
+              style={{ color: meta.color, backgroundColor: withAlpha(meta.color, 0.13) }}>
               {meta.label}
             </span>
             {liveFlags.length > 0 && (
@@ -431,7 +430,7 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
                       <td className="px-3 py-2 text-right">{li.qty}</td>
                       <td className="px-3 py-2 text-center text-muted-foreground">{li.unit}</td>
                       <td className="px-3 py-2 text-right">{fmt$(li.unitPrice)}</td>
-                      <td className="px-3 py-2 text-right font-semibold" style={{ color: O }}>{fmt$(li.extPrice)}</td>
+                      <td className="px-3 py-2 text-right font-semibold" style={{ color: BRAND }}>{fmt$(li.extPrice)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -529,12 +528,12 @@ export default function InvoiceAuditor() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-semibold" style={{ color: O }}>Supplier Invoice Auditor</h2>
+          <h2 className="text-2xl font-semibold" style={{ color: BRAND }}>Supplier Invoice Auditor</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
             Audit supplier invoices against POs · flag price variances, duplicates &amp; discrepancies
           </p>
         </div>
-        <Button className="text-white gap-2" style={{ backgroundColor: O }} onClick={() => setShowForm(true)}>
+        <Button className="text-white gap-2" style={{ backgroundColor: BRAND }} onClick={() => setShowForm(true)}>
           <PlusIcon size={14} /> New Invoice
         </Button>
       </div>
@@ -544,11 +543,11 @@ export default function InvoiceAuditor() {
         {[
           { label: 'Pending Review',  value: pendingCount,  sub: fmt$(totalPending),   color: '#eab308', Icon: FileTextIcon       },
           { label: 'Disputed',        value: disputedCount, sub: fmt$(totalDisputed),  color: '#ef4444', Icon: ShieldAlertIcon     },
-          { label: 'Audit Flags',     value: flaggedCount,  sub: 'invoices w/ flags',  color: O,         Icon: AlertTriangleIcon   },
+          { label: 'Audit Flags',     value: flaggedCount,  sub: 'invoices w/ flags',  color: BRAND,     Icon: AlertTriangleIcon   },
           { label: 'Approved / Paid', value: invoices.filter(i => i.status === 'approved' || i.status === 'paid').length,
             sub: fmt$(totalApproved), color: '#22c55e', Icon: CheckCircleIcon },
         ].map(s => (
-          <div key={s.label} className="rounded-xl p-4 border border-white/10" style={{ backgroundColor: s.color + '08' }}>
+          <div key={s.label} className="rounded-xl p-4 border border-white/10" style={{ backgroundColor: withAlpha(s.color, 0.03) }}>
             <div className="flex items-center gap-2 mb-2">
               <s.Icon size={13} style={{ color: s.color }} />
               <span className="text-xs text-muted-foreground uppercase tracking-widest">{s.label}</span>
@@ -600,7 +599,7 @@ export default function InvoiceAuditor() {
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <div className="w-7 h-7 rounded-full border-2 animate-spin"
-                style={{ borderColor: O + '33', borderTopColor: O }} />
+                style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
@@ -609,7 +608,7 @@ export default function InvoiceAuditor() {
                 {invoices.length === 0 ? 'No invoices yet — add your first one above' : 'No invoices match the current filters'}
               </p>
               {invoices.length === 0 && (
-                <Button className="text-white gap-2 text-xs" style={{ backgroundColor: O }} onClick={() => setShowForm(true)}>
+                <Button className="text-white gap-2 text-xs" style={{ backgroundColor: BRAND }} onClick={() => setShowForm(true)}>
                   <PlusIcon size={12} /> Add First Invoice
                 </Button>
               )}

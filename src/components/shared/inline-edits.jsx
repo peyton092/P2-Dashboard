@@ -5,20 +5,19 @@ import { updateJob } from '../../hooks/useFirestore'
 import { phaseLabel } from '../../lib/jobs'
 import { BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR } from '../../lib/billing'
 import { MAT_STATUS_OPTIONS, MAT_STATUS_COLOR } from '../../lib/materials'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 // Inline-edit pill-shaped Select primitives. Each one wraps a status field
 // on a job/material document and persists changes to Firestore on change.
 // Behavior preserved exactly. Moved out of src/App.jsx in Phase 19.
 
-const O = '#F47920' // Brand orange — kept local to avoid coupling to App.jsx.
-
 const JOB_STATUS_OPTIONS = [
   { value: 'on-track',     label: 'On Track',     color: '#22c55e' },
-  { value: 'needs-action', label: 'Needs Action', color: O         },
+  { value: 'needs-action', label: 'Needs Action', color: BRAND     },
   { value: 'at-risk',      label: 'At Risk',      color: '#eab308' },
   { value: 'blocked',      label: 'Blocked',      color: '#ef4444' },
   { value: 'complete',     label: 'Complete',     color: '#22c55e' },
-  { value: 'active',       label: 'Active',       color: O         },
+  { value: 'active',       label: 'Active',       color: BRAND     },
   { value: 'hold',         label: 'On Hold',      color: '#ef4444' },
   { value: 'completed',    label: 'Completed',    color: '#22c55e' },
   { value: 'pending',      label: 'Pending',      color: '#6b7280' },
@@ -33,7 +32,7 @@ export function InlineStatusSelect({ job }) {
     <div onClick={e => e.stopPropagation()}>
       <Select value={job.status} onValueChange={handleChange}>
         <SelectTrigger className="h-auto py-0.5 px-3 text-xs font-bold border rounded-full w-auto gap-1"
-          style={{ backgroundColor: opt.color + '22', color: opt.color, borderColor: opt.color + '55' }}>
+          style={{ backgroundColor: withAlpha(opt.color, 0.13), color: opt.color, borderColor: withAlpha(opt.color, 0.33) }}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -75,7 +74,7 @@ export function BillingStatusSelect({ job }) {
       onValueChange={v => job._docId && updateJob(job._docId, { billingStatus: v })}
     >
       <SelectTrigger className="h-auto py-1 px-3 text-xs font-bold border rounded-full min-w-[7.5rem]"
-        style={{ backgroundColor: color + '22', color, borderColor: color + '55' }}>
+        style={{ backgroundColor: withAlpha(color, 0.13), color, borderColor: withAlpha(color, 0.33) }}>
         <SelectValue>{label}</SelectValue>
       </SelectTrigger>
       <SelectContent>
@@ -93,7 +92,7 @@ export function MatStatusBadge({ status, docId, onUpdate }) {
     <div onClick={e => e.stopPropagation()}>
       <Select value={status || 'Ordered'} onValueChange={v => onUpdate(docId, v)}>
         <SelectTrigger className="h-auto py-0.5 px-2 text-xs font-bold border rounded-full min-w-[7rem]"
-          style={{ backgroundColor: color + '22', color, borderColor: color + '55' }}>
+          style={{ backgroundColor: withAlpha(color, 0.13), color, borderColor: withAlpha(color, 0.33) }}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

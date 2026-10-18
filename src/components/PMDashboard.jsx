@@ -22,8 +22,8 @@ import {
   ChevronDownIcon, MapPinIcon, AlertCircleIcon, BanIcon,
   CheckCircleIcon,
 } from 'lucide-react'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
-const O = '#F47920'
 const TODAY = new Date()
 
 // Roster — preserved from prior implementation. These are the six QBS PMs;
@@ -218,7 +218,7 @@ function pmMatchesFilter(s, filter) {
 const TONE_COLOR = {
   critical: '#ef4444',
   warning:  '#eab308',
-  brand:    O,
+  brand:    BRAND,
   success:  '#22c55e',
   info:     '#3b82f6',
   mute:     '#9ca3af',
@@ -484,7 +484,7 @@ function PMEmptyState({ filter, hasSearch }) {
 function PMRow({ s, expanded, onToggle }) {
   const zone = ZONES[PM_TO_ZONE[s.pm]] || ZONES['zone-7']
   const initials = s.pm.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-  const accent = zone.color || O
+  const accent = zone.color || BRAND
   const nextColor = TONE_COLOR[s.pressure.tone] || TONE_COLOR.mute
 
   return (
@@ -501,7 +501,7 @@ function PMRow({ s, expanded, onToggle }) {
           style={{
             width: 36,
             height: 36,
-            backgroundColor: accent + '22',
+            backgroundColor: withAlpha(accent, 0.13),
             color: accent,
           }}
         >

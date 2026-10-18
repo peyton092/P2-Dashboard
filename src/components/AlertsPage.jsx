@@ -20,8 +20,7 @@ import {
   TimerIcon, ReceiptIcon, BadgeCheckIcon,
   MapPinIcon, UserRoundCogIcon, ActivityIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND } from '@/lib/tokens'
 
 // Severity → Phase 1 palette tone + sort weight (lowest = surfaced first)
 const SEVERITY = {
@@ -34,7 +33,7 @@ const SEVERITY = {
 const TONE_COLOR = {
   critical: '#ef4444',
   warning:  '#eab308',
-  brand:    O,
+  brand:    BRAND,
   success:  '#22c55e',
   info:     '#3b82f6',
   mute:     '#9ca3af',

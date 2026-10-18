@@ -4,8 +4,7 @@ import {
   SearchIcon, GaugeIcon, HardHatIcon, UsersRoundIcon, FilePenLineIcon,
   ClipboardSignatureIcon, BoxesIcon, DollarSignIcon, CornerDownLeftIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 // Pages a search result can jump to (ids match TAB_COMPONENTS in App.jsx).
 const PAGES = [
@@ -133,7 +132,7 @@ export default function CommandPalette() {
   let runningIndex = -1
 
   return (
-    <div className="dark fixed inset-0 z-[90] flex items-start justify-center p-4 sm:pt-[12vh] bg-black/60 backdrop-blur-sm" onClick={close}>
+    <div className="fixed inset-0 z-[90] flex items-start justify-center p-4 sm:pt-[12vh] bg-black/60 backdrop-blur-sm" onClick={close}>
       <div
         className="w-full max-w-xl rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
@@ -177,7 +176,7 @@ export default function CommandPalette() {
                       onMouseEnter={() => setActive(idx)}
                       onClick={() => select(item)}
                       className="w-full text-left flex items-center gap-3 px-4 py-2 transition-colors"
-                      style={{ backgroundColor: isActive ? O + '1f' : 'transparent' }}
+                      style={{ backgroundColor: isActive ? withAlpha(BRAND, 0.12) : 'transparent' }}
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-white truncate">{item.title}</p>

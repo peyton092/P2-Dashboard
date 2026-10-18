@@ -1,10 +1,9 @@
 import { cn } from '@/lib/utils'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 // Existing-palette tones only. Do NOT introduce new colors.
 const TONE = {
-  brand:    { fg: O,         bg: O + '22',         bd: O + '55' },
+  brand:    { fg: BRAND,     bg: withAlpha(BRAND, 0.13), bd: withAlpha(BRAND, 0.33) },
   success:  { fg: '#22c55e', bg: '#22c55e22',      bd: '#22c55e55' },
   warning:  { fg: '#eab308', bg: '#eab30822',      bd: '#eab30855' },
   critical: { fg: '#ef4444', bg: '#ef444422',      bd: '#ef444455' },

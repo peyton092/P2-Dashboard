@@ -4,8 +4,9 @@
 
 import { contractValue } from './money'
 import { BILLING_STATUS_LABEL } from './billing'
+import { BRAND, hexToRgb } from '@/lib/tokens'
 
-const ORANGE     = [244, 121, 32]
+const ORANGE     = hexToRgb(BRAND)
 const BLACK      = [20, 20, 20]
 const GRAY       = [120, 120, 120]
 const LIGHT_GRAY = [230, 230, 230]

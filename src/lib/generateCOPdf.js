@@ -1,7 +1,9 @@
 // jsPDF is imported dynamically (see generateCOPdf) so its ~400 kB dependency
 // tree stays out of the initial bundle and only loads on first PDF export.
 
-const ORANGE     = [244, 121, 32]
+import { BRAND, hexToRgb } from '@/lib/tokens'
+
+const ORANGE     = hexToRgb(BRAND)
 const BLACK      = [20, 20, 20]
 const GRAY       = [120, 120, 120]
 const LIGHT_GRAY = [230, 230, 230]

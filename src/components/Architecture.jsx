@@ -3,6 +3,7 @@ import {
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatCard } from './shared'
+import { BRAND } from '@/lib/tokens'
 
 // Extracted from src/App.jsx in Phase 20. The local SectionHeader is inlined on
 // purpose: it differs from the modern shared/headers SectionHeader and only legacy
@@ -12,8 +13,6 @@ import { StatCard } from './shared'
 // storage.rules and functions/index.js as deployed. __tests__/Architecture.test.jsx
 // reads index.js and fails when the list here and the exports there disagree, so a
 // function added there has to be listed here too. Copy has no dashes.
-
-const O = '#F47920'
 
 function SectionHeader({ title, sub, action }) {
   return (
@@ -123,14 +122,14 @@ export default function Architecture() {
         <Card className="border-white/10">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <DatabaseIcon size={16} style={{ color: O }} /> Firestore Collections
+              <DatabaseIcon size={16} style={{ color: BRAND }} /> Firestore Collections
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {collections.map(c => (
               <div key={c.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-bold" style={{ color: O }}>{c.name}</span>
+                  <span className="text-sm font-bold" style={{ color: BRAND }}>{c.name}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mb-2">{c.desc}</p>
                 <div className="flex flex-wrap gap-1">
@@ -147,7 +146,7 @@ export default function Architecture() {
           <Card className="border-white/10">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <ServerIcon size={16} style={{ color: O }} /> Cloud Functions
+                <ServerIcon size={16} style={{ color: BRAND }} /> Cloud Functions
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -156,7 +155,7 @@ export default function Architecture() {
                   <p className="text-xs text-muted-foreground uppercase tracking-widest">{k.label}</p>
                   {functions.filter(f => f.kind === k.kind).map(f => (
                     <div key={f.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
-                      <span className="text-sm font-bold" style={{ color: O }}>{f.name}</span>
+                      <span className="text-sm font-bold" style={{ color: BRAND }}>{f.name}</span>
                       <p className="text-xs text-muted-foreground mt-1">{f.desc}</p>
                       <div className="flex items-center gap-1.5 mt-1.5">
                         <CloudIcon size={10} className="text-muted-foreground" />
@@ -174,13 +173,13 @@ export default function Architecture() {
       <Card className="border-white/10">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <ShieldIcon size={16} style={{ color: O }} /> Firestore and Storage Rules
+            <ShieldIcon size={16} style={{ color: BRAND }} /> Firestore and Storage Rules
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {rules.map(r => (
             <div key={r.title} className="p-3 rounded-lg bg-white/5 border border-white/5">
-              <span className="text-sm font-bold" style={{ color: O }}>{r.title}</span>
+              <span className="text-sm font-bold" style={{ color: BRAND }}>{r.title}</span>
               <p className="text-xs text-muted-foreground mt-1">{r.text}</p>
             </div>
           ))}

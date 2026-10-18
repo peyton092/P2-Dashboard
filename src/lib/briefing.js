@@ -6,19 +6,18 @@ import { classifyRisk, hasFailedInspection, isBillingReady, isHvacStartupBlocked
 import { jobName } from './jobs'
 import { matIsOpen, matIsOverdue, matIsBlocking, matDaysUntilNeeded } from './materials'
 import { subInsuranceExpired, subInsuranceExpiringSoon, subHasMissingDocs } from './subs'
+import { BRAND } from '@/lib/tokens'
 
 // Read-only daily operating brief data layer. Surfaces the most important
 // things to review before the day starts. No write paths — only read
 // derivations from useData(). Moved out of src/App.jsx in Phase 18.
-
-const O = '#F47920' // Brand orange — kept local to avoid coupling to App.jsx.
 
 export const BRIEF_CATEGORY_META = {
   'job-risk':    { label: 'Job Risk',         Icon: TriangleAlertIcon, accent: '#ef4444' },
   'inspections': { label: 'Inspections',      Icon: BadgeCheckIcon,    accent: '#3b82f6' },
   'billing':     { label: 'Billing',          Icon: DollarSignIcon,    accent: '#22c55e' },
   'co':          { label: 'Change Orders',    Icon: FilePenLineIcon,   accent: '#eab308' },
-  'materials':   { label: 'Materials',        Icon: PackageIcon,       accent: O },
+  'materials':   { label: 'Materials',        Icon: PackageIcon,       accent: BRAND },
   'subs':        { label: 'Subs Compliance',  Icon: ShieldCheckIcon,   accent: '#06b6d4' },
   'pm':          { label: 'PM Workload',      Icon: UserRoundCogIcon,  accent: '#a78bfa' },
 }

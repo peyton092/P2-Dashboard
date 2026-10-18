@@ -14,8 +14,7 @@ import {
   ClipboardSignatureIcon, FileTextIcon, ImageIcon, DownloadIcon,
   NotebookPenIcon, ActivityIcon, ReceiptIcon, CalendarIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 const jobLabel = (j) => j.name || j.client || j.id
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
@@ -62,7 +61,7 @@ function TradeInspections({ trade, data }) {
               <span className="text-zinc-400">{PHASE_LABEL[phase] || phase}</span>
               <span className="flex items-center gap-2">
                 {date && <span className="text-[10px] text-zinc-500">{fmtDate(date)}</span>}
-                <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: meta.c, backgroundColor: meta.c + '22' }}>{meta.l}</span>
+                <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: meta.c, backgroundColor: withAlpha(meta.c, 0.13) }}>{meta.l}</span>
               </span>
             </div>
           )
@@ -101,7 +100,7 @@ export default function JobDetail({ jobId, onBack }) {
   const complete = ['complete', 'completed'].includes(job.status)
   const railColor = failed || risk?.level === 'critical' ? '#ef4444'
     : risk?.level === 'warning' ? '#eab308'
-    : complete ? '#22c55e' : O
+    : complete ? '#22c55e' : BRAND
 
   const pendingCO = jobExtras.filter(e => e.status === 'pending')
   const approvedCO = jobExtras.filter(e => extraState(e) === 'approved')
@@ -137,7 +136,7 @@ export default function JobDetail({ jobId, onBack }) {
                 <p className="text-sm text-zinc-400 mt-1">{job.client}{job.type ? ` · ${job.type}` : ''}</p>
               </div>
               {hasInvoice && (
-                <button onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
+                <button onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: BRAND }}>
                   <DownloadIcon size={13} /> Invoice PDF
                 </button>
               )}
@@ -190,12 +189,12 @@ export default function JobDetail({ jobId, onBack }) {
               <li key={co._docId || co.id} className="px-4 py-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-bold" style={{ color: O }}>{co.id || 'CO'}</span>
+                    <span className="text-xs font-bold" style={{ color: BRAND }}>{co.id || 'CO'}</span>
                     <Pill tone={CO_TONE[extraState(co)] || 'neutral'} size="xs">{co.status || 'pending'}</Pill>
                   </div>
                   <p className="text-sm text-zinc-200 truncate mt-0.5">{co.desc || 'No description'}</p>
                 </div>
-                <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: O }}>{fmt$(co.amount)}</span>
+                <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: BRAND }}>{fmt$(co.amount)}</span>
               </li>
             ))}
           </ul>

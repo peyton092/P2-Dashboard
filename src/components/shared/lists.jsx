@@ -1,8 +1,7 @@
 import { cn } from '@/lib/utils'
 import { SearchIcon, ChevronRightIcon } from 'lucide-react'
 import { StatusBadge, BillingBadge, PriorityBadge } from './badges'
-
-const O = '#F47920'
+import { withAlpha } from '@/lib/tokens'
 
 // ── ActionBar ─────────────────────────────────────────────────────────────────
 // Inline horizontal bar for primary actions sitting above content sections.
@@ -57,7 +56,7 @@ export function FilterBar({
                   ? 'border-white/30 text-white bg-white/[0.06]'
                   : 'border-white/10 text-zinc-300 hover:text-white hover:border-white/20',
               )}
-              style={chip.active && chip.accent ? { borderColor: chip.accent + '88', color: chip.accent } : undefined}
+              style={chip.active && chip.accent ? { borderColor: withAlpha(chip.accent, 0.53), color: chip.accent } : undefined}
             >
               {chip.label}
               {typeof chip.count === 'number' && chip.count > 0 && (

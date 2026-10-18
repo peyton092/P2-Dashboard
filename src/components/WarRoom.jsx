@@ -27,8 +27,8 @@ import {
   // Phase 3 QA — preferred lucide names
   RadarIcon, CrosshairIcon, TriangleAlertIcon, BadgeCheckIcon,
 } from 'lucide-react'
+import { BRAND } from '@/lib/tokens'
 
-const O = '#F47920'
 const TODAY = new Date()
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -631,7 +631,7 @@ function PriorityJobCard({ job, risk, score }) {
             color:
               risk?.level === 'critical' ? '#ef4444' :
               risk?.level === 'warning'  ? '#eab308' :
-              O,
+              BRAND,
           }}
         >
           {next}
@@ -787,7 +787,7 @@ function DispatchCard({ job, risk, score, stale }) {
         <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-0.5">Next action</p>
         <p
           className="text-sm font-semibold leading-snug"
-          style={{ color: accent || O }}
+          style={{ color: accent || BRAND }}
         >
           {next}
         </p>

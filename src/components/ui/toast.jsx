@@ -1,14 +1,13 @@
 import { useState, useCallback } from 'react'
 import { ToastContext } from './use-toast'
 import { CheckCircleIcon, AlertCircleIcon, InfoIcon, XIcon } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND } from '@/lib/tokens'
 
 const TONE = {
   success: { color: '#22c55e', Icon: CheckCircleIcon },
   error:   { color: '#ef4444', Icon: AlertCircleIcon },
   info:    { color: '#3b82f6', Icon: InfoIcon },
-  brand:   { color: O,         Icon: InfoIcon },
+  brand:   { color: BRAND,     Icon: InfoIcon },
 }
 
 let nextId = 0

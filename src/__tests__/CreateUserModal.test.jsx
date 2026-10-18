@@ -67,12 +67,13 @@ describe('CreateUserModal dialog behavior', () => {
     expect(document.getElementById(titleId).textContent).toContain('Create User Account')
   })
 
-  it('brings its own dark scope, because it renders outside the app shell', () => {
-    // Without .dark the text inherits the light theme's near black and cannot be
-    // read on the dark card (the old dialog had this problem).
+  it('takes the dark theme from the document and names its own text color', () => {
+    // It renders outside the app shell. index.html puts the dark class on the
+    // document root, so the dialog needs no scope of its own, but it still sets
+    // its foreground so the text on the dark card never depends on what is behind it.
     openModal()
     const overlay = screen.getByRole('dialog').parentElement
-    expect(overlay.classList.contains('dark')).toBe(true)
+    expect(overlay.classList.contains('dark')).toBe(false)
     expect(overlay.classList.contains('text-foreground')).toBe(true)
   })
 

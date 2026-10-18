@@ -20,8 +20,7 @@ import {
   ClipboardListIcon, DollarSignIcon, ZapIcon, Building2Icon,
   LogOutIcon, CheckCircleIcon, LinkIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 const TOGGLE_DEFS = [
   { key: 'smsNotifications',      label: 'SMS Notifications',       desc: 'Send text alerts for critical events',             Icon: BellIcon,          def: false },
@@ -67,7 +66,7 @@ function Toggle({ enabled, onChange }) {
       aria-checked={enabled}
       onClick={() => onChange(!enabled)}
       className="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 focus:outline-none"
-      style={{ backgroundColor: enabled ? O : '#374151' }}
+      style={{ backgroundColor: enabled ? BRAND : '#374151' }}
     >
       <span
         className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
@@ -309,7 +308,7 @@ export default function SettingsPage({ onLogout, role }) {
   return (
     <div className="space-y-8 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-semibold" style={{ color: O }}>Settings</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: BRAND }}>Settings</h1>
         <p className="text-sm text-muted-foreground mt-1">Feature configuration, account, and system info</p>
       </div>
 
@@ -317,15 +316,15 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <SettingsIcon size={15} style={{ color: O }} /> Feature Toggles
+            <SettingsIcon size={15} style={{ color: BRAND }} /> Feature Toggles
           </CardTitle>
         </CardHeader>
         <CardContent className="divide-y divide-white/5 px-6">
           {TOGGLE_DEFS.map(({ key, label, desc, Icon, def }) => (
             <div key={key} className="flex items-center justify-between py-3.5 gap-4">
               <div className="flex items-start gap-3 min-w-0">
-                <div className="mt-0.5 p-1.5 rounded-lg shrink-0" style={{ backgroundColor: O + '1a' }}>
-                  <Icon size={13} style={{ color: O }} />
+                <div className="mt-0.5 p-1.5 rounded-lg shrink-0" style={{ backgroundColor: withAlpha(BRAND, 0.1) }}>
+                  <Icon size={13} style={{ color: BRAND }} />
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium leading-none mb-1">{label}</p>
@@ -342,7 +341,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <LinkIcon size={15} style={{ color: O }} /> QuickBooks Integration
+            <LinkIcon size={15} style={{ color: BRAND }} /> QuickBooks Integration
           </CardTitle>
         </CardHeader>
         <CardContent className="px-6 pb-5 space-y-3">
@@ -365,7 +364,7 @@ export default function SettingsPage({ onLogout, role }) {
             <Button
               size="sm"
               className="text-xs h-8 text-white"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
               onClick={handleConnectQB}
               disabled={qbConnecting || qbDisconnecting}
             >
@@ -392,7 +391,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <CameraIcon size={15} style={{ color: O }} /> CompanyCam Integration
+            <CameraIcon size={15} style={{ color: BRAND }} /> CompanyCam Integration
           </CardTitle>
         </CardHeader>
         <CardContent className="px-6 pb-5 space-y-3">
@@ -420,7 +419,7 @@ export default function SettingsPage({ onLogout, role }) {
             <Button
               size="sm"
               className="text-xs h-8 text-white"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
               onClick={handleConnectCC}
               disabled={ccConnecting || ccDisconnecting}
             >
@@ -468,7 +467,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <BellIcon size={15} style={{ color: O }} /> Push Notifications
+            <BellIcon size={15} style={{ color: BRAND }} /> Push Notifications
           </CardTitle>
         </CardHeader>
         <CardContent className="px-6 pb-5 space-y-3">
@@ -478,7 +477,7 @@ export default function SettingsPage({ onLogout, role }) {
           <Button
             size="sm"
             className="text-xs h-8 text-white"
-            style={{ backgroundColor: O }}
+            style={{ backgroundColor: BRAND }}
             onClick={handleEnablePush}
             disabled={pushBusy}
           >
@@ -492,14 +491,14 @@ export default function SettingsPage({ onLogout, role }) {
         <Card className="border-white/10 bg-white/5">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <ShieldIcon size={15} style={{ color: O }} /> Access Scopes
+              <ShieldIcon size={15} style={{ color: BRAND }} /> Access Scopes
             </CardTitle>
           </CardHeader>
           <CardContent className="px-6 pb-5 space-y-3">
             <Button
               size="sm"
               className="text-xs h-8 text-white"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
               onClick={handleBackfill}
               disabled={backfilling}
             >
@@ -516,7 +515,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <ShieldIcon size={15} style={{ color: O }} /> Account
+            <ShieldIcon size={15} style={{ color: BRAND }} /> Account
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 px-6 pb-5">
@@ -559,7 +558,7 @@ export default function SettingsPage({ onLogout, role }) {
                 <Button
                   size="sm"
                   className="text-xs h-7 text-white"
-                  style={{ backgroundColor: O }}
+                  style={{ backgroundColor: BRAND }}
                   onClick={handleChangePw}
                   disabled={saving || !curPw || !newPw}
                 >
@@ -592,7 +591,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <ServerIcon size={15} style={{ color: O }} /> System
+            <ServerIcon size={15} style={{ color: BRAND }} /> System
           </CardTitle>
         </CardHeader>
         <CardContent className="px-6 pb-5">

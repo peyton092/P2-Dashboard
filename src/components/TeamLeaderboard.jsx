@@ -14,8 +14,7 @@ import {
   AwardIcon, MedalIcon, BadgeCheckIcon, UsersRoundIcon,
   CheckCircleIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 const CREW = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 
@@ -134,7 +133,7 @@ function useReviewUrl() {
 function Chip({ color, icon: Icon, children }) {
   return (
     <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
-      style={{ backgroundColor: color + '18', color }}>
+      style={{ backgroundColor: withAlpha(color, 0.09), color }}>
       {Icon && <Icon size={9} />} {children}
     </span>
   )
@@ -219,7 +218,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
       <div className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer"
         onClick={() => setExpanded(e => !e)}>
         <span className="w-7 inline-flex items-center justify-center font-black text-sm shrink-0"
-          style={{ color: idx < 3 && totalPts > 0 ? O : '#6b7280' }}>
+          style={{ color: idx < 3 && totalPts > 0 ? BRAND : '#6b7280' }}>
           {idx < 3 && totalPts > 0
             ? <RankBadge idx={idx} size={16} />
             : `#${idx + 1}`}
@@ -227,9 +226,9 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
 
         <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0 border-2"
           style={{
-            backgroundColor: isLeader ? O + '33' : '#ffffff11',
-            color: isLeader ? O : '#9ca3af',
-            borderColor: isLeader ? O + '66' : '#ffffff11',
+            backgroundColor: isLeader ? withAlpha(BRAND, 0.2) : '#ffffff11',
+            color: isLeader ? BRAND : '#9ca3af',
+            borderColor: isLeader ? withAlpha(BRAND, 0.4) : '#ffffff11',
           }}>
           {name[0]}
         </div>
@@ -238,7 +237,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
           <p className="font-semibold text-sm text-white">{name}</p>
           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
             <span className="text-xs text-zinc-500">{ROLES[name]}</span>
-            {auto.reportCount > 0 && <Chip color={O} icon={ClipboardListIcon}>{auto.reportCount} rpts</Chip>}
+            {auto.reportCount > 0 && <Chip color={BRAND} icon={ClipboardListIcon}>{auto.reportCount} rpts</Chip>}
             {auto.inspReadyCount > 0 && <Chip color="#22c55e" icon={ShieldCheckIcon}>{auto.inspReadyCount} insp</Chip>}
           </div>
         </div>
@@ -246,11 +245,11 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
         <div className="hidden sm:flex items-center gap-1.5 shrink-0">
           {(man.googleReviews || 0) > 0 && <Chip color="#eab308" icon={StarIcon}>{man.googleReviews}</Chip>}
           {(man.referrals || 0) > 0 && <Chip color="#22c55e" icon={UserPlusIcon}>{man.referrals}</Chip>}
-          {(man.bonusPoints || 0) > 0 && <Chip color={O} icon={ZapIcon}>+{man.bonusPoints}</Chip>}
+          {(man.bonusPoints || 0) > 0 && <Chip color={BRAND} icon={ZapIcon}>+{man.bonusPoints}</Chip>}
         </div>
 
         <div className="text-right shrink-0 mr-1" onClick={e => e.stopPropagation()}>
-          <p className="font-semibold text-base" style={{ color: isLeader ? O : '#e5e7eb' }}>{totalPts}</p>
+          <p className="font-semibold text-base" style={{ color: isLeader ? BRAND : '#e5e7eb' }}>{totalPts}</p>
           <p className="text-[10px] text-zinc-500">pts</p>
         </div>
 
@@ -270,7 +269,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
           </button>
           <button title="+Bonus"
             className="p-1.5 rounded-lg transition-colors"
-            style={{ backgroundColor: open && isAdding?.type === 'bonus' ? O + '22' : 'transparent', color: open && isAdding?.type === 'bonus' ? O : '#6b7280' }}
+            style={{ backgroundColor: open && isAdding?.type === 'bonus' ? withAlpha(BRAND, 0.13) : 'transparent', color: open && isAdding?.type === 'bonus' ? BRAND : '#6b7280' }}
             onClick={() => onSetAdding(open && isAdding?.type === 'bonus' ? null : { name, type: 'bonus', value: '', note: '' })}>
             <ZapIcon size={12} />
           </button>
@@ -303,8 +302,8 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
       {/* Bonus panel */}
       {open && isAdding?.type === 'bonus' && (
         <div className="mx-4 mb-3 p-3 rounded-lg border flex flex-wrap items-center gap-2"
-          style={{ backgroundColor: O + '11', borderColor: O + '33' }}>
-          <ZapIcon size={13} color={O} />
+          style={{ backgroundColor: withAlpha(BRAND, 0.07), borderColor: withAlpha(BRAND, 0.2) }}>
+          <ZapIcon size={13} color={BRAND} />
           <Input type="number" min="1" placeholder="pts"
             className="w-20 h-7 text-xs bg-white/10 border-white/20"
             value={isAdding.value}
@@ -313,7 +312,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
             className="flex-1 min-w-32 h-7 text-xs bg-white/10 border-white/20"
             value={isAdding.note}
             onChange={e => onSetAdding(a => ({ ...a, note: e.target.value }))} />
-          <Button size="sm" className="h-7 text-xs" style={{ backgroundColor: O, color: '#fff' }}
+          <Button size="sm" className="h-7 text-xs" style={{ backgroundColor: BRAND, color: '#fff' }}
             onClick={() => onLogBonus(name, isAdding.value, isAdding.note)}>
             Award Bonus
           </Button>
@@ -328,10 +327,10 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
         <div className="px-[4.5rem] pb-4 pt-1">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 rounded-xl border"
             style={{ backgroundColor: '#ffffff05', borderColor: '#ffffff0d' }}>
-            <Stat label="Auto pts" value={auto.pts} sub="from reports" color={O} />
+            <Stat label="Auto pts" value={auto.pts} sub="from reports" color={BRAND} />
             <Stat label="Manual pts" value={bonusPts} sub="reviews + refs + bonus" color="#9ca3af" />
             <Stat label="Reports" value={auto.reportCount} sub={`${auto.taskCount} tasks logged`} color="#9ca3af" />
-            <Stat label="Total" value={totalPts} sub="this month" color={isLeader ? O : '#e5e7eb'} />
+            <Stat label="Total" value={totalPts} sub="this month" color={isLeader ? BRAND : '#e5e7eb'} />
           </div>
 
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-zinc-500">
@@ -342,7 +341,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
             {auto.noBlockerCount > 0 && <span className="inline-flex items-center gap-1"><ZapIcon size={11} /> {auto.noBlockerCount} no-blocker days (+{auto.noBlockerCount * PTS.noBlocker})</span>}
             {(man.googleReviews || 0) > 0 && <span className="inline-flex items-center gap-1 text-yellow-500"><StarIcon size={11} /> {man.googleReviews} Google reviews (+{man.googleReviews * PTS.review})</span>}
             {(man.referrals || 0) > 0 && <span className="inline-flex items-center gap-1 text-green-500"><UsersRoundIcon size={11} /> {man.referrals} referrals (+{man.referrals * PTS.referral})</span>}
-            {(man.bonusPoints || 0) > 0 && <span className="inline-flex items-center gap-1" style={{ color: O }}><TargetIcon size={11} /> Bonus: +{man.bonusPoints}{man.bonusNote ? ` (${man.bonusNote})` : ''}</span>}
+            {(man.bonusPoints || 0) > 0 && <span className="inline-flex items-center gap-1" style={{ color: BRAND }}><TargetIcon size={11} /> Bonus: +{man.bonusPoints}{man.bonusNote ? ` (${man.bonusNote})` : ''}</span>}
           </div>
         </div>
       )}
@@ -356,20 +355,20 @@ function PodiumCard({ name, pts, rank }) {
   const isFirst = rank === 0
   return (
     <div className="flex flex-col items-center gap-1.5 text-center">
-      <span className="inline-flex items-center justify-center" style={{ color: isFirst ? O : '#9ca3af' }}>
+      <span className="inline-flex items-center justify-center" style={{ color: isFirst ? BRAND : '#9ca3af' }}>
         <RankBadge idx={rank} size={22} />
       </span>
       <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-semibold border-2"
         style={{
-          backgroundColor: isFirst ? O + '33' : '#ffffff11',
-          color: isFirst ? O : '#9ca3af',
-          borderColor: isFirst ? O + '88' : '#ffffff22',
+          backgroundColor: isFirst ? withAlpha(BRAND, 0.2) : '#ffffff11',
+          color: isFirst ? BRAND : '#9ca3af',
+          borderColor: isFirst ? withAlpha(BRAND, 0.53) : '#ffffff22',
         }}>
         {name[0]}
       </div>
       <p className="text-xs font-bold text-white">{name}</p>
       <p className="text-[10px] text-zinc-500">{ROLES[name]}</p>
-      <p className="font-semibold text-base mt-0.5" style={{ color: isFirst ? O : '#9ca3af' }}>{pts}</p>
+      <p className="font-semibold text-base mt-0.5" style={{ color: isFirst ? BRAND : '#9ca3af' }}>{pts}</p>
       <p className="text-[10px] text-zinc-500">pts</p>
     </div>
   )
@@ -442,7 +441,7 @@ export default function TeamLeaderboard() {
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 rounded-full border-2 animate-spin"
-        style={{ borderColor: O + '33', borderTopColor: O }} />
+        style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
     </div>
   )
 
@@ -452,8 +451,8 @@ export default function TeamLeaderboard() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: O + '22' }}>
-            <TrophyIcon size={20} color={O} />
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: withAlpha(BRAND, 0.13) }}>
+            <TrophyIcon size={20} color={BRAND} />
           </div>
           <div>
             <h2 className="text-xl font-semibold text-white">Team Leaderboard</h2>
@@ -465,7 +464,7 @@ export default function TeamLeaderboard() {
             title="Configure Google Review URL"
             onClick={() => setShowUrlEdit(v => !v)}
             className="p-2 rounded-lg transition-colors"
-            style={{ backgroundColor: showUrlEdit ? O + '22' : '#ffffff11', color: showUrlEdit ? O : '#6b7280' }}>
+            style={{ backgroundColor: showUrlEdit ? withAlpha(BRAND, 0.13) : '#ffffff11', color: showUrlEdit ? BRAND : '#6b7280' }}>
             <SettingsIcon size={14} />
           </button>
           <span className="inline-flex items-center gap-1.5">
@@ -494,7 +493,7 @@ export default function TeamLeaderboard() {
                 value={urlDraft}
                 onChange={e => setUrlEdit(e.target.value)}
               />
-              <Button size="sm" className="h-8 text-xs" style={{ backgroundColor: O, color: '#fff' }}
+              <Button size="sm" className="h-8 text-xs" style={{ backgroundColor: BRAND, color: '#fff' }}
                 disabled={savingUrl} onClick={handleSaveUrl}>
                 {savingUrl ? 'Saving…' : 'Save'}
               </Button>
@@ -512,7 +511,7 @@ export default function TeamLeaderboard() {
       {/* Summary stats */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Daily Reports', value: totalReports,   pts: null,                          icon: ClipboardListIcon, color: O          },
+          { label: 'Daily Reports', value: totalReports,   pts: null,                          icon: ClipboardListIcon, color: BRAND      },
           { label: 'Google Reviews', value: totalReviews,  pts: totalReviews * PTS.review,      icon: StarIcon,          color: '#eab308'  },
           { label: 'Referrals',      value: totalReferrals, pts: totalReferrals * PTS.referral, icon: UserPlusIcon,      color: '#22c55e'  },
         ].map(s => (
@@ -570,7 +569,7 @@ export default function TeamLeaderboard() {
       <Card className="border-white/10 bg-white/5">
         <CardContent className="pt-3 pb-4">
           <div className="flex items-center gap-2 mb-3">
-            <TrendingUpIcon size={13} color={O} />
+            <TrendingUpIcon size={13} color={BRAND} />
             <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Point System</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -586,14 +585,14 @@ export default function TeamLeaderboard() {
             ].map(({ icon: Icon, label, pts, auto }) => (
               <div key={label} className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
-                  <Icon size={11} color={auto ? O : '#6b7280'} />
+                  <Icon size={11} color={auto ? BRAND : '#6b7280'} />
                   {label}
                   {auto && (
                     <span className="text-[9px] px-1 py-0.5 rounded font-bold"
-                      style={{ backgroundColor: O + '22', color: O }}>auto</span>
+                      style={{ backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}>auto</span>
                   )}
                 </div>
-                <span className="text-xs font-bold" style={{ color: O }}>{pts}</span>
+                <span className="text-xs font-bold" style={{ color: BRAND }}>{pts}</span>
               </div>
             ))}
           </div>

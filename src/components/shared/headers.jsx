@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils'
-
-const O = '#F47920'
+import { BRAND } from '@/lib/tokens'
 
 export function PageHeader({
   eyebrow,
@@ -22,7 +21,7 @@ export function PageHeader({
         {eyebrow && (
           <p
             className="text-[10px] font-semibold uppercase tracking-wider mb-1.5"
-            style={{ color: O }}
+            style={{ color: BRAND }}
           >
             {eyebrow}
           </p>
@@ -65,7 +64,7 @@ export function SectionHeader({
           {Icon && (
             <Icon
               size={16}
-              style={{ color: O }}
+              style={{ color: BRAND }}
               className="shrink-0"
               aria-hidden="true"
             />

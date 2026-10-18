@@ -2,13 +2,13 @@ import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
 import { PageHeader, Pill } from './shared'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon } from 'lucide-react'
+import { BRAND } from '@/lib/tokens'
 
-const O = '#F47920'
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 const EVENT_META = {
-  target: { color: O,         label: 'Target completion' },
+  target: { color: BRAND,     label: 'Target completion' },
   start:  { color: '#3b82f6', label: 'Job start' },
   pass:   { color: '#22c55e', label: 'Inspection passed' },
   fail:   { color: '#ef4444', label: 'Inspection failed' },
@@ -113,7 +113,7 @@ export default function Calendar() {
               <div className="flex items-center justify-between mb-1">
                 <span
                   className="text-[11px] font-semibold w-5 h-5 flex items-center justify-center rounded-full"
-                  style={c.isToday ? { backgroundColor: O, color: '#fff' } : { color: c.inMonth ? '#d4d4d8' : '#52525b' }}
+                  style={c.isToday ? { backgroundColor: BRAND, color: '#fff' } : { color: c.inMonth ? '#d4d4d8' : '#52525b' }}
                 >
                   {c.day}
                 </span>

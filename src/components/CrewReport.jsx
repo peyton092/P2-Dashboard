@@ -21,8 +21,7 @@ import {
   ShieldAlertIcon, FilePenLineIcon, BadgeCheckIcon,
   AlertTriangleIcon, ArrowRightIcon, CalendarDaysIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 const CREW_LIST = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 const PHASES = ['Rough-In', 'Service Release', 'Trim', 'Final']
@@ -65,7 +64,7 @@ function FieldLabel({ children }) {
 function yesNoButtonStyle(active, activeColor) {
   return {
     borderColor:     active ? activeColor : '#374151',
-    backgroundColor: active ? activeColor + '22' : 'transparent',
+    backgroundColor: active ? withAlpha(activeColor, 0.13) : 'transparent',
     color:           active ? activeColor : '#9ca3af',
   }
 }
@@ -104,8 +103,8 @@ function WorkCheckbox({ checked, onChange, label }) {
         onClick={() => onChange(!checked)}
         className="w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors"
         style={{
-          borderColor: checked ? O : '#4b5563',
-          backgroundColor: checked ? O : 'transparent',
+          borderColor: checked ? BRAND : '#4b5563',
+          backgroundColor: checked ? BRAND : 'transparent',
         }}
       >
         {checked && <CheckIcon size={12} color="#fff" strokeWidth={3} />}
@@ -312,7 +311,7 @@ export default function CrewReport() {
               type="button"
               onClick={reset}
               className="mt-6 inline-flex items-center gap-2 text-sm font-bold px-6 py-3 rounded-lg text-white transition-colors min-h-11"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
             >
               Submit another report
             </button>
@@ -496,7 +495,7 @@ export default function CrewReport() {
                 <YesNoToggle
                   value={changeOrderNeeded}
                   onChange={setChangeOrderNeeded}
-                  yesColor={O}
+                  yesColor={BRAND}
                   noColor="#22c55e"
                 />
               </div>
@@ -581,7 +580,7 @@ export default function CrewReport() {
             type="submit"
             disabled={submitting}
             className="w-full h-12 rounded-lg text-base font-bold text-white inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait transition-colors"
-            style={{ backgroundColor: O }}
+            style={{ backgroundColor: BRAND }}
           >
             {submitting ? (
               <><LoaderIcon size={16} className="animate-spin" /> Submitting…</>

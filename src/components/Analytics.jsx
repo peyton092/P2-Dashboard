@@ -6,10 +6,9 @@ import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList,
 } from 'recharts'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
-const O = '#F47920'
-
-const PHASE_COLORS = ['#3b82f6', O, '#22c55e']
+const PHASE_COLORS = ['#3b82f6', BRAND, '#22c55e']
 const INSP_COLORS  = { passed: '#22c55e', failed: '#ef4444', scheduled: '#eab308', pending: '#6b7280', blocked: '#3b82f6' }
 
 const fmtDollar = (n) => `$${Number(n || 0).toLocaleString()}`
@@ -133,9 +132,9 @@ export default function Analytics() {
       <div className="p-6 max-w-7xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-9 h-9 rounded-full border-2 animate-spin"
-            style={{ borderColor: O + '33', borderTopColor: O }} />
+            style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: O }}>Analytics</h1>
+            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: BRAND }}>Analytics</h1>
             <p className="text-sm text-muted-foreground">Loading portfolio data…</p>
           </div>
         </div>
@@ -151,7 +150,7 @@ export default function Analytics() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: O }}>Analytics</h1>
+        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: BRAND }}>Analytics</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Portfolio overview across {totalJobs} jobs</p>
       </div>
 
@@ -166,7 +165,7 @@ export default function Analytics() {
           <Card key={label} className="border-white/10 bg-white/5">
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">{label}</p>
-              <p className="text-2xl font-semibold" style={{ color: O }}>{value}</p>
+              <p className="text-2xl font-semibold" style={{ color: BRAND }}>{value}</p>
             </CardContent>
           </Card>
         ))}
@@ -231,7 +230,7 @@ export default function Analytics() {
               <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false}
                 domain={[0, 100]} tickFormatter={v => `${v}%`} />
               <Tooltip content={<DarkTooltip />} />
-              <Bar dataKey="passRate" name="Pass Rate %" fill={O} radius={[4, 4, 0, 0]} maxBarSize={48}>
+              <Bar dataKey="passRate" name="Pass Rate %" fill={BRAND} radius={[4, 4, 0, 0]} maxBarSize={48}>
                 <LabelList dataKey="jobs" position="top"
                   style={{ fill: '#9ca3af', fontSize: 10 }}
                   formatter={v => `${v}j`} />

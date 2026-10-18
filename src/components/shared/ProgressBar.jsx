@@ -1,9 +1,9 @@
 // Thin progress bar primitive. Pure presentational — no state, no Firestore.
 // Moved out of src/App.jsx in Phase 19. Behavior preserved exactly.
 
-const O = '#F47920' // Brand orange — kept local to avoid coupling to App.jsx.
+import { BRAND } from '@/lib/tokens'
 
-export function ProgressBar({ value, color = O, className = '' }) {
+export function ProgressBar({ value, color = BRAND, className = '' }) {
   return (
     <div className={`h-2 bg-white/10 rounded-full overflow-hidden ${className}`}>
       <div

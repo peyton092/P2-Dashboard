@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils'
 import { ArrowUpIcon, ArrowDownIcon, MinusIcon } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 // Tight, dense KPI tile suitable for a 2-6 column strip.
 // `accent` defaults to brand orange — only existing palette tones should be passed.
@@ -11,7 +10,7 @@ export default function MetricTile({
   sub,
   note,            // optional muted footnote line under `sub`
   Icon,
-  accent = O,
+  accent = BRAND,
   trend,           // 'up' | 'down' | 'flat' — visual cue only
   trendLabel,      // free-form string ("+8% vs last month")
   emphasis = 'default', // 'default' | 'critical' | 'warning' | 'success' | 'mute'
@@ -56,7 +55,7 @@ export default function MetricTile({
             style={{
               width: 32,
               height: 32,
-              backgroundColor: (emphasisColor || accent) + '22',
+              backgroundColor: withAlpha(emphasisColor || accent, 0.13),
               color: emphasisColor || accent,
             }}
           >

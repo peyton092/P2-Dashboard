@@ -22,8 +22,7 @@ import {
 } from 'lucide-react'
 import { classifyRisk } from '../agent/scoring'
 import { sumContracts, sumInvoices, missingNote } from '../lib/money'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 const TODAY = new Date()
 
@@ -364,7 +363,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('alerts')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               View All Alerts <ArrowRightIcon size={13} />
             </button>
@@ -381,7 +380,7 @@ export default function CommandCenter() {
                   <span className="flex items-center gap-2.5 min-w-0">
                     <span
                       className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
-                      style={{ backgroundColor: O + '22', color: O }}
+                      style={{ backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
                     >
                       <NeedsActionIcon kind={n.key} />
                     </span>
@@ -390,7 +389,7 @@ export default function CommandCenter() {
                   <span className="flex items-center gap-2 shrink-0">
                     <span
                       className="text-lg font-semibold tabular-nums leading-none"
-                      style={{ color: n.count > 0 ? O : '#9ca3af' }}
+                      style={{ color: n.count > 0 ? BRAND : '#9ca3af' }}
                     >
                       {n.count}
                     </span>
@@ -416,7 +415,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('war-room')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               View All Jobs At Risk <ArrowRightIcon size={13} />
             </button>
@@ -459,7 +458,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('pm-dashboard')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               View Full Workload <ArrowRightIcon size={13} />
             </button>
@@ -475,7 +474,7 @@ export default function CommandCenter() {
                     <div className="min-w-0 flex items-center gap-2">
                       <div
                         className="shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold"
-                        style={{ width: 26, height: 26, backgroundColor: O + '22', color: O }}
+                        style={{ width: 26, height: 26, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
                       >
                         {p.pm.split(' ').map(s => s[0]).join('').slice(0, 2)}
                       </div>
@@ -491,7 +490,7 @@ export default function CommandCenter() {
                       className="h-full rounded-full transition-all duration-500"
                       style={{
                         width: `${p.fill}%`,
-                        backgroundColor: p.issues > 0 ? '#eab308' : O,
+                        backgroundColor: p.issues > 0 ? '#eab308' : BRAND,
                       }}
                     />
                   </div>
@@ -513,7 +512,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('inspections')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               View Inspections <ArrowRightIcon size={13} />
             </button>
@@ -531,7 +530,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('billing-queue')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               Go to Billing Queue <ArrowRightIcon size={13} />
             </button>
@@ -573,7 +572,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('settings')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               {qb.connected ? 'Sync settings' : 'Connect now'} <ArrowRightIcon size={13} />
             </button>
@@ -621,7 +620,7 @@ function BillingRow({ label, amount, count, subtitle, note, tone = 'neutral' }) 
   const color =
     tone === 'success' ? '#22c55e' :
     tone === 'info'    ? '#3b82f6' :
-    tone === 'brand'   ? O :
+    tone === 'brand'   ? BRAND :
     '#9ca3af'
   return (
     <li className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-white/5 bg-white/[0.02]">
@@ -655,7 +654,7 @@ function InspectionDonut({ summary }) {
     { name: 'Passed',  value: summary.passed,  color: '#22c55e' },
     { name: 'Pending', value: summary.pending, color: '#eab308' },
     { name: 'Failed',  value: summary.failed,  color: '#ef4444' },
-    { name: 'Overdue', value: summary.overdue, color: O },
+    { name: 'Overdue', value: summary.overdue, color: BRAND },
   ].filter(d => d.value > 0)
 
   return (
@@ -686,7 +685,7 @@ function InspectionDonut({ summary }) {
         <DonutLegendRow label="Passed"  value={summary.passed}  total={summary.total} color="#22c55e" />
         <DonutLegendRow label="Pending" value={summary.pending} total={summary.total} color="#eab308" />
         <DonutLegendRow label="Failed"  value={summary.failed}  total={summary.total} color="#ef4444" />
-        <DonutLegendRow label="Overdue" value={summary.overdue} total={summary.total} color={O} />
+        <DonutLegendRow label="Overdue" value={summary.overdue} total={summary.total} color={BRAND} />
       </ul>
     </div>
   )
@@ -775,7 +774,7 @@ function QuickModule({ id, Icon, label, hint, badge = 0, onSelect }) {
     >
       <div
         className="shrink-0 flex items-center justify-center rounded-lg"
-        style={{ width: 38, height: 38, backgroundColor: O + '22', color: O }}
+        style={{ width: 38, height: 38, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
       >
         <Icon size={18} strokeWidth={2} />
       </div>
@@ -785,7 +784,7 @@ function QuickModule({ id, Icon, label, hint, badge = 0, onSelect }) {
           {badge > 0 && (
             <span
               className="text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white"
-              style={{ backgroundColor: O }}
+              style={{ backgroundColor: BRAND }}
             >
               {badge}
             </span>

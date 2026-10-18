@@ -1,7 +1,7 @@
 // Status metadata and lookup helpers for the legacy InspBadge / JobBadge.
 // Split from legacy-badges.jsx so that file only exports components.
 
-const O = '#F47920' // Brand orange — kept local to avoid coupling to App.jsx.
+import { BRAND } from '@/lib/tokens'
 
 export const inspMeta = {
   passed:    { color: '#22c55e', label: 'PASSED'    },
@@ -15,12 +15,12 @@ export const iMeta = (s) => inspMeta[s] || { color: '#6b7280', label: (s || '').
 
 export const statusMeta = {
   'on-track':     { color: '#22c55e', label: 'ON TRACK'     },
-  'needs-action': { color: O,         label: 'NEEDS ACTION' },
+  'needs-action': { color: BRAND,     label: 'NEEDS ACTION' },
   'at-risk':      { color: '#eab308', label: 'AT RISK'      },
   'blocked':      { color: '#ef4444', label: 'BLOCKED'      },
   'complete':     { color: '#22c55e', label: 'COMPLETE'     },
   'completed':    { color: '#22c55e', label: 'COMPLETED'    },
-  'active':       { color: O,         label: 'ACTIVE'       },
+  'active':       { color: BRAND,     label: 'ACTIVE'       },
   'hold':         { color: '#ef4444', label: 'ON HOLD'      },
   'pending':      { color: '#6b7280', label: 'PENDING'      },
 }

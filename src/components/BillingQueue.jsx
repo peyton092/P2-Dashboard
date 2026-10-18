@@ -25,8 +25,8 @@ import {
   ReceiptIcon, BanIcon, DownloadIcon, CheckIcon, XIcon,
   TimerIcon,
 } from 'lucide-react'
+import { BRAND } from '@/lib/tokens'
 
-const O = '#F47920'
 const TODAY = new Date()
 
 // ── Billing readiness — preserved from main ───────────────────────────────────
@@ -441,7 +441,7 @@ export default function BillingQueue() {
         <a
           href="mailto:billing@p2electrical.com"
           className="font-semibold transition-colors"
-          style={{ color: O }}
+          style={{ color: BRAND }}
         >
           billing@p2electrical.com
         </a>
@@ -584,7 +584,7 @@ function BillingActions({ job }) {
         onClick={handleMarkInvoiced}
         disabled={marking}
         className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-white disabled:opacity-50 transition-colors"
-        style={{ backgroundColor: O }}
+        style={{ backgroundColor: BRAND }}
         title="Submit invoice — marks job invoiced"
       >
         <ReceiptIcon size={11} /> {marking ? '…' : 'Submit invoice'}
@@ -638,7 +638,7 @@ function BillingRow({ row }) {
     next.tone === 'warning'  ? '#eab308' :
     next.tone === 'success'  ? '#22c55e' :
     next.tone === 'info'     ? '#3b82f6' :
-    next.tone === 'brand'    ? O :
+    next.tone === 'brand'    ? BRAND :
     '#9ca3af'
 
   return (
@@ -662,7 +662,7 @@ function BillingRow({ row }) {
         </div>
       </TableCell>
       <TableCell className="text-zinc-200 truncate">{jobBuilder(job)}</TableCell>
-      <TableCell align="right" className="font-bold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
+      <TableCell align="right" className="font-bold tabular-nums" style={{ color: billable > 0 ? BRAND : '#9ca3af' }}>
         {billable > 0 ? fmtMoney(billable) : '—'}
       </TableCell>
       <TableCell><BillingBadge status={job.billingStatus} /></TableCell>
@@ -718,7 +718,7 @@ function BillingCard({ row }) {
   const accent =
     next.tone === 'critical' ? '#ef4444' :
     next.tone === 'warning'  ? '#eab308' :
-    next.tone === 'brand'    ? O :
+    next.tone === 'brand'    ? BRAND :
     next.tone === 'success'  ? '#22c55e' :
     null
 
@@ -738,7 +738,7 @@ function BillingCard({ row }) {
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
+          <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? BRAND : '#9ca3af' }}>
             {billable > 0 ? fmtMoney(billable) : '—'}
           </p>
           <p className="text-[10px] text-zinc-400">{milestone}</p>

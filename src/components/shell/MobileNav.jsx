@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { MoreHorizontalIcon, XIcon } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND } from '@/lib/tokens'
 
 // MobileNav — bottom thumb-friendly nav + slide-up "More" drawer.
 //
@@ -43,7 +42,7 @@ export default function MobileNav({
                   type="button"
                   onClick={() => handleSelect(item.id)}
                   className="w-full flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors"
-                  style={{ color: active ? O : '#9ca3af' }}
+                  style={{ color: active ? BRAND : '#9ca3af' }}
                 >
                   <span className="relative">
                     <item.Icon size={20} strokeWidth={active ? 2.4 : 2} />
@@ -51,7 +50,7 @@ export default function MobileNav({
                       <span
                         className="absolute -top-1 -right-2 text-white font-black rounded-full flex items-center justify-center"
                         style={{
-                          backgroundColor: O,
+                          backgroundColor: BRAND,
                           fontSize: '9px',
                           minWidth: 14,
                           height: 14,
@@ -75,7 +74,7 @@ export default function MobileNav({
               onClick={() => setOpen(o => !o)}
               aria-expanded={open}
               className="w-full flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors"
-              style={{ color: open ? O : '#9ca3af' }}
+              style={{ color: open ? BRAND : '#9ca3af' }}
             >
               {open ? <XIcon size={20} /> : <MoreHorizontalIcon size={20} />}
               <span className="text-[10px] font-semibold leading-none">
@@ -117,7 +116,7 @@ export default function MobileNav({
                           ? 'bg-white/[0.06] text-white'
                           : 'text-muted-foreground hover:bg-white/5',
                       )}
-                      style={active ? { color: O } : undefined}
+                      style={active ? { color: BRAND } : undefined}
                     >
                       <span className="relative">
                         <item.Icon size={18} />
@@ -125,7 +124,7 @@ export default function MobileNav({
                           <span
                             className="absolute -top-1 -right-2 text-white font-black rounded-full flex items-center justify-center"
                             style={{
-                              backgroundColor: O,
+                              backgroundColor: BRAND,
                               fontSize: '9px',
                               minWidth: 14,
                               height: 14,

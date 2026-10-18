@@ -29,8 +29,7 @@ import {
 } from 'lucide-react'
 import Brand from './brand/Brand'
 import { DataPanel, Pill, EmptyState, AllClearState } from './shared'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -110,7 +109,7 @@ function clientStatus(job) {
   if (job.status === 'blocked')      return { tone: 'critical', text: 'Needs attention', color: '#ef4444' }
   if (job.status === 'at-risk')      return { tone: 'warning',  text: 'Watch list',      color: '#eab308' }
   if (job.status === 'needs-action') return { tone: 'warning',  text: 'Action needed',   color: '#eab308' }
-  return { tone: 'success', text: 'On track', color: O }
+  return { tone: 'success', text: 'On track', color: BRAND }
 }
 
 function nextMilestoneFor(job) {
@@ -139,9 +138,9 @@ function InspectionTimeline({ job }) {
           <div key={p.key} className="flex items-stretch flex-1 min-w-0">
             <div
               className="flex flex-col items-center text-center gap-1 px-2 py-2 rounded-lg flex-1 border min-w-0"
-              style={{ backgroundColor: meta.bg, borderColor: meta.color + '55' }}
+              style={{ backgroundColor: meta.bg, borderColor: withAlpha(meta.color, 0.33) }}
             >
-              <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: meta.color + '33' }}>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: withAlpha(meta.color, 0.2) }}>
                 <Icon size={14} style={{ color: meta.color }} />
               </div>
               <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color: meta.color }}>{p.label}</p>
@@ -275,7 +274,7 @@ function ExtraRow({ co }) {
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="text-xs font-bold" style={{ color: O }}>{co.id || co.coNumber || '—'}</span>
+              <span className="text-xs font-bold" style={{ color: BRAND }}>{co.id || co.coNumber || '—'}</span>
               <Pill tone={stateTone} size="xs">{stateLabel}</Pill>
               <span className="text-[10px] text-zinc-400">{co.job}</span>
             </div>
@@ -298,7 +297,7 @@ function ExtraRow({ co }) {
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="font-semibold text-base tabular-nums" style={{ color: O }}>{fmt$(total)}</p>
+            <p className="font-semibold text-base tabular-nums" style={{ color: BRAND }}>{fmt$(total)}</p>
             <p className="text-[10px] text-zinc-400">{co.date || fmtDate(co.createdAt)}</p>
           </div>
         </div>
@@ -539,7 +538,7 @@ function ClientMessages({ jobs, clientName }) {
   const myMessages = submits
 
   const CATEGORIES = ['Question', 'Schedule', 'Change Request', 'Issue', 'Other']
-  const statusColor = { Open: '#ef4444', 'In Progress': O, Resolved: '#22c55e' }
+  const statusColor = { Open: '#ef4444', 'In Progress': BRAND, Resolved: '#22c55e' }
 
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim() || !form.jobId) return
@@ -598,7 +597,7 @@ function ClientMessages({ jobs, clientName }) {
         <Card className="border-white/10">
           <CardContent className="p-3">
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0" style={{ backgroundColor: O + '33', color: O }}>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0" style={{ backgroundColor: withAlpha(BRAND, 0.2), color: BRAND }}>
                 {(clientName || 'You').slice(0, 2).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
@@ -635,7 +634,7 @@ function ClientMessages({ jobs, clientName }) {
         <Card className="border-white/10">
           <CardContent className="p-3 space-y-2">
             <Textarea className="bg-white/5 border-white/20 min-h-20 text-xs" placeholder="Write a reply…" value={replyText} onChange={e => setReplyText(e.target.value)} />
-            <Button className="w-full h-9 text-white text-xs gap-1.5" style={{ backgroundColor: O }} disabled={replying || !replyText.trim()} onClick={handleReply}>
+            <Button className="w-full h-9 text-white text-xs gap-1.5" style={{ backgroundColor: BRAND }} disabled={replying || !replyText.trim()} onClick={handleReply}>
               <SendIcon size={13} /> {replying ? 'Sending…' : 'Send reply'}
             </Button>
           </CardContent>
@@ -652,11 +651,11 @@ function ClientMessages({ jobs, clientName }) {
             <ChevronLeftIcon size={13} /> Back
           </Button>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Contact P2</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>Contact P2</p>
             <h2 className="text-lg font-semibold tracking-tight text-white mt-0.5">New message</h2>
           </div>
         </div>
-        <Card className="border-white/10" style={{ borderColor: O + '33' }}>
+        <Card className="border-white/10" style={{ borderColor: withAlpha(BRAND, 0.2) }}>
           <CardContent className="p-4 space-y-3">
             <div>
               <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Project *</label>
@@ -682,7 +681,7 @@ function ClientMessages({ jobs, clientName }) {
               <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Message *</label>
               <Textarea className="bg-white/5 border-white/20 min-h-24 text-xs" placeholder="How can P2 help?" value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} />
             </div>
-            <Button className="w-full h-9 text-white text-xs" style={{ backgroundColor: O }} disabled={submitting || !form.subject.trim() || !form.body.trim() || !form.jobId} onClick={handleNew}>
+            <Button className="w-full h-9 text-white text-xs" style={{ backgroundColor: BRAND }} disabled={submitting || !form.subject.trim() || !form.body.trim() || !form.jobId} onClick={handleNew}>
               {submitting ? 'Sending…' : 'Send to P2'}
             </Button>
           </CardContent>
@@ -697,11 +696,11 @@ function ClientMessages({ jobs, clientName }) {
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Contact P2</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>Contact P2</p>
           <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Messages</h2>
           <p className="text-xs text-zinc-400 mt-1">{openCount} open · {myMessages.length} total</p>
         </div>
-        <Button className="h-9 text-white text-xs gap-1.5 font-bold shrink-0" style={{ backgroundColor: O }} onClick={() => setView('new')} disabled={jobs.length === 0}>
+        <Button className="h-9 text-white text-xs gap-1.5 font-bold shrink-0" style={{ backgroundColor: BRAND }} onClick={() => setView('new')} disabled={jobs.length === 0}>
           <PlusIcon size={13} /> New message
         </Button>
       </div>
@@ -712,7 +711,7 @@ function ClientMessages({ jobs, clientName }) {
           title="No messages yet"
           description="Send your P2 team a question, schedule request, or issue about your project and the conversation appears here."
           action={jobs.length > 0 ? (
-            <Button className="text-white text-xs h-9 font-bold gap-1.5" style={{ backgroundColor: O }} onClick={() => setView('new')}>
+            <Button className="text-white text-xs h-9 font-bold gap-1.5" style={{ backgroundColor: BRAND }} onClick={() => setView('new')}>
               <PlusIcon size={13} /> Start a message
             </Button>
           ) : null}
@@ -724,14 +723,14 @@ function ClientMessages({ jobs, clientName }) {
             return (
               <button key={s._docId} className="w-full text-left flex items-start gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/25 transition-colors"
                 onClick={() => { setSelectedId(s._docId); setView('thread') }}>
-                <div className="shrink-0 flex items-center justify-center rounded-lg" style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}>
+                <div className="shrink-0 flex items-center justify-center rounded-lg" style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}>
                   <MessageSquareIcon size={14} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-zinc-100 truncate">{s.subject}</p>
                   <p className="text-[11px] text-zinc-400">{s.category} · {s.jobId || 'general'} · {fmtDate(s.createdAt)}</p>
                 </div>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0" style={{ backgroundColor: sc + '22', color: sc, border: `1px solid ${sc}44` }}>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0" style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, border: `1px solid ${withAlpha(sc, 0.27)}` }}>
                   {s.status || 'Open'}
                 </span>
               </button>
@@ -778,7 +777,7 @@ function ScheduleCard({ job }) {
             return (
               <li key={m.label + i} className="relative pl-6 pb-4 last:pb-0">
                 {!last && <span className="absolute left-[5px] top-3 bottom-0 w-px bg-white/10" />}
-                <span className="absolute left-0 top-1 w-3 h-3 rounded-full border-2" style={{ borderColor: meta.color, backgroundColor: meta.color + '44' }} />
+                <span className="absolute left-0 top-1 w-3 h-3 rounded-full border-2" style={{ borderColor: meta.color, backgroundColor: withAlpha(meta.color, 0.27) }} />
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-zinc-100">{m.label}</p>
                   <span className="text-[10px] font-bold uppercase tracking-wide shrink-0" style={{ color: meta.color }}>{meta.label}</span>
@@ -844,9 +843,9 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
 
   if (loading && jobs.length === 0) {
     return (
-      <div className="dark min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full border-2 animate-spin" style={{ borderColor: O + '33', borderTopColor: O }} />
+          <div className="w-9 h-9 rounded-full border-2 animate-spin" style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
           <p className="text-sm text-muted-foreground">Loading your projects…</p>
         </div>
       </div>
@@ -854,14 +853,14 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
   }
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Sticky header */}
       <header className="sticky top-0 z-20 border-b border-white/10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="px-4 sm:px-8 pt-4 pb-3 flex items-center gap-3 sm:gap-4">
           <Brand size={32} tone="light" className="shrink-0" />
           <div className="hidden sm:block w-px h-7 bg-white/10" />
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Client Portal</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>Client Portal</p>
             <p className="font-bold text-base text-white leading-tight truncate mt-0.5">{clientName}</p>
           </div>
           {onLogout && (
@@ -882,7 +881,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
             </SelectContent>
           </Select>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
-            <PortalStat label="Active"           value={activeJobs.length}    Icon={ActivityIcon}    accent={O} />
+            <PortalStat label="Active"           value={activeJobs.length}    Icon={ActivityIcon}    accent={BRAND} />
             <PortalStat label="Awaiting approval" value={pendingExtras.length} Icon={FilePenLineIcon} accent={pendingExtras.length > 0 ? '#eab308' : '#9ca3af'} sub={pendingExtras.length > 0 ? fmt$(pendingValue) : undefined} />
             <PortalStat label="Open invoices"    value={openInvoices}         Icon={ReceiptIcon}     accent={openInvoices > 0 ? '#3b82f6' : '#9ca3af'} />
             <PortalStat label="Completed"        value={completedJobs.length} Icon={BadgeCheckIcon}  accent="#22c55e" />
@@ -897,10 +896,10 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
           return (
             <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
               className="flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0"
-              style={{ borderColor: active ? O : 'transparent', color: active ? O : '#9ca3af' }}>
+              style={{ borderColor: active ? BRAND : 'transparent', color: active ? BRAND : '#9ca3af' }}>
               <t.Icon size={14} strokeWidth={active ? 2.25 : 2} />
               {t.label}
-              {t.count > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: O + '22', color: O }}>{t.count}</span>}
+              {t.count > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}>{t.count}</span>}
             </button>
           )
         })}
@@ -943,7 +942,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
         {activeTab === 'schedule' && (
           <div className="space-y-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Schedule</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>Schedule</p>
               <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Project milestones</h2>
               <p className="text-xs text-zinc-400 mt-1">Start, inspection milestones, and target completion for each project.</p>
             </div>
@@ -960,7 +959,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
         {activeTab === 'extras' && (
           <div className="space-y-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Change Orders</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>Change Orders</p>
               <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Review &amp; approve</h2>
               <p className="text-xs text-zinc-400 mt-1">
                 {pendingExtras.length} awaiting · {fmt$(pendingValue)} pending
@@ -986,7 +985,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
         {activeTab === 'invoices' && (
           <div className="space-y-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Billing</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>Billing</p>
               <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Invoices &amp; payments</h2>
               <p className="text-xs text-zinc-400 mt-1">{openInvoices} open · {visibleJobs.length} project{visibleJobs.length === 1 ? '' : 's'}</p>
             </div>
@@ -1003,7 +1002,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
         {activeTab === 'files' && (
           <div className="space-y-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>Documentation</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>Documentation</p>
               <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Photos &amp; documents</h2>
               <p className="text-xs text-zinc-400 mt-1">Jobsite photos and project documents shared by P2.</p>
             </div>
@@ -1031,12 +1030,12 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
             return (
               <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
                 className="flex flex-col items-center justify-center gap-0.5 py-2.5 relative transition-colors"
-                style={{ color: active ? O : '#9ca3af' }}>
+                style={{ color: active ? BRAND : '#9ca3af' }}>
                 <t.Icon size={20} strokeWidth={active ? 2.25 : 2} />
                 <span className="text-[10px] font-semibold leading-none">{t.label}</span>
                 {t.count > 0 && (
                   <span className="absolute top-1 right-[26%] text-[9px] text-white font-black rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: O, minWidth: 14, height: 14, padding: '0 3px' }}>
+                    style={{ backgroundColor: BRAND, minWidth: 14, height: 14, padding: '0 3px' }}>
                     {t.count > 99 ? '99+' : t.count}
                   </span>
                 )}

@@ -6,8 +6,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import Brand, { BrandMark } from '@/components/brand/Brand'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 // Sidebar — desktop only.
 //
@@ -115,14 +114,14 @@ export default function Sidebar({
                       <span
                         aria-hidden="true"
                         className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r"
-                        style={{ backgroundColor: O }}
+                        style={{ backgroundColor: BRAND }}
                       />
                     )}
                     <item.Icon
                       size={18}
                       className="shrink-0"
                       strokeWidth={active ? 2.25 : 1.85}
-                      style={active ? { color: O } : undefined}
+                      style={active ? { color: BRAND } : undefined}
                     />
                     {!collapsed && (
                       <>
@@ -135,7 +134,7 @@ export default function Sidebar({
                                 ? 'text-white'
                                 : 'text-zinc-300 bg-white/[0.08]',
                             )}
-                            style={active ? { backgroundColor: O, color: '#fff' } : undefined}
+                            style={active ? { backgroundColor: BRAND, color: '#fff' } : undefined}
                           >
                             {item.count}
                           </span>
@@ -146,7 +145,7 @@ export default function Sidebar({
                       <span
                         aria-hidden="true"
                         className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
-                        style={{ backgroundColor: O }}
+                        style={{ backgroundColor: BRAND }}
                       />
                     )}
                   </button>
@@ -182,7 +181,7 @@ export default function Sidebar({
             <div className="flex items-center gap-2.5 mb-2">
               <div
                 className="shrink-0 flex items-center justify-center rounded-full text-[11px] font-bold"
-                style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}
+                style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
               >
                 {(userLabel || 'P2').slice(0, 2).toUpperCase()}
               </div>
@@ -198,7 +197,7 @@ export default function Sidebar({
           ) : (
             <div
               className="flex items-center justify-center rounded-full text-[11px] font-bold"
-              style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}
+              style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
               title={userLabel || 'P2'}
             >
               {(userLabel || 'P2').slice(0, 2).toUpperCase()}
