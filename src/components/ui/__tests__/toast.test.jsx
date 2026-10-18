@@ -353,6 +353,118 @@ describe('an action', () => {
   })
 })
 
+// The region is last in the page. F8 takes a person using the keyboard straight to the
+// newest toast, so that the Undo on it can be reached before it goes.
+describe('the F8 shortcut', () => {
+  const withUndo = (over = {}) => ({ title: 'Notification dismissed.', action: { label: 'Undo', onClick: () => {} }, ...over })
+  // The page sends the key to the document, wherever focus is. Whether the page cancelled
+  // it comes back: false when it did, true when it left the key to the browser.
+  const pressF8 = (init = {}) => fireEvent.keyDown(document, { key: 'F8', ...init })
+
+  it('is named on the region for assistive technology, and not in the name of the region', () => {
+    setup()
+    expect(region().getAttribute('aria-keyshortcuts')).toBe('F8')
+    expect(region().getAttribute('aria-label')).toBe('Notifications')
+  })
+
+  it('moves focus to the action of the newest toast', () => {
+    const { show } = setup()
+    show(withUndo({ title: 'First.' }))
+    show(withUndo({ title: 'Second.' }))
+    act(() => { screen.getByRole('button', { name: 'Page control' }).focus() })
+
+    pressF8()
+
+    expect(document.activeElement).toBe(screen.getAllByRole('button', { name: 'Undo' })[1])
+  })
+
+  it('moves focus to the dismiss button of a newest toast that has no action', () => {
+    const { show } = setup()
+    show({ title: 'Saved.' })
+
+    pressF8()
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss notification' }))
+  })
+
+  it('reaches an error toast too, which is an alert and not a status', () => {
+    const { show } = setup()
+    show({ title: 'Could not save.', tone: 'error' })
+
+    pressF8()
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss notification' }))
+  })
+
+  it('looks only in its own region, and not at other statuses on the page', () => {
+    const { show } = setup()
+    render(<div role="status"><button type="button">Elsewhere</button></div>)
+    show(withUndo())
+
+    pressF8()
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Undo' }))
+  })
+
+  it('holds the toast still once focus is in it, and Enter then runs the action', () => {
+    const onClick = vi.fn()
+    const { show } = setup()
+    show(withUndo({ action: { label: 'Undo', onClick } }))
+
+    pressF8()
+    tick(60000)
+    expect(screen.queryByText('Notification dismissed.')).toBeTruthy()
+
+    pressEnter(document.activeElement)
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Notification dismissed.')).toBeNull()
+  })
+
+  it('keeps the key from the browser when it moves focus', () => {
+    const { show } = setup()
+    show(withUndo())
+    expect(pressF8()).toBe(false)
+  })
+
+  it('does nothing, and leaves the key to the browser, when there is no toast', () => {
+    setup()
+    expect(pressF8()).toBe(true)
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it.each([['ctrlKey'], ['metaKey'], ['altKey'], ['shiftKey']])('leaves F8 to the browser when %s is held', (modifier) => {
+    const { show } = setup()
+    show(withUndo())
+    expect(pressF8({ [modifier]: true })).toBe(true)
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('leaves other keys alone', () => {
+    const { show } = setup()
+    show(withUndo())
+    expect(fireEvent.keyDown(document, { key: 'F7' })).toBe(true)
+    expect(fireEvent.keyDown(document, { key: 'f' })).toBe(true)
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  // After the page is gone the key finds no region, so pressing it would show nothing. What
+  // matters is that the listener itself is taken off the document, and not left behind.
+  it('takes its listener off the document when the toasts are gone from the page', () => {
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    try {
+      const { unmount } = setup()
+      const keydowns = (spy) => spy.mock.calls.filter(([type]) => type === 'keydown').length
+      expect(keydowns(add)).toBeGreaterThan(0)
+      unmount()
+      expect(keydowns(remove)).toBe(keydowns(add))
+    } finally {
+      add.mockRestore()
+      remove.mockRestore()
+    }
+  })
+})
+
 describe('pausing', () => {
   const withUndo = (over = {}) => ({ title: 'Notification dismissed.', action: { label: 'Undo', onClick: () => {} }, ...over })
   const toastEl = () => screen.getByRole('status')

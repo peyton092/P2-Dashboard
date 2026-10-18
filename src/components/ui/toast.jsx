@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { ToastContext } from './use-toast'
 import { CheckCircleIcon, AlertCircleIcon, InfoIcon, XIcon } from 'lucide-react'
 import { BRAND, SEMANTIC } from '@/lib/tokens'
@@ -91,8 +91,27 @@ function ToastItem({ t, onDismiss }) {
 // region with none is hidden when a dialog opens, and then an error toast about the work the
 // dialog started (a disconnect that was refused) would be shown and never read. "off" is
 // the value that keeps the region in view of the dialog and still announces nothing itself.
+//
+// The region is last in the page, so a person using the keyboard would have to tab through
+// all of it to reach the Undo on a toast that goes in eight seconds. F8 moves focus to the
+// newest toast, on its first button, and the toast holds still while focus is in it. The
+// region names the key with aria-keyshortcuts, so that its own name stays Notifications.
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
+  const regionRef = useRef(null)
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key !== 'F8' || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
+      const shown = regionRef.current?.querySelectorAll('[role="status"], [role="alert"]')
+      const button = shown?.[shown.length - 1]?.querySelector('button')
+      if (!button) return
+      event.preventDefault()
+      button.focus()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const dismiss = useCallback((id) => {
     setToasts(list => list.filter(t => t.id !== id))
@@ -115,8 +134,10 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={toast}>
       {children}
       <div
+        ref={regionRef}
         role="region"
         aria-label="Notifications"
+        aria-keyshortcuts="F8"
         aria-live="off"
         className="fixed z-(--z-toast) bottom-4 right-4 left-4 sm:left-auto flex flex-col gap-2 pointer-events-none"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
