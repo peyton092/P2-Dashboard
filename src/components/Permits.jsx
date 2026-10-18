@@ -4,7 +4,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useData } from '../use-data'
 import { updatePermit } from '../hooks/useFirestore'
-import { SectionHeader, StatBand, StatusBadge, PermitBadge } from './shared'
+import { PageHeader, StatBand, StatusBadge, PermitBadge } from './shared'
 import { BRAND, withAlpha } from '@/lib/tokens'
 import { PERMIT_STATUS, TRADE, statusColor, statusLabel } from '../lib/status'
 
@@ -26,7 +26,7 @@ export default function Permits() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Permits" description="Permit status across all active jobs and trades" />
+      <PageHeader title="Permits" subtitle="Permit status across all active jobs and trades" />
 
       <StatBand
         stats={[

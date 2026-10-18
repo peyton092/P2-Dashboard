@@ -2,7 +2,7 @@ import {
   DatabaseIcon, ServerIcon, ShieldIcon, CloudIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { SectionHeader, StatBand } from './shared'
+import { PageHeader, StatBand } from './shared'
 import { BRAND } from '@/lib/tokens'
 
 // Extracted from src/App.jsx in Phase 20.
@@ -96,7 +96,7 @@ export default function Architecture() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Architecture" description="Firestore blueprint · Cloud Functions · Security rules" />
+      <PageHeader title="Architecture" subtitle="Firestore blueprint · Cloud Functions · Security rules" />
 
       <StatBand
         stats={[
