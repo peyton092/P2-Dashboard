@@ -84,7 +84,7 @@ npm run dev          # http://localhost:5173
 
 `npm run build` produces `dist/`; `firebase deploy --only hosting` ships it. `npm run dev` talks to the live project, not to the emulators.
 
-Nothing is seeded on first run, so an empty project shows empty states. `npm run seed:demo` writes invented demo jobs, change orders, notifications, subs and materials into the Firestore emulator only. It refuses to run unless `FIRESTORE_EMULATOR_HOST` is set:
+Nothing is seeded on first run, so an empty project shows empty states. `npm run seed:demo` writes invented demo jobs, change orders, notifications, subs and materials into the Firestore emulator only. The emulators serve the rules tests (`npm run test:rules` starts its own and seeds its own fixtures) and the seeded emulator is there for the Phase 2 screenshot harness, while `npm run dev` talks to the live project until a `firebase.js` emulator switch lands in Phase 2. The seed refuses to run unless `FIRESTORE_EMULATOR_HOST` is set:
 
 ```bash
 npx firebase emulators:start --only firestore

@@ -171,13 +171,13 @@ The Status column records where each item stands on the branch `claude/phase-0-1
 | 10 | Implement `createUser` callable (owner only, sets custom claims, sends reset link) | 5 | 5 | 3 | 30 | Done (443a779, fb81fe8) |
 | 11 | Implement `approveExtra`, `rejectExtra`, `passInspection`, `failInspection`, `createJob` callables with role checks; remove fallbacks | 5 | 5 | 3 | 30 | Done (84c81e3, 607a1ed) |
 | 12 | Tighten rules: staff write on jobs, extras, inspections; clients read via `clientUids`; builders via `tenantId`; scope queries | 5 | 5 | 4 | 20 | Done (8d5b11b, dc3b4b5, 5f7a510, 0ab45ab) |
-| 13 | CI: lint, build, unit tests, rules emulator tests on every PR | 4 | 4 | 2 | 32 | Done (5e18b64) |
+| 13 | CI: lint, build, unit tests, rules emulator tests on every PR | 4 | 4 | 2 | 32 | Done (5e18b64, df51272) |
 | 14 | Fix 58 lint errors; `npm audit fix` both packages | 3 | 4 | 1 | 35 | Done (5e18b64, which also ran npm audit fix; advisories that need breaking upgrades remain) |
 | 15 | Shared date module: local date helper, no module level `TODAY` | 4 | 4 | 2 | 32 | Open (Phase 2) |
 | 16 | Single status vocabulary module and single `isBillingReady` | 4 | 3 | 2 | 28 | Open (Phase 2) |
 | 17 | Wrap every mutation in try, catch, finally with toast feedback | 4 | 3 | 3 | 21 | Open (Phase 2) |
 | 18 | Fix material cost reset, CO save status, invoice date on submit, alert rescan merge, snooze | 4 | 4 | 2 | 32 | Open (Phase 2) |
-| 19 | Validate `paymentUrl` and file URLs; validate uploads; record `uid` on every write | 3 | 4 | 2 | 28 | Done (ae39200, ce667ce) |
+| 19 | Validate `paymentUrl` and file URLs; validate uploads; record authorship on every create (`createdBy`, `createdByEmail`); updates carry no `updatedBy` | 3 | 4 | 2 | 28 | Done (ae39200, ce667ce) |
 | 20 | Unit tests for `scoring`, `alerts`, `billing`, `briefing`, `inspections`, `notifications` | 3 | 3 | 2 | 24 | Open (Phase 2 or later) |
 | 21 | Split `App.jsx` into route files; adopt a router; drop the window event bus | 4 | 2 | 4 | 12 | Open (Phase 2 or later) |
 | 22 | Extract shared portal kit (`PortalShell`, `ExtraRow`, `InspectionTimeline`, `MessageThread`) | 3 | 2 | 4 | 10 | Open (Phase 2 or later) |
