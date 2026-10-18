@@ -153,11 +153,13 @@ describe('ConfirmDialog', () => {
     expect(confirm.classList.contains('text-destructive')).toBe(true)
   })
 
-  it('has buttons that are 44 pixels tall under 768 pixels', async () => {
+  it('has buttons that are 44 pixels tall under 768 pixels, from the footer they sit in', async () => {
     render(<Page />)
     const dialog = await openIt()
 
-    for (const button of actions(dialog)) expect(button.classList.contains('h-11'), button.textContent).toBe(true)
+    for (const button of actions(dialog)) {
+      expect(button.parentElement.classList.contains('max-md:[&>button]:min-h-11'), button.textContent).toBe(true)
+    }
   })
 
   it('has no accessibility violations, busy or not', async () => {

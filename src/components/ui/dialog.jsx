@@ -42,14 +42,15 @@ function DialogBody({ className, ...props }) {
   );
 }
 
-// The actions, Cancel first. Stacked and full width on a phone, where the buttons
-// are 44 pixels tall, and in one row at the right from 640 pixels.
+// The actions, Cancel first. Stacked and full width on a phone, and in one row at
+// the right from 640 pixels. Every button in it is at least 44 pixels tall under 768
+// pixels, so a screen that puts a button here does not have to remember to ask.
 function DialogFooter({ className, ...props }) {
   return (
     <div
       data-slot="dialog-footer"
       className={cn(
-        "flex flex-col gap-2 border-t border-white/10 px-5 py-4 sm:flex-row sm:justify-end",
+        "flex flex-col gap-2 border-t border-white/10 px-5 py-4 max-md:[&>button]:min-h-11 sm:flex-row sm:justify-end",
         className
       )}
       {...props} />

@@ -269,6 +269,16 @@ describe('the parts of a dialog', () => {
     expect(screen.getByRole('button', { name: 'Done' }).parentElement.classList.contains('footer-extra')).toBe(true)
   })
 
+  it('DialogFooter makes every button in it at least 44 pixels tall under 768 pixels', async () => {
+    render(<Page />)
+    await openIt()
+
+    // The rule is on the footer, so a button that a screen puts there does not have to ask.
+    const footer = screen.getByRole('button', { name: 'Save job' }).parentElement
+    expect(footer.getAttribute('data-slot')).toBe('dialog-footer')
+    expect(footer.classList.contains('max-md:[&>button]:min-h-11')).toBe(true)
+  })
+
   it('DialogTitle sets the title in the display face', async () => {
     render(<Page />)
     await openIt()

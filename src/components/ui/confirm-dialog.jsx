@@ -25,13 +25,12 @@ function ConfirmDialog({
   return (
     <Dialog open={open} onClose={onClose} title={title} description={body} size="sm">
       <DialogFooter>
-        <Button type="button" variant="outline" className="h-11 md:h-8" onClick={() => onClose()}>
+        <Button type="button" variant="outline" onClick={() => onClose()}>
           Cancel
         </Button>
         <Button
           type="button"
           variant={tone === "critical" ? "destructive" : "brand"}
-          className="h-11 md:h-8"
           disabled={busy}
           onClick={() => onConfirm()}>
           {busy ? "Working" : confirmLabel}
