@@ -205,6 +205,32 @@ describe('onNotificationCreated: who is sent to', () => {
     assert.deepEqual(sentTokens(), [...STAFF, 'tok-qbs', 'tok-c1'])
   })
 
+  // The claims sync and the rules give a builder a tenant only when it is qbs or vision, so a
+  // builder whose document names anything else has none and is shown nothing scoped. A push
+  // must not tell that builder what the app would not show them.
+  it('sends nothing to a builder whose document names a tenant other than qbs or vision, while staff still get the push', async () => {
+    const users = {
+      ...USERS,
+      coreB: { role: 'builder', tenantId: 'p2-core' },
+      acmeB: { role: 'builder', tenantId: 'acme' },
+      upperB: { role: 'builder', tenantId: 'QBS' },
+    }
+    const tokens = { ...TOKENS, 'tok-core': { uid: 'coreB' }, 'tok-acme': { uid: 'acmeB' }, 'tok-upper': { uid: 'upperB' } }
+    given({ tokens, users })
+    // A notification stamped with the very tenant the document names reaches staff and nobody else.
+    for (const tenantId of ['p2-core', 'acme', 'QBS']) {
+      multicasts = []
+      await notify({ type: 'info', msg: 'Tenant news', tenantId })
+      assert.deepEqual(sentTokens(), STAFF, `a notification stamped ${tenantId}`)
+    }
+  })
+
+  it('sends a notification stamped vision to the builders whose document names vision, and to no builder of qbs', async () => {
+    given({ tokens: TOKENS, users: USERS })
+    await notify({ type: 'info', msg: 'Vision news', tenantId: 'vision' })
+    assert.deepEqual(sentTokens(), [...STAFF, 'tok-vision'])
+  })
+
   it('skips a uid that cannot name a document without stopping the others', async () => {
     const tokens = {
       'tok-empty': { uid: '' },

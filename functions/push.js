@@ -10,8 +10,9 @@
 //  notification's tenantId, clientUids and jobId and the users document of each
 //  device's owner: staff get every notification, a builder the ones that carry
 //  their tenant, a client the ones that list them or name one of their jobs. A
-//  notification with none of those fields reaches staff only. A device that
-//  recorded no uid, or whose uid has no users document, gets nothing.
+//  builder's tenant is read as the claims sync reads it, so only qbs or vision
+//  counts. A notification with none of those fields reaches staff only. A device
+//  that recorded no uid, or whose uid has no users document, gets nothing.
 // ============================================================================
 
 import { onDocumentCreated } from 'firebase-functions/v2/firestore'
@@ -21,6 +22,7 @@ import { region } from './lib/config.js'
 import { chunks } from './lib/batches.js'
 import { groupTokens, targetTokens } from './lib/push-targets.js'
 import { nonEmptyString } from './lib/scope.js'
+import { tenantForRole } from './lib/users-validate.js'
 
 // What a person reads on the lock screen carries no dashes, in a title or a body.
 const NOTIF_TITLE = {
@@ -36,7 +38,10 @@ const USER_CHUNK = 10
 const MULTICAST_LIMIT = 500
 
 // The users documents of these uids, as { [uid]: { role, tenantId, clientJobIds } }:
-// the fields push-targets.js reads. A uid whose document does not exist is left out,
+// the fields push-targets.js reads. The tenant is the one the claims sync gives the
+// account (tenantForRole): a builder keeps qbs or vision and otherwise has none, so a
+// builder whose document names any other tenant matches no tenant scoped push, as the
+// rules show them nothing scoped. A uid whose document does not exist is left out,
 // which leaves its devices out of the fan out. So is a uid that cannot name a
 // document (not a string, empty, or holding a slash, which would point the path
 // somewhere else), so that one odd token cannot stop everyone else's push.
@@ -48,7 +53,7 @@ async function loadUsers(uids) {
     for (const snap of snaps) {
       if (!snap.exists) continue
       const { role, tenantId, clientJobIds } = snap.data()
-      entries.push([snap.id, { role, tenantId, clientJobIds }])
+      entries.push([snap.id, { role, tenantId: tenantForRole(role, tenantId), clientJobIds }])
     }
   }
   return Object.fromEntries(entries)
