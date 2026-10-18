@@ -5,7 +5,11 @@ import { safeHttpUrl } from '../lib/safeUrl'
 import { extraState } from '../lib/extraStatus'
 import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
-import { BILLING_STATUS_LABEL } from '../lib/billing'
+import { PHASE_LABEL } from '../lib/inspections'
+import {
+  JOB_STATUS, INSPECTION_STATUS, BILLING_STATUS, CO_STATUS,
+  isJobComplete, normalizeCoStatus, statusLabel, statusTone, statusColor, toneHex,
+} from '../lib/status'
 import { useToast } from '@/components/ui/use-toast'
 import { classifyRisk, hasFailedInspection } from '../agent/scoring'
 import {
@@ -19,18 +23,6 @@ import { BRAND, withAlpha } from '@/lib/tokens'
 const jobLabel = (j) => j.name || j.client || j.id
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 
-const ISTATUS = {
-  passed:                 { c: '#22c55e', l: 'Passed' },
-  failed:                 { c: '#ef4444', l: 'Failed' },
-  scheduled:              { c: '#3b82f6', l: 'Scheduled' },
-  pending:                { c: '#eab308', l: 'Pending' },
-  'pending-verification': { c: '#eab308', l: 'Pending' },
-  blocked:                { c: '#ef4444', l: 'Blocked' },
-  'not-started':          { c: '#6b7280', l: 'Not started' },
-  'n/a':                  { c: '#6b7280', l: 'N/A' },
-}
-
-const PHASE_LABEL = { roughIn: 'Rough-In', trim: 'Trim', final: 'Final' }
 const DATE_KEYS = new Set(['roughInDate', 'trimDate', 'finalDate', 'finalFailDate', 'roughInFailDate'])
 
 function fmtDate(d) {
@@ -42,8 +34,6 @@ function fmtDate(d) {
   } catch { return '' }
 }
 
-const CO_TONE = { approved: 'success', rejected: 'critical', pending: 'warning' }
-
 function TradeInspections({ trade, data }) {
   const phases = Object.keys(data || {}).filter(k => !DATE_KEYS.has(k))
   if (phases.length === 0) return null
@@ -52,8 +42,8 @@ function TradeInspections({ trade, data }) {
       <p className="text-xs font-bold uppercase tracking-wide text-zinc-300 mb-2 capitalize">{trade}</p>
       <div className="space-y-1.5">
         {phases.map(phase => {
-          const status = data[phase]
-          const meta = ISTATUS[status] || ISTATUS['not-started']
+          const status = data[phase] || 'not-started'
+          const color = statusColor(INSPECTION_STATUS, status)
           const dateKey = `${phase}Date`
           const date = data[dateKey]
           return (
@@ -61,7 +51,7 @@ function TradeInspections({ trade, data }) {
               <span className="text-zinc-400">{PHASE_LABEL[phase] || phase}</span>
               <span className="flex items-center gap-2">
                 {date && <span className="text-[10px] text-zinc-500">{fmtDate(date)}</span>}
-                <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: meta.c, backgroundColor: withAlpha(meta.c, 0.13) }}>{meta.l}</span>
+                <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color, backgroundColor: withAlpha(color, 0.13) }}>{statusLabel(INSPECTION_STATUS, status)}</span>
               </span>
             </div>
           )
@@ -97,10 +87,10 @@ export default function JobDetail({ jobId, onBack }) {
 
   const risk = classifyRisk(job)
   const failed = hasFailedInspection(job)
-  const complete = ['complete', 'completed'].includes(job.status)
-  const railColor = failed || risk?.level === 'critical' ? '#ef4444'
-    : risk?.level === 'warning' ? '#eab308'
-    : complete ? '#22c55e' : BRAND
+  const complete = isJobComplete(job)
+  const railColor = failed || risk?.level === 'critical' ? toneHex('critical')
+    : risk?.level === 'warning' ? toneHex('warning')
+    : complete ? toneHex('success') : BRAND
 
   const pendingCO = jobExtras.filter(e => e.status === 'pending')
   const approvedCO = jobExtras.filter(e => extraState(e) === 'approved')
@@ -126,7 +116,7 @@ export default function JobDetail({ jobId, onBack }) {
                   <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">{job.id}</span>
                   {complete
                     ? <Pill tone="success" size="xs">Complete</Pill>
-                    : <Pill tone={risk?.level === 'critical' || failed ? 'critical' : risk?.level === 'warning' ? 'warning' : 'success'} size="xs">{job.status || 'active'}</Pill>}
+                    : <Pill tone={risk?.level === 'critical' || failed ? 'critical' : risk?.level === 'warning' ? 'warning' : 'success'} size="xs">{statusLabel(JOB_STATUS, job.status || 'active')}</Pill>}
                 </div>
                 {job.address && (
                   <p className="text-sm text-zinc-400 flex items-center gap-1.5 mt-1.5">
@@ -153,7 +143,7 @@ export default function JobDetail({ jobId, onBack }) {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 text-xs">
               <DetailField Icon={UserRoundCogIcon} label="Project Manager" value={job.pm || 'TBD'} sub={job.lead ? `Lead: ${job.lead}` : null} />
               <DetailField Icon={CalendarIcon} label="Target" value={fmtDate(job.target) || 'TBD'} sub={job.start ? `Started ${fmtDate(job.start)}` : null} />
-              <DetailField Icon={ReceiptIcon} label="Billing" value={BILLING_STATUS_LABEL[job.billingStatus] || 'Not invoiced'} sub={job.invoiceNum ? `Invoice ${job.invoiceNum}` : null} />
+              <DetailField Icon={ReceiptIcon} label="Billing" value={statusLabel(BILLING_STATUS, job.billingStatus || 'not-invoiced')} sub={job.invoiceNum ? `Invoice ${job.invoiceNum}` : null} />
               <DetailField Icon={ClipboardSignatureIcon} label="Permit" value={job.permitNumber || '—'} sub={job.county ? `${job.county} County` : null} />
             </div>
           </div>
@@ -190,7 +180,7 @@ export default function JobDetail({ jobId, onBack }) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-bold" style={{ color: BRAND }}>{co.id || 'CO'}</span>
-                    <Pill tone={CO_TONE[extraState(co)] || 'neutral'} size="xs">{co.status || 'pending'}</Pill>
+                    <Pill tone={statusTone(CO_STATUS, normalizeCoStatus(co.status))} size="xs">{statusLabel(CO_STATUS, normalizeCoStatus(co.status))}</Pill>
                   </div>
                   <p className="text-sm text-zinc-200 truncate mt-0.5">{co.desc || 'No description'}</p>
                 </div>

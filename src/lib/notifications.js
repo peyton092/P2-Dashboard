@@ -2,16 +2,26 @@ import {
   AlertCircleIcon, AlertTriangleIcon, InfoIcon, CheckCircleIcon,
   DollarSignIcon, FilePenLineIcon, BadgeCheckIcon,
 } from 'lucide-react'
+import { NOTIF_TYPE, statusLabel, statusTone, statusColor } from './status'
 
 // Notification vocabulary, category derivation, and time helpers. Pure data
 // + pure functions. Moved out of src/App.jsx in Phase 18.
 
-export const NOTIF_TYPE_META = {
-  error:   { tone: 'critical', label: 'Error',   Icon: AlertCircleIcon,   color: '#ef4444' },
-  warn:    { tone: 'warning',  label: 'Warning', Icon: AlertTriangleIcon, color: '#eab308' },
-  info:    { tone: 'info',     label: 'Update',  Icon: InfoIcon,          color: '#3b82f6' },
-  success: { tone: 'success',  label: 'Done',    Icon: CheckCircleIcon,   color: '#22c55e' },
+const NOTIF_TYPE_ICON = {
+  error:   AlertCircleIcon,
+  warn:    AlertTriangleIcon,
+  info:    InfoIcon,
+  success: CheckCircleIcon,
 }
+
+// Per notification type: the words, tone and color from status.js (NOTIF_TYPE),
+// and the icon, which only this screen needs.
+export const NOTIF_TYPE_META = Object.fromEntries(Object.keys(NOTIF_TYPE).map((type) => [type, {
+  tone:  statusTone(NOTIF_TYPE, type),
+  label: statusLabel(NOTIF_TYPE, type),
+  Icon:  NOTIF_TYPE_ICON[type],
+  color: statusColor(NOTIF_TYPE, type),
+}]))
 
 export const NOTIF_FILTERS = [
   { id: 'all',           label: 'All' },

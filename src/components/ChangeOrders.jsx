@@ -35,24 +35,15 @@ import {
   TableRow,
   TableCell,
 } from './shared'
-import { BRAND } from '@/lib/tokens'
+import { BRAND, SEMANTIC, withAlpha } from '@/lib/tokens'
+import { CO_STATUS, normalizeCoStatus, statusLabel, statusTone, toneText } from '../lib/status'
 
 const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS']
 // An approved change order is read only: its price was agreed, so more or changed
 // work is a new change order.
 const APPROVED_HINT = 'Approved change orders cannot be edited.'
 const APPROVED_REFUSAL = 'This change order is approved. Raise a new change order for any additional work.'
-const CO_STATUSES = ['Draft', 'Sent to Builder', 'Approved', 'Rejected']
-
-const STATUS_COLOR = {
-  'Draft':           '#6b7280',
-  'Sent to Builder': '#3b82f6',
-  'Approved':        '#22c55e',
-  'Rejected':        '#ef4444',
-  'pending':         '#eab308',
-  'approved':        '#22c55e',
-  'rejected':        '#ef4444',
-}
+const CO_STATUSES = Object.keys(CO_STATUS)
 
 function fmt$(n) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -88,16 +79,11 @@ function emptyForm(coNumber) {
 
 // ── Status pill (uses Phase 1 primitive) ──────────────────────────────────────
 
+// The words and tone come from status.js. An older lower case status reads as
+// the Title Case one it stands for.
 function COStatusPill({ status, size = 'xs' }) {
-  const tone =
-    status === 'Approved' || status === 'approved' ? 'success'  :
-    status === 'Rejected' || status === 'rejected' ? 'critical' :
-    status === 'Sent to Builder'                   ? 'info'     :
-    status === 'Draft'                             ? 'mute'     :
-    status === 'pending'                           ? 'warning'  :
-    'mute'
-  const label = status || 'Draft'
-  return <Pill tone={tone} size={size}>{label}</Pill>
+  const key = normalizeCoStatus(status)
+  return <Pill tone={statusTone(CO_STATUS, key)} size={size}>{statusLabel(CO_STATUS, key)}</Pill>
 }
 
 // ── Operational helpers ──────────────────────────────────────────────────────
@@ -246,10 +232,10 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
               <label className="text-xs text-muted-foreground mb-1 block">Status</label>
               <Select value={form.status} disabled>
                 <SelectTrigger className="bg-white/5 border-white/20 w-full">
-                  <SelectValue />
+                  <SelectValue>{statusLabel(CO_STATUS, normalizeCoStatus(form.status))}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {CO_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  {CO_STATUSES.map(s => <SelectItem key={s} value={s}>{statusLabel(CO_STATUS, s)}</SelectItem>)}
                 </SelectContent>
               </Select>
               <p className="text-[10px] text-muted-foreground mt-1">Set when the change order is sent, approved or rejected.</p>
@@ -599,8 +585,8 @@ export default function ChangeOrders() {
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }} />
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{EXTRAS.length} change orders total</span>
             {approvalRequired.length > 0 && (
@@ -815,17 +801,6 @@ function COEmptyState({ filter, hasJobFilter, onNew }) {
   return <EmptyState title="No change orders" />
 }
 
-function tonesToColor(tone) {
-  return (
-    tone === 'critical' ? '#ef4444' :
-    tone === 'warning'  ? '#eab308' :
-    tone === 'success'  ? '#22c55e' :
-    tone === 'info'     ? '#3b82f6' :
-    tone === 'brand'    ? BRAND :
-    '#9ca3af'
-  )
-}
-
 function CORow({ co, job, onEdit, onPdf }) {
   const isNew     = !!co.lineItems
   const locked    = isApproved(co)
@@ -866,7 +841,7 @@ function CORow({ co, job, onEdit, onPdf }) {
       <TableCell className="text-zinc-200 max-w-[24rem] truncate" title={desc}>
         {desc}
       </TableCell>
-      <TableCell align="right" className="font-bold tabular-nums" style={{ color: total > 0 ? BRAND : '#9ca3af' }}>
+      <TableCell align="right" className="font-bold tabular-nums" style={{ color: total > 0 ? BRAND : SEMANTIC.neutral }}>
         {total > 0 ? '$' + Math.round(total).toLocaleString() : '—'}
       </TableCell>
       <TableCell><COStatusPill status={co.status || 'Draft'} /></TableCell>
@@ -880,7 +855,7 @@ function CORow({ co, job, onEdit, onPdf }) {
         <div className="flex flex-col items-stretch gap-1.5">
           <p
             className="text-[11px] font-semibold leading-snug"
-            style={{ color: tonesToColor(next.tone) }}
+            style={{ color: toneText(next.tone) }}
             title={next.text}
           >
             {next.text}
@@ -928,7 +903,7 @@ function COCard({ co, job, onEdit, onPdf }) {
   const age      = coAgeDays(co)
   const builder  = job?.client || job?.qbsPM || '—'
   const jobName  = job?.name || job?.address || co.job
-  const accent   = tonesToColor(next.tone)
+  const accent   = toneText(next.tone)
 
   return (
     <article
@@ -947,7 +922,7 @@ function COCard({ co, job, onEdit, onPdf }) {
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-lg font-semibold tabular-nums" style={{ color: total > 0 ? BRAND : '#9ca3af' }}>
+          <p className="text-lg font-semibold tabular-nums" style={{ color: total > 0 ? BRAND : SEMANTIC.neutral }}>
             {total > 0 ? '$' + Math.round(total).toLocaleString() : '—'}
           </p>
           {age != null && (
@@ -964,8 +939,8 @@ function COCard({ co, job, onEdit, onPdf }) {
       </div>
 
       {isRejected(co) && co.rejectNotes && (
-        <div className="rounded-lg border border-red-500/30 px-3 py-2 mb-3" style={{ backgroundColor: '#ef44440a' }}>
-          <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: '#ef4444' }}>
+        <div className="rounded-lg border border-red-500/30 px-3 py-2 mb-3" style={{ backgroundColor: withAlpha(SEMANTIC.critical, 0.04) }}>
+          <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: SEMANTIC.critical }}>
             Rejection note
           </p>
           <p className="text-[11px] text-zinc-200 italic">“{co.rejectNotes}”</p>

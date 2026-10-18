@@ -1,21 +1,11 @@
+import { MATERIAL_STATUS } from './status'
+
 // Materials vocabulary, status normalisation, and pure derivation helpers.
-// No React or Firestore dependency. Moved out of src/App.jsx in Phase 18.
+// No React or Firestore dependency. Moved out of src/App.jsx in Phase 18. The
+// words and colors of a material status are in status.js (MATERIAL_STATUS).
 
-export const MAT_STATUS_OPTIONS = ['Ordered', 'In Transit', 'Delivered', 'At Job Site', 'Used', 'Cancelled']
-
-export const MAT_STATUS_COLOR = {
-  'Ordered':    '#3b82f6',
-  'In Transit': '#eab308',
-  'Delivered':  '#22c55e',
-  'At Job Site':'#22c55e',
-  'Used':       '#6b7280',
-  'Cancelled':  '#6b7280',
-  // legacy
-  'delivered':  '#22c55e',
-  'in-transit': '#eab308',
-  'ordered':    '#3b82f6',
-  'pending':    '#6b7280',
-}
+// The statuses a person can pick, as stored.
+export const MAT_STATUS_OPTIONS = Object.keys(MATERIAL_STATUS)
 
 export const MAT_UNITS = ['ea', 'roll', 'stick', 'box', 'bag', 'pallet', 'ft', 'lf']
 
@@ -23,15 +13,6 @@ export function normalizeMatStatus(s) {
   if (!s) return 'Ordered'
   const map = { 'delivered': 'Delivered', 'in-transit': 'In Transit', 'ordered': 'Ordered', 'pending': 'Ordered' }
   return map[s] || s
-}
-
-export const MAT_STATUS_TONE = {
-  'Ordered':    'info',
-  'In Transit': 'warning',
-  'Delivered':  'success',
-  'At Job Site':'success',
-  'Used':       'mute',
-  'Cancelled':  'mute',
 }
 
 export const MAT_FILTERS = [

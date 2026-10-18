@@ -3,15 +3,16 @@ import { useData } from '../use-data'
 import { PageHeader, Pill } from './shared'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon } from 'lucide-react'
 import { BRAND } from '@/lib/tokens'
+import { INSPECTION_STATUS, statusColor, toneHex } from '../lib/status'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 const EVENT_META = {
-  target: { color: BRAND,     label: 'Target completion' },
-  start:  { color: '#3b82f6', label: 'Job start' },
-  pass:   { color: '#22c55e', label: 'Inspection passed' },
-  fail:   { color: '#ef4444', label: 'Inspection failed' },
+  target: { color: BRAND,                                    label: 'Target completion' },
+  start:  { color: toneHex('info'),                          label: 'Job start' },
+  pass:   { color: statusColor(INSPECTION_STATUS, 'passed'), label: 'Inspection passed' },
+  fail:   { color: statusColor(INSPECTION_STATUS, 'failed'), label: 'Inspection failed' },
 }
 
 const jobLabel = (j) => j.name || j.client || j.id

@@ -74,12 +74,10 @@ import NoAccessScreen from './components/NoAccessScreen'
 import { resolveSession } from './lib/session'
 import { callableMessage } from './lib/callableError'
 import {
-  PageHeader, MetricTile, DataPanel, Pill,
+  PageHeader, MetricTile, DataPanel, Pill, StatusBadge, PermitBadge,
   EmptyState, AllClearState, FilterBar, PageSkeleton,
   // Phase 19 — primitives extracted from App.jsx
   ProgressBar, StatCard,
-  iMeta,
-  InspBadge, JobBadge,
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,
 } from './components/shared'
@@ -90,18 +88,14 @@ import { ZONES, getZoneId } from './agent/zones'
 
 // Phase 18 — Domain helpers extracted from App.jsx into src/lib/.
 // Pure data + pure functions. No behavior change.
-import { BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR } from './lib/billing'
-import {
-  INSP_STATUSES, TRADE_META, PHASE_LABEL,
-  inspectionStatusTone, inspectionStatusLabel, inspJobStatusTone,
-} from './lib/inspections'
+import { INSP_STATUSES, TRADE_META, PHASE_LABEL } from './lib/inspections'
 import {
   NOTIF_TYPE_META, NOTIF_FILTERS, NOTIF_CATEGORY_LABEL, NOTIF_CATEGORY_ICON,
   notifCategory, notifMatchesFilter, notifTimestampMs, fmtNotifTime,
   notifAgeLabel, notifIsWithinHours,
 } from './lib/notifications'
 import {
-  MAT_STATUS_OPTIONS, MAT_STATUS_COLOR, MAT_UNITS, MAT_STATUS_TONE,
+  MAT_STATUS_OPTIONS, MAT_UNITS,
   MAT_FILTERS, MAT_FORM_INITIAL,
   normalizeMatStatus,
   matName, matJobId, matOrdered,
@@ -109,7 +103,7 @@ import {
   matNextAction, matMatchesFilter, fmtMatDate,
 } from './lib/materials'
 import {
-  SUB_STATUS_OPTIONS, SUB_STATUS_COLOR, SUB_FILTERS, TRADE_FILTERS,
+  SUB_STATUS_OPTIONS, SUB_FILTERS, TRADE_FILTERS,
   daysUntilDate,
   subInsuranceState, subLicenseState,
   subHasMissingDocs, subInsuranceExpired, subInsuranceExpiringSoon, subLicenseExpired,
@@ -122,15 +116,16 @@ import {
   isJobComplete, jobStaleness, jobMatchesFilter,
   jobNextAction, jobRiskMeta, fmtJobDate,
 } from './lib/jobs'
+import { BRIEF_CATEGORY_META, buildBriefingItems } from './lib/briefing'
 import {
-  BRIEF_CATEGORY_META, SEVERITY_RANK,
-  severityTone, severityColor, buildBriefingItems,
-} from './lib/briefing'
+  INSPECTION_STATUS, MATERIAL_STATUS, SEVERITY, SUB_STATUS, TRADE,
+  statusColor, statusLabel, statusTone, toneHex, toneText,
+} from './lib/status'
 import { exportToCsv } from './lib/exportCsv'
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
 import MobileNav from './components/shell/MobileNav'
-import { BRAND, withAlpha } from '@/lib/tokens'
+import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
 
 const TENANTS = [
   { id: 'p2-core', name: 'P2 Internal',          slug: 'p2'     },
@@ -224,14 +219,14 @@ const MOBILE_MORE = [
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // jobName moved to src/lib/jobs.js (Phase 18).
-// BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR moved to
-// src/lib/billing.js (Phase 18).
 
-// inspMeta, iMeta, statusMeta, sMeta moved to
-// src/components/shared/legacy-badges.jsx (Phase 19) and re-exported here
-// via the named imports at the top of this file.
-
-const tradeColor = { HVAC: '#3b82f6', Plumbing: '#06b6d4', Electrical: BRAND }
+// The color of a trade. A sub's trade is stored as written (Electrical, HVAC) and
+// the vocabulary in status.js is keyed in lower case. A trade it does not have
+// reads as neutral.
+const tradeColor = (trade) => {
+  const key = String(trade).toLowerCase()
+  return Object.hasOwn(TRADE, key) ? statusColor(TRADE, key) : toneHex('neutral')
+}
 
 const CREW_LIST = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 const TODAY = new Date()
@@ -251,10 +246,9 @@ const daysSince = (date) => {
 
 // ── Reusable components ───────────────────────────────────────────────────────
 //
-// ProgressBar, StatCard, InspBadge, JobBadge, BillingStatusSelect,
-// InlineStatusSelect, InlinePhaseSelect (and their JOB_STATUS_OPTIONS /
-// PHASE_OPTIONS data) moved to src/components/shared/* (Phase 19) and
-// re-imported via the named-imports block at the top of this file.
+// ProgressBar, StatCard, BillingStatusSelect, InlineStatusSelect and
+// InlinePhaseSelect moved to src/components/shared/* (Phase 19) and are imported
+// by name at the top of this file. Their words and menus are in src/lib/status.js.
 // The legacy local SectionHeader (used by Architecture + Permits) moved
 // alongside those tabs in Phase 20 — see src/components/Architecture.jsx
 // and src/components/Permits.jsx.
@@ -660,7 +654,7 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
 
           <div className="flex items-center gap-3 p-3 rounded-xl border border-white/10 cursor-pointer" onClick={() => setChecked(c => !c)}>
             <div className="w-5 h-5 rounded border flex items-center justify-center shrink-0"
-              style={{ borderColor: checked ? BRAND : '#6b7280', backgroundColor: checked ? BRAND : 'transparent' }}>
+              style={{ borderColor: checked ? BRAND : SEMANTIC.mute, backgroundColor: checked ? BRAND : 'transparent' }}>
               {checked && <CheckIcon size={12} color="#fff" />}
             </div>
             <span className="text-sm">I have read and agree to the P2 Field Control Terms of Access ({version})</span>
@@ -687,8 +681,8 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
 // orders, materials, sub compliance, PM workload, and yesterday's crew
 // reports. No write paths — only read derivations from useData().
 
-// BRIEF_CATEGORY_META, SEVERITY_RANK, severityTone, severityColor, and
-// buildBriefingItems moved to src/lib/briefing.js (Phase 18).
+// BRIEF_CATEGORY_META and buildBriefingItems moved to src/lib/briefing.js
+// (Phase 18). The words and colors of a severity are in src/lib/status.js.
 
 
 function MorningBriefing() {
@@ -759,9 +753,9 @@ function MorningBriefing() {
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
               />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{dateStr}</span>
             <span>Middle Tennessee</span>
@@ -870,7 +864,7 @@ function MorningBriefing() {
         >
           {CREW_LIST.map(name => {
             const submitted = submittedYesterday.has(name)
-            const tone = submitted ? '#22c55e' : '#ef4444'
+            const tone = submitted ? SEMANTIC.success : SEMANTIC.critical
             return (
               <div
                 key={name}
@@ -902,8 +896,10 @@ function MorningBriefing() {
 }
 
 function BriefingItem({ item }) {
-  const sev = severityTone(item.severity)
-  const railColor = severityColor(item.severity)
+  // A severity the app does not know is shown as info.
+  const severity = Object.hasOwn(SEVERITY, item.severity) ? item.severity : 'info'
+  const sev = statusTone(SEVERITY, severity)
+  const railColor = statusColor(SEVERITY, severity)
   const meta = BRIEF_CATEGORY_META[item.category] || BRIEF_CATEGORY_META['job-risk']
   const CatIcon = meta.Icon
   return (
@@ -932,7 +928,7 @@ function BriefingItem({ item }) {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-zinc-400">
             {item.owner && <span>{item.owner}</span>}
             {item.age !== null && item.age !== undefined && (
-              <span className="font-semibold" style={{ color: item.age >= 7 ? '#ef4444' : item.age >= 3 ? '#eab308' : '#9ca3af' }}>
+              <span className="font-semibold" style={{ color: item.age >= 7 ? SEMANTIC.critical : item.age >= 3 ? SEMANTIC.warning : SEMANTIC.neutral }}>
                 {item.age === 0 ? 'today' : item.age === 1 ? '1d' : `${item.age}d`}
               </span>
             )}
@@ -1177,9 +1173,9 @@ export function JobStatus() {
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
               />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{kpis.active} active · {kpis.completed} complete</span>
             {kpis.atRisk > 0 && (
@@ -1442,15 +1438,15 @@ function JobStatusRow({
 }) {
   const riskMeta    = jobRiskMeta(job)
   const next        = jobNextAction(job)
-  const railColor   = failed ? '#ef4444'
-                    : (risk?.level === 'critical' ? '#ef4444'
-                    : risk?.level === 'warning'  ? '#eab308'
-                    : complete                   ? '#22c55e'
-                    : '#3b82f6')
-  const nextColor   = failed ? '#ef4444'
-                    : (risk?.level === 'critical' ? '#ef4444'
-                    : risk?.level === 'warning'  ? '#eab308'
-                    : billRdy                    ? '#22c55e'
+  const railColor   = failed ? SEMANTIC.critical
+                    : (risk?.level === 'critical' ? SEMANTIC.critical
+                    : risk?.level === 'warning'  ? SEMANTIC.warning
+                    : complete                   ? SEMANTIC.success
+                    : SEMANTIC.info)
+  const nextColor   = failed ? SEMANTIC.critical
+                    : (risk?.level === 'critical' ? SEMANTIC.critical
+                    : risk?.level === 'warning'  ? SEMANTIC.warning
+                    : billRdy                    ? SEMANTIC.success
                     : BRAND)
   const progress    = Math.max(0, Math.min(100, Number(job.progress) || 0))
   const progressMuted = complete || (risk?.level === 'critical')
@@ -1514,7 +1510,7 @@ function JobStatusRow({
               {stale !== null && stale >= 3 && !complete && (
                 <span
                   className="font-semibold"
-                  style={{ color: stale >= 7 ? '#ef4444' : '#eab308' }}
+                  style={{ color: stale >= 7 ? SEMANTIC.critical : SEMANTIC.warning }}
                 >
                   {stale === 1 ? '1d since update' : `${stale}d since update`}
                 </span>
@@ -1542,12 +1538,12 @@ function JobStatusRow({
                 <span className="truncate">{job.type || 'Project'}</span>
                 <span
                   className="font-semibold tabular-nums"
-                  style={{ color: progressMuted ? '#9ca3af' : BRAND }}
+                  style={{ color: progressMuted ? SEMANTIC.neutral : BRAND }}
                 >
                   {progress}%
                 </span>
               </div>
-              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : BRAND} />
+              <ProgressBar value={progress} color={progressMuted ? SEMANTIC.neutral : BRAND} />
             </div>
           </div>
 
@@ -1555,12 +1551,12 @@ function JobStatusRow({
           <div className="hidden sm:flex flex-col items-end shrink-0 w-40">
             <p
               className="text-2xl font-semibold tabular-nums leading-none"
-              style={{ color: progressMuted ? '#9ca3af' : BRAND }}
+              style={{ color: progressMuted ? SEMANTIC.neutral : BRAND }}
             >
               {progress}%
             </p>
             <div className="w-full mt-1.5">
-              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : BRAND} />
+              <ProgressBar value={progress} color={progressMuted ? SEMANTIC.neutral : BRAND} />
             </div>
             <p className="text-[10px] text-zinc-400 mt-1.5 truncate max-w-full" title={job.type}>
               {job.type || 'Project'}
@@ -1608,7 +1604,7 @@ function JobStatusDetail({ job }) {
             {['electrical','plumbing','hvac'].map(t => job.permits?.[t] && (
               <li key={t} className="flex items-center justify-between text-[12px]">
                 <span className="capitalize text-zinc-400">{t}</span>
-                <InspBadge status={job.permits[t]} />
+                <PermitBadge status={job.permits[t]} size="xs" />
               </li>
             ))}
           </ul>
@@ -1675,15 +1671,18 @@ function Extras() {
 
 // ── Tab: Inspections ──────────────────────────────────────────────────────────
 
-// INSP_STATUSES, TRADE_META, PHASE_LABEL, inspection* helpers moved to
-// src/lib/inspections.js (Phase 18).
+// INSP_STATUSES, TRADE_META and PHASE_LABEL moved to src/lib/inspections.js
+// (Phase 18). The words and colors of an inspection status are in
+// src/lib/status.js.
 
 export function PhaseRow({ label, status, note, docId, field }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const canEdit = !!docId
   const [, trade, phase] = field ? field.split('.') : []
-  const meta = iMeta(status)
+  // A phase with no recorded result is pending.
+  const current = status || 'pending'
+  const color = statusColor(INSPECTION_STATUS, current)
 
   // Passing or failing a phase goes through a Cloud Function: it checks that the
   // caller is staff, dates the result, and writes the notification and the
@@ -1715,7 +1714,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
         {canEdit ? (
           <>
             <select
-              value={status || 'pending'}
+              value={current}
               onChange={e => {
                 // Passed and failed are recorded by the Cloud Functions, like the two
                 // buttons beside this list. Any other status is a plain edit of the job.
@@ -1727,15 +1726,15 @@ export function PhaseRow({ label, status, note, docId, field }) {
               disabled={busy}
               className="text-[11px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none disabled:opacity-50"
               style={{
-                color: meta.color,
-                backgroundColor: withAlpha(meta.color, 0.13),
-                border: `1px solid ${withAlpha(meta.color, 0.27)}`,
+                color,
+                backgroundColor: withAlpha(color, 0.13),
+                border: `1px solid ${withAlpha(color, 0.27)}`,
               }}
               aria-label={`Update ${label} status`}
             >
               {INSP_STATUSES.map(s => (
                 <option key={s} value={s} style={{ backgroundColor: '#111', color: '#fff' }}>
-                  {inspectionStatusLabel(s)}
+                  {statusLabel(INSPECTION_STATUS, s)}
                 </option>
               ))}
             </select>
@@ -1746,7 +1745,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
               title="Mark passed"
               aria-label={`Mark ${label} passed`}
               className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
-              style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}
+              style={{ backgroundColor: withAlpha(SEMANTIC.success, 0.13), color: SEMANTIC.success, border: `1px solid ${withAlpha(SEMANTIC.success, 0.27)}` }}
             >
               <CheckIcon size={13} strokeWidth={2.5} />
             </button>
@@ -1757,14 +1756,14 @@ export function PhaseRow({ label, status, note, docId, field }) {
               title="Mark failed"
               aria-label={`Mark ${label} failed`}
               className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
-              style={{ backgroundColor: '#ef444422', color: '#ef4444', border: '1px solid #ef444444' }}
+              style={{ backgroundColor: withAlpha(SEMANTIC.critical, 0.13), color: SEMANTIC.critical, border: `1px solid ${withAlpha(SEMANTIC.critical, 0.27)}` }}
             >
               <XIcon size={13} strokeWidth={2.5} />
             </button>
           </>
         ) : (
-          <Pill tone={inspectionStatusTone(status)} size="xs">
-            {inspectionStatusLabel(status)}
+          <Pill tone={statusTone(INSPECTION_STATUS, current)} size="xs">
+            {statusLabel(INSPECTION_STATUS, current)}
           </Pill>
         )}
       </div>
@@ -1910,9 +1909,9 @@ function Inspections() {
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
               />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{activeJobs.length} active jobs</span>
             {kpis.failed > 0 && (
@@ -2059,8 +2058,6 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
     { label: 'CompanyCam updated',            ok: gate.camOk      },
   ]
   const allOk = checks.every(c => c.ok)
-  const statusTone = inspJobStatusTone(j.status)
-  const statusLabel = (j.status || 'active').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.025] overflow-hidden">
@@ -2073,7 +2070,7 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
                 {j.id}
               </span>
               <span className="text-base font-bold text-white truncate">{jobName(j)}</span>
-              <Pill tone={statusTone} size="xs">{statusLabel}</Pill>
+              <StatusBadge status={j.status || 'active'} size="xs" />
             </div>
             <p className="text-[11px] text-zinc-400 mt-1 truncate">
               {j.address || '—'}{j.pm ? ` · PM ${j.pm}` : ''}{j.lead ? ` · Lead ${j.lead}` : ''}
@@ -2115,9 +2112,9 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
                 {trade === 'hvac' && j.insp?.hvac?.roughIn === 'failed' && (
                   <div
                     className="mt-2 flex items-center gap-2 px-2 py-1.5 rounded-md"
-                    style={{ backgroundColor: '#3b82f60d', border: '1px solid #3b82f655' }}
+                    style={{ backgroundColor: withAlpha(SEMANTIC.info, 0.05), border: `1px solid ${withAlpha(SEMANTIC.info, 0.33)}` }}
                   >
-                    <AlertCircleIcon size={12} color="#3b82f6" className="shrink-0" />
+                    <AlertCircleIcon size={12} color={SEMANTIC.info} className="shrink-0" />
                     <span className="text-[11px] text-blue-300 leading-snug">
                       Final blocked — rough-in must pass first
                     </span>
@@ -2151,19 +2148,19 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
                 key={c.label}
                 className="flex items-center gap-2 px-2 py-2 rounded-lg"
                 style={{
-                  backgroundColor: c.ok ? '#22c55e0d' : '#ef44440d',
-                  border: `1px solid ${c.ok ? '#22c55e22' : '#ef444422'}`,
+                  backgroundColor: c.ok ? withAlpha(SEMANTIC.success, 0.05) : withAlpha(SEMANTIC.critical, 0.05),
+                  border: `1px solid ${c.ok ? withAlpha(SEMANTIC.success, 0.13) : withAlpha(SEMANTIC.critical, 0.13)}`,
                 }}
               >
                 <div
                   className="w-4 h-4 rounded flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: c.ok ? '#22c55e22' : '#ef444422' }}
+                  style={{ backgroundColor: c.ok ? withAlpha(SEMANTIC.success, 0.13) : withAlpha(SEMANTIC.critical, 0.13) }}
                 >
                   {c.ok
-                    ? <CheckIcon size={10} color="#22c55e" />
-                    : <XIcon size={10} color="#ef4444" />}
+                    ? <CheckIcon size={10} color={SEMANTIC.success} />
+                    : <XIcon size={10} color={SEMANTIC.critical} />}
                 </div>
-                <p className="text-[11px] leading-tight" style={{ color: c.ok ? '#22c55e' : '#ef4444' }}>
+                <p className="text-[11px] leading-tight" style={{ color: c.ok ? SEMANTIC.success : SEMANTIC.critical }}>
                   {c.label}
                 </p>
               </div>
@@ -2276,9 +2273,9 @@ function SubsTab() {
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
               />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{kpis.active} subs · {kpis.approved} approved</span>
             {kpis.expired > 0 && (
@@ -2408,25 +2405,25 @@ function SubsEmptyState({ filter, hasOtherFilters }) {
 
 function SubRow({ item, expanded, onToggle }) {
   const { s, verdict, insState, licState, insDays, licDays, lastUpdateDays, subJobs, activeJobCount } = item
-  const tColor   = tradeColor[s.trade] || '#9ca3af'
+  const tColor   = tradeColor(s.trade)
   const initials = (s.name || '—').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
   const action   = subNextAction(s)
 
   // Severity rail color follows the verdict — critical/warning/success.
-  const railColor = verdict.tone === 'critical' ? '#ef4444'
-                  : verdict.tone === 'warning'  ? '#eab308'
-                  : '#22c55e'
+  const railColor = verdict.tone === 'critical' ? SEMANTIC.critical
+                  : verdict.tone === 'warning'  ? SEMANTIC.warning
+                  : SEMANTIC.success
 
-  const insColor = insState === 'expired'         ? '#ef4444'
-                 : insState === 'expiring-30'     ? '#ef4444'
-                 : insState === 'expiring-60'     ? '#eab308'
-                 : insState === 'valid'           ? '#22c55e'
-                 : '#9ca3af'
+  const insColor = insState === 'expired'         ? SEMANTIC.critical
+                 : insState === 'expiring-30'     ? SEMANTIC.critical
+                 : insState === 'expiring-60'     ? SEMANTIC.warning
+                 : insState === 'valid'           ? SEMANTIC.success
+                 : SEMANTIC.neutral
 
-  const licColor = licState === 'expired'         ? '#ef4444'
-                 : licState === 'expiring-60'     ? '#eab308'
-                 : licState === 'valid'           ? '#22c55e'
-                 : '#9ca3af'
+  const licColor = licState === 'expired'         ? SEMANTIC.critical
+                 : licState === 'expiring-60'     ? SEMANTIC.warning
+                 : licState === 'valid'           ? SEMANTIC.success
+                 : SEMANTIC.neutral
 
   const insLabel = insState === 'expired'      ? `${Math.abs(insDays || 0)}d ago`
                  : insState === 'expiring-30'  ? `${insDays}d left`
@@ -2440,15 +2437,15 @@ function SubRow({ item, expanded, onToggle }) {
                  : '—'
 
   const score = s.score ?? null
-  const scoreColor = score === null ? '#9ca3af'
-                   : score >= 90 ? '#22c55e'
+  const scoreColor = score === null ? SEMANTIC.neutral
+                   : score >= 90 ? SEMANTIC.success
                    : score >= 80 ? BRAND
-                   : '#ef4444'
+                   : SEMANTIC.critical
 
-  const updateColor = lastUpdateDays === null ? '#9ca3af'
-                    : lastUpdateDays > 5 ? '#ef4444'
-                    : lastUpdateDays > 2 ? '#eab308'
-                    : '#22c55e'
+  const updateColor = lastUpdateDays === null ? SEMANTIC.neutral
+                    : lastUpdateDays > 5 ? SEMANTIC.critical
+                    : lastUpdateDays > 2 ? SEMANTIC.warning
+                    : SEMANTIC.success
   const updateLabel = lastUpdateDays === null ? 'No data'
                     : lastUpdateDays === 0    ? 'Today'
                     : lastUpdateDays === 1    ? '1d ago'
@@ -2598,9 +2595,8 @@ function SubAssignments({ subJobs }) {
 function SubAssignmentRow({ job: j }) {
   const subStatus = (j.subsStatus || {})[j.trade] || 'active'
   const looseEnds = (j.subsLooseEnds || {})[j.trade] || ''
-  const sc = SUB_STATUS_COLOR[subStatus] || '#6b7280'
-  const tradeKey  = j.trade.charAt(0).toUpperCase() + j.trade.slice(1)
-  const tColor    = tradeColor[tradeKey] || '#9ca3af'
+  const sc = statusColor(SUB_STATUS, subStatus)
+  const tColor    = tradeColor(j.trade)
   const isComplete = ['complete', 'completed'].includes(j.status)
 
   return (
@@ -2627,15 +2623,15 @@ function SubAssignmentRow({ job: j }) {
               className="h-auto py-0.5 px-2.5 text-[11px] font-bold border rounded-full"
               style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}
             >
-              <SelectValue />
+              <SelectValue>{statusLabel(SUB_STATUS, subStatus)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {SUB_STATUS_OPTIONS.map(o => (
-                <SelectItem key={o} value={o} className="capitalize">{o}</SelectItem>
+                <SelectItem key={o} value={o}>{statusLabel(SUB_STATUS, o)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {!isComplete && <JobBadge status={j.status} />}
+          {!isComplete && <StatusBadge status={j.status} size="xs" />}
         </div>
       </div>
       <Textarea
@@ -2651,7 +2647,8 @@ function SubAssignmentRow({ job: j }) {
 
 // ── Tab: Materials ────────────────────────────────────────────────────────────
 
-// MAT_STATUS_OPTIONS / MAT_STATUS_COLOR moved to src/lib/materials.js (Phase 18).
+// MAT_STATUS_OPTIONS moved to src/lib/materials.js (Phase 18); the words and
+// colors of a material status are in src/lib/status.js.
 // MatStatusBadge moved to src/components/shared/inline-edits.jsx (Phase 19).
 // Materials helpers moved to src/lib/materials.js (Phase 18).
 
@@ -2814,9 +2811,9 @@ function Materials() {
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
               />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{kpis.open} open</span>
             {kpis.urgent > 0 && (
@@ -2972,7 +2969,7 @@ function MaterialsEmptyState({ filter, hasJobFilter, onRequest }) {
   if (filter === 'blocking')  return <AllClearState title="No materials blocking work" description="No open items needed within 7 days." />
   if (filter === 'needed')    return <AllClearState title="Nothing needed" description="Every active material has been delivered or used." />
   if (filter === 'ordered')   return <EmptyState   title="No materials in 'Ordered' status" description="Items waiting on a supplier will appear here." />
-  if (filter === 'delivered') return <EmptyState   title="No deliveries yet" description="Items marked Delivered or At Job Site will appear here." />
+  if (filter === 'delivered') return <EmptyState   title="No deliveries yet" description="Items marked Delivered or At job site will appear here." />
   if (hasJobFilter)           return <EmptyState   title="No materials for that job" description="Try clearing the job filter or request a new material." />
   return (
     <EmptyState
@@ -2998,10 +2995,10 @@ function MaterialCard({
   history, showHistory, onToggleHistory,
   onEdit, onStatusChange,
 }) {
-  const tone = MAT_STATUS_TONE[status] || 'mute'
+  const tone = statusTone(MATERIAL_STATUS, status)
   const railColor = overdue
-    ? '#ef4444'
-    : (MAT_STATUS_COLOR[status] || '#6b7280')
+    ? SEMANTIC.critical
+    : statusColor(MATERIAL_STATUS, status)
   const action = matNextAction(m)
   const orderedDate = matOrdered(m)
   const neededDate  = m.dateNeeded
@@ -3019,8 +3016,8 @@ function MaterialCard({
   })()
 
   const neededColor =
-    overdue ? '#ef4444' :
-    (daysUntil !== null && daysUntil <= 7) ? '#eab308' : '#9ca3af'
+    overdue ? SEMANTIC.critical :
+    (daysUntil !== null && daysUntil <= 7) ? SEMANTIC.warning : SEMANTIC.neutral
 
   return (
     <div
@@ -3109,7 +3106,7 @@ function MaterialCard({
         </div>
 
         {/* Tone-only Pill — purely visual, gives a quick read of the current status */}
-        <Pill tone={tone} size="xs" className="hidden sm:inline-flex">{status}</Pill>
+        <Pill tone={tone} size="xs" className="hidden sm:inline-flex">{statusLabel(MATERIAL_STATUS, status)}</Pill>
       </div>
 
       {/* History drawer */}
@@ -3128,6 +3125,15 @@ function MaterialCard({
 }
 
 function MaterialHistoryRow({ entry }) {
+  // A status in the history as words and a color. An entry from before the
+  // status was recorded has none, and reads as not set.
+  const shown = (raw) => {
+    if (!raw) return { words: 'Not set', color: toneHex('neutral') }
+    const key = normalizeMatStatus(raw)
+    return { words: statusLabel(MATERIAL_STATUS, key), color: toneText(statusTone(MATERIAL_STATUS, key)) }
+  }
+  const from = shown(entry.fromStatus)
+  const to   = shown(entry.toStatus)
   const ts = entry.createdAt?.toDate
     ? entry.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '—'
@@ -3136,13 +3142,9 @@ function MaterialHistoryRow({ entry }) {
       <span className="w-16 shrink-0 text-zinc-500">{ts}</span>
       {entry.type === 'status_change' ? (
         <span className="min-w-0">
-          <span style={{ color: MAT_STATUS_COLOR[entry.fromStatus] || '#9ca3af' }}>
-            {entry.fromStatus || '—'}
-          </span>
+          <span style={{ color: from.color }}>{from.words}</span>
           <span className="text-zinc-500 mx-1">to</span>
-          <span style={{ color: MAT_STATUS_COLOR[entry.toStatus] || '#9ca3af' }}>
-            {entry.toStatus || '—'}
-          </span>
+          <span style={{ color: to.color }}>{to.words}</span>
         </span>
       ) : (
         <span className="capitalize">{entry.type?.replace(/_/g, ' ') || 'updated'}</span>
@@ -3207,9 +3209,9 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
         <div>
           <FormFieldLabel>Status</FormFieldLabel>
           <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
-            <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue>{statusLabel(MATERIAL_STATUS, form.status)}</SelectValue></SelectTrigger>
             <SelectContent>
-              {MAT_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              {MAT_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{statusLabel(MATERIAL_STATUS, s)}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -3370,9 +3372,9 @@ function Notifications() {
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
               />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{kpis.total} live</span>
             {kpis.unread > 0 && <span>{kpis.unread} unread</span>}
@@ -3841,12 +3843,12 @@ export default function P2DashboardV4() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-center px-6">
           <div className="w-12 h-12 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: ok ? '#22c55e22' : '#ef444422' }}>
+            style={{ backgroundColor: ok ? withAlpha(SEMANTIC.success, 0.13) : withAlpha(SEMANTIC.critical, 0.13) }}>
             {ok
-              ? <CheckCircleIcon size={24} color="#22c55e" />
-              : <AlertCircleIcon size={24} color="#ef4444" />}
+              ? <CheckCircleIcon size={24} color={SEMANTIC.success} />
+              : <AlertCircleIcon size={24} color={SEMANTIC.critical} />}
           </div>
-          <p className="text-sm font-medium" style={{ color: ok ? '#22c55e' : '#ef4444' }}>
+          <p className="text-sm font-medium" style={{ color: ok ? SEMANTIC.success : SEMANTIC.critical }}>
             {ok ? `${oauthProvider} connected successfully!` : oauthState.error}
           </p>
           {!ok && (

@@ -29,7 +29,11 @@ import {
 } from 'lucide-react'
 import Brand from './brand/Brand'
 import { DataPanel, Pill, EmptyState, AllClearState } from './shared'
-import { BRAND, withAlpha } from '@/lib/tokens'
+import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
+import {
+  BILLING_STATUS, CO_STATUS, INSPECTION_STATUS, PHASE,
+  normalizeCoStatus, statusColor, statusLabel, statusTone, toneHex,
+} from '../lib/status'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,11 +61,20 @@ const fmtDate = (d) => {
 
 // ── Inspection phase aggregation (client-facing, read-only) ──────────────────
 
-const PHASE_STATUS = {
-  passed:        { color: '#22c55e', label: 'Passed',      bg: '#22c55e22', Icon: CheckCircleIcon },
-  failed:        { color: '#ef4444', label: 'In rework',   bg: '#ef444422', Icon: XIcon },
-  pending:       { color: '#eab308', label: 'In progress', bg: '#eab30822', Icon: ClockIcon },
-  'not-started': { color: '#6b7280', label: 'Upcoming',    bg: '#6b728022', Icon: ClockIcon },
+// What a client reads for each inspection result: a failed one is rework, one that
+// is not in yet is in progress, and one not started is upcoming. The colors are
+// the vocabulary's (status.js); only these words are written for the client.
+const PHASE_WORDS = {
+  passed:        'Passed',
+  failed:        'In rework',
+  pending:       'In progress',
+  'not-started': 'Upcoming',
+}
+const PHASE_ICON = {
+  passed:        CheckCircleIcon,
+  failed:        XIcon,
+  pending:       ClockIcon,
+  'not-started': ClockIcon,
 }
 
 function aggregatePhaseStatus(insp, key) {
@@ -98,17 +111,17 @@ function getServiceReleaseStatus(job) {
 
 function getJobInspectionTimeline(job) {
   return [
-    { key: 'roughIn',        label: 'Rough-In',        ...aggregatePhaseStatus(job.insp, 'roughIn') },
-    { key: 'serviceRelease', label: 'Service Release', ...getServiceReleaseStatus(job) },
-    { key: 'final',          label: 'Final',           ...aggregatePhaseStatus(job.insp, 'final') },
+    { key: 'roughIn',        label: statusLabel(PHASE, 'rough-in'),        ...aggregatePhaseStatus(job.insp, 'roughIn') },
+    { key: 'serviceRelease', label: statusLabel(PHASE, 'service-release'), ...getServiceReleaseStatus(job) },
+    { key: 'final',          label: statusLabel(PHASE, 'final'),           ...aggregatePhaseStatus(job.insp, 'final') },
   ]
 }
 
 function clientStatus(job) {
-  if (['complete', 'completed'].includes(job.status)) return { tone: 'success',  text: 'Complete',        color: '#22c55e' }
-  if (job.status === 'blocked')      return { tone: 'critical', text: 'Needs attention', color: '#ef4444' }
-  if (job.status === 'at-risk')      return { tone: 'warning',  text: 'Watch list',      color: '#eab308' }
-  if (job.status === 'needs-action') return { tone: 'warning',  text: 'Action needed',   color: '#eab308' }
+  if (['complete', 'completed'].includes(job.status)) return { tone: 'success',  text: 'Complete',        color: SEMANTIC.success }
+  if (job.status === 'blocked')      return { tone: 'critical', text: 'Needs attention', color: SEMANTIC.critical }
+  if (job.status === 'at-risk')      return { tone: 'warning',  text: 'Watch list',      color: SEMANTIC.warning }
+  if (job.status === 'needs-action') return { tone: 'warning',  text: 'Action needed',   color: SEMANTIC.warning }
   return { tone: 'success', text: 'On track', color: BRAND }
 }
 
@@ -132,20 +145,20 @@ function InspectionTimeline({ job }) {
   return (
     <div className="flex items-stretch gap-1 sm:gap-2">
       {phases.map((p, i) => {
-        const meta = PHASE_STATUS[p.status]
-        const Icon = meta.Icon
+        const color = statusColor(INSPECTION_STATUS, p.status)
+        const Icon = PHASE_ICON[p.status]
         return (
           <div key={p.key} className="flex items-stretch flex-1 min-w-0">
             <div
               className="flex flex-col items-center text-center gap-1 px-2 py-2 rounded-lg flex-1 border min-w-0"
-              style={{ backgroundColor: meta.bg, borderColor: withAlpha(meta.color, 0.33) }}
+              style={{ backgroundColor: withAlpha(color, 0.13), borderColor: withAlpha(color, 0.33) }}
             >
-              <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: withAlpha(meta.color, 0.2) }}>
-                <Icon size={14} style={{ color: meta.color }} />
+              <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: withAlpha(color, 0.2) }}>
+                <Icon size={14} style={{ color }} />
               </div>
-              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color: meta.color }}>{p.label}</p>
+              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color }}>{p.label}</p>
               <p className="text-[9px] sm:text-[10px] text-muted-foreground leading-tight">
-                {p.status === 'passed' && p.date ? fmtDate(p.date) : meta.label}
+                {p.status === 'passed' && p.date ? fmtDate(p.date) : PHASE_WORDS[p.status]}
               </p>
             </div>
             {i < phases.length - 1 && <div className="self-center w-1 h-0.5 sm:w-2 bg-white/10 shrink-0" />}
@@ -174,7 +187,7 @@ function ProjectCard({ job, extras }) {
       <header className="px-4 sm:px-5 pt-4 pb-3 border-b border-white/5">
         {pendingCount > 0 && (
           <div className="inline-flex items-center gap-1.5 mb-2.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md"
-            style={{ backgroundColor: '#eab30822', color: '#eab308', border: '1px solid #eab30844' }}>
+            style={{ backgroundColor: withAlpha(SEMANTIC.warning, 0.13), color: SEMANTIC.warning, border: `1px solid ${withAlpha(SEMANTIC.warning, 0.27)}` }}>
             <TriangleAlertIcon size={11} strokeWidth={2.25} />
             Awaiting your approval · {pendingCount}
           </div>
@@ -264,12 +277,17 @@ function ExtraRow({ co }) {
     } finally { setBusy(false) }
   }
 
-  const stateLabel = state === 'approved' ? 'Approved' : state === 'rejected' ? 'Needs revision' : 'Awaiting your approval'
-  const stateTone  = state === 'approved' ? 'success'  : state === 'rejected' ? 'critical'       : 'warning'
+  // The pill says where the change order stands, in the words every screen uses.
+  // What the client is asked to do is said on the buttons below. One waiting for
+  // the client reads as a warning here, because the decision is theirs; every
+  // other screen shows it in the tone of the vocabulary.
+  const coStatus   = normalizeCoStatus(co.status)
+  const stateLabel = statusLabel(CO_STATUS, coStatus)
+  const stateTone  = state === 'pending' ? 'warning' : statusTone(CO_STATUS, coStatus)
 
   return (
     <div className="rounded-xl border bg-white/[0.025] overflow-hidden"
-      style={{ borderColor: state === 'pending' ? '#eab30844' : state === 'rejected' ? '#ef444444' : state === 'approved' ? '#22c55e44' : 'rgba(255,255,255,0.10)' }}>
+      style={{ borderColor: state === 'draft' ? 'rgba(255,255,255,0.10)' : withAlpha(toneHex(stateTone), 0.27) }}>
       <div className="p-3 sm:p-4">
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex-1 min-w-0">
@@ -290,8 +308,8 @@ function ExtraRow({ co }) {
               </ul>
             )}
             {co.rejectNotes && state === 'rejected' && (
-              <div className="mt-2.5 rounded-lg border border-red-500/30 px-3 py-2" style={{ backgroundColor: '#ef44440a' }}>
-                <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: '#ef4444' }}>Your revision request</p>
+              <div className="mt-2.5 rounded-lg border border-red-500/30 px-3 py-2" style={{ backgroundColor: withAlpha(SEMANTIC.critical, 0.04) }}>
+                <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: SEMANTIC.critical }}>Your revision request</p>
                 <p className="text-[11px] text-zinc-200 italic">“{co.rejectNotes}”</p>
               </div>
             )}
@@ -306,7 +324,7 @@ function ExtraRow({ co }) {
           <>
             <p className="text-[10px] uppercase tracking-wide font-bold text-zinc-400 mb-1.5 mt-3">Review change order</p>
             <div className="flex gap-2">
-              <Button className="flex-1 h-10 text-xs gap-1.5 text-white font-bold" style={{ backgroundColor: '#22c55e' }} disabled={busy} onClick={handleApprove}>
+              <Button className="flex-1 h-10 text-xs gap-1.5 text-white font-bold" style={{ backgroundColor: SEMANTIC.success }} disabled={busy} onClick={handleApprove}>
                 <CheckIcon size={14} /> {busy ? 'Approving…' : 'Approve'}
               </Button>
               <Button variant="outline" className="flex-1 h-10 text-xs gap-1.5 border-white/20 hover:bg-white/[0.05] text-zinc-200" disabled={busy} onClick={() => { setShowReject(true); setErrMsg('') }}>
@@ -323,7 +341,7 @@ function ExtraRow({ co }) {
             <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
               placeholder="What should be revised? (required)" maxLength={1000} value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} />
             <div className="flex gap-2">
-              <Button className="flex-1 h-10 text-xs text-white font-bold" style={{ backgroundColor: '#ef4444' }} disabled={busy || !rejectNotes.trim()} onClick={handleReject}>
+              <Button className="flex-1 h-10 text-xs text-white font-bold" style={{ backgroundColor: SEMANTIC.critical }} disabled={busy || !rejectNotes.trim()} onClick={handleReject}>
                 {busy ? 'Submitting…' : 'Send revision request'}
               </Button>
               <Button variant="outline" className="flex-1 h-10 text-xs border-white/20 hover:bg-white/[0.05] text-zinc-200" disabled={busy} onClick={() => { setShowReject(false); setRejectNotes(''); setErrMsg('') }}>
@@ -335,7 +353,7 @@ function ExtraRow({ co }) {
         )}
 
         {!isPending && state === 'approved' && (
-          <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: '#22c55e' }}>
+          <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: SEMANTIC.success }}>
             <CheckCircleIcon size={12} /> Approved
           </div>
         )}
@@ -346,21 +364,25 @@ function ExtraRow({ co }) {
 
 // ── Invoice row ──────────────────────────────────────────────────────────────
 
-const BILLING_META = {
-  paid:           { label: 'Paid',                  tone: 'success' },
-  invoiced:       { label: 'Invoice submitted',     tone: 'info'    },
-  'partial-pay':  { label: 'Partial payment',       tone: 'warning' },
-  'not-invoiced': { label: 'Not yet invoiced',      tone: 'neutral' },
+// What a client reads for each billing status. The tones are the vocabulary's. A
+// job on hold, or with no billing status, reads as not yet invoiced, since a hold
+// is the office's business.
+const BILLING_WORDS = {
+  paid:           'Paid',
+  invoiced:       'Invoice submitted',
+  'partial-pay':  'Partial payment',
+  'not-invoiced': 'Not yet invoiced',
 }
 
 function InvoiceRow({ job }) {
   const toast = useToast()
-  const meta = BILLING_META[job.billingStatus] || BILLING_META['not-invoiced']
+  const billing = Object.hasOwn(BILLING_WORDS, job.billingStatus) ? job.billingStatus : 'not-invoiced'
+  const meta = { label: BILLING_WORDS[billing], tone: statusTone(BILLING_STATUS, billing) }
   const hasInvoice = Boolean(job.invoiceNum)
   const payHref = safeHttpUrl(job.paymentUrl)
   return (
     <div className="flex items-center gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025]">
-      <div className="shrink-0 flex items-center justify-center rounded-lg" style={{ width: 36, height: 36, backgroundColor: '#3b82f622', color: '#3b82f6' }}>
+      <div className="shrink-0 flex items-center justify-center rounded-lg" style={{ width: 36, height: 36, backgroundColor: withAlpha(SEMANTIC.info, 0.13), color: SEMANTIC.info }}>
         <ReceiptIcon size={16} />
       </div>
       <div className="min-w-0 flex-1">
@@ -376,7 +398,7 @@ function InvoiceRow({ job }) {
         <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
         {payHref && job.billingStatus !== 'paid' && (
           <a href={payHref} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] font-bold text-white" style={{ backgroundColor: '#22c55e' }}>
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] font-bold text-white" style={{ backgroundColor: SEMANTIC.success }}>
             <CreditCardIcon size={13} /> Pay now
           </a>
         )}
@@ -538,7 +560,7 @@ function ClientMessages({ jobs, clientName }) {
   const myMessages = submits
 
   const CATEGORIES = ['Question', 'Schedule', 'Change Request', 'Issue', 'Other']
-  const statusColor = { Open: '#ef4444', 'In Progress': BRAND, Resolved: '#22c55e' }
+  const ticketColor = { Open: SEMANTIC.critical, 'In Progress': BRAND, Resolved: SEMANTIC.success }
 
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim() || !form.jobId) return
@@ -616,7 +638,7 @@ function ClientMessages({ jobs, clientName }) {
             <CardContent className="p-3">
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
-                  style={{ backgroundColor: r.authorRole === 'internal' ? '#3b82f622' : '#22c55e22', color: r.authorRole === 'internal' ? '#3b82f6' : '#22c55e' }}>
+                  style={{ backgroundColor: r.authorRole === 'internal' ? withAlpha(SEMANTIC.info, 0.13) : withAlpha(SEMANTIC.success, 0.13), color: r.authorRole === 'internal' ? SEMANTIC.info : SEMANTIC.success }}>
                   {(r.author || 'P2').slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -719,7 +741,7 @@ function ClientMessages({ jobs, clientName }) {
       ) : (
         <div className="space-y-2">
           {myMessages.map(s => {
-            const sc = statusColor[s.status || 'Open']
+            const sc = ticketColor[s.status || 'Open']
             return (
               <button key={s._docId} className="w-full text-left flex items-start gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/25 transition-colors"
                 onClick={() => { setSelectedId(s._docId); setView('thread') }}>
@@ -771,7 +793,8 @@ function ScheduleCard({ job }) {
         </div>
         <ol className="relative ml-1.5">
           {milestones.map((m, i) => {
-            const meta = PHASE_STATUS[m.status] || PHASE_STATUS['not-started']
+            const phaseStatus = Object.hasOwn(PHASE_WORDS, m.status) ? m.status : 'not-started'
+            const meta = { color: statusColor(INSPECTION_STATUS, phaseStatus), label: PHASE_WORDS[phaseStatus] }
             const last = i === milestones.length - 1
             const dateStr = fmtFullDate(m.date)
             return (
@@ -882,9 +905,9 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
           </Select>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
             <PortalStat label="Active"           value={activeJobs.length}    Icon={ActivityIcon}    accent={BRAND} />
-            <PortalStat label="Awaiting approval" value={pendingExtras.length} Icon={FilePenLineIcon} accent={pendingExtras.length > 0 ? '#eab308' : '#9ca3af'} sub={pendingExtras.length > 0 ? fmt$(pendingValue) : undefined} />
-            <PortalStat label="Open invoices"    value={openInvoices}         Icon={ReceiptIcon}     accent={openInvoices > 0 ? '#3b82f6' : '#9ca3af'} />
-            <PortalStat label="Completed"        value={completedJobs.length} Icon={BadgeCheckIcon}  accent="#22c55e" />
+            <PortalStat label="Awaiting approval" value={pendingExtras.length} Icon={FilePenLineIcon} accent={pendingExtras.length > 0 ? SEMANTIC.warning : SEMANTIC.neutral} sub={pendingExtras.length > 0 ? fmt$(pendingValue) : undefined} />
+            <PortalStat label="Open invoices"    value={openInvoices}         Icon={ReceiptIcon}     accent={openInvoices > 0 ? SEMANTIC.info : SEMANTIC.neutral} />
+            <PortalStat label="Completed"        value={completedJobs.length} Icon={BadgeCheckIcon}  accent={SEMANTIC.success} />
           </div>
         </div>
       </header>
@@ -896,7 +919,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
           return (
             <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
               className="flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0"
-              style={{ borderColor: active ? BRAND : 'transparent', color: active ? BRAND : '#9ca3af' }}>
+              style={{ borderColor: active ? BRAND : 'transparent', color: active ? BRAND : SEMANTIC.neutral }}>
               <t.Icon size={14} strokeWidth={active ? 2.25 : 2} />
               {t.label}
               {t.count > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}>{t.count}</span>}
@@ -1030,7 +1053,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
             return (
               <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
                 className="flex flex-col items-center justify-center gap-0.5 py-2.5 relative transition-colors"
-                style={{ color: active ? BRAND : '#9ca3af' }}>
+                style={{ color: active ? BRAND : SEMANTIC.neutral }}>
                 <t.Icon size={20} strokeWidth={active ? 2.25 : 2} />
                 <span className="text-[10px] font-semibold leading-none">{t.label}</span>
                 {t.count > 0 && (

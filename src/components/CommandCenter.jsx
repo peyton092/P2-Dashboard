@@ -22,7 +22,8 @@ import {
 } from 'lucide-react'
 import { classifyRisk } from '../agent/scoring'
 import { sumContracts, sumInvoices, missingNote } from '../lib/money'
-import { BRAND, withAlpha } from '@/lib/tokens'
+import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
+import { INSPECTION_STATUS, statusColor, statusLabel, toneText } from '../lib/status'
 
 const TODAY = new Date()
 
@@ -290,8 +291,8 @@ export default function CommandCenter() {
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }} />
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
             <span>{activeJobs.length} active jobs</span>
@@ -389,7 +390,7 @@ export default function CommandCenter() {
                   <span className="flex items-center gap-2 shrink-0">
                     <span
                       className="text-lg font-semibold tabular-nums leading-none"
-                      style={{ color: n.count > 0 ? BRAND : '#9ca3af' }}
+                      style={{ color: n.count > 0 ? BRAND : SEMANTIC.neutral }}
                     >
                       {n.count}
                     </span>
@@ -490,7 +491,7 @@ export default function CommandCenter() {
                       className="h-full rounded-full transition-all duration-500"
                       style={{
                         width: `${p.fill}%`,
-                        backgroundColor: p.issues > 0 ? '#eab308' : BRAND,
+                        backgroundColor: p.issues > 0 ? SEMANTIC.warning : BRAND,
                       }}
                     />
                   </div>
@@ -617,11 +618,7 @@ function NeedsActionIcon({ kind }) {
 }
 
 function BillingRow({ label, amount, count, subtitle, note, tone = 'neutral' }) {
-  const color =
-    tone === 'success' ? '#22c55e' :
-    tone === 'info'    ? '#3b82f6' :
-    tone === 'brand'   ? BRAND :
-    '#9ca3af'
+  const color = toneText(tone)
   return (
     <li className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-white/5 bg-white/[0.02]">
       <div className="min-w-0">
@@ -633,7 +630,7 @@ function BillingRow({ label, amount, count, subtitle, note, tone = 'neutral' }) 
       </div>
       <p
         className="text-base font-semibold tabular-nums shrink-0"
-        style={{ color: count > 0 ? color : '#9ca3af' }}
+        style={{ color: count > 0 ? color : SEMANTIC.neutral }}
       >
         {amount > 0 ? `$${(amount / 1000).toFixed(amount >= 100_000 ? 0 : 1)}K` : '$0'}
       </p>
@@ -651,9 +648,9 @@ function InspectionDonut({ summary }) {
     )
   }
   const data = [
-    { name: 'Passed',  value: summary.passed,  color: '#22c55e' },
-    { name: 'Pending', value: summary.pending, color: '#eab308' },
-    { name: 'Failed',  value: summary.failed,  color: '#ef4444' },
+    { name: statusLabel(INSPECTION_STATUS, 'passed'),  value: summary.passed,  color: statusColor(INSPECTION_STATUS, 'passed') },
+    { name: statusLabel(INSPECTION_STATUS, 'pending'), value: summary.pending, color: statusColor(INSPECTION_STATUS, 'pending') },
+    { name: statusLabel(INSPECTION_STATUS, 'failed'),  value: summary.failed,  color: statusColor(INSPECTION_STATUS, 'failed') },
     { name: 'Overdue', value: summary.overdue, color: BRAND },
   ].filter(d => d.value > 0)
 
@@ -682,9 +679,9 @@ function InspectionDonut({ summary }) {
         </div>
       </div>
       <ul className="space-y-1.5 text-xs">
-        <DonutLegendRow label="Passed"  value={summary.passed}  total={summary.total} color="#22c55e" />
-        <DonutLegendRow label="Pending" value={summary.pending} total={summary.total} color="#eab308" />
-        <DonutLegendRow label="Failed"  value={summary.failed}  total={summary.total} color="#ef4444" />
+        <DonutLegendRow label={statusLabel(INSPECTION_STATUS, 'passed')}  value={summary.passed}  total={summary.total} color={statusColor(INSPECTION_STATUS, 'passed')} />
+        <DonutLegendRow label={statusLabel(INSPECTION_STATUS, 'pending')} value={summary.pending} total={summary.total} color={statusColor(INSPECTION_STATUS, 'pending')} />
+        <DonutLegendRow label={statusLabel(INSPECTION_STATUS, 'failed')}  value={summary.failed}  total={summary.total} color={statusColor(INSPECTION_STATUS, 'failed')} />
         <DonutLegendRow label="Overdue" value={summary.overdue} total={summary.total} color={BRAND} />
       </ul>
     </div>
@@ -715,9 +712,9 @@ function QuickBooksStatusCard({ qb }) {
         <div className="flex items-center gap-3 mb-3">
           <div
             className="shrink-0 flex items-center justify-center rounded-xl"
-            style={{ width: 44, height: 44, backgroundColor: '#22c55e22' }}
+            style={{ width: 44, height: 44, backgroundColor: withAlpha(SEMANTIC.success, 0.13) }}
           >
-            <CheckCircleIcon size={20} color="#22c55e" strokeWidth={2.25} />
+            <CheckCircleIcon size={20} color={SEMANTIC.success} strokeWidth={2.25} />
           </div>
           <div>
             <p className="text-sm font-bold text-white">Connected</p>

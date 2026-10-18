@@ -5,8 +5,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useData } from '../use-data'
 import { updatePermit } from '../hooks/useFirestore'
-import { StatCard, InspBadge, JobBadge, iMeta } from './shared'
+import { StatCard, StatusBadge, PermitBadge } from './shared'
 import { BRAND, withAlpha } from '@/lib/tokens'
+import { PERMIT_STATUS, TRADE, statusColor, statusLabel } from '../lib/status'
 
 // Phase 20 — extracted from src/App.jsx. Behavior preserved exactly. The
 // local SectionHeader is intentionally inlined here (it differs from the
@@ -23,6 +24,9 @@ function SectionHeader({ title, sub, action }) {
     </div>
   )
 }
+
+// The statuses a person can pick for a permit, in the order of the vocabulary.
+const PERMIT_STATUSES = Object.keys(PERMIT_STATUS)
 
 export default function Permits() {
   const { jobs } = useData()
@@ -51,20 +55,20 @@ export default function Permits() {
             <CardHeader>
               <CardTitle className="text-sm flex items-center justify-between">
                 <span><span className="" style={{ color: BRAND }}>{j.id}</span> — {j.address}</span>
-                <JobBadge status={j.status} />
+                <StatusBadge status={j.status} size="xs" />
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {['electrical','plumbing','hvac'].map(t => {
                 if (!j.permits[t]) return null
                 const pStatus = j.permits[t]
-                const PERMIT_STATUSES = ['pending','applied','approved','finaled','denied']
+                const permitColor = statusColor(PERMIT_STATUS, pStatus)
                 return (
                   <div key={t} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
                     <div className="flex items-center gap-3">
-                      {t === 'electrical' ? <ZapIcon size={14} style={{ color: BRAND }} /> :
-                       t === 'plumbing'   ? <WrenchIcon size={14} color="#06b6d4" /> :
-                                            <HammerIcon size={14} color="#3b82f6" />}
+                      {t === 'electrical' ? <ZapIcon size={14} color={statusColor(TRADE, t)} /> :
+                       t === 'plumbing'   ? <WrenchIcon size={14} color={statusColor(TRADE, t)} /> :
+                                            <HammerIcon size={14} color={statusColor(TRADE, t)} />}
                       <span className="text-sm capitalize font-medium">{t}</span>
                     </div>
                     {j._docId ? (
@@ -72,14 +76,14 @@ export default function Permits() {
                         value={pStatus}
                         onChange={e => updatePermit(j._docId, t, e.target.value)}
                         className="text-xs font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none"
-                        style={{ color: iMeta(pStatus).color, backgroundColor: withAlpha(iMeta(pStatus).color, 0.13), border: `1px solid ${withAlpha(iMeta(pStatus).color, 0.27)}` }}
+                        style={{ color: permitColor, backgroundColor: withAlpha(permitColor, 0.13), border: `1px solid ${withAlpha(permitColor, 0.27)}` }}
                       >
                         {PERMIT_STATUSES.map(s => (
-                          <option key={s} value={s} style={{ backgroundColor: '#111', color: '#fff' }}>{s.toUpperCase()}</option>
+                          <option key={s} value={s} style={{ backgroundColor: '#111', color: '#fff' }}>{statusLabel(PERMIT_STATUS, s)}</option>
                         ))}
                       </select>
                     ) : (
-                      <InspBadge status={pStatus} />
+                      <PermitBadge status={pStatus} size="xs" />
                     )}
                   </div>
                 )

@@ -1,10 +1,11 @@
 import { daysSince } from '../agent/scoring'
+import { SUB_STATUS } from './status'
 
 // Subcontractor compliance vocabulary + pure derivation helpers. No React or
-// Firestore dependency. Moved out of src/App.jsx in Phase 18.
+// Firestore dependency. Moved out of src/App.jsx in Phase 18. The words and
+// colors of a sub's status on a job are in status.js (SUB_STATUS).
 
-export const SUB_STATUS_OPTIONS = ['active', 'done', 'issue']
-export const SUB_STATUS_COLOR   = { active: '#22c55e', done: '#6b7280', issue: '#ef4444' }
+export const SUB_STATUS_OPTIONS = Object.keys(SUB_STATUS)
 
 export const SUB_FILTERS = [
   { id: 'all',            label: 'All' },

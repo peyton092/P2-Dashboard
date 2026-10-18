@@ -72,3 +72,67 @@ describe('the CSS tokens', () => {
     for (const value of values) expect(value).toBe(family)
   })
 })
+
+// The rest of what the dark theme and the focus ring rest on in the stylesheet
+// and the page, read as text so that an edit that breaks one fails here.
+
+// The rules of the stylesheet that hold declarations directly, comments removed.
+// A rule inside a media query or a layer is found on its own.
+const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+  selector: match[1].trim(),
+  body: match[2],
+}))
+
+// The property: value pairs inside one rule.
+const declarationsIn = (body) =>
+  Object.fromEntries(
+    body.split(';').map((line) => line.trim()).filter(Boolean).map((line) => {
+      const colon = line.indexOf(':')
+      return [line.slice(0, colon).trim(), line.slice(colon + 1).trim()]
+    }),
+  )
+
+describe('the dark theme in the stylesheet', () => {
+  const dark = declarationsIn(rules.find((rule) => rule.selector === '.dark')?.body ?? '')
+
+  it('tells the browser the document is dark, so native controls and scrollbars follow', () => {
+    expect(dark['color-scheme']).toBe('dark')
+  })
+
+  it('has four warm graphite surfaces, from the page up, at chroma 0.004 and hue 60', () => {
+    const surfaces = ['--background', '--surface-1', '--surface-2', '--surface-3'].map((property) => dark[property])
+    expect(surfaces).toEqual([
+      'oklch(0.145 0.004 60)',
+      'oklch(0.165 0.004 60)',
+      'oklch(0.205 0.004 60)',
+      'oklch(0.269 0.004 60)',
+    ])
+    const lightness = surfaces.map((value) => Number(/^oklch\(([\d.]+) /.exec(value)[1]))
+    expect([...lightness].sort((a, b) => a - b), 'each surface sits above the one below').toEqual(lightness)
+  })
+})
+
+describe('keyboard focus', () => {
+  // :focus:not(:focus-visible) takes the ring off for the mouse; it is not a ring.
+  const rings = rules.filter(({ selector, body }) =>
+    selector.includes(':focus-visible') &&
+    !selector.includes(':not(:focus-visible)') &&
+    /(?:^|;)\s*outline\s*:\s*(?!none)/.test(body),
+  )
+
+  it('has exactly one focus-visible outline rule, so that no later rule can disagree with it', () => {
+    expect(rings.map(({ selector }) => selector)).toHaveLength(1)
+  })
+
+  it('draws that ring in the brand color', () => {
+    expect(declarationsIn(rings[0].body).outline).toBe('2px solid var(--brand)')
+  })
+})
+
+describe('the page', () => {
+  const page = readFileSync(resolve(srcDir, '..', 'index.html'), 'utf8')
+
+  it('carries the dark class on the html element, so that portals on body are dark too', () => {
+    expect(page).toMatch(/<html\b[^>]*\sclass="(?:[^"]*\s)?dark(?:\s[^"]*)?"/)
+  })
+})

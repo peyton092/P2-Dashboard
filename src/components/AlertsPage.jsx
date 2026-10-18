@@ -20,24 +20,8 @@ import {
   TimerIcon, ReceiptIcon, BadgeCheckIcon,
   MapPinIcon, UserRoundCogIcon, ActivityIcon,
 } from 'lucide-react'
-import { BRAND } from '@/lib/tokens'
-
-// Severity → Phase 1 palette tone + sort weight (lowest = surfaced first)
-const SEVERITY = {
-  critical: { tone: 'critical', label: 'Critical', sort: 0 },
-  warning:  { tone: 'warning',  label: 'Warning',  sort: 1 },
-  info:     { tone: 'info',     label: 'Info',     sort: 2 },
-}
-
-// Tone → fg color for the recommendation/next-action microcopy line.
-const TONE_COLOR = {
-  critical: '#ef4444',
-  warning:  '#eab308',
-  brand:    BRAND,
-  success:  '#22c55e',
-  info:     '#3b82f6',
-  mute:     '#9ca3af',
-}
+import { SEVERITY, statusLabel, statusOrder, statusTone, toneText } from '../lib/status'
+import { SEMANTIC } from '@/lib/tokens'
 
 // ── Categorisation ───────────────────────────────────────────────────────────
 //
@@ -200,8 +184,8 @@ export default function AlertsPage() {
             || (a.jobId       || '').toLowerCase().includes(q)
       })
       .sort((a, b) => {
-        const sa = SEVERITY[a.severity]?.sort ?? 9
-        const sb = SEVERITY[b.severity]?.sort ?? 9
+        const sa = statusOrder(SEVERITY, a.severity)
+        const sb = statusOrder(SEVERITY, b.severity)
         if (sa !== sb) return sa - sb
         return ageDays(b) - ageDays(a)
       })
@@ -285,9 +269,9 @@ export default function AlertsPage() {
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
               />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{kpis.total} open · {kpis.critical} critical</span>
             {kpis.aging > 0 && (
@@ -477,14 +461,15 @@ function AlertGroup({ title, tone, alerts, onResolve, onSnooze, onDismiss }) {
 }
 
 function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
-  const sev      = SEVERITY[alert.severity] || SEVERITY.info
+  // An alert with a severity the app does not know is shown as info.
+  const severity = Object.hasOwn(SEVERITY, alert.severity) ? alert.severity : 'info'
   const cat      = categoryFor(alert)
   const CatIcon  = CATEGORY_ICON[cat] || AlertTriangleIcon
   const zoneName = alert.zoneId ? (ZONES[alert.zoneId]?.name || alert.zoneId) : null
   const isResolved = alert.status === 'resolved'
   const isSnoozed  = alert.status === 'snoozed'
   const age       = ageDays(alert)
-  const sevColor  = TONE_COLOR[sev.tone]
+  const sevColor  = toneText(statusTone(SEVERITY, severity))
 
   const statusInfo = isResolved
     ? { tone: 'success',  label: 'Resolved' }
@@ -504,7 +489,7 @@ function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
     >
       {/* Metadata row */}
       <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-        <Pill tone={sev.tone} size="xs">{sev.label}</Pill>
+        <Pill tone={statusTone(SEVERITY, severity)} size="xs">{statusLabel(SEVERITY, severity)}</Pill>
         <Pill tone="neutral" size="xs" Icon={CatIcon}>
           {CATEGORY_LABEL[cat] || ALERT_TYPE_LABEL[alert.type] || 'Alert'}
         </Pill>
@@ -578,7 +563,7 @@ function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
             type="button"
             onClick={() => onResolve(alert)}
             className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md text-white transition-colors"
-            style={{ backgroundColor: '#22c55e' }}
+            style={{ backgroundColor: SEMANTIC.success }}
           >
             <CheckIcon size={12} /> Resolve alert
           </button>

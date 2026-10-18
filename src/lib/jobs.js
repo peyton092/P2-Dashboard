@@ -1,11 +1,12 @@
 import { classifyRisk, hasFailedInspection, isBillingReady, daysSince } from '../agent/scoring'
+import { isJobComplete } from './status'
 
 // Job-level helpers. Pure data + pure derivation. No React or Firestore
 // dependency. Moved out of src/App.jsx in Phase 18.
 
 export const jobName = (j) => j.name || j.client.split(' ')[0]
 
-export const phaseLabel = (p) => p >= 67 ? 'Final Phase' : p >= 34 ? 'Mid Phase' : 'Rough-In Phase'
+export const phaseLabel = (p) => p >= 67 ? 'Final phase' : p >= 34 ? 'Mid phase' : 'Rough in phase'
 
 export const JOB_FILTERS = [
   { id: 'all',          label: 'All' },
@@ -37,9 +38,9 @@ export function jobFormFor(workspace) {
   return { ...JOB_FORM_INITIAL, tenantId: workspace === 'qbs' || workspace === 'vision' ? workspace : 'qbs' }
 }
 
-export function isJobComplete(j) {
-  return ['complete', 'completed'].includes(j.status)
-}
+// isJobComplete lives with the rest of the status vocabulary in status.js and is
+// exported here as well, for the screens that already import it from jobs.js.
+export { isJobComplete }
 
 export function jobStaleness(j) {
   return daysSince(j.lastStatusChange || j.start)

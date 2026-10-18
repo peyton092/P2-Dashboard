@@ -3,40 +3,33 @@ import {
 } from '@/components/ui/select'
 import { updateJob } from '../../hooks/useFirestore'
 import { phaseLabel } from '../../lib/jobs'
-import { BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR } from '../../lib/billing'
-import { MAT_STATUS_OPTIONS, MAT_STATUS_COLOR } from '../../lib/materials'
-import { BRAND, withAlpha } from '@/lib/tokens'
+import { BILLING_STATUSES } from '../../lib/billing'
+import { MAT_STATUS_OPTIONS, normalizeMatStatus } from '../../lib/materials'
+import {
+  JOB_STATUS, BILLING_STATUS, MATERIAL_STATUS, PHASE,
+  JOB_STATUS_OPTIONS, PHASE_OPTIONS,
+  statusLabel, statusColor,
+} from '../../lib/status'
+import { withAlpha } from '@/lib/tokens'
 
 // Inline-edit pill-shaped Select primitives. Each one wraps a status field
 // on a job/material document and persists changes to Firestore on change.
-// Behavior preserved exactly. Moved out of src/App.jsx in Phase 19.
-
-const JOB_STATUS_OPTIONS = [
-  { value: 'on-track',     label: 'On Track',     color: '#22c55e' },
-  { value: 'needs-action', label: 'Needs Action', color: BRAND     },
-  { value: 'at-risk',      label: 'At Risk',      color: '#eab308' },
-  { value: 'blocked',      label: 'Blocked',      color: '#ef4444' },
-  { value: 'complete',     label: 'Complete',     color: '#22c55e' },
-  { value: 'active',       label: 'Active',       color: BRAND     },
-  { value: 'hold',         label: 'On Hold',      color: '#ef4444' },
-  { value: 'completed',    label: 'Completed',    color: '#22c55e' },
-  { value: 'pending',      label: 'Pending',      color: '#6b7280' },
-]
-
-const PHASE_OPTIONS = ['Precon', 'Rough-In', 'Service Release', 'Trim', 'Final', 'Closeout', 'Complete']
+// Behavior preserved exactly. Moved out of src/App.jsx in Phase 19. The words,
+// tones and menus come from status.js. A select shows the words of the chosen
+// status itself, because the stored value is a key such as on-track.
 
 export function InlineStatusSelect({ job }) {
-  const opt = JOB_STATUS_OPTIONS.find(o => o.value === job.status) || JOB_STATUS_OPTIONS[5]
+  const color = statusColor(JOB_STATUS, job.status)
   const handleChange = (v) => { if (job._docId) updateJob(job._docId, { status: v }) }
   return (
     <div onClick={e => e.stopPropagation()}>
       <Select value={job.status} onValueChange={handleChange}>
         <SelectTrigger className="h-auto py-0.5 px-3 text-xs font-bold border rounded-full w-auto gap-1"
-          style={{ backgroundColor: withAlpha(opt.color, 0.13), color: opt.color, borderColor: withAlpha(opt.color, 0.33) }}>
-          <SelectValue />
+          style={{ backgroundColor: withAlpha(color, 0.13), color, borderColor: withAlpha(color, 0.33) }}>
+          <SelectValue>{statusLabel(JOB_STATUS, job.status)}</SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {JOB_STATUS_OPTIONS.slice(0, 5).map(o => (
+          {JOB_STATUS_OPTIONS.map(o => (
             <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
           ))}
         </SelectContent>
@@ -45,18 +38,33 @@ export function InlineStatusSelect({ job }) {
   )
 }
 
+// The words of a stored phase. The menu below stores the words themselves
+// (Service release), as it always has. Seed data and older writes hold a key such
+// as rough-in-passed, or Title Case words, so the text is matched as a key first.
+// Anything else shows as written, without its hyphens.
+function phaseWords(stored) {
+  const text = String(stored ?? '').trim()
+  const key = text.toLowerCase().replace(/\s+/g, '-')
+  if (Object.hasOwn(PHASE, key)) return statusLabel(PHASE, key)
+  const plain = text.replace(/-/g, ' ')
+  return plain.charAt(0).toUpperCase() + plain.slice(1)
+}
+
 export function InlinePhaseSelect({ job }) {
-  const current = job.phase || phaseLabel(job.progress)
+  const words = phaseWords(job.phase || phaseLabel(job.progress))
   const handleChange = (v) => { if (job._docId) updateJob(job._docId, { phase: v }) }
+  // The stored value is the words and not the key. The HVAC alert reads a stored
+  // service-release as the service being obtained, which choosing the phase does
+  // not mean.
   return (
     <div onClick={e => e.stopPropagation()}>
-      <Select value={current} onValueChange={handleChange}>
+      <Select value={words} onValueChange={handleChange}>
         <SelectTrigger className="h-auto py-0.5 px-3 text-xs border rounded-full w-auto gap-1 bg-white/10 border-white/20 text-muted-foreground">
-          <SelectValue />
+          <SelectValue>{words}</SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {PHASE_OPTIONS.map(p => (
-            <SelectItem key={p} value={p}>{p}</SelectItem>
+          {PHASE_OPTIONS.map(o => (
+            <SelectItem key={o.value} value={o.label}>{o.label}</SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -66,8 +74,8 @@ export function InlinePhaseSelect({ job }) {
 
 export function BillingStatusSelect({ job }) {
   const status = job.billingStatus || 'not-invoiced'
-  const color  = BILLING_STATUS_COLOR[status] || '#6b7280'
-  const label  = BILLING_STATUS_LABEL[status]  || 'Not Invoiced'
+  const color  = statusColor(BILLING_STATUS, status)
+  const label  = statusLabel(BILLING_STATUS, status)
   return (
     <Select
       value={status}
@@ -79,7 +87,7 @@ export function BillingStatusSelect({ job }) {
       </SelectTrigger>
       <SelectContent>
         {BILLING_STATUSES.map(s => (
-          <SelectItem key={s} value={s}>{BILLING_STATUS_LABEL[s]}</SelectItem>
+          <SelectItem key={s} value={s}>{statusLabel(BILLING_STATUS, s)}</SelectItem>
         ))}
       </SelectContent>
     </Select>
@@ -87,16 +95,17 @@ export function BillingStatusSelect({ job }) {
 }
 
 export function MatStatusBadge({ status, docId, onUpdate }) {
-  const color = MAT_STATUS_COLOR[status] || '#6b7280'
+  const current = normalizeMatStatus(status)
+  const color = statusColor(MATERIAL_STATUS, current)
   return (
     <div onClick={e => e.stopPropagation()}>
-      <Select value={status || 'Ordered'} onValueChange={v => onUpdate(docId, v)}>
+      <Select value={current} onValueChange={v => onUpdate(docId, v)}>
         <SelectTrigger className="h-auto py-0.5 px-2 text-xs font-bold border rounded-full min-w-[7rem]"
           style={{ backgroundColor: withAlpha(color, 0.13), color, borderColor: withAlpha(color, 0.33) }}>
-          <SelectValue />
+          <SelectValue>{statusLabel(MATERIAL_STATUS, current)}</SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {MAT_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          {MAT_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{statusLabel(MATERIAL_STATUS, s)}</SelectItem>)}
         </SelectContent>
       </Select>
     </div>

@@ -6,6 +6,7 @@ import { classifyRisk, hasFailedInspection, isBillingReady, isHvacStartupBlocked
 import { jobName } from './jobs'
 import { matIsOpen, matIsOverdue, matIsBlocking, matDaysUntilNeeded } from './materials'
 import { subInsuranceExpired, subInsuranceExpiringSoon, subHasMissingDocs } from './subs'
+import { SEVERITY, statusOrder, toneHex } from './status'
 import { BRAND } from '@/lib/tokens'
 
 // Read-only daily operating brief data layer. Surfaces the most important
@@ -13,26 +14,13 @@ import { BRAND } from '@/lib/tokens'
 // derivations from useData(). Moved out of src/App.jsx in Phase 18.
 
 export const BRIEF_CATEGORY_META = {
-  'job-risk':    { label: 'Job Risk',         Icon: TriangleAlertIcon, accent: '#ef4444' },
-  'inspections': { label: 'Inspections',      Icon: BadgeCheckIcon,    accent: '#3b82f6' },
-  'billing':     { label: 'Billing',          Icon: DollarSignIcon,    accent: '#22c55e' },
-  'co':          { label: 'Change Orders',    Icon: FilePenLineIcon,   accent: '#eab308' },
+  'job-risk':    { label: 'Job Risk',         Icon: TriangleAlertIcon, accent: toneHex('critical') },
+  'inspections': { label: 'Inspections',      Icon: BadgeCheckIcon,    accent: toneHex('info') },
+  'billing':     { label: 'Billing',          Icon: DollarSignIcon,    accent: toneHex('success') },
+  'co':          { label: 'Change Orders',    Icon: FilePenLineIcon,   accent: toneHex('warning') },
   'materials':   { label: 'Materials',        Icon: PackageIcon,       accent: BRAND },
-  'subs':        { label: 'Subs Compliance',  Icon: ShieldCheckIcon,   accent: '#06b6d4' },
+  'subs':        { label: 'Subs Compliance',  Icon: ShieldCheckIcon,   accent: toneHex('cyan') },
   'pm':          { label: 'PM Workload',      Icon: UserRoundCogIcon,  accent: '#a78bfa' },
-}
-
-export const SEVERITY_RANK = { critical: 0, warning: 1, info: 2 }
-
-export function severityTone(sev) {
-  if (sev === 'critical') return 'critical'
-  if (sev === 'warning')  return 'warning'
-  return 'info'
-}
-export function severityColor(sev) {
-  if (sev === 'critical') return '#ef4444'
-  if (sev === 'warning')  return '#eab308'
-  return '#3b82f6'
 }
 
 // Generate the full set of briefing items from the live data set. Each item
@@ -345,8 +333,8 @@ export function buildBriefingItems({ jobs, extras, materials, subs }) {
 
   // Sort: severity first, then age desc (older items surface first).
   items.sort((a, b) => {
-    const sa = SEVERITY_RANK[a.severity] ?? 9
-    const sb = SEVERITY_RANK[b.severity] ?? 9
+    const sa = statusOrder(SEVERITY, a.severity)
+    const sb = statusOrder(SEVERITY, b.severity)
     if (sa !== sb) return sa - sb
     return (b.age ?? -1) - (a.age ?? -1)
   })

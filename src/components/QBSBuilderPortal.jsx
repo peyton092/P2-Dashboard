@@ -30,7 +30,11 @@ import {
   EmptyState,
   AllClearState,
 } from './shared'
-import { BRAND, withAlpha } from '@/lib/tokens'
+import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
+import {
+  CO_STATUS, INSPECTION_STATUS, PHASE,
+  normalizeCoStatus, statusColor, statusLabel, statusTone, toneHex,
+} from '../lib/status'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -58,12 +62,13 @@ const fmtDate = (d) => {
 
 // ── Inspection phase aggregation ─────────────────────────────────────────────
 
-const PHASE_STATUS = {
-  passed:    { color: '#22c55e', label: 'Passed',     bg: '#22c55e22', Icon: CheckCircleIcon },
-  failed:    { color: '#ef4444', label: 'Failed',     bg: '#ef444422', Icon: XIcon },
-  pending:   { color: '#eab308', label: 'Pending',    bg: '#eab30822', Icon: ClockIcon },
-  scheduled: { color: '#3b82f6', label: 'Scheduled',  bg: '#3b82f622', Icon: ClockIcon },
-  'not-started': { color: '#6b7280', label: 'Not Started', bg: '#6b728022', Icon: ClockIcon },
+// The icon of each phase result. Its words and color are in status.js.
+const PHASE_ICON = {
+  passed:        CheckCircleIcon,
+  failed:        XIcon,
+  pending:       ClockIcon,
+  scheduled:     ClockIcon,
+  'not-started': ClockIcon,
 }
 
 // Aggregate per-trade roughIn / final into a single phase status.
@@ -102,9 +107,9 @@ function getServiceReleaseStatus(job) {
 
 function getJobInspectionTimeline(job) {
   return [
-    { key: 'roughIn',        label: 'Rough-In',        ...aggregatePhaseStatus(job.insp, 'roughIn') },
-    { key: 'serviceRelease', label: 'Service Release', ...getServiceReleaseStatus(job) },
-    { key: 'final',          label: 'Final',           ...aggregatePhaseStatus(job.insp, 'final') },
+    { key: 'roughIn',        label: statusLabel(PHASE, 'rough-in'),        ...aggregatePhaseStatus(job.insp, 'roughIn') },
+    { key: 'serviceRelease', label: statusLabel(PHASE, 'service-release'), ...getServiceReleaseStatus(job) },
+    { key: 'final',          label: statusLabel(PHASE, 'final'),           ...aggregatePhaseStatus(job.insp, 'final') },
   ]
 }
 
@@ -115,28 +120,28 @@ function InspectionTimeline({ job }) {
   return (
     <div className="flex items-stretch gap-1 sm:gap-2">
       {phases.map((p, i) => {
-        const meta = PHASE_STATUS[p.status]
-        const Icon = meta.Icon
+        const color = statusColor(INSPECTION_STATUS, p.status)
+        const Icon = PHASE_ICON[p.status]
         return (
           <div key={p.key} className="flex items-stretch flex-1 min-w-0">
             <div
               className="flex flex-col items-center text-center gap-1 px-2 py-2 rounded-lg flex-1 border min-w-0"
               style={{
-                backgroundColor: meta.bg,
-                borderColor: withAlpha(meta.color, 0.33),
+                backgroundColor: withAlpha(color, 0.13),
+                borderColor: withAlpha(color, 0.33),
               }}
             >
               <div
                 className="w-7 h-7 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: withAlpha(meta.color, 0.2) }}
+                style={{ backgroundColor: withAlpha(color, 0.2) }}
               >
-                <Icon size={14} style={{ color: meta.color }} />
+                <Icon size={14} style={{ color }} />
               </div>
-              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color: meta.color }}>
+              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color }}>
                 {p.label}
               </p>
               <p className="text-[9px] sm:text-[10px] text-muted-foreground leading-tight">
-                {p.status === 'passed' && p.date ? fmtDate(p.date) : meta.label}
+                {p.status === 'passed' && p.date ? fmtDate(p.date) : statusLabel(INSPECTION_STATUS, p.status)}
               </p>
             </div>
             {i < phases.length - 1 && (
@@ -163,13 +168,10 @@ function TradeInspectionPills({ insp }) {
 
   if (rows.length === 0) return null
 
-  const meta = (s) => {
-    if (s === 'passed') return { c: '#22c55e', l: 'P' }
-    if (s === 'failed') return { c: '#ef4444', l: 'F' }
-    if (s === 'pending-verification' || s === 'pending') return { c: '#eab308', l: '·' }
-    if (s === 'scheduled') return { c: '#3b82f6', l: 'S' }
-    return { c: '#6b7280', l: '—' }
-  }
+  // The letter in each dot, a dot for a result not in yet. The color is the
+  // status color from status.js.
+  const GLYPH = { passed: 'P', failed: 'F', scheduled: 'S' }
+  const meta = (s) => ({ c: statusColor(INSPECTION_STATUS, s), l: GLYPH[s] ?? '·' })
 
   return (
     <div className="grid grid-cols-3 gap-1.5 text-[10px]">
@@ -201,10 +203,10 @@ function TradeInspectionPills({ insp }) {
 // trustworthy phrase that a GC or developer would expect to read.
 function builderStatus(job) {
   const isComplete = ['complete', 'completed'].includes(job.status)
-  if (isComplete)                  return { tone: 'success',  text: 'Complete',         color: '#22c55e' }
-  if (job.status === 'blocked')    return { tone: 'critical', text: 'Needs attention',  color: '#ef4444' }
-  if (job.status === 'at-risk')    return { tone: 'warning',  text: 'Watch list',       color: '#eab308' }
-  if (job.status === 'needs-action') return { tone: 'warning', text: 'Action needed',   color: '#eab308' }
+  if (isComplete)                  return { tone: 'success',  text: 'Complete',         color: SEMANTIC.success }
+  if (job.status === 'blocked')    return { tone: 'critical', text: 'Needs attention',  color: SEMANTIC.critical }
+  if (job.status === 'at-risk')    return { tone: 'warning',  text: 'Watch list',       color: SEMANTIC.warning }
+  if (job.status === 'needs-action') return { tone: 'warning', text: 'Action needed',   color: SEMANTIC.warning }
   return                           { tone: 'success', text: 'Project on track', color: BRAND }
 }
 
@@ -248,7 +250,7 @@ function JobCard({ job, extras }) {
         {pendingCount > 0 && (
           <div
             className="inline-flex items-center gap-1.5 mb-2.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md"
-            style={{ backgroundColor: '#eab30822', color: '#eab308', border: '1px solid #eab30844' }}
+            style={{ backgroundColor: withAlpha(SEMANTIC.warning, 0.13), color: SEMANTIC.warning, border: `1px solid ${withAlpha(SEMANTIC.warning, 0.27)}` }}
           >
             <TriangleAlertIcon size={11} strokeWidth={2.25} />
             Awaiting your approval · {pendingCount}
@@ -314,7 +316,7 @@ function JobCard({ job, extras }) {
         <section className="px-4 sm:px-5 py-3 border-b border-white/5 flex items-center gap-3">
           <div
             className="shrink-0 flex items-center justify-center rounded-lg"
-            style={{ width: 32, height: 32, backgroundColor: '#3b82f622', color: '#3b82f6' }}
+            style={{ width: 32, height: 32, backgroundColor: withAlpha(SEMANTIC.info, 0.13), color: SEMANTIC.info }}
           >
             <ReceiptIcon size={16} />
           </div>
@@ -361,14 +363,14 @@ function JobCard({ job, extras }) {
         <div className="flex items-center gap-3">
           {pendingCount > 0 && (
             <div className="text-right hidden sm:block">
-              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: '#eab308' }}>Pending</p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: '#eab308' }}>{fmt$(pendingTotal)}</p>
+              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: SEMANTIC.warning }}>Pending</p>
+              <p className="text-sm font-bold tabular-nums" style={{ color: SEMANTIC.warning }}>{fmt$(pendingTotal)}</p>
             </div>
           )}
           {approvedTotal > 0 && (
             <div className="text-right hidden sm:block">
-              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: '#22c55e' }}>Approved</p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: '#22c55e' }}>{fmt$(approvedTotal)}</p>
+              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: SEMANTIC.success }}>Approved</p>
+              <p className="text-sm font-bold tabular-nums" style={{ color: SEMANTIC.success }}>{fmt$(approvedTotal)}</p>
             </div>
           )}
           <ChevronRightIcon
@@ -445,31 +447,26 @@ function ExtraRow({ co, compact = false }) {
     }
   }
 
-  // Builder-facing label for the CO state.
-  const stateLabel =
-    state === 'approved' ? 'Approved' :
-    state === 'rejected' ? 'Needs revision' :
-    'Awaiting your approval'
-  const stateTone =
-    state === 'approved' ? 'success' :
-    state === 'rejected' ? 'critical' :
-    'warning'
+  // The pill says where the change order stands, in the words every screen uses.
+  // What the builder is asked to do is said above it and on the buttons below.
+  // One waiting for the builder reads as a warning here, because the decision is
+  // theirs; every other screen shows it in the tone of the vocabulary.
+  const coStatus = normalizeCoStatus(co.status)
+  const stateLabel = statusLabel(CO_STATUS, coStatus)
+  const stateTone = state === 'pending' ? 'warning' : statusTone(CO_STATUS, coStatus)
 
   return (
     <div
       className="rounded-xl border bg-white/[0.025] overflow-hidden"
       style={{
-        borderColor: state === 'pending'  ? '#eab30844'
-                    : state === 'rejected' ? '#ef444444'
-                    : state === 'approved' ? '#22c55e44'
-                    : 'rgba(255,255,255,0.10)',
+        borderColor: state === 'draft' ? 'rgba(255,255,255,0.10)' : withAlpha(toneHex(stateTone), 0.27),
       }}
     >
       <div className={compact ? 'p-3' : 'p-4'}>
         {isPending && (
           <p
             className="text-[10px] font-bold uppercase tracking-wider mb-2"
-            style={{ color: '#eab308' }}
+            style={{ color: SEMANTIC.warning }}
           >
             Awaiting your approval
           </p>
@@ -494,9 +491,9 @@ function ExtraRow({ co, compact = false }) {
             )}
             {co.rejectNotes && state === 'rejected' && (
               <div className="mt-2.5 rounded-lg border border-red-500/30 px-3 py-2"
-                style={{ backgroundColor: '#ef44440a' }}
+                style={{ backgroundColor: withAlpha(SEMANTIC.critical, 0.04) }}
               >
-                <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: '#ef4444' }}>
+                <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: SEMANTIC.critical }}>
                   Reason for revision
                 </p>
                 <p className="text-[11px] text-zinc-200 italic">“{co.rejectNotes}”</p>
@@ -517,7 +514,7 @@ function ExtraRow({ co, compact = false }) {
             <div className="flex gap-2">
               <Button
                 className="flex-1 h-10 text-xs gap-1.5 text-white font-bold"
-                style={{ backgroundColor: '#22c55e' }}
+                style={{ backgroundColor: SEMANTIC.success }}
                 disabled={busy}
                 onClick={handleApprove}
               >
@@ -553,7 +550,7 @@ function ExtraRow({ co, compact = false }) {
             <div className="flex gap-2">
               <Button
                 className="flex-1 h-10 text-xs text-white font-bold"
-                style={{ backgroundColor: '#ef4444' }}
+                style={{ backgroundColor: SEMANTIC.critical }}
                 disabled={busy || !rejectNotes.trim()}
                 onClick={handleReject}
               >
@@ -575,7 +572,7 @@ function ExtraRow({ co, compact = false }) {
         )}
 
         {!isPending && state === 'approved' && (
-          <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: '#22c55e' }}>
+          <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: SEMANTIC.success }}>
             <CheckCircleIcon size={12} /> Approved · ready to bill
           </div>
         )}
@@ -605,8 +602,8 @@ function QBSSubmit({ qbsPM, jobs }) {
 
   const CATEGORIES = ['RFI', 'Issue', 'Question', 'Change Request', 'Approval', 'Other']
   const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
-  const priorityColor = { Low: '#22c55e', Medium: '#eab308', High: BRAND, Critical: '#ef4444' }
-  const statusColor = { Open: '#ef4444', 'In Progress': BRAND, Resolved: '#22c55e' }
+  const priorityColor = { Low: SEMANTIC.success, Medium: SEMANTIC.warning, High: BRAND, Critical: SEMANTIC.critical }
+  const ticketColor = { Open: SEMANTIC.critical, 'In Progress': BRAND, Resolved: SEMANTIC.success }
 
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim()) return
@@ -653,8 +650,8 @@ function QBSSubmit({ qbsPM, jobs }) {
   }
 
   if (view === 'thread' && selected) {
-    const sc = statusColor[selected.status || 'Open']
-    const pc = priorityColor[selected.priority] || '#6b7280'
+    const sc = ticketColor[selected.status || 'Open']
+    const pc = priorityColor[selected.priority] || SEMANTIC.mute
     return (
       <div className="space-y-4">
         <div className="flex items-start gap-3">
@@ -696,8 +693,8 @@ function QBSSubmit({ qbsPM, jobs }) {
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                   style={{
-                    backgroundColor: r.authorRole === 'internal' ? '#3b82f622' : '#22c55e22',
-                    color: r.authorRole === 'internal' ? '#3b82f6' : '#22c55e',
+                    backgroundColor: r.authorRole === 'internal' ? withAlpha(SEMANTIC.info, 0.13) : withAlpha(SEMANTIC.success, 0.13),
+                    color: r.authorRole === 'internal' ? SEMANTIC.info : SEMANTIC.success,
                   }}>
                   {(r.author || 'P2').slice(0, 2).toUpperCase()}
                 </div>
@@ -875,8 +872,8 @@ function QBSSubmit({ qbsPM, jobs }) {
       ) : (
         <div className="space-y-2">
           {myPortalSubmits.map(s => {
-            const pc = priorityColor[s.priority] || '#6b7280'
-            const sc = statusColor[s.status || 'Open']
+            const pc = priorityColor[s.priority] || SEMANTIC.mute
+            const sc = ticketColor[s.status || 'Open']
             return (
               <button
                 key={s._docId}
@@ -921,7 +918,7 @@ function QBSSubmit({ qbsPM, jobs }) {
 
 function QBSNotifications({ notifs }) {
   const typeIcon  = { error: AlertCircleIcon, warn: TriangleAlertIcon, info: InfoIcon, success: CheckCircleIcon }
-  const typeColor = { error: '#ef4444', warn: '#eab308', info: '#3b82f6', success: '#22c55e' }
+  const typeColor = { error: SEMANTIC.critical, warn: SEMANTIC.warning, info: SEMANTIC.info, success: SEMANTIC.success }
   const unreadCount = notifs.filter(n => !n.read).length
 
   return (
@@ -945,7 +942,7 @@ function QBSNotifications({ notifs }) {
         <div className="space-y-2">
           {notifs.map((n, i) => {
             const Icon = typeIcon[n.type] || InfoIcon
-            const color = typeColor[n.type] || '#9ca3af'
+            const color = typeColor[n.type] || SEMANTIC.neutral
             return (
               <button
                 key={n._docId || n.id || i}
@@ -1106,9 +1103,9 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
             style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}
           >
             <PortalStat label="Active"           value={activeJobs.length}      Icon={ActivityIcon}     accent={BRAND} />
-            <PortalStat label="Pending approval" value={pendingExtras.length}   Icon={FilePenLineIcon}  accent="#eab308" sub={fmt$(pendingValue)} />
-            <PortalStat label="Inspection issue" value={failedInsp.length}      Icon={TriangleAlertIcon} accent={failedInsp.length > 0 ? '#ef4444' : '#9ca3af'} />
-            <PortalStat label="Completed"        value={completedJobs.length}   Icon={BadgeCheckIcon}    accent="#22c55e" />
+            <PortalStat label="Pending approval" value={pendingExtras.length}   Icon={FilePenLineIcon}  accent={SEMANTIC.warning} sub={fmt$(pendingValue)} />
+            <PortalStat label="Inspection issue" value={failedInsp.length}      Icon={TriangleAlertIcon} accent={failedInsp.length > 0 ? SEMANTIC.critical : SEMANTIC.neutral} />
+            <PortalStat label="Completed"        value={completedJobs.length}   Icon={BadgeCheckIcon}    accent={SEMANTIC.success} />
           </div>
         </div>
       </header>
@@ -1125,7 +1122,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
               className="flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0"
               style={{
                 borderColor: active ? BRAND : 'transparent',
-                color: active ? BRAND : '#9ca3af',
+                color: active ? BRAND : SEMANTIC.neutral,
               }}
             >
               <t.Icon size={14} strokeWidth={active ? 2.25 : 2} />
@@ -1291,7 +1288,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                 type="button"
                 onClick={() => setActiveTab(t.id)}
                 className="flex flex-col items-center justify-center gap-0.5 py-2.5 relative transition-colors"
-                style={{ color: active ? BRAND : '#9ca3af' }}
+                style={{ color: active ? BRAND : SEMANTIC.neutral }}
               >
                 <t.Icon size={20} strokeWidth={active ? 2.25 : 2} />
                 <span className="text-[10px] font-semibold leading-none">{t.label}</span>
@@ -1335,9 +1332,9 @@ function PortalStat({ label, value, sub, Icon, accent }) {
 
 function OverviewMetric({ label, value, sub, Icon, emphasis = 'default', valueClass = '' }) {
   const accent =
-    emphasis === 'warning'  ? '#eab308' :
-    emphasis === 'critical' ? '#ef4444' :
-    emphasis === 'success'  ? '#22c55e' :
+    emphasis === 'warning'  ? SEMANTIC.warning :
+    emphasis === 'critical' ? SEMANTIC.critical :
+    emphasis === 'success'  ? SEMANTIC.success :
     BRAND
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.025] p-3">
@@ -1391,9 +1388,9 @@ function ExtrasTab({ extras, jobs }) {
   }
 
   const FILTERS = [
-    { id: 'pending', label: 'Pending', color: '#eab308', count: extras.filter(e => extraState(e) === 'pending').length },
-    { id: 'approved', label: 'Approved', color: '#22c55e', count: extras.filter(e => extraState(e) === 'approved').length },
-    { id: 'rejected', label: 'Rejected', color: '#ef4444', count: extras.filter(e => extraState(e) === 'rejected').length },
+    { id: 'pending', label: 'Pending', color: toneHex('warning'), count: extras.filter(e => extraState(e) === 'pending').length },
+    { id: 'approved', label: 'Approved', color: statusColor(CO_STATUS, 'Approved'), count: extras.filter(e => extraState(e) === 'approved').length },
+    { id: 'rejected', label: 'Rejected', color: statusColor(CO_STATUS, 'Rejected'), count: extras.filter(e => extraState(e) === 'rejected').length },
     { id: 'all', label: 'All', color: BRAND, count: extras.length },
   ]
 

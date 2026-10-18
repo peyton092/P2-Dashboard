@@ -1,8 +1,13 @@
 // Design tokens for scripts and inline styles. src/index.css declares the same
 // colors and font families as CSS custom properties, which Tailwind turns into
 // utilities (bg-brand, text-success, font-display), and
-// src/__tests__/tokens.test.js fails when the two disagree. A color is written
-// here or in index.css and nowhere else.
+// src/__tests__/tokens.test.js fails when the two disagree.
+//
+// The rule is that a color is written here or in index.css and nowhere else. It
+// is the direction of travel and not yet the state of the code: screens still
+// hold some colors of their own. src/__tests__/hex-literals.test.js counts them
+// against a budget that every task lowers when it touches a file, until the
+// budget reaches zero and the rule holds without exception.
 
 // The brand orange. Reserved for navigation state, primary actions, the brand
 // mark and the focus ring.

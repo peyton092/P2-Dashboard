@@ -2,19 +2,13 @@
 // tree stays out of the initial bundle and only loads on first PDF export.
 
 import { BRAND, hexToRgb } from '@/lib/tokens'
+import { CO_STATUS, normalizeCoStatus, statusColor, statusLabel } from './status'
 
 const ORANGE     = hexToRgb(BRAND)
 const BLACK      = [20, 20, 20]
 const GRAY       = [120, 120, 120]
 const LIGHT_GRAY = [230, 230, 230]
 const WHITE      = [255, 255, 255]
-
-const STATUS_COLORS = {
-  'Draft':           [107, 114, 128],
-  'Sent to Builder': [59,  130, 246],
-  'Approved':        [34,  197, 94],
-  'Rejected':        [239, 68,  68],
-}
 
 function money(n) {
   return `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -72,9 +66,11 @@ export async function generateCOPdf(co, jobLabel) {
   doc.text(jobLabel || co.job || '—', COLS3[0], y, { maxWidth: 186 })
   doc.text(co.date || '—',           COLS3[1], y)
 
-  const sc = STATUS_COLORS[co.status] || GRAY
-  doc.setTextColor(...sc)
-  doc.text((co.status || 'Draft').toUpperCase(), COLS3[2], y)
+  // The status is printed as the vocabulary words it, in the vocabulary's color.
+  // A change order with no status is a draft.
+  const status = co.status ? normalizeCoStatus(co.status) : 'Draft'
+  doc.setTextColor(...hexToRgb(statusColor(CO_STATUS, status)))
+  doc.text(statusLabel(CO_STATUS, status).toUpperCase(), COLS3[2], y)
   doc.setTextColor(...BLACK)
 
   y += 28

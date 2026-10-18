@@ -1,15 +1,22 @@
 import { useMemo } from 'react'
 import { useData } from '../use-data'
-import { extraState } from '../lib/extraStatus'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList,
 } from 'recharts'
-import { BRAND, withAlpha } from '@/lib/tokens'
+import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
+import {
+  CO_STATUS, INSPECTION_STATUS,
+  normalizeCoStatus, statusColor, statusLabel, toneHex,
+} from '../lib/status'
 
-const PHASE_COLORS = ['#3b82f6', BRAND, '#22c55e']
-const INSP_COLORS  = { passed: '#22c55e', failed: '#ef4444', scheduled: '#eab308', pending: '#6b7280', blocked: '#3b82f6' }
+const PHASE_COLORS = [toneHex('info'), BRAND, toneHex('success')]
+
+// The two series of the extras chart, in the colors of the change order statuses
+// they add up.
+const APPROVED_COLOR = statusColor(CO_STATUS, 'Approved')
+const PENDING_COLOR  = statusColor(CO_STATUS, 'Sent to Builder')
 
 const fmtDollar = (n) => `$${Number(n || 0).toLocaleString()}`
 
@@ -47,12 +54,12 @@ export default function Analytics() {
 
   // ── 1. Job Phase Distribution ───────────────────────────────────────────────
   const phaseData = useMemo(() => {
-    const bins = { 'Rough-In': 0, 'Mid Phase': 0, 'Final Phase': 0 }
+    const bins = { 'Rough in': 0, 'Mid phase': 0, 'Final phase': 0 }
     jobs.forEach(j => {
       const p = j.progress ?? 0
-      if (p < 34)       bins['Rough-In']++
-      else if (p < 67)  bins['Mid Phase']++
-      else              bins['Final Phase']++
+      if (p < 34)       bins['Rough in']++
+      else if (p < 67)  bins['Mid phase']++
+      else              bins['Final phase']++
     })
     return Object.entries(bins).map(([name, value]) => ({ name, value }))
   }, [jobs])
@@ -95,7 +102,7 @@ export default function Analytics() {
     })
     return Object.entries(counts)
       .filter(([, v]) => v > 0)
-      .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value, key: name }))
+      .map(([name, value]) => ({ name: statusLabel(INSPECTION_STATUS, name), value, key: name }))
   }, [jobs])
 
   // ── 4. Extras Conversion ───────────────────────────────────────────────────
@@ -103,11 +110,15 @@ export default function Analytics() {
     if (extras.length > 0) {
       const map = {}
       extras.forEach(e => {
+        // A rejected change order is money the job will not see, and a draft has
+        // not gone to the builder, so neither is counted.
+        const state = normalizeCoStatus(e.status)
+        if (state === 'Rejected' || state === 'Draft') return
         const label = e.job || e.jobId || 'Unknown'
         if (!map[label]) map[label] = { name: label, approved: 0, pending: 0 }
         const amt = Number(e.amount) || 0
-        if (extraState(e) === 'approved' || e.status === 'sent-to-qbs') map[label].approved += amt
-        else if (e.status === 'pending' || !e.status)              map[label].pending  += amt
+        if (state === 'Approved') map[label].approved += amt
+        else                      map[label].pending  += amt
       })
       return Object.values(map).sort((a, b) => (b.approved + b.pending) - (a.approved + a.pending)).slice(0, 10)
     }
@@ -123,7 +134,10 @@ export default function Analytics() {
   const totalJobs   = jobs.length
   const activeJobs  = jobs.filter(j => !['complete', 'completed'].includes(j.status)).length
   const avgProgress = totalJobs ? Math.round(jobs.reduce((s, j) => s + (j.progress || 0), 0) / totalJobs) : 0
-  const totalExtras = extras.reduce((s, e) => s + (Number(e.amount) || 0), 0)
+  // Rejected change orders are left out: that money was never agreed.
+  const totalExtras = extras
+    .filter(e => normalizeCoStatus(e.status) !== 'Rejected')
+    .reduce((s, e) => s + (Number(e.amount) || 0), 0)
 
   // Loading guard lives AFTER all hooks so hook order stays stable across
   // renders (an early return above the useMemo calls would change hook count).
@@ -189,7 +203,7 @@ export default function Analytics() {
                   ))}
                 </Pie>
                 <Tooltip content={<DarkTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+                <Legend wrapperStyle={{ fontSize: 12, color: SEMANTIC.neutral }} />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
@@ -206,11 +220,11 @@ export default function Analytics() {
                 <Pie data={inspData} cx="50%" cy="50%" innerRadius={55} outerRadius={90}
                   dataKey="value" labelLine={false} label={<PieLabel />}>
                   {inspData.map((entry) => (
-                    <Cell key={entry.key} fill={INSP_COLORS[entry.key] || '#6b7280'} />
+                    <Cell key={entry.key} fill={statusColor(INSPECTION_STATUS, entry.key)} />
                   ))}
                 </Pie>
                 <Tooltip content={<DarkTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+                <Legend wrapperStyle={{ fontSize: 12, color: SEMANTIC.neutral }} />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
@@ -226,13 +240,13 @@ export default function Analytics() {
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={subData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
-              <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false}
+              <XAxis dataKey="name" tick={{ fill: SEMANTIC.neutral, fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: SEMANTIC.neutral, fontSize: 11 }} axisLine={false} tickLine={false}
                 domain={[0, 100]} tickFormatter={v => `${v}%`} />
               <Tooltip content={<DarkTooltip />} />
               <Bar dataKey="passRate" name="Pass Rate %" fill={BRAND} radius={[4, 4, 0, 0]} maxBarSize={48}>
                 <LabelList dataKey="jobs" position="top"
-                  style={{ fill: '#9ca3af', fontSize: 10 }}
+                  style={{ fill: SEMANTIC.neutral, fontSize: 10 }}
                   formatter={v => `${v}j`} />
               </Bar>
             </BarChart>
@@ -250,17 +264,17 @@ export default function Analytics() {
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={extrasData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
-              <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false}
+              <XAxis dataKey="name" tick={{ fill: SEMANTIC.neutral, fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: SEMANTIC.neutral, fontSize: 11 }} axisLine={false} tickLine={false}
                 tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
               <Tooltip content={<DarkTooltip />} />
-              <Bar dataKey="approved" name="Approved $" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} maxBarSize={48} />
-              <Bar dataKey="pending"  name="Pending $"  stackId="a" fill="#eab308" radius={[4, 4, 0, 0]} maxBarSize={48} />
+              <Bar dataKey="approved" name="Approved $" stackId="a" fill={APPROVED_COLOR} radius={[0, 0, 0, 0]} maxBarSize={48} />
+              <Bar dataKey="pending"  name="Pending $"  stackId="a" fill={PENDING_COLOR}  radius={[4, 4, 0, 0]} maxBarSize={48} />
             </BarChart>
           </ResponsiveContainer>
           <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: '#22c55e' }} /> Approved</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: '#eab308' }} /> Pending</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: APPROVED_COLOR }} /> Approved</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: PENDING_COLOR }} /> Pending</span>
           </div>
         </CardContent>
       </Card>

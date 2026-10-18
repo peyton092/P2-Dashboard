@@ -5,6 +5,7 @@ export {
   Pill,
   StatusBadge,
   InspectionBadge,
+  PermitBadge,
   BillingBadge,
   PriorityBadge,
 } from './badges'
@@ -25,14 +26,10 @@ export {
   JobCard,
 } from './lists'
 
-// Phase 19 — primitives extracted from src/App.jsx. Pure UI; behavior
-// preserved exactly. The legacy InspBadge/JobBadge live alongside the
-// modern Pill from `./badges`; new screens should prefer Pill.
+// Phase 19 primitives extracted from src/App.jsx. Pure UI; behavior preserved.
 export { Skeleton, PageSkeleton } from './Skeleton'
 export { ProgressBar } from './ProgressBar'
 export { StatCard } from './StatCard'
-export { inspMeta, iMeta, statusMeta, sMeta } from './legacy-badge-meta'
-export { InspBadge, JobBadge } from './legacy-badges'
 export {
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,

@@ -25,7 +25,8 @@ import {
   ReceiptIcon, BanIcon, DownloadIcon, CheckIcon, XIcon,
   TimerIcon,
 } from 'lucide-react'
-import { BRAND } from '@/lib/tokens'
+import { BRAND, SEMANTIC } from '@/lib/tokens'
+import { BILLING_STATUS, statusLabel, statusTone, toneHex, toneText } from '../lib/status'
 
 const TODAY = new Date()
 
@@ -272,8 +273,8 @@ export default function BillingQueue() {
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }} />
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{kpis.ready.count} ready · {fmtCompact(kpis.ready.amount)} billable</span>
             {kpis.aging.count > 0 && (
@@ -521,7 +522,7 @@ function DocStatusPill({ hasDocs, milestone }) {
 
 function ApprovalStatusPill({ row }) {
   const { job, hasPendingCO, pendingCOCount, isReady } = row
-  if (job.billingStatus === 'hold')   return <Pill tone="critical" size="xs">On hold</Pill>
+  if (job.billingStatus === 'hold')   return <Pill tone={statusTone(BILLING_STATUS, 'hold')} size="xs">{statusLabel(BILLING_STATUS, 'hold')}</Pill>
   if (job.status === 'blocked')       return <Pill tone="critical" size="xs">Job blocked</Pill>
   if (hasPendingCO)                   return <Pill tone="warning" size="xs">{pendingCOCount} CO pending</Pill>
   if (isReady)                        return <Pill tone="success" size="xs">Inspection passed</Pill>
@@ -633,13 +634,7 @@ function BillingRow({ row }) {
   const zoneId   = getZoneId(job)
   const zone     = ZONES[zoneId] || ZONES['zone-7']
   const next     = nextActionFor(job, { isReady, hasDocs, hasPendingCO, agingDays })
-  const nextColor =
-    next.tone === 'critical' ? '#ef4444' :
-    next.tone === 'warning'  ? '#eab308' :
-    next.tone === 'success'  ? '#22c55e' :
-    next.tone === 'info'     ? '#3b82f6' :
-    next.tone === 'brand'    ? BRAND :
-    '#9ca3af'
+  const nextColor = toneText(next.tone)
 
   return (
     <TableRow
@@ -662,7 +657,7 @@ function BillingRow({ row }) {
         </div>
       </TableCell>
       <TableCell className="text-zinc-200 truncate">{jobBuilder(job)}</TableCell>
-      <TableCell align="right" className="font-bold tabular-nums" style={{ color: billable > 0 ? BRAND : '#9ca3af' }}>
+      <TableCell align="right" className="font-bold tabular-nums" style={{ color: billable > 0 ? BRAND : SEMANTIC.neutral }}>
         {billable > 0 ? fmtMoney(billable) : '—'}
       </TableCell>
       <TableCell><BillingBadge status={job.billingStatus} /></TableCell>
@@ -715,12 +710,8 @@ function AgingPill({ row }) {
 function BillingCard({ row }) {
   const { job, isReady, hasDocs, hasPendingCO, agingDays, billable, milestone } = row
   const next = nextActionFor(job, { isReady, hasDocs, hasPendingCO, agingDays })
-  const accent =
-    next.tone === 'critical' ? '#ef4444' :
-    next.tone === 'warning'  ? '#eab308' :
-    next.tone === 'brand'    ? BRAND :
-    next.tone === 'success'  ? '#22c55e' :
-    null
+  // Only the tones that ask for attention or mark a win get a bar.
+  const accent = ['critical', 'warning', 'brand', 'success'].includes(next.tone) ? toneHex(next.tone) : null
 
   return (
     <article
@@ -738,7 +729,7 @@ function BillingCard({ row }) {
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? BRAND : '#9ca3af' }}>
+          <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? BRAND : SEMANTIC.neutral }}>
             {billable > 0 ? fmtMoney(billable) : '—'}
           </p>
           <p className="text-[10px] text-zinc-400">{milestone}</p>
@@ -754,7 +745,7 @@ function BillingCard({ row }) {
 
       <div className="mt-2 pt-3 border-t border-white/5">
         <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-0.5">Next action</p>
-        <p className="text-sm font-semibold leading-snug" style={{ color: accent || '#9ca3af' }}>
+        <p className="text-sm font-semibold leading-snug" style={{ color: accent || SEMANTIC.neutral }}>
           {next.text}
         </p>
         <div className="flex items-center justify-between gap-2 mt-3">

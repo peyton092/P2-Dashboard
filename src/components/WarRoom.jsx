@@ -14,6 +14,7 @@ import {
   MetricTile,
   DataPanel,
   Pill,
+  StatusBadge,
   EmptyState,
   LoadingState,
   FilterBar,
@@ -27,7 +28,7 @@ import {
   // Phase 3 QA — preferred lucide names
   RadarIcon, CrosshairIcon, TriangleAlertIcon, BadgeCheckIcon,
 } from 'lucide-react'
-import { BRAND } from '@/lib/tokens'
+import { BRAND, SEMANTIC } from '@/lib/tokens'
 
 const TODAY = new Date()
 
@@ -319,8 +320,8 @@ export default function WarRoom() {
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }} />
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
             <span>{kpis.active} active · {completedJobs.length} completed</span>
@@ -499,20 +500,6 @@ export default function WarRoom() {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function StatusPill({ status, size = 'xs' }) {
-  const tone =
-    status === 'on-track'     ? 'success'  :
-    status === 'at-risk'      ? 'warning'  :
-    status === 'needs-action' ? 'brand'    :
-    status === 'blocked'      ? 'critical' :
-    status === 'hold'         ? 'critical' :
-    status === 'complete' || status === 'completed' ? 'success' :
-    status === 'active'       ? 'brand'    :
-    'mute'
-  const label = (status || 'pending').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-  return <Pill tone={tone} size={size}>{label}</Pill>
-}
-
 function RiskPill({ risk, size = 'xs' }) {
   if (!risk) return <span className="text-zinc-500 text-xs">—</span>
   const tone =
@@ -559,8 +546,8 @@ function ZoneTag({ job, className = '' }) {
 function TargetMeta({ job }) {
   const tDays = daysUntil(job.target)
   if (tDays === null) return null
-  if (tDays < 0) return <span className="text-[10px] font-semibold" style={{ color: '#ef4444' }}>{Math.abs(tDays)}d overdue</span>
-  if (tDays <= 7) return <span className="text-[10px] font-semibold" style={{ color: '#eab308' }}>Due in {tDays}d</span>
+  if (tDays < 0) return <span className="text-[10px] font-semibold" style={{ color: SEMANTIC.critical }}>{Math.abs(tDays)}d overdue</span>
+  if (tDays <= 7) return <span className="text-[10px] font-semibold" style={{ color: SEMANTIC.warning }}>Due in {tDays}d</span>
   return <span className="text-[10px] text-zinc-400">Due {fmtDateShort(job.target)}</span>
 }
 
@@ -575,8 +562,8 @@ function PriorityJobCard({ job, risk, score }) {
       style={{
         borderLeftWidth: 3,
         borderLeftColor:
-          risk?.level === 'critical' ? '#ef4444' :
-          risk?.level === 'warning'  ? '#eab308' :
+          risk?.level === 'critical' ? SEMANTIC.critical :
+          risk?.level === 'warning'  ? SEMANTIC.warning :
           'rgba(255,255,255,0.10)',
       }}
     >
@@ -629,8 +616,8 @@ function PriorityJobCard({ job, risk, score }) {
           className="text-xs font-semibold leading-snug"
           style={{
             color:
-              risk?.level === 'critical' ? '#ef4444' :
-              risk?.level === 'warning'  ? '#eab308' :
+              risk?.level === 'critical' ? SEMANTIC.critical :
+              risk?.level === 'warning'  ? SEMANTIC.warning :
               BRAND,
           }}
         >
@@ -684,7 +671,7 @@ function DispatchRow({ job, risk, stale }) {
       </TableCell>
       <TableCell>
         <p className="text-zinc-100 truncate">{phase}</p>
-        <div className="mt-1"><StatusPill status={job.status} /></div>
+        <div className="mt-1"><StatusBadge status={job.status || 'pending'} size="xs" /></div>
       </TableCell>
       <TableCell><RiskPill risk={risk} /></TableCell>
       <TableCell><InspectionPills job={job} /></TableCell>
@@ -703,11 +690,11 @@ function DispatchRow({ job, risk, stale }) {
         {tDays !== null && (
           <div className="mt-0.5">
             {tDays < 0 ? (
-              <span className="text-[11px] font-semibold" style={{ color: '#ef4444' }}>
+              <span className="text-[11px] font-semibold" style={{ color: SEMANTIC.critical }}>
                 {Math.abs(tDays)}d overdue
               </span>
             ) : tDays <= 7 ? (
-              <span className="text-[11px] font-semibold" style={{ color: '#eab308' }}>
+              <span className="text-[11px] font-semibold" style={{ color: SEMANTIC.warning }}>
                 Due in {tDays}d
               </span>
             ) : (
@@ -729,8 +716,8 @@ function DispatchCard({ job, risk, score, stale }) {
   const next  = nextActionFor(job)
   const tDays = daysUntil(job.target)
   const accent =
-    risk?.level === 'critical' ? '#ef4444' :
-    risk?.level === 'warning'  ? '#eab308' :
+    risk?.level === 'critical' ? SEMANTIC.critical :
+    risk?.level === 'warning'  ? SEMANTIC.warning :
     null
 
   return (
@@ -769,7 +756,7 @@ function DispatchCard({ job, risk, score, stale }) {
         <div>
           <p className="text-zinc-400 uppercase tracking-wide text-[10px] mb-0.5">Phase</p>
           <p className="font-semibold text-zinc-100 truncate">{phase}</p>
-          <div className="mt-1"><StatusPill status={job.status} /></div>
+          <div className="mt-1"><StatusBadge status={job.status || 'pending'} size="xs" /></div>
         </div>
         <div>
           <p className="text-zinc-400 uppercase tracking-wide text-[10px] mb-0.5">Inspection</p>
@@ -798,11 +785,11 @@ function DispatchCard({ job, risk, score, stale }) {
           <ZoneTag job={job} />
           {tDays !== null && (
             tDays < 0 ? (
-              <span className="text-[11px] font-semibold" style={{ color: '#ef4444' }}>
+              <span className="text-[11px] font-semibold" style={{ color: SEMANTIC.critical }}>
                 {Math.abs(tDays)}d overdue
               </span>
             ) : tDays <= 7 ? (
-              <span className="text-[11px] font-semibold" style={{ color: '#eab308' }}>
+              <span className="text-[11px] font-semibold" style={{ color: SEMANTIC.warning }}>
                 Due in {tDays}d
               </span>
             ) : (

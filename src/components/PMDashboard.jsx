@@ -22,7 +22,8 @@ import {
   ChevronDownIcon, MapPinIcon, AlertCircleIcon, BanIcon,
   CheckCircleIcon,
 } from 'lucide-react'
-import { BRAND, withAlpha } from '@/lib/tokens'
+import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
+import { toneText } from '../lib/status'
 
 const TODAY = new Date()
 
@@ -214,16 +215,6 @@ function pmMatchesFilter(s, filter) {
   return true
 }
 
-// Pressure-tone → fg color (used for the action microcopy line).
-const TONE_COLOR = {
-  critical: '#ef4444',
-  warning:  '#eab308',
-  brand:    BRAND,
-  success:  '#22c55e',
-  info:     '#3b82f6',
-  mute:     '#9ca3af',
-}
-
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function PMDashboard() {
@@ -324,9 +315,9 @@ export default function PMDashboard() {
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
+                style={{ backgroundColor: SEMANTIC.success, boxShadow: `0 0 6px ${SEMANTIC.success}` }}
               />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
+              <span className="tracking-wider text-[10px] uppercase" style={{ color: SEMANTIC.success }}>Live</span>
             </span>
             <span>{kpis.activePMs} of {allPMs.length} PMs with active work</span>
             <span>{kpis.totalActive} active assignments</span>
@@ -485,7 +476,7 @@ function PMRow({ s, expanded, onToggle }) {
   const zone = ZONES[PM_TO_ZONE[s.pm]] || ZONES['zone-7']
   const initials = s.pm.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
   const accent = zone.color || BRAND
-  const nextColor = TONE_COLOR[s.pressure.tone] || TONE_COLOR.mute
+  const nextColor = toneText(s.pressure.tone)
 
   return (
     <div>
@@ -558,7 +549,7 @@ function PMRow({ s, expanded, onToggle }) {
 }
 
 function PMStat({ label, value, tone }) {
-  const color = TONE_COLOR[tone] || TONE_COLOR.mute
+  const color = toneText(tone)
   return (
     <span className="inline-flex items-baseline gap-1">
       <span className="font-bold tabular-nums" style={{ color }}>{value}</span>
@@ -665,9 +656,9 @@ function PMJobRow({ job, risk, score, pendingCOs }) {
         )}
         {tDays !== null && (
           tDays < 0 ? (
-            <span className="font-semibold" style={{ color: '#ef4444' }}>{Math.abs(tDays)}d overdue</span>
+            <span className="font-semibold" style={{ color: SEMANTIC.critical }}>{Math.abs(tDays)}d overdue</span>
           ) : tDays <= 7 ? (
-            <span className="font-semibold" style={{ color: '#eab308' }}>Due in {tDays}d</span>
+            <span className="font-semibold" style={{ color: SEMANTIC.warning }}>Due in {tDays}d</span>
           ) : (
             <span>Due {fmtDateShort(job.target)}</span>
           )

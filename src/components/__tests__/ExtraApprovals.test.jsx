@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { TONE_HEX, hexToRgb } from '@/lib/tokens'
 
 // Both portals let the builder or the client approve a change order or ask for a
 // revision. The decision, the notification and the history entry are written by
@@ -414,5 +415,32 @@ describe('QBSBuilderPortal', () => {
     expect(screen.getByRole('button', { name: /^Approved/ }).textContent).toBe('Approved2')
     expect(screen.getByRole('button', { name: /^Rejected/ }).textContent).toBe('Rejected1')
     expect(screen.getByRole('button', { name: /^All/ }).textContent).toBe('All5')
+  })
+})
+
+// Both portals say where a change order stands in the words every screen uses
+// (src/lib/status.js), so the office and the builder read the same status. What
+// the viewer is asked to do is said elsewhere on the row. A change order that
+// waits for the viewer's decision is a warning in the portals, because the next
+// step is theirs; a decided one has the tone of the vocabulary.
+describe.each(PORTALS)('$name status pill', (portal) => {
+  const rgb = (tone) => `rgb(${hexToRgb(TONE_HEX[tone]).join(', ')})`
+
+  it.each([
+    ['Sent to Builder', 'Sent to builder', 'warning'],
+    ['pending', 'Sent to builder', 'warning'],
+    [undefined, 'Sent to builder', 'warning'],
+    ['Approved', 'Approved', 'success'],
+    ['approved', 'Approved', 'success'],
+    ['Rejected', 'Rejected', 'critical'],
+    ['rejected', 'Rejected', 'critical'],
+  ])('shows status %s as %s in the %s tone', async (status, words, tone) => {
+    mocks.data.extras = [extra({ status })]
+    await portal.open()
+    const all = screen.queryByRole('button', { name: /^All/ })
+    if (all) fireEvent.click(all)
+    // The pill sits on the line with the change order number.
+    const pill = within(screen.getByText('CO-004').parentElement).getByText(words)
+    expect(pill.style.color).toBe(rgb(tone))
   })
 })

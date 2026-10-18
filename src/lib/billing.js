@@ -1,18 +1,5 @@
-// Billing status vocabulary used across the app. Pure data, no React or
-// Firestore dependency. Moved out of src/App.jsx in Phase 18.
+// The billing statuses a person can pick for a job. The words and tones are in
+// status.js (BILLING_STATUS). A job on hold is placed there and released from the
+// billing queue, so hold is not in this list.
 
 export const BILLING_STATUSES = ['not-invoiced', 'invoiced', 'partial-pay', 'paid']
-
-export const BILLING_STATUS_LABEL = {
-  'not-invoiced': 'Not Invoiced',
-  'invoiced':     'Invoiced',
-  'partial-pay':  'Partial Pay',
-  'paid':         'Paid',
-}
-
-export const BILLING_STATUS_COLOR = {
-  'not-invoiced': '#6b7280',
-  'invoiced':     '#3b82f6',
-  'partial-pay':  '#eab308',
-  'paid':         '#22c55e',
-}

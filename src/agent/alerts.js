@@ -271,15 +271,3 @@ export const ALERT_TYPE_LABEL = {
   zone_batch:        'Zone Batch',
   pm_overload:       'PM Overload',
 }
-
-export const SEVERITY_COLOR = {
-  critical: '#ef4444',
-  warning:  '#f59e0b',
-  info:     '#3b82f6',
-}
-
-export const SEVERITY_LABEL = {
-  critical: 'Critical',
-  warning:  'Warning',
-  info:     'Info',
-}
