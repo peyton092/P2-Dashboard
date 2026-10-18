@@ -72,7 +72,7 @@ describe('the status of the sub', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not change the sub status. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 })
@@ -115,7 +115,7 @@ describe('the loose ends', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not save the loose ends. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
     expect(box().value).toBe('Cover plates, labels')
   })

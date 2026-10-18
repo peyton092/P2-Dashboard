@@ -101,14 +101,14 @@ afterEach(() => {
 })
 
 // What Firestore throws when the rules refuse a write, as the browser SDK reports it:
-// the code permission-denied with the sentence "Missing or insufficient permissions."
-// callableMessage shows a sentence that is not just the code, so the toast says what
-// failed and, under it, that sentence.
+// the code permission-denied with the sentence "Missing or insufficient permissions.",
+// which is written for developers. callableMessage gives that code a plain sentence of
+// its own, so the toast says what failed and, under it, that sentence.
 const refused = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
 const REFUSED_TOAST = {
   tone: 'error',
   title: 'Could not send your message. Try again.',
-  description: 'Missing or insufficient permissions.',
+  description: 'You do not have permission to do that.',
 }
 
 describe('a portal with no projects', () => {

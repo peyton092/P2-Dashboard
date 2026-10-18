@@ -82,7 +82,7 @@ describe('logging a referral', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not log the referral for Austin. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy()
   })
@@ -139,7 +139,7 @@ describe('awarding a bonus', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not award the bonus to Austin. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(screen.getByPlaceholderText('pts').value).toBe('25')
     expect(screen.getByPlaceholderText('Reason (optional)').value).toBe('Stayed late')
@@ -187,7 +187,7 @@ describe('saving the Google review link', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not save the review link. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(link().value).toBe('  https://g.page/r/new/review  ')
     expect(save().disabled).toBe(false)

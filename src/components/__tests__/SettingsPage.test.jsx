@@ -366,7 +366,7 @@ describe('the feature toggles', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not change Email Digests. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
   })
 })

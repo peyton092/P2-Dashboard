@@ -211,7 +211,7 @@ describe.each(PORTALS)('$name', (portal) => {
       expect(toastCalls()).toEqual([{
         tone: 'error',
         title: 'Could not send your reply. Try again.',
-        description: 'Missing or insufficient permissions.',
+        description: 'You do not have permission to do that.',
       }])
       expect(box().value).toBe('The code is 4417')
       expect(mocks.updateSubmit).not.toHaveBeenCalled()
@@ -229,7 +229,7 @@ describe.each(PORTALS)('$name', (portal) => {
         {
           tone: 'error',
           title: 'The reply was sent, but the message did not move to In Progress.',
-          description: 'Missing or insufficient permissions.',
+          description: 'You do not have permission to do that.',
         },
       ])
       expect(box().value).toBe('')
@@ -279,7 +279,7 @@ describe('the status of a message in the builder portal', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not change the status. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
   })
 })
@@ -309,7 +309,7 @@ describe('the updates in the builder portal', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not mark the update read. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
   })
 

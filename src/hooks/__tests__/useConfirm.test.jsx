@@ -172,6 +172,15 @@ describe('useConfirm', () => {
       await gone()
     })
 
+    it('closes when the work was saved on this device and is still to be sent, as run says offline', async () => {
+      render(<Page onConfirm={() => Promise.resolve({ ok: true, value: undefined, queued: true })} />)
+      await openSettled()
+
+      fireEvent.click(confirmButton())
+
+      await gone()
+    })
+
     it('closes when onConfirm gives back nothing, as a plain function does', async () => {
       render(<Page onConfirm={() => Promise.resolve()} />)
       await openSettled()

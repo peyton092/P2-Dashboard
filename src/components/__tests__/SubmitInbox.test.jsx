@@ -100,7 +100,7 @@ describe('creating a submit', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not create the submit. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(screen.getByPlaceholderText('Brief summary of the issue or request').value).toBe('Panel location')
     expect(send().disabled).toBe(false)
@@ -146,7 +146,7 @@ describe('replying', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not send the reply. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(box().value).toBe('The code is 4417')
     expect(mocks.updateSubmit).not.toHaveBeenCalled()
@@ -164,7 +164,7 @@ describe('replying', () => {
       {
         tone: 'error',
         title: 'The reply was sent, but the submit did not move to In Progress.',
-        description: 'Missing or insufficient permissions.',
+        description: 'You do not have permission to do that.',
       },
     ])
     expect(box().value).toBe('')
@@ -204,7 +204,7 @@ describe('the status of a submit', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not change the status. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
   })
 

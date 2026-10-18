@@ -1,4 +1,4 @@
-import { expect } from 'vitest'
+import { expect, vi } from 'vitest'
 import * as axeMatchers from 'vitest-axe/matchers'
 
 // Vitest runs this before every test file, through setupFiles in
@@ -14,3 +14,9 @@ expect.extend(axeMatchers)
 if (typeof window !== 'undefined') {
   Object.defineProperty(window.navigator, 'vendor', { value: 'Google Inc.', configurable: true })
 }
+
+// The error logger writes to Firestore, which a test must never reach. useMutation reports
+// every failed write to it, so every screen test would load the real one, and with it the real
+// Firebase app. A test that wants to see what was logged reads these spies, and the test of
+// the logger itself loads the real module with vi.importActual.
+vi.mock('@/lib/errorLogger', () => ({ logError: vi.fn(), initErrorLogger: vi.fn() }))

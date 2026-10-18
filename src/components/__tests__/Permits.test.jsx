@@ -79,7 +79,7 @@ describe('Permits', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not change the permit status. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 

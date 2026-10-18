@@ -13,6 +13,17 @@ function writeLog(message, stack, source) {
   }).catch(() => {})
 }
 
+// For code that handles an error itself, such as useMutation, and still wants it in the log
+// that an unhandled one would have reached. It never throws and never shows anything, because
+// it is the logger of last resort: a failure of the log is not worth an error of its own.
+export function logError(error, source = 'unknown') {
+  try {
+    writeLog(error?.message || String(error), error?.stack, source)
+  } catch {
+    // Nothing is left to tell.
+  }
+}
+
 export function initErrorLogger() {
   window.addEventListener('error', (e) => {
     writeLog(e.message, e.error?.stack, e.filename || 'window.error')

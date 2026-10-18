@@ -94,7 +94,7 @@ describe('NextActionInput', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not save the next action. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(field().value).toBe('Schedule the final')
   })

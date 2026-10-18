@@ -137,7 +137,7 @@ describe('submitting an invoice', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not submit the invoice. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(screen.getByRole('dialog')).toBeTruthy()
 
@@ -178,7 +178,7 @@ describe('the billing hold', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not place the hold. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(screen.getByRole('button', { name: 'Hold' }).disabled).toBe(false)
   })
@@ -199,7 +199,7 @@ describe('the billing hold', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not release the hold. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
   })
 
@@ -262,7 +262,7 @@ describe('the invoice number', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not save the invoice number. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(field().value).toBe('INV-1001')
   })

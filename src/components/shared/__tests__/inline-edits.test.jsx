@@ -102,7 +102,7 @@ describe('InlineStatusSelect', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not change the status. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 
@@ -168,7 +168,7 @@ describe('InlinePhaseSelect', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not change the phase. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 })
@@ -215,7 +215,7 @@ describe('BillingStatusSelect', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not change the billing status. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 })

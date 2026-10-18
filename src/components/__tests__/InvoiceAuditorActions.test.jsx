@@ -97,7 +97,7 @@ describe('saving a new invoice', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not save the invoice. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
     expect(screen.getByPlaceholderText('INV-12345').value).toBe('INV-200')
     expect(save().disabled).toBe(false)
@@ -143,7 +143,7 @@ describe('the status of an invoice', () => {
     expect(toastCalls()).toEqual([{
       tone: 'error',
       title: 'Could not change the status. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     }])
   })
 })

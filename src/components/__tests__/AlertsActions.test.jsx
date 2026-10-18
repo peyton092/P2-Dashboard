@@ -136,7 +136,7 @@ describe('resolving an alert', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not resolve the alert. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 })
@@ -182,7 +182,7 @@ describe('dismissing an alert', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not dismiss the alert. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 })
@@ -205,7 +205,7 @@ describe('snoozing an alert', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not snooze the alert. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 })
@@ -255,7 +255,7 @@ describe('re-scanning the jobs', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not scan the jobs. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
     expect(scan().disabled).toBe(false)
   })

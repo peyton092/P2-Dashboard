@@ -511,7 +511,7 @@ describe('inspection status list', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not change the inspection status. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 

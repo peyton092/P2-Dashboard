@@ -107,7 +107,7 @@ describe('requesting a material', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not save the material. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
     expect(nameField().value).toBe('200A panel')
     expect(submit().textContent).toBe('Submit request')
@@ -196,7 +196,7 @@ describe('changing the status of a material', () => {
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
       title: 'Could not update the material. Try again.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
     expect(mocks.addHistory).not.toHaveBeenCalled()
   })
@@ -211,7 +211,7 @@ describe('changing the status of a material', () => {
     expect(mocks.toast.mock.calls[1][0]).toEqual({
       tone: 'error',
       title: 'The status changed, but its history entry was not saved.',
-      description: 'Missing or insufficient permissions.',
+      description: 'You do not have permission to do that.',
     })
   })
 })

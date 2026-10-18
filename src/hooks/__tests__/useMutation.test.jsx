@@ -1,12 +1,18 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, renderHook, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
 import { ToastProvider } from '@/components/ui/toast'
-import { useMutation } from '../useMutation'
+import { logError } from '@/lib/errorLogger'
+import { useMutation, OFFLINE_WAIT_MS } from '../useMutation'
 
 // useMutation is the one path every write in the app takes. These tests read the toast
 // it is given as a spy, and then once with the real ToastProvider, to prove the Undo
 // button a person sees does what the spy was told it would.
+
+// The setup file replaces the error logger with spies, so that no test reaches Firestore.
+beforeEach(() => {
+  vi.mocked(logError).mockClear()
+})
 
 afterEach(() => {
   cleanup()
@@ -383,6 +389,249 @@ describe('undo', () => {
     await act(async () => { await action.onClick() })
     expect(undo).toHaveBeenCalledTimes(1)
     expect(toast).toHaveBeenLastCalledWith({ tone: 'success', title: 'Undone.' })
+  })
+})
+
+// Every failure is also put in the error log, with the source mutation. It used to get there
+// as a rejection nobody handled, and run handles it now.
+describe('the error log', () => {
+  it('is told once, with the error itself and the source mutation, when a write fails', async () => {
+    const { result } = setup()
+    const failure = Object.assign(new Error('No document to update: jobs/abc'), { code: 'not-found' })
+    await act(async () => { await result.current.run(() => Promise.reject(failure), { error: 'Could not save. Try again.' }) })
+    expect(logError).toHaveBeenCalledTimes(1)
+    expect(logError).toHaveBeenCalledWith(failure, 'mutation')
+  })
+
+  it('is told when fn throws before it returns a promise, and when the rejection is not an error', async () => {
+    const { result } = setup()
+    const thrown = new Error('Before the call.')
+    await act(async () => { await result.current.run(() => { throw thrown }) })
+    await act(async () => { await result.current.run(() => Promise.reject('a string')) })
+    expect(logError.mock.calls).toEqual([[thrown, 'mutation'], ['a string', 'mutation']])
+  })
+
+  it('is told when undo fails', async () => {
+    const { result, toast } = setup()
+    await act(async () => { await result.current.run(() => Promise.resolve(), { success: 'Dismissed.', undo: () => Promise.reject(new Error('No.')) }) })
+    expect(logError).not.toHaveBeenCalled()
+    await act(async () => { await toast.mock.calls[0][0].action.onClick() })
+    expect(logError).toHaveBeenCalledTimes(1)
+    expect(logError.mock.calls[0][1]).toBe('mutation')
+  })
+
+  it('is not told about a write that went through', async () => {
+    const { result } = setup()
+    await act(async () => { await result.current.run(() => Promise.resolve(1), { success: 'Saved.' }) })
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('is told of a failure that arrives after the screen is gone', async () => {
+    const { result, unmount } = setup()
+    const work = deferred()
+    let pending
+    act(() => { pending = result.current.run(() => work.promise) })
+    unmount()
+    const failure = new Error('No.')
+    await act(async () => { work.reject(failure); await pending })
+    expect(logError).toHaveBeenCalledWith(failure, 'mutation')
+  })
+
+  // The logger never throws, but run promises never to reject, so it does not rely on that.
+  it('still resolves not ok, after telling the person, when the logger throws', async () => {
+    vi.mocked(logError).mockImplementationOnce(() => { throw new Error('The logger broke.') })
+    const { result, toast } = setup()
+    let outcome
+    await act(async () => {
+      outcome = await result.current.run(() => Promise.reject(new Error('No.')), { error: 'Could not save. Try again.' })
+    })
+    expect(outcome).toEqual({ ok: false, error: 'No.' })
+    expect(toast).toHaveBeenCalledWith({ tone: 'error', title: 'Could not save. Try again.', description: 'No.' })
+  })
+})
+
+// A Firestore write resolves when the server says so, and offline it does not, though the
+// entry is in the local cache and will be sent. After OFFLINE_WAIT_MS, offline, run says the
+// entry is saved on this device and resolves queued, and goes on watching the write.
+describe('while a write is out and the device is offline', () => {
+  const QUEUED = 'Saved on this device. It will sync when you are back online.'
+  let onLine
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+  })
+  afterEach(() => { onLine.mockRestore() })
+
+  // Starts a run of work the test settles later, and keeps what it resolved to.
+  function begin(rig, work, options = {}) {
+    const box = { outcome: undefined }
+    act(() => { rig.result.current.run(() => work.promise, options).then((outcome) => { box.outcome = outcome }) })
+    return box
+  }
+  const wait = (ms) => act(async () => { vi.advanceTimersByTime(ms) })
+
+  it('exports the wait as 2500 milliseconds', () => {
+    expect(OFFLINE_WAIT_MS).toBe(2500)
+  })
+
+  it('stays out, with busy on and nothing said, until the wait has gone by', async () => {
+    const rig = setup()
+    const run = begin(rig, deferred(), { success: 'Saved.' })
+
+    await wait(OFFLINE_WAIT_MS - 1)
+
+    expect(run.outcome).toBeUndefined()
+    expect(rig.result.current.busy).toBe(true)
+    expect(rig.toast).not.toHaveBeenCalled()
+  })
+
+  it('resolves ok and queued after the wait, says it is saved on this device, and is not busy', async () => {
+    const rig = setup()
+    const run = begin(rig, deferred(), { success: 'Saved.' })
+
+    await wait(OFFLINE_WAIT_MS)
+
+    expect(run.outcome).toEqual({ ok: true, value: undefined, queued: true })
+    expect(rig.toast).toHaveBeenCalledTimes(1)
+    expect(rig.toast).toHaveBeenCalledWith({ tone: 'info', title: QUEUED })
+    expect(rig.result.current.busy).toBe(false)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('says no success words and offers no Undo, even for a write that was given both', async () => {
+    const rig = setup()
+    begin(rig, deferred(), { success: 'Notification dismissed.', undo: vi.fn() })
+
+    await wait(OFFLINE_WAIT_MS)
+
+    expect(rig.toast.mock.calls.map(([opts]) => opts)).toEqual([{ tone: 'info', title: QUEUED }])
+  })
+
+  it('tells the person, with the reason and in the error log, when the write is refused later', async () => {
+    const rig = setup()
+    const work = deferred()
+    begin(rig, work, { error: 'Could not save the material. Try again.' })
+    await wait(OFFLINE_WAIT_MS)
+    const refused = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
+
+    await act(async () => { work.reject(refused) })
+
+    expect(rig.toast).toHaveBeenCalledTimes(2)
+    expect(rig.toast).toHaveBeenLastCalledWith({
+      tone: 'error',
+      title: 'Could not save the material. Try again.',
+      description: 'You do not have permission to do that.',
+    })
+    expect(logError).toHaveBeenCalledTimes(1)
+    expect(logError).toHaveBeenCalledWith(refused, 'mutation')
+    expect(rig.result.current.error).toBe('You do not have permission to do that.')
+    expect(rig.result.current.busy).toBe(false)
+  })
+
+  it('shows nothing more when the write goes through later', async () => {
+    const rig = setup()
+    const work = deferred()
+    begin(rig, work, { success: 'Saved.', undo: vi.fn() })
+    await wait(OFFLINE_WAIT_MS)
+
+    await act(async () => { work.resolve('late') })
+    await wait(60000)
+
+    expect(rig.toast).toHaveBeenCalledTimes(1)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('still tells the person of a late refusal when the screen is gone, without setting state', async () => {
+    const rig = setup()
+    const work = deferred()
+    begin(rig, work, { error: 'Could not save. Try again.' })
+    await wait(OFFLINE_WAIT_MS)
+    rig.unmount()
+
+    await act(async () => { work.reject(new Error('No.')) })
+
+    expect(rig.toast).toHaveBeenLastCalledWith({ tone: 'error', title: 'Could not save. Try again.', description: 'No.' })
+  })
+
+  it('leaves a write that settles before the wait alone, whether it works or fails', async () => {
+    const rig = setup()
+    const worked = deferred()
+    const failed = deferred()
+    const first = begin(rig, worked, { success: 'Saved.' })
+    const second = begin(rig, failed, { error: 'Could not save. Try again.' })
+    await wait(100)
+
+    await act(async () => { worked.resolve(7); failed.reject(new Error('No.')) })
+
+    expect(first.outcome).toEqual({ ok: true, value: 7 })
+    expect(second.outcome).toEqual({ ok: false, error: 'No.' })
+    expect(rig.toast.mock.calls.map(([opts]) => opts.tone)).toEqual(['success', 'error'])
+    await wait(60000)
+    expect(rig.toast).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps today\'s path for a call that fails fast offline', async () => {
+    const rig = setup()
+    const work = deferred()
+    const run = begin(rig, work, { error: 'Could not disconnect QuickBooks. Try again.' })
+    await wait(200)
+
+    await act(async () => { work.reject(sdkError('unavailable', 'unavailable')) })
+
+    expect(run.outcome).toEqual({ ok: false, error: 'Could not disconnect QuickBooks. Try again.' })
+    expect(rig.toast).toHaveBeenCalledTimes(1)
+    expect(rig.toast).toHaveBeenCalledWith({ tone: 'error', title: 'Could not disconnect QuickBooks. Try again.' })
+  })
+
+  it('has no timer left once the write has settled, and none once it is queued', async () => {
+    const rig = setup()
+    const work = deferred()
+    begin(rig, work)
+    expect(vi.getTimerCount()).toBe(1)
+    await act(async () => { work.resolve() })
+    expect(vi.getTimerCount()).toBe(0)
+
+    begin(rig, deferred())
+    await wait(OFFLINE_WAIT_MS)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  describe('and when the device is online', () => {
+    beforeEach(() => { onLine.mockReturnValue(true) })
+
+    it('waits for the acknowledgement however long it takes, with nothing said', async () => {
+      const rig = setup()
+      const work = deferred()
+      const run = begin(rig, work, { success: 'Saved.' })
+
+      await wait(60000)
+
+      expect(run.outcome).toBeUndefined()
+      expect(rig.result.current.busy).toBe(true)
+      expect(rig.toast).not.toHaveBeenCalled()
+
+      await act(async () => { work.resolve('done') })
+
+      expect(run.outcome).toEqual({ ok: true, value: 'done' })
+      expect(rig.toast).toHaveBeenCalledTimes(1)
+      expect(rig.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Saved.' })
+    })
+
+    it('notices at the next check that the device went offline while the write was out', async () => {
+      const rig = setup()
+      const run = begin(rig, deferred(), { success: 'Saved.' })
+      await wait(OFFLINE_WAIT_MS)
+      expect(run.outcome).toBeUndefined()
+
+      onLine.mockReturnValue(false)
+      await wait(OFFLINE_WAIT_MS - 1)
+      expect(run.outcome).toBeUndefined()
+      await wait(1)
+
+      expect(run.outcome).toEqual({ ok: true, value: undefined, queued: true })
+      expect(rig.toast).toHaveBeenCalledWith({ tone: 'info', title: QUEUED })
+    })
   })
 })
 
