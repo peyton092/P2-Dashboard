@@ -1,4 +1,4 @@
-# Push Notifications — Setup
+# Push Notifications: Setup
 
 The plumbing is built. To turn it on you supply keys/credentials from the
 Firebase console (and, for mobile, the platform projects). Nothing here needs

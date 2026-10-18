@@ -25,7 +25,8 @@
         ".git",
         "firebase-debug.log",
         "firebase-debug.*.log",
-        "*.local"
+        "*.local",
+        "test"
       ]
     }
   ]
