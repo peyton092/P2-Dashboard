@@ -151,38 +151,45 @@ export function useSubmits() {
   return { submits, loading }
 }
 
-export function useJobFiles(jobDocId) {
-  const [files, setFiles] = useState([])
-  const [loadedFor, setLoadedFor] = useState(null)
+// Rows are stored with the id they were loaded for and only returned while that
+// id is still current, so a changed id never shows the previous id's data.
+const EMPTY_SNAPSHOT = { id: null, items: [] }
+
+function useSubcollection(parentCollection, parentId, subcollection, direction) {
+  const [state, setState] = useState(EMPTY_SNAPSHOT)
 
   useEffect(() => {
-    if (!jobDocId) return
-    const q = query(collection(db, 'jobs', jobDocId, 'files'), orderBy('createdAt', 'desc'))
-    const unsub = onSnapshot(q, snap => {
-      setFiles(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoadedFor(jobDocId)
-    }, () => setLoadedFor(jobDocId))
-    return unsub
-  }, [jobDocId])
+    if (!parentId) return
+    const q = query(
+      collection(db, parentCollection, parentId, subcollection),
+      orderBy('createdAt', direction),
+    )
+    const unsub = onSnapshot(
+      q,
+      snap => setState({
+        id: parentId,
+        items: snap.docs.map(d => ({ ...d.data(), _docId: d.id })),
+      }),
+      () => setState({ id: parentId, items: [] }),
+    )
+    return () => {
+      unsub()
+      setState(EMPTY_SNAPSHOT)
+    }
+  }, [parentCollection, parentId, subcollection, direction])
 
-  return { files: jobDocId ? files : [], loading: !!jobDocId && loadedFor !== jobDocId }
+  const current = !!parentId && state.id === parentId
+  return { items: current ? state.items : [], loading: !!parentId && !current }
+}
+
+export function useJobFiles(jobDocId) {
+  const { items, loading } = useSubcollection('jobs', jobDocId, 'files', 'desc')
+  return { files: items, loading }
 }
 
 export function useSubmitReplies(submitDocId) {
-  const [replies, setReplies] = useState([])
-  const [loadedFor, setLoadedFor] = useState(null)
-
-  useEffect(() => {
-    if (!submitDocId) return
-    const q = query(collection(db, 'submits', submitDocId, 'replies'), orderBy('createdAt', 'asc'))
-    const unsub = onSnapshot(q, snap => {
-      setReplies(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoadedFor(submitDocId)
-    }, () => setLoadedFor(submitDocId))
-    return unsub
-  }, [submitDocId])
-
-  return { replies: submitDocId ? replies : [], loading: !!submitDocId && loadedFor !== submitDocId }
+  const { items, loading } = useSubcollection('submits', submitDocId, 'replies', 'asc')
+  return { replies: items, loading }
 }
 
 // ── Basic Mutations ───────────────────────────────────────────────────────────
