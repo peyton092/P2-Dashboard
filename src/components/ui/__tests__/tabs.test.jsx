@@ -126,6 +126,14 @@ describe('Tabs', () => {
     expect(tab('Change orders').textContent).toBe('Change orders')
   })
 
+  it('draws the focus ring inside a tab, where the scrolling list cannot clip it', () => {
+    render(<Sections />)
+    // Important, because the focus rule in index.css is not in a layer and would win.
+    for (const el of screen.getAllByRole('tab')) {
+      expect(el.classList.contains('focus-visible:-outline-offset-2!'), el.textContent).toBe(true)
+    }
+  })
+
   it('has tabs at least 44 pixels tall under 768 pixels', () => {
     render(<Sections />)
     for (const el of screen.getAllByRole('tab')) expect(el.classList.contains('min-h-11'), el.textContent).toBe(true)

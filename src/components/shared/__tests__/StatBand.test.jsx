@@ -152,7 +152,9 @@ describe('StatBand', () => {
     const button = screen.getByRole('button', { name: /Needs action/ })
     expect(button.getAttribute('type')).toBe('button')
     expect(button.closest('li')).toBe(screen.getByText('Needs action').closest('li'))
-    for (const name of ['block', 'w-full', 'h-full']) expect(button.classList.contains(name), name).toBe(true)
+    for (const name of ['w-full', 'h-full']) expect(button.classList.contains(name), name).toBe(true)
+    // A column, so that its content sits at the top of a cell that a taller neighbor stretched.
+    for (const name of ['flex', 'flex-col']) expect(button.classList.contains(name), name).toBe(true)
     expect(screen.getAllByRole('button')).toHaveLength(1)
 
     fireEvent.click(button)
@@ -164,9 +166,10 @@ describe('StatBand', () => {
     expect(screen.getByRole('button', { name: 'Needs action 5 Open the list' })).toBeTruthy()
   })
 
-  it('shows a clickable stat\'s focus ring inside its cell, where the strip cannot clip it', () => {
+  it('draws a clickable stat\'s focus ring inside its cell, where the strip cannot clip it', () => {
     render(<StatBand stats={[{ label: 'Needs action', value: 5, onClick: () => {} }]} />)
-    expect(screen.getByRole('button').classList.contains('focus-visible:-outline-offset-2')).toBe(true)
+    // Important, because the focus rule in index.css is not in a layer and would win.
+    expect(screen.getByRole('button').classList.contains('focus-visible:-outline-offset-2!')).toBe(true)
   })
 
   it('puts nothing a button cannot hold inside a button', () => {

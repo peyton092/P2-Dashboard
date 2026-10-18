@@ -54,10 +54,13 @@ function StatCell({ stat, className }) {
   return (
     <li data-slot="stat" className={cn(BAND_CELL, className)}>
       {onClick ? (
+        // A button centers its content in a cell taller than it, unless it is a column.
+        // The focus ring is drawn inside the cell, because the strip clips what is outside it.
+        // The shared focus rule is not in a layer, so only an important utility beats its offset.
         <button
           type="button"
           onClick={onClick}
-          className="block h-full w-full cursor-pointer px-4 py-3 text-left transition-colors hover:bg-white/[0.04] focus-visible:-outline-offset-2 sm:px-5 sm:py-4">
+          className="flex h-full w-full cursor-pointer flex-col px-4 py-3 text-left transition-colors hover:bg-white/[0.04] focus-visible:-outline-offset-2! sm:px-5 sm:py-4">
           {content}
         </button>
       ) : (
