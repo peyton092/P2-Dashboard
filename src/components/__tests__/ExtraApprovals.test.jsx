@@ -197,11 +197,12 @@ describe.each(PORTALS)('$name change orders', (portal) => {
       await waitFor(() => expect(mocks.approveExtra).toHaveBeenCalledTimes(2))
     })
 
-    it('refuses to call the function for a change order with no document id', () => {
+    it('refuses to call the function for a change order with no document id, and says so without a dash', () => {
       mocks.data.extras = [extra({ _docId: undefined })]
       portal.open()
       fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
       expect(mocks.approveExtra).not.toHaveBeenCalled()
+      expect(screen.getByText('This change order is missing an ID. Refresh and try again.')).toBeTruthy()
     })
   })
 

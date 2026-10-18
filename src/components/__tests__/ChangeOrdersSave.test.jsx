@@ -35,7 +35,7 @@ const JOB = { id: 'QBS-003', _docId: 'job3', name: 'Lee Residence', client: 'Dan
 const LINE = { desc: 'Backflow preventer', qty: 1, unit: 'EA', unitPrice: 4000, extPrice: 4000 }
 const saved = (over) => ({
   _docId: 'x1', coNumber: 'CO-2026-001', id: undefined, job: 'QBS-003', date: '2026-10-01', status: 'Draft',
-  lineItems: [LINE], markupPct: 15, notes: '', amount: 4600, total: 4600, desc: 'CO-2026-001 — Backflow preventer', ...over,
+  lineItems: [LINE], markupPct: 15, notes: '', amount: 4600, total: 4600, desc: 'CO-2026-001: Backflow preventer', ...over,
 })
 
 // An error as the Functions SDK throws it.
@@ -59,7 +59,7 @@ const open = () => render(<ToastContext.Provider value={mocks.toast}><ChangeOrde
 const openSaved = (over) => {
   mocks.data.extras = [saved(over)]
   open()
-  fireEvent.click(screen.getAllByTitle('Edit / re-send')[0])
+  fireEvent.click(screen.getAllByTitle('Edit or resend')[0])
 }
 const send = () => screen.getByRole('button', { name: /Send to Builder|Sending/ })
 const saveDraft = () => screen.getByRole('button', { name: /Save Draft/ })
@@ -87,6 +87,22 @@ describe('saving a change order', () => {
     expect('sentAt' in data).toBe(false)
     expect('qbsSentAt' in data).toBe(false)
     expect(mocks.sendExtraToBuilder).not.toHaveBeenCalled()
+  })
+
+  it('describes the change order with its number, a colon and the first line, and no dash', async () => {
+    await startNew()
+    fireEvent.click(saveDraft())
+    await waitFor(() => expect(mocks.addDoc).toHaveBeenCalledTimes(1))
+    const { desc } = mocks.addDoc.mock.calls[0][1]
+    expect(desc).toMatch(/^CO-\d{4}-001: Backflow preventer$/)
+    expect(desc).not.toMatch(/[\u2010-\u2015\u2212]/)
+  })
+
+  it('writes the same description when an existing change order is saved', async () => {
+    openSaved()
+    fireEvent.click(saveDraft())
+    await waitFor(() => expect(mocks.updateDoc).toHaveBeenCalledTimes(1))
+    expect(mocks.updateDoc.mock.calls[0][1].desc).toBe('CO-2026-001: Backflow preventer')
   })
 
   it('Save Draft does not send, and leaves the form for the list', async () => {
@@ -125,7 +141,7 @@ describe('saving a change order', () => {
   })
 
   it('never writes a status over an existing one, so a save cannot undo a decision', async () => {
-    for (const status of ['Draft', 'Sent to Builder', 'Approved', 'Rejected']) {
+    for (const status of ['Draft', 'Sent to Builder', 'Rejected']) {
       openSaved({ status })
       fireEvent.click(saveDraft())
       await waitFor(() => expect(mocks.updateDoc).toHaveBeenCalledTimes(1))
@@ -149,6 +165,81 @@ describe('saving a change order', () => {
     expect(job.disabled).toBe(false)
     expect(status.disabled).toBe(true)
     expect(screen.getByText('Set when the change order is sent, approved or rejected.')).toBeTruthy()
+  })
+})
+
+describe('an approved change order is read only', () => {
+  const HINT = 'Approved change orders cannot be edited.'
+  const REFUSAL = 'This change order is approved. Raise a new change order for any additional work.'
+
+  it.each([['Approved'], ['approved']])('turns the edit action off for a change order with status %s, and says why', (status) => {
+    mocks.data.extras = [saved({ status })]
+    open()
+    // The list is drawn twice, as a table and as cards; both have the action.
+    const actions = screen.getAllByTitle(HINT)
+    expect(actions).toHaveLength(2)
+    for (const action of actions) {
+      expect(action.disabled).toBe(true)
+      fireEvent.click(action)
+    }
+    expect(screen.queryByPlaceholderText('Describe the work…')).toBeNull()
+    expect(screen.queryByTitle('Edit or resend')).toBeNull()
+  })
+
+  it.each([['Draft'], ['Sent to Builder'], ['Rejected'], ['pending']])('keeps the edit action on for a change order with status %s', (status) => {
+    mocks.data.extras = [saved({ status })]
+    open()
+    expect(screen.queryByTitle(HINT)).toBeNull()
+    const actions = screen.getAllByTitle('Edit or resend')
+    expect(actions.length).toBeGreaterThan(0)
+    expect(actions[0].disabled).toBe(false)
+    fireEvent.click(actions[0])
+    expect(screen.getByPlaceholderText('Describe the work…')).toBeTruthy()
+  })
+
+  it('refuses a save of a change order approved while its form was open, and writes nothing', async () => {
+    openSaved({ status: 'Sent to Builder' })
+    // The builder approves it now: the live data says Approved, the form still holds
+    // the copy it was opened from. Typing draws the form again with the live data.
+    mocks.data = { ...mocks.data, extras: [saved({ status: 'Approved' })] }
+    fireEvent.change(screen.getByPlaceholderText('Describe the work…'), { target: { value: 'Backflow preventer, larger' } })
+    fireEvent.click(saveDraft())
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'error', title: REFUSAL })
+    expect(mocks.updateDoc).not.toHaveBeenCalled()
+    expect(mocks.addDoc).not.toHaveBeenCalled()
+    expect(mocks.sendExtraToBuilder).not.toHaveBeenCalled()
+    // The form stays open, and the buttons are not left switched off.
+    expect(screen.getByPlaceholderText('Describe the work…').value).toBe('Backflow preventer, larger')
+    expect(saveDraft().disabled).toBe(false)
+  })
+
+  it('refuses to send one approved while its form was open, and writes nothing', async () => {
+    openSaved({ status: 'Sent to Builder' })
+    mocks.data = { ...mocks.data, extras: [saved({ status: 'approved' })] }
+    fireEvent.change(screen.getByPlaceholderText('Describe the work…'), { target: { value: 'Backflow preventer, larger' } })
+    fireEvent.click(send())
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'error', title: REFUSAL })
+    expect(mocks.updateDoc).not.toHaveBeenCalled()
+    expect(mocks.sendExtraToBuilder).not.toHaveBeenCalled()
+  })
+
+  it('still saves a change order that is not approved after the live data changed in other ways', async () => {
+    openSaved({ status: 'Sent to Builder' })
+    mocks.data = { ...mocks.data, extras: [saved({ status: 'Rejected', rejectNotes: 'Use the 200A panel' })] }
+    fireEvent.change(screen.getByPlaceholderText('Describe the work…'), { target: { value: 'Backflow preventer, revised' } })
+    fireEvent.click(saveDraft())
+    await waitFor(() => expect(mocks.updateDoc).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).not.toHaveBeenCalled()
+  })
+
+  it('does not refuse a new change order, which is not in the live list yet', async () => {
+    mocks.data.extras = [saved({ _docId: 'other', status: 'Approved' })]
+    await startNew()
+    fireEvent.click(saveDraft())
+    await waitFor(() => expect(mocks.addDoc).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).not.toHaveBeenCalled()
   })
 })
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { withAuthor, sendExtraToBuilder } from '../hooks/useFirestore'
-import { statusOnSave } from '../lib/extraStatus'
+import { extraState, statusOnSave } from '../lib/extraStatus'
 import { callableMessage } from '../lib/callableError'
 import { useData } from '../use-data'
 import { useToast } from '@/components/ui/use-toast'
@@ -38,6 +38,10 @@ import {
 
 const O = '#F47920'
 const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS']
+// An approved change order is read only: its price was agreed, so more or changed
+// work is a new change order.
+const APPROVED_HINT = 'Approved change orders cannot be edited.'
+const APPROVED_REFUSAL = 'This change order is approved. Raise a new change order for any additional work.'
 const CO_STATUSES = ['Draft', 'Sent to Builder', 'Approved', 'Rejected']
 
 const STATUS_COLOR = {
@@ -425,7 +429,7 @@ export default function ChangeOrders() {
   }
 
   function openEdit(co) {
-    if (!co.lineItems) return
+    if (!co.lineItems || extraState(co) === 'approved') return
     setForm({
       ...co,
       lineItems: co.lineItems.map(li => ({ ...li, _id: Math.random() })),
@@ -440,6 +444,16 @@ export default function ChangeOrders() {
   // the qbs flag), and it never changes a status itself (see statusOnSave).
   async function saveCO(sendToBuilder) {
     if (!form.job || !form.lineItems.some(li => li.desc.trim())) return
+
+    // The edit action is off for an approved change order, so this catches a form
+    // that was opened before the builder approved it: the live copy of the change
+    // order shows the approval, the copy the form was opened from does not.
+    const live = editingCO?._docId ? EXTRAS.find(e => e._docId === editingCO._docId) : undefined
+    if (extraState(editingCO) === 'approved' || extraState(live) === 'approved') {
+      toast({ tone: 'error', title: APPROVED_REFUSAL })
+      return
+    }
+
     setSaving(true)
     let saved = false
     try {
@@ -470,7 +484,7 @@ export default function ChangeOrders() {
         total,
         notes: form.notes || '',
         amount: total,
-        desc: `${form.coNumber}${firstLine ? ` — ${firstLine}` : ''}`,
+        desc: `${form.coNumber}${firstLine ? `: ${firstLine}` : ''}`,
       }
 
       let docId = editingCO?._docId
@@ -814,6 +828,8 @@ function tonesToColor(tone) {
 
 function CORow({ co, job, onEdit, onPdf }) {
   const isNew     = !!co.lineItems
+  const locked    = isApproved(co)
+  const canEdit   = isNew && !locked
   const coNum     = co.coNumber || co.id || '—'
   const desc      = co.desc || co.lineItems?.[0]?.desc || '—'
   const total     = co.total ?? co.amount ?? 0
@@ -889,9 +905,9 @@ function CORow({ co, job, onEdit, onPdf }) {
               type="button"
               onClick={() => onEdit(co)}
               className="p-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.08] transition-colors"
-              title={isNew ? 'Edit / re-send' : 'Edit'}
-              disabled={!isNew}
-              style={!isNew ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+              title={locked ? APPROVED_HINT : isNew ? 'Edit or resend' : 'Edit'}
+              disabled={!canEdit}
+              style={!canEdit ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
             >
               <PencilIcon size={13} />
             </button>
@@ -904,6 +920,7 @@ function CORow({ co, job, onEdit, onPdf }) {
 
 function COCard({ co, job, onEdit, onPdf }) {
   const isNew    = !!co.lineItems
+  const locked   = isApproved(co)
   const coNum    = co.coNumber || co.id || '—'
   const desc     = co.desc || co.lineItems?.[0]?.desc || '—'
   const total    = co.total ?? co.amount ?? 0
@@ -974,7 +991,8 @@ function COCard({ co, job, onEdit, onPdf }) {
           <button
             type="button"
             onClick={() => onEdit(co)}
-            disabled={!isNew}
+            disabled={!isNew || locked}
+            title={locked ? APPROVED_HINT : undefined}
             className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             style={{ backgroundColor: O }}
           >

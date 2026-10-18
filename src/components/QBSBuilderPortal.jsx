@@ -411,7 +411,7 @@ function ExtraRow({ co, compact = false }) {
   // Cloud Function, which also checks that this person may act on the change order.
   const handleApprove = async () => {
     if (!co._docId) {
-      setErrMsg('This change order is missing a document ID — refresh the page and try again.')
+      setErrMsg('This change order is missing an ID. Refresh and try again.')
       return
     }
     setBusy(true)

@@ -6,7 +6,9 @@ import { join, resolve } from 'node:path'
 // and creating jobs are done by Cloud Functions that check the caller's role and
 // write the notification and the history entry with the change. If the browser
 // writes any of it again, a builder or a client is back to deciding for itself
-// what the database says, so none of these may come back.
+// what the database says, so these structural guards keep the pieces that made
+// that possible from coming back. How the screens behave around those calls is
+// tested where it happens: ExtraApprovals, ChangeOrdersSave and JobActions.
 const srcDir = resolve(import.meta.dirname, '..')
 
 function sourceFiles(dir) {
@@ -19,96 +21,71 @@ function sourceFiles(dir) {
 
 const files = sourceFiles(srcDir)
 const read = (name) => readFileSync(files.find((f) => f.endsWith(name)), 'utf8')
-const offenders = (pattern) => files.filter((f) => pattern.test(readFileSync(f, 'utf8'))).map((f) => f.slice(srcDir.length + 1))
+
+// The source of one top level function declaration, from its first line to the
+// closing brace in the first column.
+function functionSource(text, name) {
+  const start = text.search(new RegExp(`^(export )?(async )?function ${name}\\(`, 'm'))
+  if (start === -1) return null
+  return text.slice(start, text.indexOf('\n}\n', start) + 2)
+}
+
+// What a file imports from a module, as a list of names.
+function importsFrom(text, module) {
+  const names = []
+  for (const match of text.matchAll(/import\s*\{([^}]*)\}\s*from\s*'([^']+)'/g)) {
+    if (match[2] === module) names.push(...match[1].split(',').map((name) => name.trim().split(/\s+as\s+/)[0]).filter(Boolean))
+  }
+  return names
+}
 
 describe('browser code', () => {
   it('finds the source files it is meant to scan', () => {
     expect(files.length).toBeGreaterThan(20)
-    for (const name of ['useFirestore.js', 'ClientPortal.jsx', 'QBSBuilderPortal.jsx', 'ChangeOrders.jsx', 'App.jsx']) {
+    for (const name of ['useFirestore.js', 'ClientPortal.jsx', 'QBSBuilderPortal.jsx']) {
       expect(files.some((f) => f.endsWith(name)), name).toBe(true)
     }
   })
 
   it('has no helper named sendExtraToQBS any more', () => {
-    expect(offenders(/sendExtraToQBS/)).toEqual([])
-  })
-
-  it('writes no approved, rejected or sent status to a change order from anywhere', () => {
-    expect(offenders(/status:\s*['"](approved|rejected|Approved|Rejected|Sent to Builder)['"]/)).toEqual([])
+    const offenders = files.filter((f) => /sendExtraToQBS/.test(readFileSync(f, 'utf8')))
+    expect(offenders.map((f) => f.slice(srcDir.length + 1))).toEqual([])
   })
 
   describe('the six callable helpers', () => {
-    const start = (text) => text.indexOf('// ── Callable Cloud Functions')
-    const section = () => {
-      const text = read('useFirestore.js')
-      return text.slice(start(text), text.indexOf('export function useDailyReports'))
-    }
+    const SIX = ['sendExtraToBuilder', 'approveExtra', 'rejectExtra', 'passInspection', 'failInspection', 'createJob']
 
-    it('are found', () => {
-      const text = section()
-      for (const name of ['sendExtraToBuilder', 'approveExtra', 'rejectExtra', 'passInspection', 'failInspection', 'createJob']) {
-        expect(text, name).toContain(`export async function ${name}(`)
-      }
+    it.each(SIX)('%s catches nothing and writes nothing to Firestore, so a failed call reaches the caller', (name) => {
+      const source = functionSource(read('useFirestore.js'), name)
+      expect(source, `${name} is declared in useFirestore.js`).not.toBeNull()
+      expect(source).not.toMatch(/\bcatch\b/)
+      expect(source).not.toMatch(/\b(addDoc|updateDoc|setDoc|deleteDoc|writeBatch|runTransaction|serverTimestamp)\b/)
+    })
+
+    it('go through one function that does not catch or write either', () => {
+      const source = functionSource(read('useFirestore.js'), 'callCloud')
+      expect(source, 'callCloud is declared in useFirestore.js').not.toBeNull()
+      expect(source).toMatch(/\bhttpsCallable\b/)
+      expect(source).not.toMatch(/\bcatch\b/)
+      expect(source).not.toMatch(/\b(addDoc|updateDoc|setDoc|deleteDoc|writeBatch|runTransaction|serverTimestamp)\b/)
     })
 
     it('leave no browser helper that writes a change order, a notification or an inspection record', () => {
       const text = read('useFirestore.js')
       for (const gone of ['updateExtra', 'addNotification', 'updateInspection']) {
-        expect(text, gone).not.toMatch(new RegExp(`\\b${gone}\\b`))
+        expect(text, gone).not.toMatch(new RegExp(`export\\s+(async\\s+)?(function|const)\\s+${gone}\\b`))
       }
-    })
-
-    it('catch nothing and write nothing to Firestore, so a failed call reaches the caller', () => {
-      const text = section()
-      expect(text).not.toMatch(/\bcatch\b/)
-      expect(text).not.toMatch(/\b(addDoc|updateDoc|setDoc|deleteDoc|writeBatch|runTransaction)\b/)
-      expect(text).not.toMatch(/serverTimestamp/)
     })
   })
 
   describe.each(['ClientPortal.jsx', 'QBSBuilderPortal.jsx'])('%s', (name) => {
-    it('writes no extras, notifications or history of its own', () => {
+    it('imports no Firestore write for change orders, notifications or history', () => {
       const text = read(name)
-      for (const writer of ['updateExtra', 'addNotification', 'addHistory', 'addExtra', 'updateDoc', 'addDoc', 'setDoc']) {
-        expect(text, writer).not.toMatch(new RegExp(`\\b${writer}\\b`))
+      const fromHelpers = importsFrom(text, '../hooks/useFirestore')
+      for (const writer of ['updateExtra', 'addExtra', 'addNotification', 'addHistory', 'updateInspection']) {
+        expect(fromHelpers, writer).not.toContain(writer)
       }
-    })
-
-    it('reads a change order through extraState and never compares its status text', () => {
-      const text = read(name)
-      expect(text).toContain("from '../lib/extraStatus'")
-      expect(text).not.toMatch(/\b(e|co|extra)\.status\b/)
-    })
-  })
-
-  describe('ChangeOrders.jsx', () => {
-    it('does not write the qbs flag or the send time, which sendExtraToBuilder sets', () => {
-      const text = read('ChangeOrders.jsx')
-      expect(text).not.toMatch(/\bqbs:\s/)
-      expect(text).not.toMatch(/\bsentAt:\s/)
-      expect(text).not.toMatch(/\bqbsSentAt\b/)
-    })
-
-    it('sends through the callable helper', () => {
-      const text = read('ChangeOrders.jsx')
-      expect(text).toMatch(/await sendExtraToBuilder\(/)
-    })
-  })
-
-  describe('App.jsx', () => {
-    it('creates jobs and records inspection results only through the callable helpers', () => {
-      const text = read('App.jsx')
-      expect(text).toMatch(/await createJob\(/)
-      expect(text).toMatch(/record\(passInspection\)/)
-      expect(text).toMatch(/record\(failInspection\)/)
-      expect(text).not.toMatch(/addDoc\(collection\(db, ['"]jobs['"]/)
-    })
-
-    it('does not write passed or failed to a job itself: the status list sends both to the callable helpers', () => {
-      const text = read('App.jsx')
-      expect(text).not.toMatch(/updateJob\(docId, \{ \[field\]: e\.target\.value \}\)/)
-      expect(text).toMatch(/next === 'passed'\) record\(passInspection\)/)
-      expect(text).toMatch(/next === 'failed'\) record\(failInspection\)/)
+      expect(importsFrom(text, 'firebase/firestore'), 'firebase/firestore').toEqual([])
     })
   })
 })

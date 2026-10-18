@@ -238,7 +238,7 @@ function ExtraRow({ co }) {
   // The approval, the notification and the history entry are all written by the
   // Cloud Function, which also checks that this person may act on the change order.
   const handleApprove = async () => {
-    if (!co._docId) { setErrMsg('This change order is missing an ID — refresh and try again.'); return }
+    if (!co._docId) { setErrMsg('This change order is missing an ID. Refresh and try again.'); return }
     setBusy(true); setErrMsg('')
     try {
       await approveExtra(co._docId)

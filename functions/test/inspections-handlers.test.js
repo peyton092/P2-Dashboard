@@ -1,75 +1,27 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { HttpsError } from 'firebase-functions/v2/https'
-import { FieldValue } from 'firebase-admin/firestore'
-import { db } from '../lib/admin.js'
 import { passInspection, failInspection } from '../inspections.js'
+import { assertNoDashes, code, isServerTime, stubFirestore as installStub } from './helpers/firestore-stub.js'
 
-// Nothing here reaches a network. The Firestore instance is the real singleton
-// with the methods the handlers call replaced, so a call the handlers make that
-// is not stubbed fails loudly instead of quietly succeeding. A transaction is
-// replayed the way Firestore treats it: what it stages is committed only if the
-// callback finishes.
-
-let calls // every Firestore entry point the handler touched, in order
-let reads // every document read inside the transaction, in order
-let writes // committed writes, in order: { op, path, data }
-
-// jobs: { j1: { id: 'QBS-003', ... } }   job documents that exist, by document id
-// userDocs: { u1: { displayName } }      users documents the actor lookup may read
-function stubFirestore({ jobs = {}, userDocs = {} } = {}) {
-  let auto = 0
-  mock.method(db, 'collection', (name) => {
-    calls.push(`collection:${name}`)
-    return { doc: (id) => ({ path: `${name}/${id ?? `auto${++auto}`}` }) }
-  })
-  mock.method(db, 'doc', (path) => {
-    calls.push(`doc:${path}`)
-    return {
-      get: async () => {
-        const data = userDocs[path.replace(/^users\//, '')]
-        return { exists: data !== undefined, data: () => data }
-      },
-    }
-  })
-  mock.method(db, 'runTransaction', async (update) => {
-    calls.push('runTransaction')
-    const staged = []
-    const tx = {
-      get: async (ref) => {
-        reads.push(ref.path)
-        const data = jobs[ref.path.replace(/^jobs\//, '')]
-        return { exists: data !== undefined, data: () => data }
-      },
-      update: (ref, data) => staged.push({ op: 'update', path: ref.path, data }),
-      set: (ref, data) => staged.push({ op: 'set', path: ref.path, data }),
-    }
-    const result = await update(tx)
-    writes.push(...staged)
-    return result
-  })
+// The Firestore stub is shared with the other handler tests (helpers/firestore-stub.js).
+// Each test installs it with the documents that exist, and `stub` then holds what the
+// handler did: stub.calls, stub.reads, stub.writes and stub.stub.written(prefix).
+//
+// jobs:  { job1: { id: 'QBS-003', ... } }  job documents that exist, by document id
+// users: { u1: { displayName } }           users documents the actor lookup may read
+let stub
+const stubFirestore = (collections) => {
+  stub = installStub(collections)
 }
 
 beforeEach(() => {
-  calls = []
-  reads = []
-  writes = []
+  stub = undefined
 })
 
 afterEach(() => {
   mock.restoreAll()
   mock.timers.reset()
 })
-
-const code = (expected, message) => (err) => {
-  assert.ok(err instanceof HttpsError, `expected an HttpsError, got ${err}`)
-  assert.equal(err.code, expected)
-  if (message !== undefined) assert.equal(err.message, message)
-  return true
-}
-
-const isServerTime = (value) => value.isEqual(FieldValue.serverTimestamp())
-const written = (prefix) => writes.filter((w) => w.path.startsWith(prefix))
 
 const OWNER = { uid: 'o1', token: { role: 'owner', email: 'jesse@p2em.com', name: 'Jesse Parker' } }
 const INTERNAL = { uid: 'i1', token: { role: 'internal', email: 'pat@p2em.com', name: 'Pat Lee' } }
@@ -86,7 +38,7 @@ describe('the guard runs before anything is read', () => {
     for (const fn of [passInspection, failInspection]) {
       await assert.rejects(call(fn, request, undefined), code('unauthenticated', 'You must be signed in.'))
     }
-    assert.deepEqual([calls, reads, writes], [[], [], []])
+    assert.deepEqual([stub.calls, stub.reads, stub.writes], [[], [], []])
   })
 
   it('turns a builder and a client away, touching nothing', async () => {
@@ -96,7 +48,7 @@ describe('the guard runs before anything is read', () => {
         await assert.rejects(call(fn, request, auth), code('permission-denied', 'Staff access required.'))
       }
     }
-    assert.deepEqual([calls, reads, writes], [[], [], []])
+    assert.deepEqual([stub.calls, stub.reads, stub.writes], [[], [], []])
   })
 
   it('lets owner and internal staff in', async () => {
@@ -114,7 +66,7 @@ describe('invalid requests are refused before anything is read', () => {
     await assert.rejects(call(passInspection, { ...request, trade: 'plumbing', phase: 'trim' }, OWNER), code('invalid-argument', message))
     await assert.rejects(call(failInspection, { ...request, trade: 'hvac', phase: 'trim' }, OWNER), code('invalid-argument', message))
     await assert.rejects(call(passInspection, { ...request, phase: 'start' }, OWNER), code('invalid-argument', message))
-    assert.deepEqual([calls, reads, writes], [[], [], []])
+    assert.deepEqual([stub.calls, stub.reads, stub.writes], [[], [], []])
   })
 
   it('refuses an unknown trade and an unusable job id', async () => {
@@ -124,7 +76,7 @@ describe('invalid requests are refused before anything is read', () => {
       await assert.rejects(call(passInspection, { ...request, jobDocId }, OWNER), code('invalid-argument', 'Choose a job.'))
     }
     await assert.rejects(call(passInspection, undefined, OWNER), code('invalid-argument', 'Choose a job.'))
-    assert.deepEqual([calls, reads, writes], [[], [], []])
+    assert.deepEqual([stub.calls, stub.reads, stub.writes], [[], [], []])
   })
 
   it('does not accept the old jobId key', async () => {
@@ -138,7 +90,7 @@ describe('passInspection', () => {
     mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-18T23:30:00Z') })
     stubFirestore({ jobs: { job1: JOB } })
     assert.deepEqual(await call(passInspection, request, OWNER), { ok: true })
-    const [patch] = written('jobs/')
+    const [patch] = stub.written('jobs/')
     assert.equal(patch.op, 'update')
     assert.equal(patch.path, 'jobs/job1')
     assert.deepEqual(patch.data, {
@@ -151,13 +103,13 @@ describe('passInspection', () => {
     mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-19T00:05:00Z') })
     stubFirestore({ jobs: { job1: JOB } })
     await call(passInspection, { ...request, trade: 'hvac', phase: 'final' }, OWNER)
-    assert.deepEqual(written('jobs/')[0].data, { 'insp.hvac.final': 'passed', 'insp.hvac.finalDate': '2026-10-19' })
+    assert.deepEqual(stub.written('jobs/')[0].data, { 'insp.hvac.final': 'passed', 'insp.hvac.finalDate': '2026-10-19' })
   })
 
   it('writes a success notification scoped like the job', async () => {
     stubFirestore({ jobs: { job1: JOB } })
     await call(passInspection, request, OWNER)
-    const [note] = written('notifications/')
+    const [note] = stub.written('notifications/')
     assert.equal(note.op, 'set')
     assert.equal(note.data.type, 'success')
     assert.equal(note.data.msg, 'QBS-003 electrical rough in passed')
@@ -173,7 +125,7 @@ describe('passInspection', () => {
   it('writes the history line the Activity feed renders', async () => {
     stubFirestore({ jobs: { job1: JOB } })
     await call(passInspection, request, INTERNAL)
-    const [line] = written('history/')
+    const [line] = stub.written('history/')
     assert.equal(line.data.type, 'inspection')
     assert.equal(line.data.action, 'passed')
     assert.equal(line.data.summary, 'QBS-003 electrical rough in passed')
@@ -188,9 +140,9 @@ describe('passInspection', () => {
   it('reads the job and writes all three in one transaction', async () => {
     stubFirestore({ jobs: { job1: JOB } })
     await call(passInspection, request, OWNER)
-    assert.ok(calls.includes('runTransaction'))
-    assert.deepEqual(reads, ['jobs/job1'])
-    assert.equal(writes.length, 3)
+    assert.ok(stub.calls.includes('runTransaction'))
+    assert.deepEqual(stub.reads, ['jobs/job1'])
+    assert.equal(stub.writes.length, 3)
   })
 
   it('records every phase every trade has', async () => {
@@ -198,9 +150,9 @@ describe('passInspection', () => {
     const phases = { electrical: ['roughIn', 'trim', 'final'], plumbing: ['roughIn', 'final'], hvac: ['roughIn', 'final'] }
     for (const [trade, list] of Object.entries(phases)) {
       for (const phase of list) {
-        writes = []
+        stub.clear()
         await call(passInspection, { jobDocId: 'job1', trade, phase }, OWNER)
-        assert.equal(written('jobs/')[0].data[`insp.${trade}.${phase}`], 'passed', `${trade} ${phase}`)
+        assert.equal(stub.written('jobs/')[0].data[`insp.${trade}.${phase}`], 'passed', `${trade} ${phase}`)
       }
     }
   })
@@ -208,21 +160,30 @@ describe('passInspection', () => {
   it('takes the actor from the sign in token, not from the request', async () => {
     stubFirestore({ jobs: { job1: JOB } })
     await call(passInspection, { ...request, actor: { uid: 'x', displayName: 'Someone Else' }, displayName: 'Someone Else' }, OWNER)
-    assert.equal(written('history/')[0].data.actorUid, 'o1')
-    assert.equal(written('history/')[0].data.actor, 'Jesse Parker')
+    assert.equal(stub.written('history/')[0].data.actorUid, 'o1')
+    assert.equal(stub.written('history/')[0].data.actor, 'Jesse Parker')
+  })
+
+  it('records a caller whose token has no email with null, never undefined', async () => {
+    // The stub refuses undefined anywhere in written data, as Firestore does.
+    stubFirestore({ jobs: { job1: JOB } })
+    await call(passInspection, request, { uid: 'o2', token: { role: 'owner', name: 'Jesse Parker' } })
+    assert.equal(stub.written('notifications/')[0].data.createdByEmail, null)
+    assert.equal(stub.written('history/')[0].data.actorEmail, null)
+    assert.equal(stub.written('history/')[0].data.createdByEmail, null)
   })
 
   it('answers a job that does not exist with not-found, and writes nothing', async () => {
     stubFirestore({ jobs: {} })
     await assert.rejects(call(passInspection, request, OWNER), code('not-found', 'That job no longer exists.'))
-    assert.deepEqual(writes, [])
+    assert.deepEqual(stub.writes, [])
   })
 
   it('writes a job id of null when the job record has none', async () => {
     stubFirestore({ jobs: { job1: { tenantId: 'qbs' } } })
     await call(passInspection, request, OWNER)
-    assert.equal(written('notifications/')[0].data.jobId, null)
-    assert.equal(written('notifications/')[0].data.msg, 'Job electrical rough in passed')
+    assert.equal(stub.written('notifications/')[0].data.jobId, null)
+    assert.equal(stub.written('notifications/')[0].data.msg, 'Job electrical rough in passed')
   })
 })
 
@@ -231,11 +192,11 @@ describe('failInspection', () => {
     mock.timers.enable({ apis: ['Date'], now: new Date('2026-03-02T10:00:00Z') })
     stubFirestore({ jobs: { job1: JOB } })
     assert.deepEqual(await call(failInspection, { jobDocId: 'job1', trade: 'plumbing', phase: 'final' }, OWNER), { ok: true })
-    assert.deepEqual(written('jobs/')[0].data, { 'insp.plumbing.final': 'failed', 'insp.plumbing.finalDate': '2026-03-02' })
-    const [note] = written('notifications/')
+    assert.deepEqual(stub.written('jobs/')[0].data, { 'insp.plumbing.final': 'failed', 'insp.plumbing.finalDate': '2026-03-02' })
+    const [note] = stub.written('notifications/')
     assert.equal(note.data.type, 'error')
     assert.equal(note.data.msg, 'QBS-003 plumbing final failed')
-    const [line] = written('history/')
+    const [line] = stub.written('history/')
     assert.equal(line.data.action, 'failed')
     assert.equal(line.data.type, 'inspection')
   })
@@ -243,14 +204,11 @@ describe('failInspection', () => {
 
 describe('everything it writes', () => {
   it('is free of dashes in the wording', async () => {
-    const IDS = /[A-Z]+(-\d+)+/g
     stubFirestore({ jobs: { job1: JOB } })
     await call(passInspection, request, OWNER)
     await call(failInspection, { jobDocId: 'job1', trade: 'hvac', phase: 'roughIn' }, OWNER)
-    for (const { data } of [...written('notifications/'), ...written('history/')]) {
-      for (const text of [data.msg, data.summary].filter(Boolean)) {
-        assert.doesNotMatch(text.replace(IDS, 'ID'), /[-‐-―−]/, `dash in: ${text}`)
-      }
+    for (const { data } of [...stub.written('notifications/'), ...stub.written('history/')]) {
+      for (const text of [data.msg, data.summary].filter(Boolean)) assertNoDashes(text)
     }
   })
 })

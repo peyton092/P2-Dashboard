@@ -1,79 +1,25 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { HttpsError } from 'firebase-functions/v2/https'
-import { FieldValue } from 'firebase-admin/firestore'
-import { db } from '../lib/admin.js'
 import { createJob } from '../jobs.js'
+import { assertNoDashes, code, isServerTime, stubFirestore as installStub } from './helpers/firestore-stub.js'
 
-// Nothing here reaches a network. The Firestore instance is the real singleton
-// with the methods the handler calls replaced, so a call it makes that is not
-// stubbed fails loudly instead of quietly succeeding. A transaction is replayed
-// the way Firestore treats it: what it stages is committed only if the callback
-// finishes.
-
-let calls // every Firestore entry point the handler touched, in order
-let reads // every query read inside the transaction, in order
-let writes // committed writes, in order: { op, path, data }
-
-// jobs: [{ id: 'QBS-045' }]   the job documents that exist
-function stubFirestore({ jobs = [], userDocs = {} } = {}) {
-  let auto = 0
-  mock.method(db, 'collection', (name) => {
-    calls.push(`collection:${name}`)
-    return {
-      doc: (id) => {
-        const docId = id ?? `auto${++auto}`
-        return { id: docId, path: `${name}/${docId}` }
-      },
-      where: (field, op, value) => ({ limit: () => ({ query: { name, field, op, value } }) }),
-    }
-  })
-  mock.method(db, 'doc', (path) => {
-    calls.push(`doc:${path}`)
-    return {
-      get: async () => {
-        const data = userDocs[path.replace(/^users\//, '')]
-        return { exists: data !== undefined, data: () => data }
-      },
-    }
-  })
-  mock.method(db, 'runTransaction', async (update) => {
-    calls.push('runTransaction')
-    const staged = []
-    const tx = {
-      get: async ({ query }) => {
-        const { name, field, op, value } = query
-        reads.push(`query:${name}:${field}${op}${value}`)
-        const found = name === 'jobs' && field === 'id' && op === '==' ? jobs.filter((job) => job.id === value) : []
-        return { empty: found.length === 0, docs: found.map((job) => ({ data: () => job })) }
-      },
-      set: (ref, data) => staged.push({ op: 'set', path: ref.path, data }),
-    }
-    const result = await update(tx)
-    writes.push(...staged)
-    return result
-  })
+// The Firestore stub is shared with the other handler tests (helpers/firestore-stub.js).
+// Each test installs it with the documents that exist, and `stub` then holds what the
+// handler did: stub.calls, stub.reads, stub.writes and stub.stub.written(prefix).
+//
+// jobs: { job1: { id: 'QBS-045' } }  job documents that exist, by document id
+let stub
+const stubFirestore = (collections) => {
+  stub = installStub(collections)
 }
 
 beforeEach(() => {
-  calls = []
-  reads = []
-  writes = []
+  stub = undefined
 })
 
 afterEach(() => {
   mock.restoreAll()
 })
-
-const code = (expected, message) => (err) => {
-  assert.ok(err instanceof HttpsError, `expected an HttpsError, got ${err}`)
-  assert.equal(err.code, expected)
-  if (message !== undefined) assert.equal(err.message, message)
-  return true
-}
-
-const isServerTime = (value) => value.isEqual(FieldValue.serverTimestamp())
-const written = (prefix) => writes.filter((w) => w.path.startsWith(prefix))
 
 const OWNER = { uid: 'o1', token: { role: 'owner', email: 'jesse@p2em.com', name: 'Jesse Parker' } }
 const INTERNAL = { uid: 'i1', token: { role: 'internal', email: 'blake@p2em.com', name: 'Blake Neblett' } }
@@ -114,7 +60,7 @@ describe('createJob guard', () => {
   it('turns a signed out caller away, touching nothing', async () => {
     stubFirestore()
     await assert.rejects(call(form(), undefined), code('unauthenticated', 'You must be signed in.'))
-    assert.deepEqual([calls, reads, writes], [[], [], []])
+    assert.deepEqual([stub.calls, stub.reads, stub.writes], [[], [], []])
   })
 
   it('turns a builder and a client away, touching nothing', async () => {
@@ -122,7 +68,7 @@ describe('createJob guard', () => {
     for (const auth of [QBS, CLIENT]) {
       await assert.rejects(call(form(), auth), code('permission-denied', 'Staff access required.'))
     }
-    assert.deepEqual([calls, reads, writes], [[], [], []])
+    assert.deepEqual([stub.calls, stub.reads, stub.writes], [[], [], []])
   })
 
   it('lets owner and internal staff in', async () => {
@@ -146,14 +92,14 @@ describe('createJob validation', () => {
     for (const [data, message] of cases) {
       await assert.rejects(asOwner(data), code('invalid-argument', message))
     }
-    assert.deepEqual([calls, reads, writes], [[], [], []])
+    assert.deepEqual([stub.calls, stub.reads, stub.writes], [[], [], []])
   })
 
   it('refuses a job id that is already taken with already-exists, and writes nothing', async () => {
-    stubFirestore({ jobs: [{ id: 'QBS-045' }] })
+    stubFirestore({ jobs: { existing: { id: 'QBS-045' } } })
     await assert.rejects(asOwner(form()), code('already-exists', 'A job with that ID already exists.'))
-    assert.deepEqual(reads, ['query:jobs:id==QBS-045'])
-    assert.deepEqual(writes, [])
+    assert.deepEqual(stub.reads, ['query:jobs:id==QBS-045'])
+    assert.deepEqual(stub.writes, [])
   })
 })
 
@@ -161,7 +107,7 @@ describe('createJob', () => {
   it('writes the job, and answers with { ok: true, docId } naming the new document', async () => {
     stubFirestore()
     const result = await call(form(), INTERNAL)
-    const [job] = written('jobs/')
+    const [job] = stub.written('jobs/')
     assert.equal(job.op, 'set')
     assert.match(job.path, /^jobs\/auto\d+$/)
     assert.deepEqual(result, { ok: true, docId: job.path.replace('jobs/', '') })
@@ -170,7 +116,7 @@ describe('createJob', () => {
   it('stores everything the form sent, with the server fields added', async () => {
     stubFirestore()
     await call(form(), INTERNAL)
-    const { data } = written('jobs/')[0]
+    const { data } = stub.written('jobs/')[0]
     const expected = form()
     for (const key of Object.keys(expected)) assert.deepEqual(data[key], expected[key], key)
     assert.deepEqual(data.clientUids, [])
@@ -183,7 +129,7 @@ describe('createJob', () => {
   it('sets the server fields itself, whatever the caller sent', async () => {
     stubFirestore()
     await asOwner({ ...form(), clientUids: ['intruder'], createdBy: 'someone', createdByEmail: 'someone@x.example', createdAt: '2000-01-01' })
-    const { data } = written('jobs/')[0]
+    const { data } = stub.written('jobs/')[0]
     assert.deepEqual(data.clientUids, [])
     assert.equal(data.createdBy, 'o1')
     assert.equal(data.createdByEmail, 'jesse@p2em.com')
@@ -193,24 +139,24 @@ describe('createJob', () => {
   it('checks the id is unused inside the transaction that writes the job', async () => {
     stubFirestore()
     await asOwner(form())
-    assert.ok(calls.includes('runTransaction'))
-    assert.deepEqual(reads, ['query:jobs:id==QBS-045'])
-    assert.equal(writes.length, 3)
+    assert.ok(stub.calls.includes('runTransaction'))
+    assert.deepEqual(stub.reads, ['query:jobs:id==QBS-045'])
+    assert.equal(stub.writes.length, 3)
   })
 
   it('keeps a name when one is sent, and does not invent one otherwise', async () => {
     stubFirestore()
     await asOwner({ ...form(), name: ' Lee Residence ' })
-    assert.equal(written('jobs/')[0].data.name, 'Lee Residence')
-    writes = []
+    assert.equal(stub.written('jobs/')[0].data.name, 'Lee Residence')
+    stub.clear()
     await asOwner({ ...form(), id: 'QBS-046' })
-    assert.equal('name' in written('jobs/')[0].data, false)
+    assert.equal('name' in stub.written('jobs/')[0].data, false)
   })
 
   it('drops what a job cannot hold', async () => {
     stubFirestore()
     await asOwner({ ...form(), fn: () => 1, list: [{ a: 1 }], deep: { a: { b: { c: { d: 1 } } } }, 'bad.key': 1 })
-    const { data } = written('jobs/')[0]
+    const { data } = stub.written('jobs/')[0]
     for (const key of ['fn', 'list', 'bad.key']) assert.equal(key in data, false, key)
     assert.deepEqual(data.deep, { a: { b: {} } })
   })
@@ -218,7 +164,7 @@ describe('createJob', () => {
   it('writes an info notification for the new job, scoped to its tenant with no clients yet', async () => {
     stubFirestore()
     await call(form(), INTERNAL)
-    const [note] = written('notifications/')
+    const [note] = stub.written('notifications/')
     assert.equal(note.op, 'set')
     assert.equal(note.data.type, 'info')
     assert.equal(note.data.msg, 'QBS-045 created by Blake Neblett')
@@ -234,7 +180,7 @@ describe('createJob', () => {
   it('writes the history line the Activity feed renders', async () => {
     stubFirestore()
     await call(form(), INTERNAL)
-    const [line] = written('history/')
+    const [line] = stub.written('history/')
     assert.equal(line.data.type, 'job')
     assert.equal(line.data.action, 'created')
     assert.equal(line.data.summary, 'QBS-045 created: 123 Main St')
@@ -248,25 +194,31 @@ describe('createJob', () => {
   it('records the tenant it was given, so a vision job is not forced into qbs', async () => {
     stubFirestore()
     await asOwner({ ...form(), id: 'VIS-001', tenantId: 'vision' })
-    assert.equal(written('jobs/')[0].data.tenantId, 'vision')
-    assert.equal(written('notifications/')[0].data.tenantId, 'vision')
+    assert.equal(stub.written('jobs/')[0].data.tenantId, 'vision')
+    assert.equal(stub.written('notifications/')[0].data.tenantId, 'vision')
   })
 
   it('takes the actor from the sign in token, not from the request', async () => {
     stubFirestore()
     await call({ ...form(), actor: { uid: 'x' }, displayName: 'Someone Else' }, INTERNAL)
-    assert.equal(written('jobs/')[0].data.createdBy, 'i1')
-    assert.equal(written('history/')[0].data.actorUid, 'i1')
+    assert.equal(stub.written('jobs/')[0].data.createdBy, 'i1')
+    assert.equal(stub.written('history/')[0].data.actorUid, 'i1')
+  })
+
+  it('records a caller whose token has no email with null, never undefined', async () => {
+    // The stub refuses undefined anywhere in written data, as Firestore does.
+    stubFirestore()
+    await call(form(), { uid: 'o2', token: { role: 'owner', name: 'Jesse Parker' } })
+    assert.equal(stub.written('jobs/')[0].data.createdByEmail, null)
+    assert.equal(stub.written('notifications/')[0].data.createdByEmail, null)
+    assert.equal(stub.written('history/')[0].data.actorEmail, null)
   })
 
   it('is free of dashes in the wording', async () => {
-    const IDS = /[A-Z]+(-\d+)+/g
     stubFirestore()
     await asOwner(form())
-    for (const { data } of [...written('notifications/'), ...written('history/')]) {
-      for (const text of [data.msg, data.summary].filter(Boolean)) {
-        assert.doesNotMatch(text.replace(IDS, 'ID'), /[-‐-―−]/, `dash in: ${text}`)
-      }
+    for (const { data } of [...stub.written('notifications/'), ...stub.written('history/')]) {
+      for (const text of [data.msg, data.summary].filter(Boolean)) assertNoDashes(text)
     }
   })
 })
