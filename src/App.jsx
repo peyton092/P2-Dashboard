@@ -9,6 +9,7 @@ import { httpsCallable } from 'firebase/functions'
 import { DataProvider } from './DataContext'
 import { useData } from './use-data'
 import { useNow } from './hooks/useNow'
+import { useConnectionState } from './hooks/useConnectionState'
 import { daysSince, fmtLongDate, toLocalDateStr } from './lib/dates'
 import {
   updateNotification, updateJob,
@@ -3504,6 +3505,11 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
   const [collapsed, setCollapsed] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState(null)
   const { loading, jobs, extras, notifs, subs, submits, agentAlerts } = useData()
+
+  // Keeps the connection probe running on the screens that show no connection chip
+  // (Settings, a job page, Analytics), so the chip on the next screen starts from
+  // what is already known and does not flash Syncing. The answer is not needed here.
+  useConnectionState()
 
   // Cross-component navigation. Command Center's "View All" links and Quick
   // Modules dispatch `p2:navigate` with a tab id; the shell listens here.

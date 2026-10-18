@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useSyncExternalStore } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 import { doc, onSnapshot, onSnapshotsInSync } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useData } from '../use-data'
@@ -51,15 +51,51 @@ export function probeConnection(database, uid, onChange) {
 // What the probe has said for one user. caughtUp is true from a sync until the next
 // snapshot, which is a change, and confirmed is true while the last snapshot came
 // from the server. With no uid there is nothing to confirm.
-const fresh = (uid) => ({ uid, caughtUp: false, confirmed: uid == null })
+const fresh = (uid) => ({ caughtUp: false, confirmed: uid == null })
 
-// Each event carries the uid it was heard for. The first event for a new user starts
-// that user's state from scratch, so nothing heard for the user before carries over.
-function reduce(state, event) {
-  const current = state.uid === event.uid ? state : fresh(event.uid)
-  if (event.type === 'sync') return { ...current, caughtUp: true }
-  return { ...current, caughtUp: false, confirmed: !event.fromCache }
+function reduce(facts, event) {
+  if (event.type === 'sync') return { ...facts, caughtUp: true }
+  return { caughtUp: false, confirmed: !event.fromCache }
 }
+
+// One probe for each user, shared by every component that asks for the state. Each
+// page header has a chip and each screen is a new component, so a probe of a chip's
+// own would start from nothing on every navigation: the cached copy of the document
+// comes first and the server's answer a moment later, and the chip would flash
+// Syncing each time the person changed screens. Shared, a chip that mounts reads what
+// the others already know.
+//
+// The first component to ask starts the probe and the last to leave stops it. A
+// screen that replaces another unmounts and mounts in the same commit, so the probe
+// is stopped only if nobody has asked for it again by the end of that task.
+const probes = new Map()
+
+function retain(uid, onChange) {
+  let held = probes.get(uid)
+  if (!held) {
+    const started = { facts: fresh(uid), watchers: new Set(), holds: 0, stop: () => {} }
+    started.stop = probeConnection(db, uid, (event) => {
+      started.facts = reduce(started.facts, event)
+      started.watchers.forEach((watcher) => watcher())
+    })
+    probes.set(uid, started)
+    held = started
+  }
+  held.holds += 1
+  held.watchers.add(onChange)
+  return () => {
+    held.watchers.delete(onChange)
+    held.holds -= 1
+    queueMicrotask(() => {
+      if (held.holds === 0 && probes.get(uid) === held) {
+        probes.delete(uid)
+        held.stop()
+      }
+    })
+  }
+}
+
+const isSettled = (facts) => facts.caughtUp && facts.confirmed
 
 function subscribeToBrowser(onChange) {
   window.addEventListener('online', onChange)
@@ -72,19 +108,15 @@ function subscribeToBrowser(onChange) {
 const browserIsOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false
 
 // 'online', 'syncing' or 'offline'. Call it in a component that is shown while a user
-// is signed in; ConnectionChip is that component.
+// is signed in; ConnectionChip is that component. The dashboard calls it once itself
+// and ignores the answer, to keep the probe running on the screens that show no chip.
 export function useConnectionState() {
   const uid = useData()?.uid ?? null
   const online = useSyncExternalStore(subscribeToBrowser, browserIsOnline, () => true)
-  const [heard, dispatch] = useReducer(reduce, uid, fresh)
-
-  useEffect(
-    () => probeConnection(db, uid, (event) => dispatch({ ...event, uid })),
-    [uid],
-  )
+  const subscribe = useCallback((onChange) => retain(uid, onChange), [uid])
+  const getSnapshot = useCallback(() => isSettled(probes.get(uid)?.facts ?? fresh(uid)), [uid])
+  const settled = useSyncExternalStore(subscribe, getSnapshot, () => false)
 
   if (!online) return 'offline'
-  // What was heard for another user counts for nothing.
-  const probe = heard.uid === uid ? heard : fresh(uid)
-  return probe.caughtUp && probe.confirmed ? 'online' : 'syncing'
+  return settled ? 'online' : 'syncing'
 }

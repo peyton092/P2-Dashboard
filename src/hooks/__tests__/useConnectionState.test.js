@@ -38,6 +38,11 @@ const documentIs = (fromCache, hasPendingWrites = false) =>
 // Every listener has seen the change. The SDK says so after each change.
 const everyoneCaughtUp = () => act(() => liveInSync().next())
 
+// The probe is shared and stops a moment after the last component goes, at the end of
+// the task, so that a screen replaced by another does not start it again. This lets
+// that moment pass.
+const settle = () => act(async () => {})
+
 let online
 const goOffline = () => act(() => { online = false; window.dispatchEvent(new Event('offline')) })
 const goOnline = () => act(() => { online = true; window.dispatchEvent(new Event('online')) })
@@ -201,7 +206,7 @@ describe('useConnectionState with a signed in user', () => {
     expect(result.current).toBe('offline')
   })
 
-  it('listens again for another user, and does not carry the first user answer over', () => {
+  it('listens again for another user, and does not carry the first user answer over', async () => {
     const { result, rerender } = renderHook(() => useConnectionState())
     documentIs(false)
     everyoneCaughtUp()
@@ -210,6 +215,7 @@ describe('useConnectionState with a signed in user', () => {
 
     session.value = { uid: 'user-2' }
     rerender()
+    await settle()
 
     expect(first.live).toBe(false)
     expect(liveDocument().ref.path).toBe('users/user-2')
@@ -231,15 +237,93 @@ describe('useConnectionState with a signed in user', () => {
     expect(sdk.inSync).toHaveLength(1)
   })
 
-  it('stops listening when the component goes away', () => {
+  it('stops listening when the component goes away', async () => {
     const { unmount } = renderHook(() => useConnectionState())
     expect(liveDocument()).toBeDefined()
     expect(liveInSync()).toBeDefined()
 
     unmount()
+    await settle()
 
     expect(sdk.documents.every((listener) => !listener.live)).toBe(true)
     expect(sdk.inSync.every((listener) => !listener.live)).toBe(true)
+  })
+
+  // Each page header has a chip and each screen is a new component. A probe of a chip's
+  // own would start from nothing on every navigation, read the cached copy of the
+  // document first, and show Syncing until the server answered.
+  describe('sharing the probe between screens', () => {
+    it('starts one probe for the components that ask, and tells each of them what it hears', () => {
+      const first = renderHook(() => useConnectionState())
+      const second = renderHook(() => useConnectionState())
+      expect(sdk.documents).toHaveLength(1)
+      expect(sdk.inSync).toHaveLength(1)
+
+      documentIs(false)
+      everyoneCaughtUp()
+
+      expect(first.result.current).toBe('online')
+      expect(second.result.current).toBe('online')
+    })
+
+    it('starts a component that arrives later from what is already known, so that it never shows Syncing', () => {
+      renderHook(() => useConnectionState())
+      documentIs(false)
+      everyoneCaughtUp()
+
+      const seen = []
+      renderHook(() => {
+        const state = useConnectionState()
+        seen.push(state)
+        return state
+      })
+
+      expect(seen.length).toBeGreaterThan(0)
+      expect(seen.every((state) => state === 'online')).toBe(true)
+    })
+
+    it('keeps the probe running when one screen replaces another', async () => {
+      const screen = renderHook(() => useConnectionState())
+      documentIs(false)
+      everyoneCaughtUp()
+
+      // The old screen unmounts and the new one mounts in the same commit.
+      screen.unmount()
+      const next = renderHook(() => useConnectionState())
+      await settle()
+
+      expect(sdk.documents).toHaveLength(1)
+      expect(liveDocument()).toBeDefined()
+      expect(next.result.current).toBe('online')
+    })
+
+    it('stops the probe when the last component has gone, and not before', async () => {
+      const first = renderHook(() => useConnectionState())
+      const second = renderHook(() => useConnectionState())
+
+      first.unmount()
+      await settle()
+      expect(liveDocument()).toBeDefined()
+      expect(liveInSync()).toBeDefined()
+
+      second.unmount()
+      await settle()
+      expect(liveDocument()).toBeUndefined()
+      expect(liveInSync()).toBeUndefined()
+    })
+
+    it('starts again from nothing for a component that asks after the probe was stopped', async () => {
+      const first = renderHook(() => useConnectionState())
+      documentIs(false)
+      everyoneCaughtUp()
+      first.unmount()
+      await settle()
+
+      const again = renderHook(() => useConnectionState())
+
+      expect(sdk.documents).toHaveLength(2)
+      expect(again.result.current).toBe('syncing')
+    })
   })
 
   it('stops listening to the browser when the component goes away', () => {
