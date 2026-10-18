@@ -27,7 +27,7 @@ export default function MobileNav({
     <>
       <nav
         aria-label="Mobile navigation"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/10"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-(--z-nav) border-t border-white/10"
         style={{
           backgroundColor: 'oklch(0.165 0 0)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',

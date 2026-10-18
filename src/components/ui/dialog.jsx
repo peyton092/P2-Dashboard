@@ -67,12 +67,12 @@ function Dialog({ open, onClose, title, description, children, size = "sm", init
       <DialogPrimitive.Portal>
         <DialogPrimitive.Backdrop
           data-slot="dialog-scrim"
-          className="fixed inset-0 z-[60] bg-black/70 duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none" />
+          className="fixed inset-0 z-(--z-dialog) bg-black/70 duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none" />
         {/* The viewport scrolls, so a dialog taller than the screen can be read to
             the end, and m-auto on the panel centers it when it is not. */}
         <DialogPrimitive.Viewport
           data-slot="dialog-viewport"
-          className="fixed inset-0 z-[60] flex overflow-y-auto overscroll-contain p-4">
+          className="fixed inset-0 z-(--z-dialog) flex overflow-y-auto overscroll-contain p-4">
           <DialogPrimitive.Popup
             data-slot="dialog-popup"
             aria-modal="true"

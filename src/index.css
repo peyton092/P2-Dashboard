@@ -102,6 +102,18 @@
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
     --dur-fast: 120ms;
     --dur-base: 160ms;
+
+    /* Stacking, lowest first. Everything that floats above the page takes its
+       z-index from this scale, as z-(--z-popup) and so on, and not from a number
+       of its own, so that a layer which opens from inside another can be placed
+       above it. nav is the mobile bar, dialog the scrim and the panel of a dialog,
+       popup a list that opens from a control and can open from inside a dialog,
+       palette the command palette, and toast a message about what just happened. */
+    --z-nav: 50;
+    --z-dialog: 60;
+    --z-popup: 70;
+    --z-palette: 90;
+    --z-toast: 100;
 }
 
 /* The dark theme. index.html puts this class on the document root, so it also

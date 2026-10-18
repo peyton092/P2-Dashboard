@@ -32,7 +32,7 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={toast}>
       {children}
       <div
-        className="fixed z-[100] bottom-4 right-4 left-4 sm:left-auto flex flex-col gap-2 pointer-events-none"
+        className="fixed z-(--z-toast) bottom-4 right-4 left-4 sm:left-auto flex flex-col gap-2 pointer-events-none"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         aria-live="polite"
       >

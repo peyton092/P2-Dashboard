@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { useRef, useState } from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { axe } from '@/test/axe'
 import { Dialog, DialogBody, DialogFooter } from '../dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select'
 
 afterEach(cleanup)
 
@@ -24,6 +27,33 @@ function press(el) {
   fireEvent.pointerUp(el, { button: 0, pointerType: 'mouse' })
   fireEvent.mouseUp(el, { button: 0 })
   fireEvent.click(el, { button: 0 })
+}
+
+// jsdom has no layout, so it cannot say which of two layers is on top. What an element
+// asks for can be read: a class such as z-(--z-popup), whose number is the scale in
+// src/index.css, or a number written out. The browser check of the real stacking is in
+// the task 3 fix round report.
+const scale = Object.fromEntries(
+  [...readFileSync(resolve(import.meta.dirname, '../../../index.css'), 'utf8').matchAll(/--z-([a-z]+):\s*(\d+)\s*;/g)]
+    .map(([, name, value]) => [name, Number(value)]),
+)
+const layerOf = (el) => {
+  for (const name of el.classList) {
+    const fromScale = /^z-\(--z-([a-z]+)\)$/.exec(name)
+    if (fromScale) return scale[fromScale[1]] ?? null
+    const written = /^z-(?:\[(\d+)\]|(\d+))$/.exec(name)
+    if (written) return Number(written[1] ?? written[2])
+  }
+  return null
+}
+// The highest layer that an element or any element around it asks for.
+const highestLayerAround = (el) => {
+  let top = null
+  for (let node = el; node; node = node.parentElement) {
+    const layer = layerOf(node)
+    if (layer != null && (top == null || layer > top)) top = layer
+  }
+  return top
 }
 
 // A page with an opener, the way a screen uses the dialog.
@@ -252,6 +282,66 @@ describe('Dialog', () => {
     render(<Page />)
     const dialog = await openIt()
     expect(dialog.classList.contains('max-w-sm')).toBe(true)
+  })
+})
+
+describe('a Select inside a dialog', () => {
+  // A controlled select with a readout of what was picked, as a form in a dialog has.
+  const TradeSelect = () => {
+    const [trade, setTrade] = useState('electrical')
+    return (
+      <>
+        <span id="trade-label">Trade</span>
+        <Select value={trade} onValueChange={setTrade}>
+          <SelectTrigger aria-labelledby="trade-label">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="electrical">Electrical</SelectItem>
+            <SelectItem value="hvac">HVAC</SelectItem>
+          </SelectContent>
+        </Select>
+        <p data-testid="picked">{trade}</p>
+      </>
+    )
+  }
+
+  // Base UI draws a list that opens from inside a dialog into the dialog's own portal,
+  // after the viewport, so the list is only seen if its layer is above the viewport's.
+  it('opens its list in a layer above the dialog, so the list is not hidden under the panel', async () => {
+    const { baseElement } = render(
+      <Page>
+        <DialogBody><TradeSelect /></DialogBody>
+      </Page>,
+    )
+    await openIt()
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Trade' }))
+    const list = await screen.findByRole('listbox')
+
+    const scrim = baseElement.querySelector('[data-slot="dialog-scrim"]')
+    const viewport = baseElement.querySelector('[data-slot="dialog-viewport"]')
+    expect(layerOf(scrim), 'the scrim').toBe(layerOf(viewport))
+    expect(highestLayerAround(list), 'the list is in a layer above the dialog').toBeGreaterThan(layerOf(viewport))
+  })
+
+  it('takes a pick, and the dialog stays open', async () => {
+    const onClose = vi.fn()
+    render(
+      <Page onClose={onClose}>
+        <DialogBody><TradeSelect /></DialogBody>
+      </Page>,
+    )
+    const dialog = await openIt()
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Trade' }))
+    const option = await screen.findByRole('option', { name: 'HVAC' })
+    await act(async () => { fireEvent.mouseMove(option) })
+    await act(async () => { fireEvent.click(option) })
+
+    await waitFor(() => expect(screen.getByTestId('picked').textContent).toBe('hvac'))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBe(dialog)
   })
 })
 
