@@ -268,6 +268,22 @@ describe('Dialog', () => {
     }
   })
 
+  // The fade and the zoom come from data-open:animate-in and data-closed:animate-out.
+  // A bare motion-reduce:animate-none has the same specificity as they do and is
+  // written earlier in the stylesheet, so it loses, and the person who asked for less
+  // motion still gets the animation. motion-reduce:data-open:animate-none and its
+  // closed twin are written after them, so each state needs its own. The scrim and the
+  // panel are the two parts of the dialog that animate. jsdom cannot match the media
+  // query, so the browser check is in the task 3 fix round report.
+  it.each(['dialog-scrim', 'dialog-popup'])('turns the animation off in both states for a person who asked for less motion (%s)', async (slot) => {
+    const { baseElement } = render(<Page />)
+    await openIt()
+
+    const classes = [...baseElement.querySelector(`[data-slot="${slot}"]`).classList]
+    expect(classes).toContain('motion-reduce:data-open:animate-none')
+    expect(classes).toContain('motion-reduce:data-closed:animate-none')
+  })
+
   it.each([
     ['sm', 'max-w-sm'],
     ['md', 'max-w-lg'],

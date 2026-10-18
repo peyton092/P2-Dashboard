@@ -67,7 +67,7 @@ function Dialog({ open, onClose, title, description, children, size = "sm", init
       <DialogPrimitive.Portal>
         <DialogPrimitive.Backdrop
           data-slot="dialog-scrim"
-          className="fixed inset-0 z-(--z-dialog) bg-black/70 duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none" />
+          className="fixed inset-0 z-(--z-dialog) bg-black/70 duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none" />
         {/* The viewport scrolls, so a dialog taller than the screen can be read to
             the end, and m-auto on the panel centers it when it is not. */}
         <DialogPrimitive.Viewport
@@ -78,7 +78,7 @@ function Dialog({ open, onClose, title, description, children, size = "sm", init
             aria-modal="true"
             initialFocus={initialFocusRef}
             className={cn(
-              "relative m-auto w-full rounded-[10px] border border-white/10 bg-surface-2 text-foreground shadow-xl outline-none duration-150 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 motion-reduce:animate-none",
+              "relative m-auto w-full rounded-[10px] border border-white/10 bg-surface-2 text-foreground shadow-xl outline-none duration-150 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none",
               SIZE[size] ?? SIZE.sm
             )}>
             <div className="px-5 pt-5 pr-14 pb-4">
