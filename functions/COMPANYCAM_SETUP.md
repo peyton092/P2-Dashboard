@@ -100,7 +100,7 @@ call `qbCallback` or `ccCallback`.
 
 ## Files involved
 
-- `functions/index.js` — Cloud Functions code (ccAuth, ccCallback, ccDisconnect)
+- `functions/oauth-companycam.js` — Cloud Functions code (ccAuth, ccCallback, ccDisconnect), exported through `functions/index.js`
 - `src/components/SettingsPage.jsx` — Connect/Disconnect UI
 - `src/App.jsx` — callback routing on `?code=…&state=…` (no `realmId`)
 - Firestore: `cc_config/tokens` — connection state (read by SettingsPage)

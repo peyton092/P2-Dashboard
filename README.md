@@ -33,7 +33,13 @@ src/
   hooks/useFirestore.js        # All collection subscriptions + mutations
   lib/                         # Invoice/CO PDF generators
 functions/
-  index.js                     # Cloud Functions — QB OAuth (qbAuth/qbCallback/qbDisconnect) + CompanyCam OAuth (ccAuth/ccCallback/ccDisconnect) + photo sync (ccSyncPhotos/ccSyncPhotosScheduled)
+  index.js                     # Cloud Functions entry point — re-exports every function
+  oauth-quickbooks.js          # QB OAuth (qbAuth/qbCallback/qbDisconnect)
+  oauth-companycam.js          # CompanyCam OAuth (ccAuth/ccCallback/ccDisconnect)
+  companycam-sync.js           # Photo sync (ccSyncPhotos/ccSyncPhotosScheduled)
+  push.js                      # Push fan out (onNotificationCreated)
+  lib/                         # Shared code — Admin init, secrets, config, role/scope/push-target rules, authz guards
+  test/                        # Unit tests (cd functions && npm test)
   QUICKBOOKS_SETUP.md          # Step-by-step QB connect setup
   COMPANYCAM_SETUP.md          # Step-by-step CompanyCam connect setup
   scripts/grant-public-invoker.js  # IAM helper for Firebase callables

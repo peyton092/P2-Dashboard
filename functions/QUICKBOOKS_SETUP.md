@@ -86,7 +86,7 @@ You should be redirected to Intuit, asked to pick the company file, and bounced 
 
 ## Files involved
 
-- `functions/index.js` — Cloud Functions code (qbAuth, qbCallback, qbDisconnect)
+- `functions/oauth-quickbooks.js` — Cloud Functions code (qbAuth, qbCallback, qbDisconnect), exported through `functions/index.js`
 - `src/components/SettingsPage.jsx` — Connect/Disconnect UI
 - `src/App.jsx` — `qbCallback` wiring on `?code=…&state=…&realmId=…` URL
 - Firestore: `qb_config/tokens` — connection state (read by SettingsPage)
