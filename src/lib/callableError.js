@@ -13,7 +13,12 @@
 // other error that carries a code, such as a sign in or storage one, gets the fallback.
 //
 // An error with no code at all is not the SDK's. This app threw it, in words meant for the
-// person, and it is shown as it is.
+// person, and it is shown as it is. Two kinds of error have no code either and are not that:
+// a runtime exception (a TypeError such as "Cannot read properties of undefined (reading
+// 'x')", a ReferenceError, a RangeError, a SyntaxError, an EvalError or a URIError), whose
+// words are developer text and get the fallback, and a failed fetch ("Failed to fetch" in
+// Chrome, "Load failed" in Safari, "NetworkError when attempting to fetch resource" in
+// Firefox), whose words are the browser's and are told as the server not being reached.
 const statusName = (text) => String(text).toLowerCase().replace(/^functions\//, '').replace(/_/g, '-')
 
 const SERVER_UNREACHABLE = 'Could not reach the server. Try again.'
@@ -28,9 +33,18 @@ const FIRESTORE_SENTENCES = {
   'resource-exhausted': 'Too many requests right now. Wait a moment and try again.',
 }
 
+const FETCH_FAILURE = /^(failed to fetch|load failed|networkerror when attempting to fetch resource)\.?$/i
+const RUNTIME_EXCEPTIONS = ['TypeError', 'ReferenceError', 'RangeError', 'SyntaxError', 'EvalError', 'URIError']
+const isRuntimeException = (err) =>
+  err instanceof TypeError || err instanceof ReferenceError || err instanceof RangeError
+  || err instanceof SyntaxError || err instanceof EvalError || err instanceof URIError
+  || RUNTIME_EXCEPTIONS.includes(err?.name)
+
 export function callableMessage(err, fallback) {
   const code = typeof err?.code === 'string' ? err.code : null
   if (code !== null && !code.startsWith('functions/')) return FIRESTORE_SENTENCES[statusName(code)] ?? fallback
+  if (typeof err?.message === 'string' && FETCH_FAILURE.test(err.message.trim())) return SERVER_UNREACHABLE
+  if (code === null && isRuntimeException(err)) return fallback
   const bareCode = code !== null && statusName(err.message) === statusName(code)
   return err?.message && !bareCode ? err.message : fallback
 }

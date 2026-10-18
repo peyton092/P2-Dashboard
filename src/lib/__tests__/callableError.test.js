@@ -116,3 +116,71 @@ describe('callableMessage for a Firestore error', () => {
     expect(callableMessage(new Error('You must be signed in.'), FALLBACK)).toBe('You must be signed in.')
   })
 })
+
+// An error with no code is shown as it is when this app threw it in words for a person. A
+// runtime exception has no code either, and neither has a failed fetch, and what they say is
+// developer or browser text: "Cannot read properties of undefined (reading 'x')", "Failed to
+// fetch". The first gets the fallback, the second says the server could not be reached.
+describe('callableMessage for a runtime exception or a failed fetch', () => {
+  it.each([
+    ['a TypeError', new TypeError("Cannot read properties of undefined (reading 'x')")],
+    ['a ReferenceError', new ReferenceError('jobs is not defined')],
+    ['a RangeError', new RangeError('Invalid array length')],
+    ['a SyntaxError', new SyntaxError('Unexpected token < in JSON at position 0')],
+    ['an EvalError', new EvalError('Refused to evaluate a string as JavaScript')],
+    ['a URIError', new URIError('URI malformed')],
+  ])('shows only the fallback for %s', (_name, err) => {
+    expect(callableMessage(err, FALLBACK)).toBe(FALLBACK)
+  })
+
+  it('shows only the fallback for the exceptions the engine itself throws', () => {
+    const thrown = []
+    // A ReferenceError has to come from a name that is not there.
+    // eslint-disable-next-line no-undef
+    for (const crash of [() => null.x, () => undefinedName, () => new Array(-1), () => JSON.parse('{')]) {
+      try { crash() } catch (err) { thrown.push(err) }
+    }
+    expect(thrown.map((err) => err.name)).toEqual(['TypeError', 'ReferenceError', 'RangeError', 'SyntaxError'])
+    for (const err of thrown) expect(callableMessage(err, FALLBACK)).toBe(FALLBACK)
+  })
+
+  it('shows only the fallback for a subclass of one of them, and for one that only says its name', () => {
+    class BadInput extends TypeError {}
+    expect(callableMessage(new BadInput('Bad input.'), FALLBACK)).toBe(FALLBACK)
+    expect(callableMessage(Object.assign(new Error('Cannot read properties of null'), { name: 'TypeError' }), FALLBACK)).toBe(FALLBACK)
+  })
+
+  it.each([
+    ['Chrome', new TypeError('Failed to fetch')],
+    ['Safari', new TypeError('Load failed')],
+    ['Firefox', new TypeError('NetworkError when attempting to fetch resource.')],
+  ])('says the server could not be reached for a failed fetch in %s', (_browser, err) => {
+    expect(callableMessage(err, FALLBACK)).toBe('Could not reach the server. Try again.')
+  })
+
+  it('reads the words of a failed fetch whatever their casing and whatever the full stop, and from any kind of error', () => {
+    expect(callableMessage(new Error('failed to fetch'), FALLBACK)).toBe('Could not reach the server. Try again.')
+    expect(callableMessage(new Error('NetworkError when attempting to fetch resource'), FALLBACK)).toBe('Could not reach the server. Try again.')
+    expect(callableMessage(new Error('  Load failed.  '), FALLBACK)).toBe('Could not reach the server. Try again.')
+    expect(callableMessage({ message: 'Failed to fetch' }, FALLBACK)).toBe('Could not reach the server. Try again.')
+  })
+
+  it('does not take a sentence for a failed fetch just because it mentions one', () => {
+    expect(callableMessage(new Error('Could not load the file because the download failed.'), FALLBACK))
+      .toBe('Could not load the file because the download failed.')
+    expect(callableMessage(new Error('Upload failed: the file is too big.'), FALLBACK)).toBe('Upload failed: the file is too big.')
+  })
+
+  it('still shows the words of a plain error this app threw, and of one with its own class', () => {
+    expect(callableMessage(new Error('You must be signed in.'), FALLBACK)).toBe('You must be signed in.')
+    class UploadError extends Error {}
+    expect(callableMessage(new UploadError('That file type is not allowed.'), FALLBACK)).toBe('That file type is not allowed.')
+  })
+
+  it('leaves an error that carries a code to what its code says', () => {
+    expect(callableMessage(Object.assign(new TypeError('Failed to fetch'), { code: 'unavailable' }), FALLBACK)).toBe('Could not reach the server. Try again.')
+    expect(callableMessage(Object.assign(new TypeError('Cannot read properties of null'), { code: 'internal' }), FALLBACK)).toBe(FALLBACK)
+    expect(callableMessage(sdkError('failed-precondition', 'This change order has already been decided.'), FALLBACK))
+      .toBe('This change order has already been decided.')
+  })
+})
