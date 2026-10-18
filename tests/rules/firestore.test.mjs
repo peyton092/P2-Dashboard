@@ -130,7 +130,7 @@ describe('firestore rules', () => {
     })
 
     it('internal writes users/x with role builder succeeds', async () => {
-      await assertSucceeds(setDoc(doc(t.asStaff('s1'), 'users/x'), { role: 'builder' }))
+      await assertSucceeds(setDoc(doc(t.asStaff('s1'), 'users/x'), { role: 'builder', tenantId: 'qbs' }))
     })
 
     it('owner writes users/x with role owner succeeds', async () => {
@@ -165,6 +165,76 @@ describe('firestore rules', () => {
       await t.seed((db) => setDoc(doc(db, 'users/x'), { role: 'client' }))
       await assertFails(deleteDoc(doc(t.asStaff('s1'), 'users/x')))
       await assertSucceeds(deleteDoc(doc(t.asOwner('o1'), 'users/x')))
+    })
+
+    // Internal staff manage builder and client records. They cannot rewrite the
+    // record of an owner or of other staff (onUserWritten would turn that into a
+    // demotion and a sign out), and a builder always needs a real builder tenant.
+    describe('internal staff and existing records', () => {
+      const seedUsers = () =>
+        t.seed(async (db) => {
+          await setDoc(doc(db, 'users/o1'), { role: 'owner', displayName: 'Jesse' })
+          await setDoc(doc(db, 'users/i1'), { role: 'internal', displayName: 'Ian' })
+          await setDoc(doc(db, 'users/c1'), { role: 'client', clientJobIds: ['QBS-001'] })
+          await setDoc(doc(db, 'users/b1'), { role: 'builder', tenantId: 'qbs' })
+        })
+
+      it('internal updates an existing owner doc to client fails, set or merge', async () => {
+        await seedUsers()
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/o1'), { role: 'client', clientJobIds: [] }))
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/o1'), { role: 'client' }, { merge: true }))
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/o1'), { role: 'builder', tenantId: 'qbs' }))
+      })
+
+      it('internal updates an existing internal doc to client fails, set or merge', async () => {
+        await seedUsers()
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/i1'), { role: 'client', clientJobIds: [] }))
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/i1'), { role: 'client' }, { merge: true }))
+      })
+
+      it('internal updates an existing client doc (clientJobIds) succeeds', async () => {
+        await seedUsers()
+        await assertSucceeds(
+          setDoc(doc(t.asStaff('s1'), 'users/c1'), { role: 'client', clientJobIds: ['QBS-001', 'QBS-002'] }),
+        )
+        await assertSucceeds(setDoc(doc(t.asStaff('s1'), 'users/c1'), { clientJobIds: ['QBS-002'] }, { merge: true }))
+      })
+
+      it('internal updates an existing builder doc to the other builder tenant succeeds', async () => {
+        await seedUsers()
+        await assertSucceeds(setDoc(doc(t.asStaff('s1'), 'users/b1'), { tenantId: 'vision' }, { merge: true }))
+      })
+
+      it('internal creates a builder doc in either builder tenant succeeds', async () => {
+        await assertSucceeds(setDoc(doc(t.asStaff('s1'), 'users/new1'), { role: 'builder', tenantId: 'qbs' }))
+        await assertSucceeds(setDoc(doc(t.asStaff('s1'), 'users/new2'), { role: 'builder', tenantId: 'vision' }))
+      })
+
+      it('internal creates a builder with tenantId p2-core fails', async () => {
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/new1'), { role: 'builder', tenantId: 'p2-core' }))
+      })
+
+      it('internal creates a builder with another tenant or none fails', async () => {
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/new1'), { role: 'builder', tenantId: 'acme' }))
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/new2'), { role: 'builder' }))
+      })
+
+      it('internal moves an existing builder or client doc to a builder in p2-core fails', async () => {
+        await seedUsers()
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/b1'), { tenantId: 'p2-core' }, { merge: true }))
+        await assertFails(setDoc(doc(t.asStaff('s1'), 'users/c1'), { role: 'builder', tenantId: 'p2-core' }))
+      })
+
+      it('owner demotes an internal to client succeeds', async () => {
+        await seedUsers()
+        await assertSucceeds(setDoc(doc(t.asOwner('o2'), 'users/i1'), { role: 'client', clientJobIds: [] }))
+      })
+
+      it('owner rewrites any record, including another owner and a builder tenant', async () => {
+        await seedUsers()
+        await assertSucceeds(setDoc(doc(t.asOwner('o2'), 'users/o1'), { role: 'internal' }))
+        await assertSucceeds(setDoc(doc(t.asOwner('o2'), 'users/b1'), { role: 'builder', tenantId: 'p2-core' }))
+      })
     })
 
     it('user can read own users doc', async () => {

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { validateNewUser } from '../lib/users-validate.js'
+import { validateNewUser, tenantForRole } from '../lib/users-validate.js'
 
 // Messages are shown to the owner as they are, so they are pinned word for word.
 const MSG = {
@@ -183,6 +183,27 @@ describe('validateNewUser: client job ids', () => {
   it('checks the pattern after trimming and upper casing', () => {
     assert.equal(validateNewUser({ ...owner, role: 'client', clientJobIds: ['  qbs-001'] }).ok, true)
     assert.equal(validateNewUser({ ...owner, role: 'client', clientJobIds: ['Qbs-001'] }).ok, true)
+  })
+})
+
+describe('tenantForRole', () => {
+  it('keeps qbs or vision for a builder', () => {
+    assert.equal(tenantForRole('builder', 'qbs'), 'qbs')
+    assert.equal(tenantForRole('builder', 'vision'), 'vision')
+  })
+
+  it('gives a builder with any other value no tenant, never a default one', () => {
+    for (const value of [undefined, null, '', 'p2-core', 'acme', 'QBS', 'Vision', ' qbs', 42, ['qbs'], {}]) {
+      assert.equal(tenantForRole('builder', value), null)
+    }
+  })
+
+  it('puts every other role in p2-core, whatever tenant was given', () => {
+    for (const role of ['owner', 'internal', 'client', null, undefined, 'admin']) {
+      for (const value of ['qbs', 'vision', 'acme', '', null, undefined, 42]) {
+        assert.equal(tenantForRole(role, value), 'p2-core')
+      }
+    }
   })
 })
 

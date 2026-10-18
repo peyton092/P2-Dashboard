@@ -307,6 +307,37 @@ describe('CreateUserModal submit', () => {
     }
   })
 
+  it('treats the status name the SDK uses when the server sent no message as a bare code too', async () => {
+    // A reply with a status but no message gives "INTERNAL" or "NOT_FOUND" (upper case,
+    // with underscores) for the code "functions/internal" or "functions/not-found".
+    openModal()
+    fill('Email', 'pat@example.com')
+    const cases = [
+      ['internal', 'INTERNAL'],
+      ['not-found', 'NOT_FOUND'],
+      ['deadline-exceeded', 'DEADLINE_EXCEEDED'],
+      ['permission-denied', 'Permission-Denied'],
+      ['unauthenticated', 'Unauthenticated'],
+    ]
+    for (const [code, message] of cases) {
+      mocks.callable.mockRejectedValueOnce(Object.assign(new Error(message), { code: `functions/${code}` }))
+      submit()
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toBe('Could not create the account. Try again.')
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Create Account' }).disabled).toBe(false))
+    }
+  })
+
+  it('still shows a real message that merely starts with the code name', async () => {
+    mocks.callable.mockRejectedValue(
+      Object.assign(new Error('Internal accounts need an owner.'), { code: 'functions/internal' }),
+    )
+    openModal()
+    fill('Email', 'pat@example.com')
+    submit()
+    expect((await screen.findByRole('alert')).textContent).toBe('Internal accounts need an owner.')
+  })
+
   it('shows the message the function sent, whatever its code', async () => {
     mocks.callable.mockRejectedValue(Object.assign(new Error('Owner access required.'), { code: 'functions/permission-denied' }))
     openModal()

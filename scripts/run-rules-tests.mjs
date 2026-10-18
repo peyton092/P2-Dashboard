@@ -1,5 +1,9 @@
 // Runs the Firestore/Storage rules tests inside the Firebase emulators.
 // Requires Java 17+ for the emulators (CI installs Java 21).
+//
+// The test files share one emulator, and each clears its data between tests, so
+// they run one file at a time (--test-concurrency=1). Run in parallel, one
+// file's clearFirestore() wipes the fixtures another file has just seeded.
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
@@ -13,7 +17,7 @@ const result = spawnSync(
     'emulators:exec',
     '--only', 'firestore,storage',
     '--project', 'p2-dashboard',
-    'node --test tests/rules/*.test.mjs',
+    'node --test --test-concurrency=1 tests/rules/*.test.mjs',
   ],
   { cwd: root, stdio: 'inherit', shell: false },
 )

@@ -11,6 +11,18 @@ import { VALID_ROLES } from './roles.js'
 const BUILDER_TENANTS = Object.freeze(['qbs', 'vision'])
 const CORE_TENANT = 'p2-core'
 
+// The one rule for which tenant an account of this role may have, shared by
+// createUser (validateNewUser below) and by the claims sync, so the two cannot
+// drift apart. A builder keeps qbs or vision and otherwise has no tenant (null):
+// there is no default builder tenant, because putting a builder into qbs by
+// default would grant access from a guess. Every other role is always p2-core,
+// whatever was stored. `role` may be anything (a document with no valid role
+// is simply not a builder).
+export function tenantForRole(role, tenantId) {
+  if (role !== 'builder') return CORE_TENANT
+  return BUILDER_TENANTS.includes(tenantId) ? tenantId : null
+}
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const JOB_ID_PATTERN = /^[A-Z]+-\d{3}$/
 
@@ -42,13 +54,8 @@ export function validateNewUser(input) {
 
   const displayName = (typeof source.displayName === 'string' ? source.displayName.trim() : '') || email
 
-  let tenantId = CORE_TENANT
-  if (role === 'builder') {
-    if (typeof source.tenantId !== 'string' || !BUILDER_TENANTS.includes(source.tenantId)) {
-      return fail('Choose a builder tenant.')
-    }
-    tenantId = source.tenantId
-  }
+  const tenantId = tenantForRole(role, source.tenantId)
+  if (tenantId === null) return fail('Choose a builder tenant.')
 
   let clientJobIds = []
   if (role === 'client') {

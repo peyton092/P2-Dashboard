@@ -56,9 +56,18 @@ service cloud.firestore {
     match /users/{uid} {
       allow read:  if signedIn() && (request.auth.uid == uid || isStaff());
       // Owners write any record. Internal staff may only write builder or
-      // client records, so they cannot mint owners or other staff.
+      // client records: the record written must be one, and so must the record
+      // it replaces (a new record has none), so they can neither mint owners or
+      // other staff nor rewrite one into a builder or client, which onUserWritten
+      // would turn into a demotion and a sign out. A builder record needs a
+      // real builder tenant, so a builder cannot be pointed at p2-core or at a
+      // tenant that does not exist.
       allow write: if isOwner()
-        || (isStaff() && request.resource.data.role in ['builder', 'client']);
+        || (isStaff()
+            && request.resource.data.role in ['builder', 'client']
+            && (resource == null || resource.data.role in ['builder', 'client'])
+            && (request.resource.data.role != 'builder'
+                || request.resource.data.tenantId in ['qbs', 'vision']));
       // Builders accept Terms of Access as themselves.
       match /termsAcceptances/{version} {
         allow read, write: if signedIn() && (request.auth.uid == uid || isStaff());

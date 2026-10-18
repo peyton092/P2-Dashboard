@@ -410,10 +410,14 @@ const CREATE_FAILED = 'Could not create the account. Try again.'
 
 // What the owner reads when createUser fails. The function's own errors carry a
 // sentence meant for people (HttpsError messages), so they are shown as they are.
-// When the request never got a reply the Functions SDK uses the bare code as the
-// message ("internal"), which says nothing, so that gets the plain fallback.
+// When the request never got a reply, or the reply had a status but no message,
+// the Functions SDK uses the code ("internal") or the status name ("INTERNAL",
+// "NOT_FOUND") as the message, which says nothing, so that gets the plain fallback.
+// "functions/not-found", "NOT_FOUND" and "Not-Found" all name the same status.
+const statusName = (text) => String(text).toLowerCase().replace(/^functions\//, '').replace(/_/g, '-')
+
 function createFailureMessage(err) {
-  const bareCode = typeof err?.code === 'string' && err.message === err.code.replace(/^functions\//, '')
+  const bareCode = typeof err?.code === 'string' && statusName(err.message) === statusName(err.code)
   return err?.message && !bareCode ? err.message : CREATE_FAILED
 }
 

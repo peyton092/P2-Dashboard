@@ -53,12 +53,13 @@
 //                   random password and the matching claims, writes
 //                   users/{uid}, and returns { uid }. The browser then sends
 //                   the person a password reset email so they set their own.
-//    onUserWritten  Firestore trigger on users/{uid}. Sets the Auth custom
-//                   claims { role, tenantId, clientJobIds } from the document,
-//                   adds a client's uid to the clientUids of their jobs (and
-//                   removes it when they lose a job or the document goes), and
-//                   revokes refresh tokens when an existing role changes or is
-//                   removed.
+//    onUserWritten  Firestore trigger on users/{uid}. Reads the document as it
+//                   is now (events can arrive late or out of order), sets the
+//                   Auth custom claims { role, tenantId, clientJobIds } from it,
+//                   links a client's uid into the clientUids of every job they
+//                   list and out of any job that lists them but no longer
+//                   should (all of them when the document goes), and revokes
+//                   refresh tokens when an existing role changes or is removed.
 //
 //  Required Firebase secrets (set with `firebase functions:secrets:set`):
 //    QB_CLIENT_ID       — Intuit app's Client ID

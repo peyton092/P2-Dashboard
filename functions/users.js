@@ -23,7 +23,7 @@ import { db } from './lib/admin.js'
 import { requireOwner } from './lib/authz.js'
 import { region } from './lib/config.js'
 import { validateNewUser } from './lib/users-validate.js'
-import { claimsPatchFor } from './lib/users-sync.js'
+import { claimsPatchFor, jobLinkChanges } from './lib/users-sync.js'
 
 export { validateNewUser }
 
@@ -111,11 +111,17 @@ async function undoCreate(auth, uid, documentAttempted) {
 // claims in the user's ID token and to the jobs' clientUids that the Firestore
 // rules read.
 //
-// Everything it does is idempotent. A failed run is logged and not retried.
-// Saving the document again sets the claims again, but a client is linked to
-// jobs only when their list of job ids changes, so anything else (a job created
-// after its client, say) is put right by the owner backfill, which recomputes
-// every job's clientUids from the users documents.
+// It works from the document as it is now. Events can be delivered late or out
+// of order, so the event's own copy of the document may already be out of date,
+// and acting on it could put an old role back. The document is read again and
+// everything (claims, job links) follows that, so whichever event runs last
+// leaves the latest state in place. Only the previous role, which decides
+// whether to revoke, comes from the event.
+//
+// Everything it does is idempotent. A failed run is logged and not retried
+// (a retry would repeat revokeRefreshTokens), and saving the document again runs
+// it again: the claims are set again and every job the client lists is checked
+// and linked if it is missing.
 export const onUserWritten = onDocumentWritten({ document: 'users/{uid}', region }, async (event) => {
   const change = event.data
   if (!change) {
@@ -124,15 +130,14 @@ export const onUserWritten = onDocumentWritten({ document: 'users/{uid}', region
   }
   const { uid } = event.params
   const before = change.before.exists ? change.before.data() : null
-  const after = change.after.exists ? change.after.data() : null
+
+  const latest = await change.after.ref.get()
+  const after = latest.exists ? latest.data() : null
   const patch = claimsPatchFor(before, after)
 
   // The two halves do not depend on each other, so one failing must not stop
   // the other (a failed claims write must not leave a removed client on a job).
-  const results = await Promise.allSettled([
-    syncClaims(uid, patch),
-    syncJobs(uid, patch, after === null),
-  ])
+  const results = await Promise.allSettled([syncClaims(uid, patch), syncJobs(uid, patch.jobIds)])
   const failed = results.find((result) => result.status === 'rejected')
   if (failed) throw failed.reason
 })
@@ -159,31 +164,40 @@ const BATCH_SIZE = 400
 const chunks = (list, size) =>
   Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, (i + 1) * size))
 
-// A job's `id` field (like QBS-001) is not its document id, so jobs are found by
-// querying it.
-async function jobsWithIds(ids) {
-  const refs = new Map()
-  for (const part of chunks(ids, JOB_ID_CHUNK)) {
-    const snap = await db.collection('jobs').where('id', 'in', part).get()
-    for (const doc of snap.docs) refs.set(doc.ref.path, doc.ref)
-  }
-  return refs
+// A job as jobLinkChanges reads it, plus the reference to write to.
+const jobOf = (doc) => {
+  const data = doc.data() ?? {}
+  return { ref: doc.ref, path: doc.ref.path, id: data.id, clientUids: data.clientUids }
 }
 
-// Adds the user to the clientUids of the jobs they gained and removes them from
-// the jobs they lost. When the document was deleted it also removes them from
-// every job that still lists them, whatever the old document said.
-async function syncJobs(uid, patch, deleted) {
-  const adds = await jobsWithIds(patch.addJobIds)
-  const removes = await jobsWithIds(patch.removeJobIds)
-  if (deleted) {
-    const snap = await db.collection('jobs').where('clientUids', 'array-contains', uid).get()
-    for (const doc of snap.docs) removes.set(doc.ref.path, doc.ref)
+// The jobs whose `id` field (like QBS-001, not the document id) is in ids.
+async function jobsWithIds(ids) {
+  const found = new Map()
+  for (const part of chunks(ids, JOB_ID_CHUNK)) {
+    const snap = await db.collection('jobs').where('id', 'in', part).get()
+    for (const doc of snap.docs) found.set(doc.ref.path, jobOf(doc))
   }
+  return [...found.values()]
+}
+
+// The jobs whose clientUids already list the user.
+async function jobsListing(uid) {
+  const snap = await db.collection('jobs').where('clientUids', 'array-contains', uid).get()
+  return snap.docs.map(jobOf)
+}
+
+// Brings the jobs in line with the ids the user is meant to have: links the user
+// to every one of those jobs that does not list them yet, and unlinks them from
+// every job that lists them but is not one of those. With no ids (not a client,
+// or the document is gone) that unlinks them everywhere.
+async function syncJobs(uid, jobIds) {
+  const wanted = await jobsWithIds(jobIds)
+  const linked = await jobsListing(uid)
+  const { add, remove } = jobLinkChanges(uid, jobIds, wanted, linked)
 
   const writes = [
-    ...[...adds.values()].map((ref) => [ref, FieldValue.arrayUnion(uid)]),
-    ...[...removes.values()].map((ref) => [ref, FieldValue.arrayRemove(uid)]),
+    ...add.map((job) => [job.ref, FieldValue.arrayUnion(uid)]),
+    ...remove.map((job) => [job.ref, FieldValue.arrayRemove(uid)]),
   ]
   for (const part of chunks(writes, BATCH_SIZE)) {
     const batch = db.batch()
