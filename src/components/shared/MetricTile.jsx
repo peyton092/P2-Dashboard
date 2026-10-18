@@ -9,6 +9,7 @@ export default function MetricTile({
   label,
   value,
   sub,
+  note,            // optional muted footnote line under `sub`
   Icon,
   accent = O,
   trend,           // 'up' | 'down' | 'flat' — visual cue only
@@ -86,6 +87,9 @@ export default function MetricTile({
             </p>
           )}
         </div>
+      )}
+      {note && (
+        <p className="text-[10px] text-zinc-500 leading-snug mt-1">{note}</p>
       )}
       {/* subtle bottom accent line on hover for clickable tiles */}
       {onClick && (

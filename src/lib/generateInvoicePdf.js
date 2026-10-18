@@ -2,6 +2,9 @@
 // so it only loads when a PDF is actually generated, keeping it out of the
 // initial app bundle.
 
+import { contractValue } from './money'
+import { BILLING_STATUS_LABEL } from './billing'
+
 const ORANGE     = [244, 121, 32]
 const BLACK      = [20, 20, 20]
 const GRAY       = [120, 120, 120]
@@ -26,7 +29,20 @@ function addDays(date, n) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+export const NO_CONTRACT_VALUE_ERROR = 'Job has no contract value'
+
+// Toast options for a failed generateInvoicePdf call, shared by its callers.
+export function invoicePdfErrorToast(e) {
+  const description = e?.message === NO_CONTRACT_VALUE_ERROR
+    ? 'Add a contract value to this job before generating an invoice.'
+    : 'Could not generate the invoice PDF. Try again.'
+  return { tone: 'error', title: 'Invoice not generated', description }
+}
+
 export async function generateInvoicePdf(job) {
+  const value = contractValue(job)
+  if (value === null) throw new Error(NO_CONTRACT_VALUE_ERROR)
+
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'pt', format: 'letter' })
   const W = 612
@@ -108,10 +124,12 @@ export async function generateInvoicePdf(job) {
   y += 20
 
   // ── Line items ────────────────────────────────────────────────────────────────
-  const contractValue = job.contractValue || 18000
   const lineItems = [
-    { desc: job.type || 'MEP Services', detail: `Project: ${job.id} — ${job.name || job.client}`, amount: contractValue },
+    { desc: job.type || 'MEP Services', detail: `Project: ${job.id} — ${job.name || job.client}`, amount: value },
   ]
+  const hasTax = typeof job.taxRate === 'number'
+  const taxAmount = hasTax ? value * job.taxRate : 0
+  const totalDue = value + taxAmount
 
   // Table header
   doc.setFillColor(240, 240, 240)
@@ -159,10 +177,12 @@ export async function generateInvoicePdf(job) {
   doc.setFontSize(9.5)
   doc.setTextColor(...GRAY)
   doc.text('Subtotal', tLabelX, y)
-  doc.text(money(contractValue), tValueX, y, { align: 'right' })
-  y += 16
-  doc.text('Tax (0%)', tLabelX, y)
-  doc.text('$0.00', tValueX, y, { align: 'right' })
+  doc.text(money(value), tValueX, y, { align: 'right' })
+  if (hasTax) {
+    y += 16
+    doc.text(`Tax (${Number((job.taxRate * 100).toFixed(3))}%)`, tLabelX, y)
+    doc.text(money(taxAmount), tValueX, y, { align: 'right' })
+  }
   y += 8
   doc.setDrawColor(...LIGHT_GRAY)
   doc.line(tLabelX, y, W - M, y)
@@ -172,7 +192,7 @@ export async function generateInvoicePdf(job) {
   doc.setFontSize(14)
   doc.setTextColor(...ORANGE)
   doc.text('TOTAL DUE', tLabelX, y)
-  doc.text(money(contractValue), tValueX, y, { align: 'right' })
+  doc.text(money(totalDue), tValueX, y, { align: 'right' })
   y += 30
 
   // ── Payment instructions ──────────────────────────────────────────────────────
@@ -199,14 +219,19 @@ export async function generateInvoicePdf(job) {
     doc.text(`Payment due within 30 days of invoice date.`, M, y)
   }
 
-  // ── Status badge (INVOICED) ──────────────────────────────────────────────────
-  doc.setFillColor(...GREEN)
-  doc.roundedRect(W - M - 76, 84, 76, 18, 4, 4, 'F')
+  // ── Status badge (from job.billingStatus) ────────────────────────────────────
+  const statusLabel = (BILLING_STATUS_LABEL[job.billingStatus] || BILLING_STATUS_LABEL['not-invoiced']).toUpperCase()
+  const statusColor = job.billingStatus === 'paid' ? GREEN
+    : job.billingStatus === 'invoiced' ? ORANGE
+    : GRAY
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
   doc.setCharSpace(1)
+  const badgeW = Math.max(76, doc.getTextWidth(statusLabel) + 20)
+  doc.setFillColor(...statusColor)
+  doc.roundedRect(W - M - badgeW, 84, badgeW, 18, 4, 4, 'F')
   doc.setTextColor(...WHITE)
-  doc.text('INVOICED', W - M - 38, 96, { align: 'center' })
+  doc.text(statusLabel, W - M - badgeW / 2, 96, { align: 'center' })
   doc.setCharSpace(0)
 
   // ── Footer ────────────────────────────────────────────────────────────────────

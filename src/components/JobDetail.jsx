@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import { useData } from '../use-data'
 import { useJobFiles } from '../hooks/useFirestore'
-import { generateInvoicePdf } from '../lib/generateInvoicePdf'
+import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
 import { BILLING_STATUS_LABEL } from '../lib/billing'
+import { useToast } from '@/components/ui/use-toast'
 import { classifyRisk, hasFailedInspection } from '../agent/scoring'
 import {
   ChevronLeftIcon, MapPinIcon, UserRoundCogIcon, HardHatIcon,
@@ -71,6 +72,7 @@ function TradeInspections({ trade, data }) {
 
 export default function JobDetail({ jobId, onBack }) {
   const { jobs = [], extras = [], materials = [], dailyReports = [] } = useData()
+  const toast = useToast()
   const job = useMemo(() => jobs.find(j => j.id === jobId), [jobs, jobId])
   const { files } = useJobFiles(job?._docId)
 
@@ -133,7 +135,7 @@ export default function JobDetail({ jobId, onBack }) {
                 <p className="text-sm text-zinc-400 mt-1">{job.client}{job.type ? ` · ${job.type}` : ''}</p>
               </div>
               {hasInvoice && (
-                <button onClick={() => generateInvoicePdf(job)} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
+                <button onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
                   <DownloadIcon size={13} /> Invoice PDF
                 </button>
               )}

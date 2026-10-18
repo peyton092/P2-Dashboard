@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../use-data'
 import { updateJob } from '../hooks/useFirestore'
 import { exportToCsv } from '../lib/exportCsv'
+import { contractValue, fmtMoney, sumContracts, sumInvoices, missingNote } from '../lib/money'
 import { ZONES, getZoneId } from '../agent/zones'
 import {
   PageHeader,
@@ -47,19 +48,9 @@ function isBillingReady(job) {
 function getMilestone(job) {
   return anyFinalPassed(job) ? 'Final Inspection' : 'Rough-In'
 }
-function getBillingPct(job) {
-  return anyFinalPassed(job) ? 0.30 : 0.70
-}
-function getContractValue(job) {
-  return Number(job.contractValue) || 18000
-}
-function getBillableAmount(job) {
-  return getContractValue(job) * getBillingPct(job)
-}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const fmt = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('en-US')
 function fmtCompact(n) {
   const v = Number(n) || 0
   if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`
@@ -161,7 +152,7 @@ export default function BillingQueue() {
     const invDate       = parseInvoiceDate(j.invoiceDate)
     const agingDays     = invDate ? daysSinceDate(invDate) : null
     const readySince    = j.lastStatusChange ? daysSinceDate(j.lastStatusChange) : null
-    const billable      = isReady ? getBillableAmount(j) : 0
+    const billable      = isReady ? contractValue(j) : null
     return {
       job: j,
       isReady,
@@ -189,27 +180,17 @@ export default function BillingQueue() {
       e.job.billingStatus === 'invoiced' && e.agingDays !== null && e.agingDays >= 30,
     )
 
+    const sumOf = (list, sumFn, kind) => {
+      const { total, missing } = sumFn(list.map(e => e.job))
+      return { amount: total, note: missingNote(missing, kind) }
+    }
+
     return {
-      ready: {
-        count: ready.length,
-        amount: ready.reduce((s, e) => s + e.billable, 0),
-      },
-      missingDocs: {
-        count: missingDocs.length,
-        amount: missingDocs.reduce((s, e) => s + e.billable, 0),
-      },
-      pendingApproval: {
-        count: pendingApproval.length,
-        amount: pendingApproval.reduce((s, e) => s + e.billable, 0),
-      },
-      invoicedThisMonth: {
-        count: invoicedThisMonth.length,
-        amount: invoicedThisMonth.reduce((s, e) => s + getContractValue(e.job) * 0.7, 0),
-      },
-      aging: {
-        count: aging.length,
-        amount: aging.reduce((s, e) => s + getContractValue(e.job) * 0.7, 0),
-      },
+      ready:             { count: ready.length,             ...sumOf(ready, sumContracts, 'contract') },
+      missingDocs:       { count: missingDocs.length,       ...sumOf(missingDocs, sumContracts, 'contract') },
+      pendingApproval:   { count: pendingApproval.length,   ...sumOf(pendingApproval, sumContracts, 'contract') },
+      invoicedThisMonth: { count: invoicedThisMonth.length, ...sumOf(invoicedThisMonth, sumInvoices, 'invoice') },
+      aging:             { count: aging.length,             ...sumOf(aging, sumInvoices, 'invoice') },
     }
   }, [enriched])
 
@@ -253,7 +234,7 @@ export default function BillingQueue() {
       )
     }
     const sorted = [...list]
-    if (sortBy === 'amount')      sorted.sort((a, b) => b.billable - a.billable)
+    if (sortBy === 'amount')      sorted.sort((a, b) => (b.billable ?? -1) - (a.billable ?? -1))
     else if (sortBy === 'aging')  sorted.sort((a, b) => (b.agingDays ?? -1) - (a.agingDays ?? -1))
     else if (sortBy === 'pm')     sorted.sort((a, b) => (a.job.pm || '').localeCompare(b.job.pm || ''))
     else if (sortBy === 'zone')   sorted.sort((a, b) => getZoneId(a.job).localeCompare(getZoneId(b.job)))
@@ -308,7 +289,7 @@ export default function BillingQueue() {
               { label: 'Name',        get: e => jobLabel(e.job) },
               { label: 'PM',          get: e => e.job.pm || '' },
               { label: 'Billing',     get: e => e.job.billingStatus || '' },
-              { label: 'Billable',    get: e => Math.round(e.billable || 0) },
+              { label: 'Billable',    get: e => (e.billable === null ? '' : Math.round(e.billable)) },
               { label: 'Invoice #',   get: e => e.job.invoiceNum || '' },
               { label: 'Invoice Date',get: e => e.job.invoiceDate || '' },
               { label: 'Aging (days)',get: e => e.agingDays ?? '' },
@@ -334,6 +315,7 @@ export default function BillingQueue() {
           Icon={CheckCircleIcon}
           emphasis={kpis.ready.count > 0 ? 'success' : 'mute'}
           sub={`${kpis.ready.count} job${kpis.ready.count === 1 ? '' : 's'}`}
+          note={kpis.ready.note}
         />
         <MetricTile
           label="Missing Documentation"
@@ -341,6 +323,7 @@ export default function BillingQueue() {
           Icon={FilePenLineIcon}
           emphasis={kpis.missingDocs.count > 0 ? 'warning' : 'success'}
           sub={kpis.missingDocs.count > 0 ? fmtCompact(kpis.missingDocs.amount) + ' on hold' : 'All packages clean'}
+          note={kpis.missingDocs.note}
         />
         <MetricTile
           label="Pending Approval"
@@ -354,6 +337,7 @@ export default function BillingQueue() {
           value={fmtCompact(kpis.invoicedThisMonth.amount)}
           Icon={ReceiptIcon}
           sub={`${kpis.invoicedThisMonth.count} invoice${kpis.invoicedThisMonth.count === 1 ? '' : 's'}`}
+          note={kpis.invoicedThisMonth.note}
         />
         <MetricTile
           label="Aging 30+"
@@ -361,6 +345,7 @@ export default function BillingQueue() {
           Icon={TimerIcon}
           emphasis={kpis.aging.count > 0 ? 'critical' : 'success'}
           sub={kpis.aging.count > 0 ? fmtCompact(kpis.aging.amount) + ' outstanding' : 'No overdue invoices'}
+          note={kpis.aging.note}
         />
       </section>
 
@@ -678,7 +663,7 @@ function BillingRow({ row }) {
       </TableCell>
       <TableCell className="text-zinc-200 truncate">{jobBuilder(job)}</TableCell>
       <TableCell align="right" className="font-bold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
-        {billable > 0 ? fmt(billable) : '—'}
+        {billable > 0 ? fmtMoney(billable) : '—'}
       </TableCell>
       <TableCell><BillingBadge status={job.billingStatus} /></TableCell>
       <TableCell><DocStatusPill hasDocs={hasDocs} milestone={milestone} /></TableCell>
@@ -754,7 +739,7 @@ function BillingCard({ row }) {
         </div>
         <div className="text-right shrink-0">
           <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
-            {billable > 0 ? fmt(billable) : '—'}
+            {billable > 0 ? fmtMoney(billable) : '—'}
           </p>
           <p className="text-[10px] text-zinc-400">{milestone} {anyFinalPassed(job) ? '30%' : '70%'}</p>
         </div>

@@ -6,7 +6,7 @@ import {
   approveExtra, updateExtra, addNotification, useJobFiles,
   addSubmit, useSubmitReplies, addSubmitReply, updateSubmit, addJobFile, addHistory,
 } from '../hooks/useFirestore'
-import { generateInvoicePdf } from '../lib/generateInvoicePdf'
+import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
 import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -355,6 +355,7 @@ const BILLING_META = {
 }
 
 function InvoiceRow({ job }) {
+  const toast = useToast()
   const meta = BILLING_META[job.billingStatus] || BILLING_META['not-invoiced']
   const hasInvoice = Boolean(job.invoiceNum)
   return (
@@ -380,7 +381,7 @@ function InvoiceRow({ job }) {
           </a>
         )}
         {hasInvoice && (
-          <Button variant="outline" className="h-8 px-2.5 text-[11px] gap-1.5 border-white/20 hover:bg-white/[0.05] text-zinc-200" onClick={() => generateInvoicePdf(job)}>
+          <Button variant="outline" className="h-8 px-2.5 text-[11px] gap-1.5 border-white/20 hover:bg-white/[0.05] text-zinc-200" onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }}>
             <DownloadIcon size={13} /> PDF
           </Button>
         )}
