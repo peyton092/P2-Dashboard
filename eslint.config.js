@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'functions/node_modules', '.superpowers', 'coverage']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -23,7 +23,37 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^[A-Z_]' }],
+    },
+  },
+  {
+    // Build-time constants injected by vite.config.js `define`.
+    files: ['src/**/*.{js,jsx}'],
+    languageOptions: {
+      globals: {
+        __APP_VERSION__: 'readonly',
+        __BUILD_DATE__: 'readonly',
+      },
+    },
+  },
+  {
+    // Node runtime: Cloud Functions, scripts, tests, and tool configs.
+    files: [
+      'functions/**/*.js',
+      'scripts/**/*.{js,mjs}',
+      'tests/**/*.{js,mjs}',
+      '*.config.js',
+      'vitest.config.js',
+    ],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
+    // Service workers run in a worker scope, not the window.
+    files: ['public/*.js'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.serviceworker },
     },
   },
 ])

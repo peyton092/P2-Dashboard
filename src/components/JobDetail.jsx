@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { useJobFiles } from '../hooks/useFirestore'
 import { generateInvoicePdf } from '../lib/generateInvoicePdf'
 import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'

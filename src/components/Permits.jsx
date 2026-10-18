@@ -3,7 +3,7 @@ import {
   FileTextIcon, ClockIcon, CheckCircleIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { updatePermit } from '../hooks/useFirestore'
 import { StatCard, InspBadge, JobBadge, iMeta } from './shared'
 

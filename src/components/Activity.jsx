@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { useHistory } from '../hooks/useFirestore'
 import { PageHeader, DataPanel, Pill, EmptyState } from './shared'
 import {

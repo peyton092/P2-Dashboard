@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'

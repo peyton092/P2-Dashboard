@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   collection, doc, onSnapshot, addDoc, updateDoc, setDoc,
-  query, orderBy, limit, serverTimestamp, where,
+  query, orderBy, limit, serverTimestamp,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db } from '../firebase'
@@ -153,36 +153,36 @@ export function useSubmits() {
 
 export function useJobFiles(jobDocId) {
   const [files, setFiles] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loadedFor, setLoadedFor] = useState(null)
 
   useEffect(() => {
-    if (!jobDocId) { setFiles([]); setLoading(false); return }
+    if (!jobDocId) return
     const q = query(collection(db, 'jobs', jobDocId, 'files'), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(q, snap => {
       setFiles(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, () => setLoading(false))
+      setLoadedFor(jobDocId)
+    }, () => setLoadedFor(jobDocId))
     return unsub
   }, [jobDocId])
 
-  return { files, loading }
+  return { files: jobDocId ? files : [], loading: !!jobDocId && loadedFor !== jobDocId }
 }
 
 export function useSubmitReplies(submitDocId) {
   const [replies, setReplies] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loadedFor, setLoadedFor] = useState(null)
 
   useEffect(() => {
-    if (!submitDocId) { setReplies([]); setLoading(false); return }
+    if (!submitDocId) return
     const q = query(collection(db, 'submits', submitDocId, 'replies'), orderBy('createdAt', 'asc'))
     const unsub = onSnapshot(q, snap => {
       setReplies(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
-      setLoading(false)
-    }, () => setLoading(false))
+      setLoadedFor(submitDocId)
+    }, () => setLoadedFor(submitDocId))
     return unsub
   }, [submitDocId])
 
-  return { replies, loading }
+  return { replies: submitDocId ? replies : [], loading: !!submitDocId && loadedFor !== submitDocId }
 }
 
 // ── Basic Mutations ───────────────────────────────────────────────────────────

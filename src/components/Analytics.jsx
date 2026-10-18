@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,

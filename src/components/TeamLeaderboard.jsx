@@ -107,20 +107,21 @@ async function patchScore(name, updates) {
   })
 }
 
+const reviewUrlRef = () => doc(db, 'app_settings', 'google_review')
+
 function useReviewUrl() {
   const [url, setUrl] = useState('')
   const [loaded, setLoaded] = useState(false)
-  const ref = doc(db, 'app_settings', 'google_review')
 
   useEffect(() => {
-    getDoc(ref).then(snap => {
+    getDoc(reviewUrlRef()).then(snap => {
       if (snap.exists()) setUrl(snap.data().url || '')
       setLoaded(true)
     }).catch(() => setLoaded(true))
   }, [])
 
   async function saveUrl(val) {
-    await setDoc(ref, { url: val, updatedAt: serverTimestamp() }, { merge: true })
+    await setDoc(reviewUrlRef(), { url: val, updatedAt: serverTimestamp() }, { merge: true })
     setUrl(val)
   }
 
@@ -202,7 +203,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
 
 // ── Per-person expandable card ─────────────────────────────────────────────────
 
-function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReview, onLogReferral, onLogBonus }) {
+function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral, onLogBonus }) {
   const [expanded, setExpanded] = useState(false)
   const [showReviewLink, setShowReviewLink] = useState(false)
   const { name, auto, man, totalPts } = entry
@@ -378,13 +379,14 @@ function PodiumCard({ name, pts, rank }) {
 export default function TeamLeaderboard() {
   const { dailyReports, loading: reportsLoading } = useDailyReports()
   const { scores, loading: scoresLoading } = useCrewScores()
-  const { url: reviewUrl, loaded: urlLoaded, saveUrl } = useReviewUrl()
+  const { url: reviewUrl, saveUrl } = useReviewUrl()
   const [adding, setAdding] = useState(null)
   const [showUrlEdit, setShowUrlEdit] = useState(false)
-  const [urlDraft, setUrlDraft] = useState('')
+  // null until the user edits; falls back to the saved URL.
+  const [urlEdit, setUrlEdit] = useState(null)
   const [savingUrl, setSavingUrl] = useState(false)
 
-  useEffect(() => { if (urlLoaded) setUrlDraft(reviewUrl) }, [urlLoaded, reviewUrl])
+  const urlDraft = urlEdit ?? reviewUrl
 
   const loading = reportsLoading || scoresLoading
 
@@ -411,12 +413,6 @@ export default function TeamLeaderboard() {
   const totalReports   = ranked.reduce((s, r) => s + r.auto.reportCount, 0)
   const monthLabel = new Date(CURRENT_MONTH + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
-  async function logReview(name) {
-    const man = scores[name] || {}
-    await patchScore(name, { googleReviews: (man.googleReviews || 0) + 1 })
-    setAdding(null)
-  }
-
   async function logReferral(name) {
     const man = scores[name] || {}
     await patchScore(name, { referrals: (man.referrals || 0) + 1 })
@@ -436,6 +432,7 @@ export default function TeamLeaderboard() {
   async function handleSaveUrl() {
     setSavingUrl(true)
     await saveUrl(urlDraft.trim())
+    setUrlEdit(null)
     setSavingUrl(false)
     setShowUrlEdit(false)
   }
@@ -493,7 +490,7 @@ export default function TeamLeaderboard() {
                 placeholder="https://g.page/r/YOUR_PLACE_ID/review"
                 className="flex-1 h-8 text-xs bg-white/10 border-white/20"
                 value={urlDraft}
-                onChange={e => setUrlDraft(e.target.value)}
+                onChange={e => setUrlEdit(e.target.value)}
               />
               <Button size="sm" className="h-8 text-xs" style={{ backgroundColor: O, color: '#fff' }}
                 disabled={savingUrl} onClick={handleSaveUrl}>
@@ -560,7 +557,6 @@ export default function TeamLeaderboard() {
               reviewUrl={reviewUrl}
               isAdding={adding?.name === entry.name ? adding : null}
               onSetAdding={setAdding}
-              onLogReview={logReview}
               onLogReferral={logReferral}
               onLogBonus={logBonus}
             />

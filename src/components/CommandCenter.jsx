@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '../firebase'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
   PageHeader,

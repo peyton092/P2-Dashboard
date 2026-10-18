@@ -1,5 +1,5 @@
 import { getZoneId, getZoneName, ZONES } from './zones'
-import { daysSince, hasFailedInspection, isBillingReady, isHvacStartupBlocked } from './scoring'
+import { daysSince, isBillingReady } from './scoring'
 
 // Deterministic alert ID so we can dedup in Firestore
 export function alertId(jobId, type) {

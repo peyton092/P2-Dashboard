@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect } from 'react'
-import { collection, getDocs, writeBatch, doc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { useState, useEffect } from 'react'
+import { DataContext } from './use-data'
+import { collection, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase'
 import { useJobs, useAllExtras, useNotifications, useSubs, useMaterials, useSubmits, useDailyReports, useUrgentItems, useSettings, useAgentAlerts } from './hooks/useFirestore'
 
@@ -29,7 +30,7 @@ const OLD_PM_MAP = {
   'David Park':     'Jeb Brooks',
 }
 
-export const STATIC_JOBS = [
+const STATIC_JOBS = [
   // ── QBS-001 Austin — CORE: elec rough-in PASS 03/02 ──────────────────────────
   {
     id: 'QBS-001', name: 'Austin', address: '4812 Enclave Dr', city: 'Austin, TX 78746', county: 'Travis',
@@ -811,7 +812,7 @@ export const STATIC_JOBS = [
   ...(LAST_STATUS_CHANGES[j.id] ? { lastStatusChange: LAST_STATUS_CHANGES[j.id] } : {}),
 }))
 
-export const STATIC_EXTRAS = [
+const STATIC_EXTRAS = [
   { id: 'CO-001', job: 'QBS-001', desc: 'Panel upgrade to 200A',             amount: 3500, status: 'approved', qbs: true,  date: '2025-01-18' },
   { id: 'CO-002', job: 'QBS-001', desc: 'EV charger outlet + conduit',       amount: 2900, status: 'approved', qbs: true,  date: '2025-02-05' },
   { id: 'CO-003', job: 'QBS-003', desc: 'Additional 24 circuits — suite B',  amount: 8700, status: 'approved', qbs: true,  date: '2025-02-20' },
@@ -826,7 +827,7 @@ export const STATIC_EXTRAS = [
   { id: 'CO-012', job: 'QBS-013', desc: 'Data/low voltage — server room',    amount: 5300, status: 'pending',  qbs: false, date: '2025-04-01' },
 ]
 
-export const STATIC_NOTIFS = [
+const STATIC_NOTIFS = [
   { id: 1, type: 'error',   msg: 'QBS-024 Plumbing drain slope non-compliant — rework required', time: '3h ago',  read: false },
   { id: 2, type: 'warn',    msg: "Roman's insurance expires in 38 days — renewal required",      time: '1d ago',  read: false },
   { id: 3, type: 'warn',    msg: 'Medey: W-9 missing — cannot issue 1099',                       time: '2d ago',  read: false },
@@ -837,7 +838,7 @@ export const STATIC_NOTIFS = [
   { id: 8, type: 'success', msg: 'QBS-033 Parton HVAC final PASSED',                             time: '5d ago',  read: true  },
 ]
 
-export const STATIC_SUBS = [
+const STATIC_SUBS = [
   { id: 'carlos',  name: 'Carlos Reyes',    co: 'Reliable HVAC Systems',     trade: 'HVAC',       lic: 'TACLA45231C',  licExp: '2026-06-30', insExp: '2025-12-31', w9: true,  score: 94,  jobs: 5, phone: '(713) 555-0101', lastUpdate: '2026-04-15' },
   { id: 'roman',   name: 'Roman Vasquez',   co: "Roman's Air & Heat",         trade: 'HVAC',       lic: 'TACLA78654E',  licExp: '2025-09-15', insExp: '2025-05-24', w9: true,  score: 88,  jobs: 3, phone: '(281) 555-0102', lastUpdate: '2026-04-10' },
   { id: 'kebler',  name: 'Kebler Torres',   co: 'Kebler Plumbing LLC',        trade: 'Plumbing',   lic: 'MPL#34521',    licExp: '2026-03-31', insExp: '2026-01-31', w9: true,  score: 97,  jobs: 4, phone: '(713) 555-0103', lastUpdate: '2026-04-16' },
@@ -849,7 +850,7 @@ export const STATIC_SUBS = [
   { id: 'p2',      name: 'P2 In-House Crew',co: 'P2 Field Services',          trade: 'Electrical', lic: 'TECL#000001',  licExp: '2026-12-31', insExp: '2026-12-31', w9: true,  score: 100, jobs: 3, phone: '(713) 555-0000', lastUpdate: '2026-04-16' },
 ]
 
-export const STATIC_MATERIALS = [
+const STATIC_MATERIALS = [
   { id: 'M-001', job: 'QBS-001', item: '200A Main Panel Square D',      qty: 1,  unit: 'ea',    cost: 485,  status: 'delivered',  vendor: 'Graybar',    eta: '2025-01-20' },
   { id: 'M-002', job: 'QBS-001', item: '12/2 Romex Wire 250ft',         qty: 4,  unit: 'roll',  cost: 185,  status: 'delivered',  vendor: 'Graybar',    eta: '2025-01-20' },
   { id: 'M-003', job: 'QBS-003', item: '4" PVC Drain Pipe 20ft',        qty: 16, unit: 'stick', cost: 42,   status: 'delivered',  vendor: 'Ferguson',   eta: '2025-02-25' },
@@ -922,29 +923,25 @@ async function seedFirestore() {
     batch.set(ref, { ...job, ...agentFields(job), _seeded: true, createdAt: serverTimestamp() })
   })
 
-  if (true) {
-    STATIC_EXTRAS.forEach(extra => {
-      const ref = doc(collection(db, 'extras'))
-      batch.set(ref, { ...extra, createdAt: serverTimestamp() })
-    })
-    STATIC_NOTIFS.forEach(n => {
-      const ref = doc(collection(db, 'notifications'))
-      batch.set(ref, { type: n.type, msg: n.msg, read: n.read, createdAt: serverTimestamp() })
-    })
-    STATIC_SUBS.forEach(sub => {
-      batch.set(doc(db, 'subs', sub.id), sub)
-    })
-    STATIC_MATERIALS.forEach(m => {
-      batch.set(doc(db, 'materials', m.id), { ...m, createdAt: serverTimestamp() })
-    })
-  }
+  STATIC_EXTRAS.forEach(extra => {
+    const ref = doc(collection(db, 'extras'))
+    batch.set(ref, { ...extra, createdAt: serverTimestamp() })
+  })
+  STATIC_NOTIFS.forEach(n => {
+    const ref = doc(collection(db, 'notifications'))
+    batch.set(ref, { type: n.type, msg: n.msg, read: n.read, createdAt: serverTimestamp() })
+  })
+  STATIC_SUBS.forEach(sub => {
+    batch.set(doc(db, 'subs', sub.id), sub)
+  })
+  STATIC_MATERIALS.forEach(m => {
+    batch.set(doc(db, 'materials', m.id), { ...m, createdAt: serverTimestamp() })
+  })
 
   await batch.commit()
 }
 
 // ── Context ───────────────────────────────────────────────────────────────────
-
-const DataContext = createContext(null)
 
 export function DataProvider({ children, tenantId = null, role = null, clientJobIds = null }) {
   const { jobs: firestoreJobs, loading: jobsLoading }               = useJobs()
@@ -956,7 +953,7 @@ export function DataProvider({ children, tenantId = null, role = null, clientJob
   const { dailyReports: firestoreDailyReports, loading: drLoading } = useDailyReports()
   const { urgentItems: firestoreUrgentItems, loading: uiLoading }   = useUrgentItems()
   const { settings }                                                 = useSettings()
-  const { alerts: agentAlerts, loading: alertsLoading }             = useAgentAlerts()
+  const { alerts: agentAlerts }                                      = useAgentAlerts()
   const [seeded, setSeeded] = useState(false)
 
   useEffect(() => {
@@ -1021,8 +1018,4 @@ export function DataProvider({ children, tenantId = null, role = null, clientJob
       {children}
     </DataContext.Provider>
   )
-}
-
-export function useData() {
-  return useContext(DataContext)
 }

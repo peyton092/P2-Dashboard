@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
+import { ToastContext } from './use-toast'
 import { CheckCircleIcon, AlertCircleIcon, InfoIcon, XIcon } from 'lucide-react'
 
 const O = '#F47920'
@@ -8,13 +9,6 @@ const TONE = {
   error:   { color: '#ef4444', Icon: AlertCircleIcon },
   info:    { color: '#3b82f6', Icon: InfoIcon },
   brand:   { color: O,         Icon: InfoIcon },
-}
-
-const ToastContext = createContext(() => {})
-
-// useToast() → toast(opts | string). opts: { title, description, tone, duration }
-export function useToast() {
-  return useContext(ToastContext)
 }
 
 let nextId = 0

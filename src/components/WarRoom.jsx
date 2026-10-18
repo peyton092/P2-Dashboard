@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useData } from '../DataContext'
+import { useData } from '../use-data'
 import {
   scoreJob,
   classifyRisk,
