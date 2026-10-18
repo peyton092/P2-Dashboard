@@ -13,7 +13,7 @@ function Page({ onConfirm = () => {}, onClose = () => {}, ...props }) {
       <button type="button" onClick={() => setOpen(true)}>Reject change order</button>
       <ConfirmDialog
         open={open}
-        onClose={() => { onClose(); setOpen(false) }}
+        onClose={(...args) => { onClose(...args); setOpen(false) }}
         onConfirm={onConfirm}
         title="Reject this change order?"
         body="The builder is told it was rejected."
@@ -73,6 +73,19 @@ describe('ConfirmDialog', () => {
 
     expect(onConfirm).toHaveBeenCalledTimes(1)
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('calls onConfirm and onClose with nothing, so a handler never gets the click event', async () => {
+    const onConfirm = vi.fn()
+    const onClose = vi.fn()
+    render(<Page onConfirm={onConfirm} onClose={onClose} />)
+    await openIt()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    expect(onConfirm).toHaveBeenCalledWith()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onClose).toHaveBeenCalledWith()
   })
 
   it('calls onClose, and never onConfirm, when Cancel is pressed', async () => {

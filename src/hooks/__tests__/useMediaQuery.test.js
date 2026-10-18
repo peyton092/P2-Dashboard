@@ -14,28 +14,31 @@ const DESKTOP = '(min-width: 1024px)'
 function stubMatchMedia(answers, { legacy = false } = {}) {
   const matches = { ...answers }
   const listeners = new Map()
+  const subscriptions = new Map()
   const of = (query) => {
     if (!listeners.has(query)) listeners.set(query, new Set())
     return listeners.get(query)
   }
-  window.matchMedia = (query) => {
-    const set = of(query)
-    return {
-      media: query,
-      get matches() { return matches[query] ?? false },
-      ...(legacy
-        ? {
-            addListener: (fn) => set.add(fn),
-            removeListener: (fn) => set.delete(fn),
-          }
-        : {
-            addEventListener: (type, fn) => { if (type === 'change') set.add(fn) },
-            removeEventListener: (type, fn) => { if (type === 'change') set.delete(fn) },
-          }),
-    }
+  const add = (query, fn) => {
+    of(query).add(fn)
+    subscriptions.set(query, (subscriptions.get(query) ?? 0) + 1)
   }
+  window.matchMedia = (query) => ({
+    media: query,
+    get matches() { return matches[query] ?? false },
+    ...(legacy
+      ? {
+          addListener: (fn) => add(query, fn),
+          removeListener: (fn) => of(query).delete(fn),
+        }
+      : {
+          addEventListener: (type, fn) => { if (type === 'change') add(query, fn) },
+          removeEventListener: (type, fn) => { if (type === 'change') of(query).delete(fn) },
+        }),
+  })
   return {
     listening: (query) => of(query).size,
+    subscribedTo: (query) => subscriptions.get(query) ?? 0,
     set(query, value) {
       matches[query] = value
       of(query).forEach((fn) => fn({ matches: value }))
@@ -81,6 +84,17 @@ describe('useMediaQuery', () => {
     act(() => media.set(DESKTOP, true))
 
     expect(result.current).toBe(false)
+  })
+
+  it('subscribes once, and not again each time the component renders', () => {
+    const media = stubMatchMedia({ [TABLET]: false })
+    const { rerender } = renderHook(() => useMediaQuery(TABLET))
+
+    rerender()
+    rerender()
+    rerender()
+
+    expect(media.subscribedTo(TABLET)).toBe(1)
   })
 
   it('stops listening when the component unmounts', () => {

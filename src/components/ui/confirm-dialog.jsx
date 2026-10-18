@@ -10,7 +10,8 @@ import { Dialog, DialogFooter } from "./dialog"
 //     title="Reject this change order?" body="The builder is told it was rejected."
 //     confirmLabel="Reject" tone="critical" />
 //
-// The page decides when the dialog closes, as it does for Dialog.
+// The page decides when the dialog closes, as it does for Dialog. The two callbacks
+// are called with nothing, so neither is ever handed the click event.
 function ConfirmDialog({
   open,
   onClose,
@@ -24,7 +25,7 @@ function ConfirmDialog({
   return (
     <Dialog open={open} onClose={onClose} title={title} description={body} size="sm">
       <DialogFooter>
-        <Button type="button" variant="outline" className="h-11 md:h-8" onClick={onClose}>
+        <Button type="button" variant="outline" className="h-11 md:h-8" onClick={() => onClose()}>
           Cancel
         </Button>
         <Button
@@ -32,7 +33,7 @@ function ConfirmDialog({
           variant={tone === "critical" ? "destructive" : "brand"}
           className="h-11 md:h-8"
           disabled={busy}
-          onClick={onConfirm}>
+          onClick={() => onConfirm()}>
           {busy ? "Working" : confirmLabel}
         </Button>
       </DialogFooter>

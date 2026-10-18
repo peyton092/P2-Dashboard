@@ -32,7 +32,7 @@ const EXPORTED = [...index.matchAll(/^export \{([^}]*)\} from/gm)]
   .flatMap(([, names]) => names.split(',').map((name) => name.trim()).filter(Boolean))
 
 // The stat with this label. A card title with the same words is not in the band.
-const statCard = (label) =>
+const stat = (label) =>
   screen.getAllByText(label).find((el) => el.closest('[data-slot="stat"]')).closest('[data-slot="stat"]')
 
 // The name that heads a card, which is bold. A chip with the same words (permits is also a
@@ -63,7 +63,7 @@ describe('Architecture', () => {
     expect(screen.queryByText('leads')).toBeNull()
     expect(screen.queryByText('inspections')).toBeNull()
 
-    const roles = statCard('Auth Roles')
+    const roles = stat('Auth Roles')
     expect(within(roles).getByText('4')).toBeTruthy()
     expect(within(roles).getByText('owner, internal, builder, client')).toBeTruthy()
   })
@@ -75,7 +75,7 @@ describe('Architecture', () => {
     for (const name of EXPORTED) {
       expect(screen.queryAllByText(name), name).toHaveLength(1)
     }
-    expect(within(statCard('Cloud Functions')).getByText(String(EXPORTED.length))).toBeTruthy()
+    expect(within(stat('Cloud Functions')).getByText(String(EXPORTED.length))).toBeTruthy()
   })
 
   // The chips list the fields a document carries. permits shows the author stamp only, and

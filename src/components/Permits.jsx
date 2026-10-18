@@ -8,7 +8,7 @@ import { SectionHeader, StatBand, StatusBadge, PermitBadge } from './shared'
 import { BRAND, withAlpha } from '@/lib/tokens'
 import { PERMIT_STATUS, TRADE, statusColor, statusLabel } from '../lib/status'
 
-// Extracted from src/App.jsx in Phase 20. Behavior preserved exactly.
+// Extracted from src/App.jsx in Phase 20.
 
 // The statuses a person can pick for a permit, in the order of the vocabulary.
 const PERMIT_STATUSES = Object.keys(PERMIT_STATUS)

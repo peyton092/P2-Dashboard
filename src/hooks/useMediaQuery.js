@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 
 // Whether a media query matches now, and again whenever that changes. Screens ask
 // it which layout to render once, instead of rendering both and hiding one with
@@ -9,7 +9,7 @@ import { useSyncExternalStore } from 'react'
 
 const supported = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
 
-function subscribe(query, onChange) {
+function listen(query, onChange) {
   if (!supported()) return () => {}
   const list = window.matchMedia(query)
   // Safari before 14 has addListener and removeListener and no addEventListener.
@@ -22,8 +22,11 @@ function subscribe(query, onChange) {
 }
 
 export function useMediaQuery(query) {
+  // React subscribes again whenever this function changes, so it changes only with
+  // the query.
+  const subscribe = useCallback((onChange) => listen(query, onChange), [query])
   return useSyncExternalStore(
-    (onChange) => subscribe(query, onChange),
+    subscribe,
     () => (supported() ? window.matchMedia(query).matches : false),
     () => false,
   )
