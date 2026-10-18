@@ -15,7 +15,6 @@ import {
 } from './hooks/useFirestore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -1531,7 +1530,7 @@ function JobStatusRow({
                   {progress}%
                 </span>
               </div>
-              <ProgressBar value={progress} color={progressMuted ? SEMANTIC.neutral : BRAND} />
+              <ProgressBar value={progress} tone={progressMuted ? 'neutral' : 'brand'} />
             </div>
           </div>
 
@@ -1544,7 +1543,7 @@ function JobStatusRow({
               {progress}%
             </p>
             <div className="w-full mt-1.5">
-              <ProgressBar value={progress} color={progressMuted ? SEMANTIC.neutral : BRAND} />
+              <ProgressBar value={progress} tone={progressMuted ? 'neutral' : 'brand'} />
             </div>
             <p className="text-[10px] text-zinc-400 mt-1.5 truncate max-w-full" title={job.type}>
               {job.type || 'Project'}
@@ -2103,7 +2102,7 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
                   </div>
                 )}
                 <div className="mt-2.5">
-                  <ProgressBar value={progressPct} color={meta.color} />
+                  <ProgressBar value={progressPct} tone={statusTone(TRADE, trade)} />
                 </div>
               </div>
             )
