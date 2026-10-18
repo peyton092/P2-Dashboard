@@ -6,14 +6,15 @@ rules_version = '2';
 // crown jewels (OAuth access tokens, app settings, user role records) are
 // locked to staff (owner / internal) only.
 //
-// KNOWN LIMITATION: operational collections (jobs, extras, …) are readable by
+// KNOWN LIMITATION: operational collections (jobs, extras, ...) are readable by
 // any signed-in user. The builder/client portals currently scope what each
 // user SEES in JavaScript (DataContext: tenantId / clientJobIds), not at the
-// database layer, because the portals issue unscoped collection queries. Fully
-// enforcing per-tenant/per-client READ isolation at the DB requires scoping
-// those queries first — see SECURITY.md. These rules close the highest-value
-// holes (auth required everywhere; tokens/settings/roles protected) without
-// breaking the existing client-side filtering.
+// database layer, because the portals issue unscoped collection queries.
+// Per-tenant and per-client read isolation at the database layer is being
+// enforced in a later task of this plan, once those queries are scoped. Until
+// then these rules close the highest-value holes (auth required everywhere;
+// tokens, settings and roles protected) without breaking the existing
+// client-side filtering.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -23,12 +24,18 @@ service cloud.firestore {
     }
 
     // Role comes from a custom claim when present, otherwise the users doc.
+    // The 'in' test matters: reading a missing claim directly throws and
+    // denies the request, which locked out every user without a claim.
     function userRole() {
-      return request.auth.token.role != null
+      return ('role' in request.auth.token)
         ? request.auth.token.role
         : (exists(/databases/$(database)/documents/users/$(request.auth.uid))
             ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
             : null);
+    }
+
+    function isOwner() {
+      return signedIn() && userRole() == 'owner';
     }
 
     function isStaff() {
@@ -48,7 +55,10 @@ service cloud.firestore {
     //    so a user can't escalate their own role or widen clientJobIds.
     match /users/{uid} {
       allow read:  if signedIn() && (request.auth.uid == uid || isStaff());
-      allow write: if isStaff();
+      // Owners write any record. Internal staff may only write builder or
+      // client records, so they cannot mint owners or other staff.
+      allow write: if isOwner()
+        || (isStaff() && request.resource.data.role in ['builder', 'client']);
       // Builders accept Terms of Access as themselves.
       match /termsAcceptances/{version} {
         allow read, write: if signedIn() && (request.auth.uid == uid || isStaff());
@@ -58,8 +68,20 @@ service cloud.firestore {
     // ── Device push tokens. A user registers their own; staff can read all. ─
     match /fcm_tokens/{token} {
       allow read:  if isStaff();
-      allow write: if signedIn();
+      allow write: if signedIn() && request.resource.data.uid == request.auth.uid;
     }
+
+    // ── Client error log: any signed-in user may report an error as ────────
+    //    themselves. Only staff read. No updates or deletes.
+    match /error_logs/{doc} {
+      allow create: if signedIn()
+        && request.resource.data.userEmail == request.auth.token.email;
+      allow read: if isStaff();
+    }
+
+    // ── Crew scores and app settings: everyone reads, staff writes. ─────────
+    match /crew_scores/{doc}  { allow read: if signedIn(); allow write: if isStaff(); }
+    match /app_settings/{doc} { allow read: if signedIn(); allow write: if isStaff(); }
 
     // ── Operational data: signed-in access (see KNOWN LIMITATION above). ────
     match /jobs/{doc=**}            { allow read, write: if signedIn(); }
