@@ -224,6 +224,18 @@ describe('data subscriptions and sign in', () => {
     expect(counter.jobs).toBe(0)
   })
 
+  it('shows the No access screen to a user whose users document exists but names no role, and starts nothing', async () => {
+    mocks.getDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ displayName: 'Pat Lee', email: 'nobody2@p2.test', tenantId: 'p2-core' }),
+    })
+    await openSignedOut()
+    await authChanges(withClaims('nobody2', {}))
+    expect(await screen.findByText('No access yet')).toBeTruthy()
+    expect(mocks.getDoc).toHaveBeenCalledTimes(1)
+    expect(counter.jobs).toBe(0)
+  })
+
   // The rules give a builder only the documents of their tenant, so one with no
   // tenant has nothing to see, and is told so instead of shown an empty portal.
   it('shows a builder with no tenant the No access screen and starts nothing', async () => {

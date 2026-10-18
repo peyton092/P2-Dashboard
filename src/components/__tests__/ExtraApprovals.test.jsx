@@ -151,14 +151,27 @@ describe.each(PORTALS)('$name change orders', (portal) => {
   })
 
   describe('approving', () => {
-    it('calls approveExtra with the document id, and writes nothing else from the browser', async () => {
+    it('calls approveExtra with the document id and the total it shows, and writes nothing else from the browser', async () => {
       mocks.data.extras = [extra()]
       portal.open()
       fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
       await waitFor(() => expect(mocks.approveExtra).toHaveBeenCalledTimes(1))
-      expect(mocks.approveExtra).toHaveBeenCalledWith('x1')
+      expect(mocks.approveExtra).toHaveBeenCalledWith('x1', 4100)
       noOtherWriters()
       expect(mocks.rejectExtra).not.toHaveBeenCalled()
+    })
+
+    // The function refuses a decision at a total other than the stored one, which is
+    // total, else amount, else 0, so the portal shows and sends exactly that.
+    it.each([
+      ['its total over its amount', { total: 4200, amount: 4100 }, 4200, '$4,200'],
+      ['0 when it has neither', { amount: undefined }, 0, '$0'],
+    ])('shows and sends %s', async (_label, over, expectedTotal, shown) => {
+      mocks.data.extras = [extra(over)]
+      portal.open()
+      expect(screen.getAllByText(shown).length).toBeGreaterThan(0)
+      fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
+      await waitFor(() => expect(mocks.approveExtra).toHaveBeenCalledWith('x1', expectedTotal))
     })
 
     it('shows the sentence the function wrote when it refuses', async () => {
@@ -228,14 +241,23 @@ describe.each(PORTALS)('$name change orders', (portal) => {
       expect(open().getAttribute('maxlength')).toBe('1000')
     })
 
-    it('calls rejectExtra with the document id and the trimmed note, and writes nothing else', async () => {
+    it('calls rejectExtra with the document id, the trimmed note and the total it shows, and writes nothing else', async () => {
       const note = open()
       fireEvent.change(note, { target: { value: '  Use the 200A panel  ' } })
       fireEvent.click(send())
       await waitFor(() => expect(mocks.rejectExtra).toHaveBeenCalledTimes(1))
-      expect(mocks.rejectExtra).toHaveBeenCalledWith('x1', 'Use the 200A panel')
+      expect(mocks.rejectExtra).toHaveBeenCalledWith('x1', 'Use the 200A panel', 4100)
       noOtherWriters()
       expect(mocks.approveExtra).not.toHaveBeenCalled()
+    })
+
+    it('sends the total over the amount with a revision request too', async () => {
+      mocks.data.extras = [extra({ total: 4200 })]
+      portal.open()
+      fireEvent.click(requestRevision())
+      fireEvent.change(screen.getByPlaceholderText('What should be revised? (required)'), { target: { value: 'Use the 200A panel' } })
+      fireEvent.click(send())
+      await waitFor(() => expect(mocks.rejectExtra).toHaveBeenCalledWith('x1', 'Use the 200A panel', 4200))
     })
 
     it('closes the form once the function has accepted it', async () => {

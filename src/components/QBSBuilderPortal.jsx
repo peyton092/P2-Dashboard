@@ -407,6 +407,9 @@ function ExtraRow({ co, compact = false }) {
 
   const state = extraState(co)
   const isPending = state === 'pending'
+  // The total shown here is the one sent with a decision: the function refuses it
+  // when the stored total has changed since.
+  const total = co.total ?? co.amount ?? 0
 
   // The approval, the notification and the history entry are all written by the
   // Cloud Function, which also checks that this person may act on the change order.
@@ -418,7 +421,7 @@ function ExtraRow({ co, compact = false }) {
     setBusy(true)
     setErrMsg('')
     try {
-      await approveExtra(co._docId)
+      await approveExtra(co._docId, total)
     } catch (err) {
       console.error('[QBS] Approve failed:', err)
       setErrMsg(callableMessage(err, 'Could not save approval. Check your connection and try again.'))
@@ -432,7 +435,7 @@ function ExtraRow({ co, compact = false }) {
     setBusy(true)
     setErrMsg('')
     try {
-      await rejectExtra(co._docId, rejectNotes.trim())
+      await rejectExtra(co._docId, rejectNotes.trim(), total)
       setShowReject(false)
       setRejectNotes('')
     } catch (err) {
@@ -502,7 +505,7 @@ function ExtraRow({ co, compact = false }) {
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="font-semibold text-base tabular-nums" style={{ color: O }}>{fmt$(co.amount)}</p>
+            <p className="font-semibold text-base tabular-nums" style={{ color: O }}>{fmt$(total)}</p>
             <p className="text-[10px] text-zinc-400">{co.date || fmtDate(co.createdAt)}</p>
           </div>
         </div>

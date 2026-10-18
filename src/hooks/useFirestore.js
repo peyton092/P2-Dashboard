@@ -154,8 +154,10 @@ export function useMaterials(scope) {
 }
 
 // Rows are stored with the id they were loaded for and only returned while that
-// id is still current, so a changed id never shows the previous id's data.
-const EMPTY_SNAPSHOT = { id: null, items: [], error: null }
+// id is still current, so a changed id never shows the previous id's data. While
+// loading, and without an id, the rows are the frozen EMPTY_LIST, the same on
+// every render.
+const EMPTY_SNAPSHOT = { id: null, items: EMPTY_LIST, error: null }
 
 function useSubcollection(parentCollection, parentId, subcollection, direction) {
   const [state, setState] = useState(EMPTY_SNAPSHOT)
@@ -183,7 +185,7 @@ function useSubcollection(parentCollection, parentId, subcollection, direction) 
 
   const current = !!parentId && state.id === parentId
   return {
-    items: current ? state.items : [],
+    items: current ? state.items : EMPTY_LIST,
     loading: !!parentId && !current,
     error: current ? state.error : null,
   }
@@ -293,12 +295,14 @@ export async function sendExtraToBuilder(docId) {
   return callCloud('sendExtraToBuilder', { extraId: docId })
 }
 
-export async function approveExtra(docId, note) {
-  return callCloud('approveExtra', { extraId: docId, ...(note === undefined ? {} : { note }) })
+// expectedTotal is the total the person was shown (total, else amount, else 0).
+// The function refuses the decision when the stored total is another by then.
+export async function approveExtra(docId, expectedTotal) {
+  return callCloud('approveExtra', { extraId: docId, ...(expectedTotal === undefined ? {} : { expectedTotal }) })
 }
 
-export async function rejectExtra(docId, note) {
-  return callCloud('rejectExtra', { extraId: docId, note })
+export async function rejectExtra(docId, note, expectedTotal) {
+  return callCloud('rejectExtra', { extraId: docId, note, ...(expectedTotal === undefined ? {} : { expectedTotal }) })
 }
 
 export async function passInspection(jobDocId, trade, phase) {

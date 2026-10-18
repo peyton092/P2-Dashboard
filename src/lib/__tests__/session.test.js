@@ -6,6 +6,11 @@ describe('resolveSession', () => {
     expect(resolveSession({}, null, { displayName: '' }).role).toBeNull()
   })
 
+  it('a users document with no role gives no role', () => {
+    const s = resolveSession({}, { displayName: 'Pat Lee', tenantId: 'p2-core', clientJobIds: [] }, { displayName: 'Pat' })
+    expect(s.role).toBeNull()
+  })
+
   it('takes the role from the users document when claims have none', () => {
     expect(resolveSession({}, { role: 'internal' }, {}).role).toBe('internal')
   })

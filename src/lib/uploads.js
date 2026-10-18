@@ -1,14 +1,15 @@
+// A file must be strictly under this size, as storage.rules requires (size < 25 MB).
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 export const ALLOWED_UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/heic', 'image/webp', 'application/pdf']
 
 const TYPE_REASON = 'That file type is not allowed. Upload a JPEG, PNG, HEIC, WebP or PDF.'
-const SIZE_REASON = 'That file is larger than 25 MB.'
+const SIZE_REASON = 'That file is 25 MB or larger.'
 
 export function validateUpload(file) {
   if (!file || !file.type || !ALLOWED_UPLOAD_TYPES.includes(file.type)) {
     return { ok: false, reason: TYPE_REASON }
   }
-  if (!(file.size <= MAX_UPLOAD_BYTES)) {
+  if (!(file.size < MAX_UPLOAD_BYTES)) {
     return { ok: false, reason: SIZE_REASON }
   }
   return { ok: true }

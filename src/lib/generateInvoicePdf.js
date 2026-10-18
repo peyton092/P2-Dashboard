@@ -125,7 +125,7 @@ export async function generateInvoicePdf(job) {
 
   // ── Line items ────────────────────────────────────────────────────────────────
   const lineItems = [
-    { desc: job.type || 'MEP Services', detail: `Project: ${job.id} — ${job.name || job.client}`, amount: value },
+    { desc: job.type || 'MEP Services', detail: `Project ${job.id}: ${job.name || job.client}`, amount: value },
   ]
   const hasTax = typeof job.taxRate === 'number'
   const taxAmount = hasTax ? value * job.taxRate : 0

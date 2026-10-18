@@ -50,6 +50,13 @@ describe('generateInvoicePdf', () => {
     expect(texts).toContain('$1,100.00')
   })
 
+  it('names the project on the line item with plain punctuation, no dash', async () => {
+    await generateInvoicePdf({ id: 'QBS-003', name: 'Lee Residence', contractValue: 1000 })
+    expect(texts).toContain('Project QBS-003: Lee Residence')
+    const line = texts.find(t => t.startsWith('Project'))
+    expect(line.replace('QBS-003', 'ID')).not.toMatch(/[-\u2010-\u2015\u2212]/)
+  })
+
   it('renders a zero rate tax line', async () => {
     await generateInvoicePdf({ id: 'J1', contractValue: 1000, taxRate: 0 })
     expect(texts).toContain('Tax (0%)')

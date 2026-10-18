@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
 
 // Creating a job and recording an inspection result go through Cloud Functions
@@ -154,6 +154,71 @@ describe('New job form', () => {
     fireEvent.click(create())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
     expect(mocks.toast.mock.calls[0][0].description).toBe('Check your connection and try again.')
+  })
+
+  // The tenant decides who outside P2 sees the job, so it is chosen on the form, and
+  // starts as the workspace chosen in the sidebar when that is a builder tenant.
+  describe('the tenant', () => {
+    const tenant = () => screen.getByRole('combobox', { name: 'Tenant' })
+    // A real pointer moves over an option before it clicks, and the option ignores a click until then.
+    async function choose(name) {
+      await act(async () => { fireEvent.mouseDown(tenant()) })
+      const option = await screen.findByRole('option', { name })
+      await act(async () => { fireEvent.mouseMove(option) })
+      await act(async () => { fireEvent.click(option) })
+    }
+    const sent = async () => {
+      fireEvent.click(create())
+      await waitFor(() => expect(mocks.createJob).toHaveBeenCalledTimes(1))
+      return mocks.createJob.mock.calls[0][0].tenantId
+    }
+
+    it('offers the three tenants by name, with no dash in any of them', async () => {
+      open()
+      await act(async () => { fireEvent.mouseDown(tenant()) })
+      const list = await screen.findByRole('listbox')
+      const names = within(list).getAllByRole('option').map(option => option.textContent)
+      expect(names).toEqual(['P2 internal', 'QBS', 'Vision'])
+      for (const name of [...names, 'Tenant']) expect(name).not.toMatch(/[-\u2010-\u2015\u2212]/)
+    })
+
+    it('sends the tenant the person chose', async () => {
+      open()
+      fill()
+      await choose('Vision')
+      expect(tenant().textContent).toContain('Vision')
+      expect(await sent()).toBe('vision')
+    })
+
+    it('sends p2-core when P2 internal is chosen', async () => {
+      open()
+      fill()
+      await choose('P2 internal')
+      expect(await sent()).toBe('p2-core')
+    })
+
+    it.each([
+      ['vision', 'Vision', 'vision'],
+      ['qbs', 'QBS', 'qbs'],
+      ['p2-core', 'QBS', 'qbs'],
+      [null, 'QBS', 'qbs'],
+    ])('starts as the workspace when that is a builder tenant, and as QBS otherwise (workspace %s)', async (workspace, shown, value) => {
+      mocks.data = { jobs: [], subs: [], tenantId: workspace }
+      open()
+      expect(tenant().textContent).toContain(shown)
+      fill()
+      expect(create().disabled).toBe(false)
+      expect(await sent()).toBe(value)
+    })
+
+    it('starts again from the workspace each time the form is opened', async () => {
+      mocks.data = { jobs: [], subs: [], tenantId: 'vision' }
+      open()
+      await choose('P2 internal')
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      fireEvent.click(screen.getByRole('button', { name: /New job/ }))
+      expect(tenant().textContent).toContain('Vision')
+    })
   })
 
   it('lets the person fix the id and send again after a refusal', async () => {

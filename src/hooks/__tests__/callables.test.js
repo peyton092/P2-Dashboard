@@ -44,8 +44,10 @@ const JOB = { id: 'QBS-045', address: '123 Main St', client: 'Dana Lee', tenantI
 const HELPERS = [
   ['sendExtraToBuilder', ['x1'], 'sendExtraToBuilder', { extraId: 'x1' }],
   ['approveExtra', ['x1'], 'approveExtra', { extraId: 'x1' }],
-  ['approveExtra', ['x1', 'Looks good'], 'approveExtra', { extraId: 'x1', note: 'Looks good' }],
+  ['approveExtra', ['x1', 4100], 'approveExtra', { extraId: 'x1', expectedTotal: 4100 }],
+  ['approveExtra', ['x1', 0], 'approveExtra', { extraId: 'x1', expectedTotal: 0 }],
   ['rejectExtra', ['x1', 'Use the 200A panel'], 'rejectExtra', { extraId: 'x1', note: 'Use the 200A panel' }],
+  ['rejectExtra', ['x1', 'Use the 200A panel', 4100], 'rejectExtra', { extraId: 'x1', note: 'Use the 200A panel', expectedTotal: 4100 }],
   ['passInspection', ['job1', 'electrical', 'roughIn'], 'passInspection', { jobDocId: 'job1', trade: 'electrical', phase: 'roughIn' }],
   ['failInspection', ['job1', 'hvac', 'final'], 'failInspection', { jobDocId: 'job1', trade: 'hvac', phase: 'final' }],
   ['createJob', [JOB], 'createJob', JOB],
@@ -83,9 +85,11 @@ describe.each(HELPERS)('%s(%j)', (helper, args, callable, payload) => {
 })
 
 describe('the helpers keep their shape', () => {
-  it('sends a plain approval without a note key', async () => {
+  it('sends a plain approval with nothing but the id, and no expectedTotal key when none is given', async () => {
     await store.approveExtra('x1')
     expect(Object.keys(mocks.call.mock.calls[0][0])).toEqual(['extraId'])
+    await store.rejectExtra('x1', 'Use the 200A panel')
+    expect(Object.keys(mocks.call.mock.calls[1][0])).toEqual(['extraId', 'note'])
   })
 
   it('names the job by its document id, under jobDocId, not jobId', async () => {

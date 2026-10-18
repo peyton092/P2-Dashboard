@@ -234,6 +234,9 @@ function ExtraRow({ co }) {
 
   const state = extraState(co)
   const isPending = state === 'pending'
+  // The total shown here is the one sent with a decision: the function refuses it
+  // when the stored total has changed since.
+  const total = co.total ?? co.amount ?? 0
 
   // The approval, the notification and the history entry are all written by the
   // Cloud Function, which also checks that this person may act on the change order.
@@ -241,8 +244,8 @@ function ExtraRow({ co }) {
     if (!co._docId) { setErrMsg('This change order is missing an ID. Refresh and try again.'); return }
     setBusy(true); setErrMsg('')
     try {
-      await approveExtra(co._docId)
-      toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(co.amount)}` })
+      await approveExtra(co._docId, total)
+      toast({ tone: 'success', title: 'Change order approved', description: `${co.id || 'CO'} · ${fmt$(total)}` })
     } catch (err) {
       console.error('[Client] Approve failed:', err)
       setErrMsg(callableMessage(err, 'Could not save approval. Check your connection and try again.'))
@@ -253,7 +256,7 @@ function ExtraRow({ co }) {
     if (!co._docId || !rejectNotes.trim()) return
     setBusy(true); setErrMsg('')
     try {
-      await rejectExtra(co._docId, rejectNotes.trim())
+      await rejectExtra(co._docId, rejectNotes.trim(), total)
       toast({ tone: 'info', title: 'Revision requested', description: `P2 has been notified about ${co.id || 'this change order'}.` })
       setShowReject(false); setRejectNotes('')
     } catch (err) {
@@ -295,7 +298,7 @@ function ExtraRow({ co }) {
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="font-semibold text-base tabular-nums" style={{ color: O }}>{fmt$(co.amount)}</p>
+            <p className="font-semibold text-base tabular-nums" style={{ color: O }}>{fmt$(total)}</p>
             <p className="text-[10px] text-zinc-400">{co.date || fmtDate(co.createdAt)}</p>
           </div>
         </div>

@@ -118,7 +118,7 @@ import {
 } from './lib/subs'
 import {
   jobName,
-  JOB_FILTERS, JOB_FORM_INITIAL,
+  JOB_FILTERS, JOB_TENANTS, jobFormFor,
   isJobComplete, jobStaleness, jobMatchesFilter,
   jobNextAction, jobRiskMeta, fmtJobDate,
 } from './lib/jobs'
@@ -1004,7 +1004,7 @@ function BriefingGroup({ category, items }) {
 // src/lib/jobs.js (Phase 18).
 
 export function JobStatus() {
-  const { jobs = [], subs = [] } = useData()
+  const { jobs = [], subs = [], tenantId: workspace } = useData()
   const toast = useToast()
   const [search, setSearch]         = useState('')
   const [filter, setFilter]         = useState('all')
@@ -1012,7 +1012,7 @@ export function JobStatus() {
   const [zoneFilter, setZoneFilter] = useState('all')
   const [expanded, setExpanded]     = useState(null)
   const [showNewJob, setShowNewJob] = useState(false)
-  const [jobForm, setJobForm]       = useState(JOB_FORM_INITIAL)
+  const [jobForm, setJobForm]       = useState(() => jobFormFor(workspace))
   const [creating, setCreating]     = useState(false)
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -1107,7 +1107,7 @@ export function JobStatus() {
   const hvacSubs  = (subs || []).filter(s => s.trade === 'HVAC')
 
   const handleCreateJob = async () => {
-    if (!jobForm.id || !jobForm.address || !jobForm.client) return
+    if (!jobForm.id || !jobForm.address || !jobForm.client || !jobForm.tenantId) return
     setCreating(true)
     try {
       await createJob({
@@ -1120,7 +1120,7 @@ export function JobStatus() {
         status:       'active',
         progress:     0,
         extras:       0,
-        tenantId:     'qbs',
+        tenantId:     jobForm.tenantId,
         lead:         '',
         start:        new Date().toISOString().slice(0, 10),
         target:       jobForm.target || '',
@@ -1135,7 +1135,7 @@ export function JobStatus() {
           hvac:       { roughIn: 'pending', final: 'blocked' },
         },
       })
-      setJobForm(JOB_FORM_INITIAL)
+      setJobForm(jobFormFor(workspace))
       setShowNewJob(false)
     } catch (err) {
       // The form stays open with what was typed, so it can be corrected and sent again.
@@ -1200,7 +1200,7 @@ export function JobStatus() {
             </button>
             <button
               type="button"
-              onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(JOB_FORM_INITIAL) }}
+              onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(jobFormFor(workspace)) }}
               className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
               style={{ backgroundColor: O }}
             >
@@ -1272,6 +1272,14 @@ export function JobStatus() {
             <JobFormField label="Client *">
               <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
             </JobFormField>
+            <JobFormField label="Tenant">
+              <Select required items={JOB_TENANTS} value={jobForm.tenantId} onValueChange={v => setJobForm(f => ({ ...f, tenantId: v }))}>
+                <SelectTrigger aria-label="Tenant" className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {JOB_TENANTS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </JobFormField>
             <JobFormField label="Project type">
               <Input className="bg-white/[0.04] border-white/10 text-white" value={jobForm.type} onChange={e => setJobForm(f => ({ ...f, type: e.target.value }))} />
             </JobFormField>
@@ -1324,7 +1332,7 @@ export function JobStatus() {
             <button
               type="button"
               onClick={handleCreateJob}
-              disabled={creating || !jobForm.id || !jobForm.address || !jobForm.client}
+              disabled={creating || !jobForm.id || !jobForm.address || !jobForm.client || !jobForm.tenantId}
               className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{ backgroundColor: O }}
             >
@@ -1332,7 +1340,7 @@ export function JobStatus() {
             </button>
             <button
               type="button"
-              onClick={() => { setShowNewJob(false); setJobForm(JOB_FORM_INITIAL) }}
+              onClick={() => { setShowNewJob(false); setJobForm(jobFormFor(workspace)) }}
               className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg border border-white/10 text-zinc-200 hover:text-white hover:border-white/25 transition-colors"
             >
               Cancel

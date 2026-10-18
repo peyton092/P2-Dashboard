@@ -98,10 +98,12 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// What Firestore throws when the rules refuse a write, as the browser SDK reports it
-// with no sentence of its own.
-const refused = () => Object.assign(new Error('permission-denied'), { code: 'permission-denied' })
-const REFUSED_TOAST = { tone: 'error', title: 'Could not send your message. Try again.' }
+// What Firestore throws when the rules refuse a write, as the browser SDK reports it:
+// the code permission-denied with the sentence "Missing or insufficient permissions."
+// callableMessage shows a sentence that is not just the code, so that is what the
+// toast says, rather than the portal's own fallback.
+const refused = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
+const REFUSED_TOAST = { tone: 'error', title: 'Missing or insufficient permissions.' }
 
 describe('a portal with no projects', () => {
   it('the client portal says that none are linked to the account yet', () => {

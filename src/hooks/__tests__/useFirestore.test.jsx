@@ -311,6 +311,25 @@ describe.each([
   })
 })
 
+// The hooks that listen to one record do the same: without an id, and while they wait
+// for the first snapshot, they give the same frozen empty list on every render.
+describe.each([
+  ['useJobFiles', useJobFiles, 'files'],
+  ['useSubmitReplies', useSubmitReplies, 'replies'],
+])('%s empty value', (_name, hook, key) => {
+  it.each([
+    ['while it waits', 'A'],
+    ['without an id', null],
+  ])('is the same frozen empty list on every render %s', (_label, id) => {
+    const { result, rerender } = renderHook(() => hook(id))
+    const first = result.current[key]
+    expect(first).toEqual([])
+    rerender()
+    expect(result.current[key]).toBe(first)
+    expect(Object.isFrozen(first)).toBe(true)
+  })
+})
+
 // The table above covers each hook in detail. This one walks everything the
 // module exports, so a hook added later that swallows its error fails here too.
 describe('every hook the module exports', () => {

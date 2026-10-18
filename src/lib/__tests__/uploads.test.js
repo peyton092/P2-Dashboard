@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { validateUpload, sanitizeFileName, MAX_UPLOAD_BYTES, ALLOWED_UPLOAD_TYPES } from '../uploads'
 
 const TYPE_REASON = 'That file type is not allowed. Upload a JPEG, PNG, HEIC, WebP or PDF.'
-const SIZE_REASON = 'That file is larger than 25 MB.'
+const SIZE_REASON = 'That file is 25 MB or larger.'
 
 describe('constants', () => {
   it('match the agreed limits', () => {
@@ -21,8 +21,13 @@ describe('validateUpload', () => {
   it('accepts a small pdf', () => {
     expect(validateUpload({ type: 'application/pdf', size: 1024 })).toEqual({ ok: true })
   })
-  it('accepts a file exactly at the limit', () => {
-    expect(validateUpload({ type: 'image/png', size: MAX_UPLOAD_BYTES })).toEqual({ ok: true })
+  // storage.rules takes a file strictly under 25 MB, so the browser refuses one at the
+  // limit too, instead of starting an upload the rules would refuse.
+  it('rejects a file exactly at the limit, as storage.rules does', () => {
+    expect(validateUpload({ type: 'image/png', size: MAX_UPLOAD_BYTES })).toEqual({ ok: false, reason: SIZE_REASON })
+  })
+  it('accepts a file one byte under the limit', () => {
+    expect(validateUpload({ type: 'image/png', size: MAX_UPLOAD_BYTES - 1 })).toEqual({ ok: true })
   })
   it('rejects an empty or missing type', () => {
     expect(validateUpload({ type: '', size: 10 })).toEqual({ ok: false, reason: TYPE_REASON })
