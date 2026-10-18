@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
+import { axe } from '@/test/axe'
 import { TONE_HEX, hexToRgb } from '@/lib/tokens'
 import { ProgressBar } from '../ProgressBar'
 
@@ -39,5 +40,16 @@ describe('ProgressBar', () => {
   it('passes a class name to the track', () => {
     const { container } = render(<ProgressBar value={40} className="mt-2" />)
     expect(container.firstElementChild.classList.contains('mt-2')).toBe(true)
+  })
+
+  it('has no accessibility violations, empty, part full and full', async () => {
+    const { container } = render(
+      <>
+        <ProgressBar value={0} />
+        <ProgressBar value={40} tone="warning" />
+        <ProgressBar value={100} tone="success" />
+      </>,
+    )
+    expect(await axe(container)).toHaveNoViolations()
   })
 })

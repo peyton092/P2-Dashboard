@@ -41,10 +41,11 @@ function RowSkeleton() {
 
 // Full-page loading scaffold used as the route Suspense fallback. Mirrors the
 // common page shape (header + KPI strip + data panel) so transitions land
-// without a layout jump.
+// without a layout jump. To a screen reader it is one busy status named Loading,
+// and the shapes inside it are hidden. aria-label needs a role to sit on.
 export function PageSkeleton({ tiles = 5, rows = 6 }) {
   return (
-    <div className="space-y-6 p2-page-enter" aria-busy="true" aria-label="Loading">
+    <div className="space-y-6 p2-page-enter" role="status" aria-busy="true" aria-label="Loading">
       <div className="pb-5 mb-1 border-b border-white/5">
         <Skeleton className="h-2.5 w-24 mb-3" />
         <Skeleton className="h-7 w-64 mb-3" />

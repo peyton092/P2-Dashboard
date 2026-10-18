@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
+import { axe } from '@/test/axe'
 import AppShell from '../AppShell'
 
 afterEach(cleanup)
@@ -41,5 +42,26 @@ describe('the AppShell content container', () => {
 
   it('uses no 2xl utility for the cap, because 2xl starts at 1536 pixels and not 1800', () => {
     expect(renderShell().filter((name) => name.startsWith('2xl:'))).toEqual([])
+  })
+})
+
+describe('the AppShell landmarks', () => {
+  const renderShell = () =>
+    render(
+      <AppShell sidebar={<nav aria-label="Sidebar">Sidebar</nav>} mobileNav={<nav aria-label="Mobile navigation">Mobile</nav>}>
+        <h1>Page</h1>
+      </AppShell>,
+    )
+
+  it('holds the page in one main landmark', () => {
+    renderShell()
+
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getByRole('main').contains(screen.getByRole('heading', { name: 'Page' }))).toBe(true)
+  })
+
+  it('has no accessibility violations', async () => {
+    const { container } = renderShell()
+    expect(await axe(container)).toHaveNoViolations()
   })
 })

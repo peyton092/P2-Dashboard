@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
-import { PageSkeleton } from '../Skeleton'
+import { render, screen, cleanup } from '@testing-library/react'
+import { axe } from '@/test/axe'
+import { PageSkeleton, Skeleton } from '../Skeleton'
 
 afterEach(cleanup)
 
@@ -32,9 +33,35 @@ describe('PageSkeleton', () => {
   it('stays hidden from a screen reader beyond its busy label', () => {
     const { container } = render(<PageSkeleton tiles={3} rows={1} />)
 
-    const page = container.firstElementChild
+    // The page is one status region named Loading, which is busy.
+    const page = screen.getByRole('status', { name: 'Loading' })
+    expect(page).toBe(container.firstElementChild)
     expect(page.getAttribute('aria-busy')).toBe('true')
-    expect(page.getAttribute('aria-label')).toBe('Loading')
-    expect(container.querySelectorAll('.p2-skeleton').length).toBeGreaterThan(0)
+
+    // Every placeholder shape inside it is hidden, so a screen reader hears the one
+    // label and not a row of empty boxes.
+    const shapes = [...container.querySelectorAll('.p2-skeleton')]
+    expect(shapes.length).toBeGreaterThan(0)
+    for (const shape of shapes) expect(shape.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('has no accessibility violations', async () => {
+    const { container } = render(<PageSkeleton tiles={3} rows={2} />)
+    expect(await axe(container)).toHaveNoViolations()
+  })
+})
+
+describe('Skeleton', () => {
+  it('hides itself from a screen reader', () => {
+    const { container } = render(<Skeleton className="h-4 w-32" />)
+
+    const shape = container.firstElementChild
+    expect(shape.classList.contains('p2-skeleton')).toBe(true)
+    expect(shape.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('has no accessibility violations', async () => {
+    const { container } = render(<Skeleton className="h-4 w-32" />)
+    expect(await axe(container)).toHaveNoViolations()
   })
 })
