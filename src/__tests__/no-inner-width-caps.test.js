@@ -10,12 +10,10 @@ import { describe, it, expect } from 'vitest'
 //
 // What is read is the class names in the source: any max-w of 3xl or wider (3xl to 7xl,
 // a screen size, or a measure of 768 pixels or more), anywhere under src/components and
-// in src/App.jsx. What is left out:
-//   - src/components/ui, where the dialog and the popups set their own width,
-//   - a line that takes its element out of the page flow with fixed or absolute, which
-//     is how a dialog or a popup is drawn,
-//   - AppShell itself, which holds the one cap, and
-//   - the two portals in ALLOWED, below.
+// in src/App.jsx. Four things are left out. First, src/components/ui, where the dialog
+// and the popups set their own width. Second, a line that takes its element out of the
+// page flow with fixed or absolute, which is how a dialog or a popup is drawn. Third,
+// AppShell itself, which holds the one cap. Fourth, the two portals in ALLOWED, below.
 
 const src = resolve(import.meta.dirname, '..')
 
