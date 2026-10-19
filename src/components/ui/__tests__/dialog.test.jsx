@@ -384,6 +384,21 @@ describe('a dialog with a hidden title, at the bottom of the screen', () => {
     expect(screen.getByRole('dialog', { name: 'Edit job details' })).toBe(dialog)
   })
 
+  // The close button sits in the top right corner, 8 pixels in and 44 pixels square under 768
+  // pixels, so it reaches 52 pixels down. With the title hidden nothing else holds that space,
+  // and the first row of the content would start under the button: in the More pages drawer
+  // a tap near the corner of the fourth tile closed the drawer. The header keeps 56 pixels
+  // (pt-14) above the content instead. jsdom has no layout, so the class is what is checked;
+  // the Task 6 report has the Chromium measurement of the drawer.
+  it('keeps the content below the close button when the title is hidden', async () => {
+    render(<Page hideTitle />)
+    await openIt()
+
+    const header = screen.getByRole('heading', { name: 'Edit job details' }).parentElement
+    expect(header.classList.contains('pt-14')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Close' }).classList.contains('min-h-11')).toBe(true)
+  })
+
   it('shows the title unless it is told to hide it', async () => {
     render(<Page />)
     await openIt()

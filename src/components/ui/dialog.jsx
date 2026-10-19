@@ -21,7 +21,9 @@ import { IconButton } from "./icon-button"
 //
 // hideTitle keeps the title for a screen reader, which still names the dialog by it,
 // and leaves it off the screen, for a dialog whose contents say what it is without a
-// heading, such as the More pages drawer of the phone navigation. placement="bottom"
+// heading, such as the More pages drawer of the phone navigation. The space the title
+// took is kept, as tall as the close button, so the content starts below the button and
+// no part of it sits under it. placement="bottom"
 // sets the panel on the bottom edge of the screen, full width up to its size, where a
 // thumb reaches it, and slides it in from there.
 const SIZE = {
@@ -100,7 +102,7 @@ function Dialog({ open, onClose, title, description, children, size = "sm", init
               place.popup,
               SIZE[size] ?? SIZE.sm
             )}>
-            <div className={hideTitle ? "pt-5" : "px-5 pt-5 pr-14 pb-4"}>
+            <div className={hideTitle ? "pt-14" : "px-5 pt-5 pr-14 pb-4"}>
               <DialogTitle className={hideTitle ? "sr-only" : undefined}>{title}</DialogTitle>
               {description && (
                 <DialogPrimitive.Description
