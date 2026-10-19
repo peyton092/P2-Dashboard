@@ -243,6 +243,104 @@ describe('a write that is out', () => {
   })
 })
 
+// The stored value reaches the box in a render of its own, after the write has been applied to
+// Firestore's cache. Until it has, the box holds text that still differs from what is stored,
+// and a write of that text that is already out must not be sent a second time by the next
+// blur, by the box going away or by the page being hidden. On a phone the tap that leaves the
+// loose ends box also collapses its card, so the two come in the same turn.
+describe('a write that is out before the stored value has caught up', () => {
+  it('is not written again when the box is left a second time', async () => {
+    const work = deferred()
+    const { write, type, leave } = setup()
+    write.mockReturnValue(work.promise)
+    type('two')
+    await leave()
+
+    await leave()
+
+    expect(write).toHaveBeenCalledTimes(1)
+    await act(async () => { work.resolve() })
+    expect(toast.mock.calls).toEqual([[{ tone: 'success', title: 'Saved.' }]])
+  })
+
+  it('is not written again when the box goes away, and the person is told once', async () => {
+    const work = deferred()
+    const { write, type, leave, unmount } = setup({ saveOnLeave: true })
+    write.mockReturnValue(work.promise)
+    type('two')
+    await leave()
+
+    await act(async () => { unmount() })
+
+    expect(write).toHaveBeenCalledTimes(1)
+    await act(async () => { work.resolve() })
+    expect(toast.mock.calls).toEqual([[{ tone: 'success', title: 'Saved.' }]])
+  })
+
+  it('is not written again when the page is hidden, nor when the box then goes away', async () => {
+    const work = deferred()
+    const { write, type, leave, unmount } = setup({ saveOnLeave: true })
+    write.mockReturnValue(work.promise)
+    type('two')
+    await leave()
+
+    await act(async () => { window.dispatchEvent(new Event('pagehide')) })
+    await act(async () => { unmount() })
+
+    expect(write).toHaveBeenCalledTimes(1)
+    await act(async () => { work.resolve() })
+  })
+
+  it('is written again when it was refused, by leaving the box and by the box going away', async () => {
+    const { write, type, leave, unmount } = setup({ saveOnLeave: true })
+    write.mockRejectedValueOnce(refused()).mockRejectedValueOnce(refused()).mockResolvedValue()
+    type('two')
+    await leave()
+    expect(write).toHaveBeenCalledTimes(1)
+
+    await leave()
+    expect(write).toHaveBeenCalledTimes(2)
+
+    await act(async () => { unmount() })
+    expect(write).toHaveBeenCalledTimes(3)
+    expect(write.mock.calls).toEqual([['two'], ['two'], ['two']])
+  })
+
+  it('is written again when more was typed, and the refusal of the first does not hide the second', async () => {
+    const first = deferred()
+    const second = deferred()
+    const { result, write, type, leave, stored } = setup()
+    write.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    type('two')
+    await leave()
+    type('two and more')
+    await leave()
+    expect(write.mock.calls).toEqual([['two'], ['two and more']])
+
+    await act(async () => { first.reject(refused()) })
+    await leave()
+    expect(write).toHaveBeenCalledTimes(2)
+
+    stored('one')
+    await act(async () => { second.reject(refused()) })
+    expect(result.current.value).toBe('two and more')
+  })
+
+  it('is written again, as a new write, once it has finished and the stored value is something else', async () => {
+    const { result, write, type, leave, stored } = setup()
+    type('two')
+    await leave()
+    stored('two')
+    stored('three')
+    expect(result.current.value).toBe('three')
+
+    type('two')
+    await leave()
+
+    expect(write.mock.calls).toEqual([['two'], ['two']])
+  })
+})
+
 // The write of a box is one Firestore write, which is in the local cache at once, so the box
 // asks for the offline outcome (queue: true in useMutation). Offline, the write does not
 // answer, and after the wait the box says the text is saved on this device and lets go of it.

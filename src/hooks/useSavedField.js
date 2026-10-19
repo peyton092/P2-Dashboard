@@ -28,7 +28,8 @@ import { useMutation } from './useMutation'
 // typed text is still in it, under the error toast, to be written again by leaving the box
 // again. When the write went through, the box shows what is stored, unless more was typed
 // since. Leaving the box again while the write is out, with nothing new, writes nothing, and
-// does not let go of the text either, because a refusal is going to need it.
+// does not let go of the text either, because a refusal is going to need it. That holds before
+// the stored value has caught up too, which is why the text of the write that is out is kept.
 //
 // normalize is what is compared with what is stored and what is written: a box that trims
 // gives it (text) => text.trim(). enabled is false where there is nowhere to write. write is
@@ -47,6 +48,12 @@ export function useSavedField({ stored, enabled = true, normalize = (text) => te
   // The typed text has been dealt with: show what is stored again, unless more was typed since.
   const settle = useCallback((saved) => setDraft((now) => (now === saved ? null : now)), [])
 
+  // What the write that is out wrote, or null when none is. The stored value reaches the box in
+  // a render of its own, after the write has been applied to Firestore's cache, and until it has
+  // the box still holds text that differs from it. Leaving the box again, the box going away or
+  // the page being hidden in that time would write the same text a second time and say so twice.
+  const out = useRef(null)
+
   const save = useCallback((now) => {
     if (!now.enabled || now.draft === null) return
     const next = now.normalize(now.draft)
@@ -56,8 +63,14 @@ export function useSavedField({ stored, enabled = true, normalize = (text) => te
       if (!now.saving) settle(now.draft)
       return
     }
+    if (next === out.current) return
     const typed = now.draft
+    out.current = next
     run(() => now.write(next), { success: now.success, error: now.error, queue: true }).then(({ ok }) => {
+      // Finished, one way or the other, and so no longer out. A refused write is let go of, so
+      // that the text it kept in the box can be written again. A later write of other text that
+      // is still out stays what is remembered.
+      if (out.current === next) out.current = null
       if (ok) settle(typed)
     })
   }, [run, settle])

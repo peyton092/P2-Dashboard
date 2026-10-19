@@ -274,6 +274,25 @@ describe('the loose ends', () => {
       await act(async () => { write.resolve() })
     })
 
+    // On a phone the tap that leaves the box also collapses its card, so the blur and the end
+    // of the box come in the same turn, before the stored loose ends have been drawn again.
+    it('writes once, and says so once, when the box is left and its card collapses in the same turn', async () => {
+      const write = deferred()
+      mocks.updateJob.mockReturnValue(write.promise)
+      const { unmount } = open()
+      fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+
+      await act(async () => {
+        fireEvent.blur(box())
+        unmount()
+      })
+      await act(async () => { window.dispatchEvent(new Event('pagehide')) })
+      await act(async () => { write.resolve() })
+
+      expect(mocks.updateJob).toHaveBeenCalledTimes(1)
+      expect(mocks.toast.mock.calls).toEqual([[{ tone: 'success', title: 'Loose ends saved.' }]])
+    })
+
     it('stops listening for the page being hidden once the box has gone', async () => {
       const { unmount } = open()
       fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
