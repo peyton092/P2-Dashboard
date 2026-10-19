@@ -8,7 +8,7 @@ Link: (added by the controller after deployment)
 
 1. The whole app, built from this repository: every screen of the owner and office dashboard, the builder portal and the client portal.
 2. Sample data, made when the demo first opens on a device and dated from that day, so the newest job update is yesterday. It starts from the jobs, change orders, subs and materials of the emulator seed (`scripts/demo-data.mjs`), with every date moved by the same number of days, and adds what the screens need besides: four demo accounts, settings, submissions with replies, daily reports, alerts, crew scores, history, supplier invoices, permits, change orders in every status with line items, jobs in the QBS, Vision and P2 workspaces, and jobs that are blocked, at risk, on hold or part paid.
-3. The changes a person makes, kept in that browser only (in localStorage, under `p2-demo-state`), so a reload keeps them. Nobody else sees them, and another phone starts from the sample data.
+3. The changes a person makes, kept in that browser only (in localStorage, under `p2-demo-state`), so a reload keeps them for the rest of that day. They are saved with the seed version, the day the demo was built and the day the sample data was dated for; on a later day, or once the demo is published again, the browser starts again from fresh sample data dated from that day (the chosen role stays). Nobody else sees them, and another phone starts from the sample data.
 
 Every person, client, company and street address in the sample data is invented. The names that stay are the project managers and crew the app itself lists, and the suppliers the Invoice Auditor lists.
 

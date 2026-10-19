@@ -359,6 +359,44 @@ describe('keeping the store on the device', () => {
     expect((await getDoc(doc(later, 'jobs', 'j1'))).data().createdAt.toMillis()).toBe(3000)
   })
 
+  it('keeps the day the seed was dated for with what it saves, and restores it on that day', async () => {
+    const seedOf = vi.fn(seed)
+    const today = firestoreOver(createDemoStore({ seed: seedOf, storage, version: 'test-1' }))
+    await updateDoc(doc(today, 'jobs', 'j1'), { progress: 55 })
+    await vi.advanceTimersByTimeAsync(250)
+    expect(seedOf).toHaveBeenCalledTimes(1)
+    expect(seedOf.mock.calls[0][0]).toEqual(new Date(2026, 9, 19, 9, 0, 0))
+    expect(JSON.parse(storage.map.get(DEMO_STATE_KEY))).toMatchObject({ version: 'test-1', day: '2026-10-19' })
+
+    vi.setSystemTime(new Date(2026, 9, 19, 23, 59, 0))
+    const evening = firestoreOver(createDemoStore({ seed: seedOf, storage, version: 'test-1' }))
+    expect((await getDoc(doc(evening, 'jobs', 'j1'))).data().progress).toBe(55)
+    expect(seedOf).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts again from a seed dated today on a later day, and forgets the old state but not the role', async () => {
+    storage.setItem('p2-demo-role', 'builder')
+    await updateDoc(doc(db, 'jobs', 'j1'), { progress: 55 })
+    await vi.advanceTimersByTimeAsync(250)
+
+    vi.setSystemTime(new Date(2026, 9, 20, 7, 30, 0))
+    const seedOf = vi.fn(seed)
+    const tomorrow = firestoreOver(createDemoStore({ seed: seedOf, storage, version: 'test-1' }))
+    expect((await getDoc(doc(tomorrow, 'jobs', 'j1'))).data().progress).toBe(40)
+    expect(seedOf).toHaveBeenCalledTimes(1)
+    expect(seedOf.mock.calls[0][0]).toEqual(new Date(2026, 9, 20, 7, 30, 0))
+    expect(storage.map.has(DEMO_STATE_KEY)).toBe(false)
+    expect(storage.getItem('p2-demo-role')).toBe('builder')
+  })
+
+  it('starts again from the seed when what was saved came from another build', async () => {
+    const built = (date) => createDemoStore({ seed, storage, version: `demo-seed-1 built ${date}` })
+    await updateDoc(doc(firestoreOver(built('2026-10-18')), 'jobs', 'j1'), { progress: 55 })
+    await vi.advanceTimersByTimeAsync(250)
+    expect((await getDoc(doc(firestoreOver(built('2026-10-18')), 'jobs', 'j1'))).data().progress).toBe(55)
+    expect((await getDoc(doc(firestoreOver(built('2026-10-19')), 'jobs', 'j1'))).data().progress).toBe(40)
+  })
+
   it('starts from the seed when what was saved is for another seed version, or cannot be read', async () => {
     storage.setItem(DEMO_STATE_KEY, JSON.stringify({ version: 'test-0', collections: { jobs: {} } }))
     const stale = firestoreOver(createDemoStore({ seed, storage, version: 'test-1' }))

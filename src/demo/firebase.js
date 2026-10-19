@@ -14,11 +14,18 @@ import { deviceStorage } from './device'
 // src/firebase.js here in demo mode, so the app gets the same five exports, built from
 // the shims, with no Firebase configuration and no project of any kind behind them.
 // The store starts from the seed, dated from the day it is first used, or from what
-// this browser saved of an earlier visit.
+// this browser saved earlier that same day, from the same seed and the same build.
+
+// The day of the build, which vite.config.js defines for every build.
+const BUILT = typeof __BUILD_DATE__ === 'string' ? __BUILD_DATE__ : 'outside a build'
+
+// Saved state is kept for this seed version and this build alone, so a visitor who
+// comes back after the demo is published again starts from its sample data.
+export const DEMO_STATE_VERSION = `${DEMO_SEED_VERSION} built ${BUILT}`
 
 const app = initializeApp({
   demo: {
-    store: { seed: () => buildSeed(new Date()), storage: deviceStorage(), version: DEMO_SEED_VERSION },
+    store: { seed: (now) => buildSeed(now), storage: deviceStorage(), version: DEMO_STATE_VERSION },
   },
 })
 

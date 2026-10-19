@@ -1,3 +1,4 @@
+import { toLocalDateStr } from '../lib/dates'
 import { Timestamp, isServerTimestamp, serverClock } from './timestamp'
 
 // The demo's database: every collection the app reads, held in memory on this
@@ -5,13 +6,16 @@ import { Timestamp, isServerTimestamp, serverClock } from './timestamp'
 // queries and snapshots into calls on this store, and the demo callables write to it
 // directly, so the two see the same documents.
 //
-//   const store = createDemoStore({ seed, storage, version })
+//   const store = createDemoStore({ seed, storage, version, clock })
 //
 // seed is a function that gives the collections to start from, as
-// { 'jobs': { [docId]: data }, 'jobs/abc/files': { ... } }, and is called whenever the
-// store starts without saved state and on reset. storage is localStorage or anything
-// with the same three methods, or null. version names the seed: saved state for another
-// version is ignored, so a new seed is never mixed with an old one.
+// { 'jobs': { [docId]: data }, 'jobs/abc/files': { ... } }, for the date it is handed
+// (now, from clock), and is called whenever the store starts without saved state and
+// on reset. storage is localStorage or anything with the same three methods, or null.
+// version names the seed and the build: saved state for another version is ignored,
+// so a new seed is never mixed with an old one. The day the seed was dated for is
+// saved with the state, and state saved on another day is ignored too, so a visitor
+// who comes back the next day sees sample data dated from that day.
 //
 // Documents are copied on the way in and on the way out, so neither a screen that
 // changes what it read nor one that changes what it wrote can change what is stored.
@@ -249,8 +253,9 @@ const guarded = (fn) => {
 // round, so one callback that fails does not keep the others from being called.
 const reportLater = (error) => setTimeout(() => { throw error }, 0)
 
-export function createDemoStore({ seed = () => ({}), storage = null, version = 'demo' } = {}) {
+export function createDemoStore({ seed = () => ({}), storage = null, version = 'demo', clock = () => new Date() } = {}) {
   let collections = null
+  let seedDay = null
   const nextStamp = serverClock()
   const listeners = new Set()
   const inSyncCallbacks = new Set()
@@ -259,11 +264,14 @@ export function createDemoStore({ seed = () => ({}), storage = null, version = '
   let roundScheduled = false
   let saveTimer = null
 
-  // The collections of the seed, as entries, with any serverTimestamp in it stamped now.
+  // The collections of the seed for today, as entries, with any serverTimestamp in it
+  // stamped now.
   function seeded() {
+    const now = clock()
+    seedDay = toLocalDateStr(now)
     const stamp = nextStamp()
     const out = new Map()
-    for (const [path, docs] of Object.entries(seed() || {})) {
+    for (const [path, docs] of Object.entries(seed(now) || {})) {
       const map = new Map()
       for (const [id, data] of Object.entries(docs || {})) map.set(id, entryOf(toStored(data, stamp, '')))
       out.set(path, map)
@@ -271,16 +279,23 @@ export function createDemoStore({ seed = () => ({}), storage = null, version = '
     return out
   }
 
+  // What this device saved, when it was saved by this build from this seed on this
+  // day. Anything else saved is forgotten, so that the seed starts it again.
   function restored() {
     const text = guarded(() => storage?.getItem(DEMO_STATE_KEY))
     if (typeof text !== 'string') return null
-    let saved
+    let saved = null
     try {
       saved = JSON.parse(text)
     } catch {
+      // Unreadable, so forgotten below.
+    }
+    const today = toLocalDateStr(clock())
+    if (!isMap(saved) || saved.version !== version || saved.day !== today || !isMap(saved.collections)) {
+      guarded(() => storage.removeItem(DEMO_STATE_KEY))
       return null
     }
-    if (!saved || saved.version !== version || !isMap(saved.collections)) return null
+    seedDay = today
     const out = new Map()
     for (const [path, docs] of Object.entries(saved.collections)) {
       if (!isMap(docs)) continue
@@ -316,7 +331,7 @@ export function createDemoStore({ seed = () => ({}), storage = null, version = '
       out[path] = {}
       for (const [id, entry] of docs) out[path][id] = encode(entry.data)
     }
-    guarded(() => storage.setItem(DEMO_STATE_KEY, JSON.stringify({ version, collections: out })))
+    guarded(() => storage.setItem(DEMO_STATE_KEY, JSON.stringify({ version, day: seedDay, collections: out })))
   }
 
   function scheduleSave() {

@@ -40,6 +40,14 @@ describe('the demo app', () => {
     const app = initializeApp({})
     expect(getFunctions(app).app).toBe(app)
   })
+
+  it('keeps saved state for its own seed version and build alone', async () => {
+    vi.resetModules()
+    vi.stubGlobal('__BUILD_DATE__', '2026-10-19')
+    const { DEMO_STATE_VERSION } = await import('../firebase')
+    const { DEMO_SEED_VERSION } = await import('../seed')
+    expect(DEMO_STATE_VERSION).toBe(`${DEMO_SEED_VERSION} built 2026-10-19`)
+  })
 })
 
 describe('storage', () => {
