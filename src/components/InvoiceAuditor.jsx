@@ -214,12 +214,10 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
       {/* Meta */}
       <Card className="border-white/10">
         <CardContent className="p-4">
-          {/* A list takes its name from the label of its Field, but not the aria attributes
-              Field gives the control, so the trigger is told it is required itself. */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Field label="Vendor" required>
               <Select value={form.vendor} onValueChange={v => setForm(f => ({ ...f, vendor: v }))}>
-                <SelectTrigger aria-required="true" className="bg-white/5 border-white/20">
+                <SelectTrigger className="bg-white/5 border-white/20">
                   <SelectValue placeholder="Select vendor…" />
                 </SelectTrigger>
                 <SelectContent>

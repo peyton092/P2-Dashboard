@@ -373,19 +373,36 @@ describe('CreateUserModal submit', () => {
     expect(screen.getByLabelText('Email').value).toBe('')
   })
 
-  it('disables the button while the account is being created and ignores a second submit', async () => {
+  // While the account is being created the button says Creating and takes no second press.
+  // It is aria-disabled and not disabled, so the person who pressed it keeps focus inside the
+  // dialog instead of losing it to the page behind, and a status that is there from the start
+  // reads Working, as ConfirmDialog does.
+  it('turns the button off while the account is being created, keeps focus on it, and says Working', async () => {
     let finish
     mocks.callable.mockReturnValue(new Promise((resolve) => { finish = resolve }))
     openModal()
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Name')))
     fill('Email', 'pat@example.com')
+    const status = screen.getByRole('status')
+    expect(status.textContent).toBe('')
+    const button = screen.getByRole('button', { name: 'Create Account' })
+    act(() => { button.focus() })
     submit()
-    const button = await screen.findByRole('button', { name: 'Creating…' })
-    expect(button.disabled).toBe(true)
+
+    expect(await screen.findByRole('button', { name: 'Creating…' })).toBe(button)
+    expect(button.getAttribute('aria-disabled')).toBe('true')
+    expect(button.disabled).toBe(false)
+    expect(document.activeElement).toBe(button)
+    expect(status.textContent).toBe('Working')
+    fireEvent.click(button)
     fireEvent.submit(button.closest('form'))
     expect(mocks.callable).toHaveBeenCalledTimes(1)
-    finish({ data: { uid: 'u' } })
+
+    await act(async () => { finish({ data: { uid: 'u' } }) })
     await screen.findByText(SUCCESS('pat@example.com'))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Account' }).disabled).toBe(false))
+    expect(screen.getByRole('status')).toBe(status)
+    expect(status.textContent).toBe(SUCCESS('pat@example.com'))
+    expect(screen.getByRole('button', { name: 'Create Account' }).getAttribute('aria-disabled')).not.toBe('true')
   })
 
   it('no longer creates accounts or user documents from the browser', async () => {

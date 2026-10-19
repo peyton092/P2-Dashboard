@@ -3,6 +3,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { storage } from '../firebase'
 import { addDailyReport } from '../hooks/useFirestore'
 import { validateUpload, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
+import { callableMessage } from '../lib/callableError'
 import { fmtLongDate, toLocalDateStr } from '../lib/dates'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
@@ -39,6 +40,14 @@ const WORK_ITEMS = [
   { id: 'devices',  label: 'Devices installed' },
   { id: 'fixtures', label: 'Fixtures hung' },
   { id: 'other',    label: 'Other' },
+]
+
+// The lists a report cannot be sent without, in the order of the form, each with what it
+// says when it is left empty.
+const REQUIRED = [
+  ['crewMember', 'Pick your name to continue.'],
+  ['jobId',      'Pick a job to continue.'],
+  ['phase',      'Pick a phase to continue.'],
 ]
 
 const BLOCKER_OPTIONS = [
@@ -161,8 +170,18 @@ export default function CrewReport() {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess]       = useState(false)
   const [error, setError]           = useState('')
+  // What each required list says while it is empty after a refused submit, by its key.
+  const [missing, setMissing]       = useState({})
 
   const cameraRef = useRef(null)
+  const reporterRef = useRef(null)
+  const jobRef      = useRef(null)
+  const phaseRef    = useRef(null)
+  // A list that is picked loses its mark at once.
+  const pick = (key, set) => (value) => {
+    set(value)
+    setMissing(m => ({ ...m, [key]: undefined }))
+  }
 
   const selectedJob = useMemo(
     () => activeJobs.find(j => j.id === jobId) || null,
@@ -223,11 +242,20 @@ export default function CrewReport() {
   // ── Submit (writes only the original 12 fields — Safety / CO toggles are
   //   folded into `nextStep` so we don't introduce new Firestore fields). ──
 
+  // A report missing its reporter, job or phase is refused before anything is written: each
+  // empty list says why on its own Field, which reads it out as an alert and marks the list
+  // invalid, and focus goes to the first of them.
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!crewMember) { setError('Pick your name to continue.'); return }
-    if (!jobId)      { setError('Pick a job to continue.');     return }
-    if (!phase)      { setError('Pick a phase to continue.');   return }
+    const values = { crewMember, jobId, phase }
+    const needs = Object.fromEntries(REQUIRED.filter(([key]) => !values[key]))
+    setMissing(needs)
+    const first = REQUIRED.find(([key]) => needs[key])
+    if (first) {
+      const lists = { crewMember: reporterRef, jobId: jobRef, phase: phaseRef }
+      lists[first[0]].current?.focus()
+      return
+    }
 
     setError('')
     setSubmitting(true)
@@ -265,7 +293,9 @@ export default function CrewReport() {
       await addDailyReport(payload)
       setSuccess(true)
     } catch (err) {
-      setError('Submit failed: ' + (err.message || 'Unknown error'))
+      // The words a person can act on: the reason when the app gave one, and a plain
+      // sentence for an error written for developers (standing ruling 17).
+      setError(`Could not submit the report. ${callableMessage(err, 'Try again.')}`)
     } finally {
       setSubmitting(false)
     }
@@ -275,7 +305,7 @@ export default function CrewReport() {
     setCrewMember(''); setJobId(''); setPhase(''); setWorkDone({}); setPhotos([])
     setMatUsed(''); setMatNeeded(''); setBlocker('None')
     setInspReady(null); setSafetyIssue(null); setChangeOrderNeeded(null)
-    setNextStep(''); setSuccess(false); setError('')
+    setNextStep(''); setSuccess(false); setError(''); setMissing({})
   }
 
   // ── Success state ───────────────────────────────────────────────────────────
@@ -347,9 +377,9 @@ export default function CrewReport() {
           {/* Crew & Job */}
           <DataPanel title="Crew & Job" Icon={HardHatIcon}>
             <div className="space-y-4">
-              <Field label="Reporter">
-                <Select value={crewMember} onValueChange={setCrewMember}>
-                  <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
+              <Field label="Reporter" required error={missing.crewMember}>
+                <Select value={crewMember} onValueChange={pick('crewMember', setCrewMember)}>
+                  <SelectTrigger ref={reporterRef} className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue placeholder="Select your name…" />
                   </SelectTrigger>
                   <SelectContent>
@@ -360,9 +390,9 @@ export default function CrewReport() {
                 </Select>
               </Field>
 
-              <Field label="Job">
-                <Select value={jobId} onValueChange={setJobId}>
-                  <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
+              <Field label="Job" required error={missing.jobId}>
+                <Select value={jobId} onValueChange={pick('jobId', setJobId)}>
+                  <SelectTrigger ref={jobRef} className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue placeholder="Select job…" />
                   </SelectTrigger>
                   <SelectContent>
@@ -375,9 +405,9 @@ export default function CrewReport() {
                 </Select>
               </Field>
 
-              <Field label="Phase">
-                <Select value={phase} onValueChange={setPhase}>
-                  <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
+              <Field label="Phase" required error={missing.phase}>
+                <Select value={phase} onValueChange={pick('phase', setPhase)}>
+                  <SelectTrigger ref={phaseRef} className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue placeholder="Select phase…" />
                   </SelectTrigger>
                   <SelectContent>
@@ -539,10 +569,10 @@ export default function CrewReport() {
             )}
           </DataPanel>
 
-          {/* Error + Submit */}
+          {/* A photo that cannot be sent, or a submit that failed, is read out as an alert. */}
           {error && (
-            <div className="flex items-start gap-2 text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
-              <AlertTriangleIcon size={16} className="mt-0.5 shrink-0" />
+            <div role="alert" className="flex items-start gap-2 text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+              <AlertTriangleIcon size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
               <span>{error}</span>
             </div>
           )}

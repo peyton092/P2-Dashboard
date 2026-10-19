@@ -72,6 +72,14 @@ const PASSWORD_MESSAGES = {
   'auth/network-request-failed': 'No connection. Check it and try again.',
 }
 
+// The box a code is about, so its words sit under that box and mark it invalid. The words
+// for any other code concern neither box, and are read out under them both.
+const PASSWORD_FIELDS = {
+  'auth/wrong-password':     'current',
+  'auth/invalid-credential': 'current',
+  'auth/weak-password':      'new',
+}
+
 function Toggle({ label, enabled, onChange }) {
   return (
     <button
@@ -105,8 +113,9 @@ export default function SettingsPage({ onLogout, role }) {
   const [pwMode, setPwMode]   = useState(false)
   const [curPw, setCurPw]     = useState('')
   const [newPw, setNewPw]     = useState('')
-  // What went wrong with the last try, in words, under the boxes. The toast says it too.
-  const [pwError, setPwError] = useState('')
+  // What went wrong with the last try, in words, and the box it is about, if it is about
+  // one. The toast says it too.
+  const [pwError, setPwError] = useState(null)
 
   const [qbConnected, setQbConnected] = useState(false)
   const [qbConnectedAt, setQbConnectedAt] = useState(null)
@@ -313,7 +322,8 @@ export default function SettingsPage({ onLogout, role }) {
 
   const handleChangePw = async () => {
     if (!user || !curPw || !newPw) return
-    setPwError('')
+    setPwError(null)
+    let field
     const { ok, error } = await runPassword(async () => {
       try {
         const cred = EmailAuthProvider.credential(user.email, curPw)
@@ -322,6 +332,7 @@ export default function SettingsPage({ onLogout, role }) {
       } catch (e) {
         // The sign in service's own text is for developers. A code it has words for gets
         // them, and any other code gets the plain sentence the toast already has.
+        field = PASSWORD_FIELDS[e.code]
         throw new Error(PASSWORD_MESSAGES[e.code] ?? '')
       }
     }, {
@@ -331,7 +342,7 @@ export default function SettingsPage({ onLogout, role }) {
     if (ok) {
       setCurPw(''); setNewPw(''); setPwMode(false)
     } else {
-      setPwError(error)
+      setPwError({ field, message: error })
     }
   }
 
@@ -559,13 +570,13 @@ export default function SettingsPage({ onLogout, role }) {
               variant="outline"
               size="sm"
               className="border-white/20 text-xs h-8"
-              onClick={() => { setPwMode(true); setPwError('') }}
+              onClick={() => { setPwMode(true); setPwError(null) }}
             >
               Change Password
             </Button>
           ) : (
             <div className="space-y-2">
-              <Field label="Current password">
+              <Field label="Current password" error={pwError?.field === 'current' ? pwError.message : undefined}>
                 <Input
                   type="password"
                   autoComplete="current-password"
@@ -574,7 +585,11 @@ export default function SettingsPage({ onLogout, role }) {
                   onChange={e => setCurPw(e.target.value)}
                 />
               </Field>
-              <Field label="New password" hint="At least 6 characters.">
+              <Field
+                label="New password"
+                hint="At least 6 characters."
+                error={pwError?.field === 'new' ? pwError.message : undefined}
+              >
                 <Input
                   type="password"
                   autoComplete="new-password"
@@ -583,8 +598,9 @@ export default function SettingsPage({ onLogout, role }) {
                   onChange={e => setNewPw(e.target.value)}
                 />
               </Field>
-              {/* The toast reads the reason out; this is where it stays to be seen. */}
-              {pwError && <p className="text-xs text-critical">{pwError}</p>}
+              {/* The toast says the reason too; this is where it stays to be seen. Words about
+                  one box sit under that box, and words about neither are an alert here. */}
+              {pwError && !pwError.field && <p role="alert" className="text-xs text-critical">{pwError.message}</p>}
               <div className="flex gap-2">
                 <Button
                   variant="brand"
@@ -599,7 +615,7 @@ export default function SettingsPage({ onLogout, role }) {
                   variant="ghost"
                   size="sm"
                   className="text-xs h-7"
-                  onClick={() => { setPwMode(false); setPwError(''); setCurPw(''); setNewPw('') }}
+                  onClick={() => { setPwMode(false); setPwError(null); setCurPw(''); setNewPw('') }}
                 >
                   Cancel
                 </Button>

@@ -523,9 +523,23 @@ export function CreateUserModal({ onClose }) {
             </Field>
           )}
           {error   && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
-          {success && <p role="status" className="text-xs text-green-400 font-medium">{success}</p>}
-          {warning && <p role="status" className="text-xs text-amber-400 font-medium">{warning}</p>}
-          <Button type="submit" variant="brand" className="w-full max-md:min-h-11" disabled={loading}>
+          {/* In the document from the start, so that what arrives in it is announced: Working
+              while the account is being made, then how it went. */}
+          <div role="status">
+            {loading && <span className="sr-only">Working</span>}
+            {success && <p className="text-xs text-green-400 font-medium">{success}</p>}
+            {warning && <p className="text-xs text-amber-400 font-medium">{warning}</p>}
+          </div>
+          {/* aria-disabled and not disabled while the account is being made, as ConfirmDialog
+              does, so a person who pressed it keeps focus in the dialog and not on the page
+              behind. handleCreate ignores a submit while it runs. */}
+          <Button
+            type="submit"
+            variant="brand"
+            className="w-full max-md:min-h-11 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            disabled={loading}
+            focusableWhenDisabled
+          >
             {loading ? 'Creating…' : 'Create Account'}
           </Button>
         </form>

@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { withAuthor, sendExtraToBuilder } from '../hooks/useFirestore'
@@ -142,7 +142,6 @@ function jobLabel(jobs, jobId) {
 function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
   const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
   const { ask, dialog } = useConfirm()
-  const statusId = useId()
 
   // The price on a line goes with it, so taking one off is asked about first. It is a
   // change to the form and nothing is written until the form is saved, so the question
@@ -218,13 +217,10 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
       {/* Meta row */}
       <Card className="border-white/10">
         <CardContent className="p-4">
-          {/* A list takes its name from the label of its Field, but not the aria attributes
-              Field gives the control, so the trigger is told it is required and where its
-              hint is itself. */}
           <div className="grid md:grid-cols-3 gap-4">
             <Field label="Job" required>
               <Select value={form.job} onValueChange={v => setForm(f => ({ ...f, job: v }))}>
-                <SelectTrigger aria-required="true" className="bg-white/5 border-white/20 w-full">
+                <SelectTrigger className="bg-white/5 border-white/20 w-full">
                   <SelectValue placeholder="Select job…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -242,9 +238,9 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                 onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
               />
             </Field>
-            <Field id={statusId} label="Status" hint="Set when the change order is sent, approved or rejected.">
+            <Field label="Status" hint="Set when the change order is sent, approved or rejected.">
               <Select value={form.status} disabled>
-                <SelectTrigger aria-describedby={`${statusId}-hint`} className="bg-white/5 border-white/20 w-full">
+                <SelectTrigger className="bg-white/5 border-white/20 w-full">
                   <SelectValue>{statusLabel(CO_STATUS, normalizeCoStatus(form.status || 'Draft'))}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>

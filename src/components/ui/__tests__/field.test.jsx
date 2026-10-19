@@ -4,6 +4,7 @@ import { axe } from '@/test/axe'
 import { Input } from '../input'
 import { Textarea } from '../textarea'
 import { Field } from '../field'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select'
 
 afterEach(cleanup)
 
@@ -137,5 +138,45 @@ describe('Field', () => {
       </>,
     )
     expect(await axe(container)).toHaveNoViolations()
+  })
+
+  // A list is a Base UI Select, whose Root renders no element of its own, so the Root takes
+  // the id and the aria attributes Field gives its control and hands them to the trigger,
+  // the element a keyboard reaches and a screen reader reads.
+  it('gives a list its label, its hint, its error and required, on the trigger', () => {
+    render(
+      <Field id="crew" label="Reporter" hint="Who filed it." error="Pick your name to continue." required>
+        <Select>
+          <SelectTrigger>
+            <SelectValue placeholder="Select your name" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Austin">Austin</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>,
+    )
+
+    const list = screen.getByRole('combobox', { name: 'Reporter' })
+    expect(list.getAttribute('aria-required')).toBe('true')
+    expect(list.getAttribute('aria-invalid')).toBe('true')
+    expect(list.getAttribute('aria-describedby')).toBe('crew-hint crew-error')
+    expect(screen.getByRole('alert').textContent).toBe('Pick your name to continue.')
+  })
+
+  it('leaves a list without those marks when its Field has none', () => {
+    render(
+      <Field label="Blocker">
+        <Select defaultValue="None">
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="None">None</SelectItem></SelectContent>
+        </Select>
+      </Field>,
+    )
+
+    const list = screen.getByRole('combobox', { name: 'Blocker' })
+    for (const attribute of ['aria-required', 'aria-invalid', 'aria-describedby']) {
+      expect(list.hasAttribute(attribute), attribute).toBe(false)
+    }
   })
 })

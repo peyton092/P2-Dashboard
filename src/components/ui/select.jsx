@@ -6,7 +6,29 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+// The aria attributes a Field gives its control. Base UI's Select.Root renders no element
+// of its own and drops them, so the Root here keeps them and the trigger, the element a
+// keyboard reaches and a screen reader reads, wears them: a list on a Field is described by
+// its hint and its error, and is marked required and invalid, as an input is. The label
+// already reaches the trigger, through the id the Root passes on to it.
+const FieldAria = React.createContext({})
+
+function Select({
+  "aria-describedby": describedBy,
+  "aria-invalid": invalid,
+  "aria-required": required,
+  ...props
+}) {
+  const aria = React.useMemo(
+    () => ({ "aria-describedby": describedBy, "aria-invalid": invalid, "aria-required": required }),
+    [describedBy, invalid, required]
+  )
+  return (
+    <FieldAria.Provider value={aria}>
+      <SelectPrimitive.Root {...props} />
+    </FieldAria.Provider>
+  );
+}
 
 function SelectGroup({
   className,
@@ -38,8 +60,10 @@ function SelectTrigger({
   children,
   ...props
 }) {
+  const aria = React.useContext(FieldAria)
   return (
     <SelectPrimitive.Trigger
+      {...aria}
       data-slot="select-trigger"
       data-size={size}
       className={cn(

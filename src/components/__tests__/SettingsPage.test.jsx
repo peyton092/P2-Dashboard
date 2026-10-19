@@ -483,6 +483,36 @@ describe('changing the password', () => {
     expect(screen.getByText('Could not update the password. Try again.', { selector: 'p' })).toBeTruthy()
   })
 
+  // The words under the boxes are an alert on the box they concern, which is marked invalid
+  // and described by them: a wrong current password on the first box, a short new one on
+  // the second. An error that concerns neither box is an alert under them both.
+  it.each([
+    ['auth/wrong-password', 'Current password', 'New password', 'Current password is incorrect.'],
+    ['auth/weak-password', 'New password', 'Current password', 'New password must be at least 6 characters.'],
+  ])('puts %s on the %s box as an alert, and marks that box invalid', async (code, box, otherBox, words) => {
+    mocks.reauthenticate.mockRejectedValue(authError(code))
+    await start()
+    await press(update())
+
+    const input = screen.getByLabelText(box)
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toBe(words)
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(input.getAttribute('aria-describedby').split(' ')).toContain(alert.id)
+    expect(screen.getByLabelText(otherBox).hasAttribute('aria-invalid')).toBe(false)
+  })
+
+  it('reads an error that concerns neither box out as an alert, and marks neither invalid', async () => {
+    mocks.reauthenticate.mockRejectedValue(authError('auth/network-request-failed'))
+    await start()
+    await press(update())
+
+    expect(screen.getByRole('alert').textContent).toBe('No connection. Check it and try again.')
+    for (const box of ['Current password', 'New password']) {
+      expect(screen.getByLabelText(box).hasAttribute('aria-invalid'), box).toBe(false)
+    }
+  })
+
   it('clears the message under the boxes as soon as the person tries again', async () => {
     const pending = deferred()
     mocks.reauthenticate.mockRejectedValueOnce(authError('auth/wrong-password')).mockReturnValueOnce(pending.promise)
