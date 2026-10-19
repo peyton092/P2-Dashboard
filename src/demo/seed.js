@@ -1,7 +1,7 @@
 import {
-  STATIC_JOBS, STATIC_EXTRAS, STATIC_SUBS, STATIC_MATERIALS, LAST_STATUS_CHANGES, agentFields,
+  STATIC_JOBS, STATIC_EXTRAS, STATIC_SUBS, STATIC_MATERIALS, TYPE_CONTRACT, agentFields,
 } from '../../scripts/demo-data.mjs'
-import { daysBetween, parseDateStr, toLocalDateStr } from '../lib/dates'
+import { daysBetween, toLocalDateStr } from '../lib/dates'
 import { Timestamp } from './timestamp'
 import { DEMO_USERS } from './users'
 import { extraActivity, inspectionActivity, jobActivity, scopeForJob } from './callables'
@@ -11,12 +11,15 @@ import { extraActivity, inspectionActivity, jobActivity, scopeForJob } from './c
 //   buildSeed(now)  every collection the screens read, as { [path]: { [docId]: data } }
 //
 // The jobs, change orders, subs and materials of the emulator seed (scripts/demo-data.mjs)
-// are the base, with every date in them moved by one offset so that the newest status
-// change is the day before now: the jobs keep how old each step is, and the app looks
-// current. What that data does not have, and a screen needs, is added here, dated from
-// now: the demo accounts, settings, submissions and replies, daily reports, alerts, crew
-// scores, history, supplier invoices, permits, change orders in every status with line
-// items, a few jobs in other tenants, and some jobs with blockers.
+// are the base: what each job is (its id, type, manager, value, subs, phase and progress)
+// comes from there, and everything about when is dated from now, so the owner opens to
+// a healthy business with some real work to do: most jobs on track and updated in the
+// last two days, a handful at risk and two or three critical, targets mostly ahead,
+// a few invoices this month, one inspection failed, and most sub insurance current
+// (see How each job stands today, below). What that data does not have, and a screen
+// needs, is added here, dated from now: the demo accounts, settings, submissions and
+// replies, daily reports, alerts, crew scores, history, supplier invoices, permits,
+// change orders in every status with line items, and a few jobs in other tenants.
 //
 // Every name of a person, client, homeowner or company and every street address here is
 // invented, and none comes from the emulator data, which has real looking names. The
@@ -30,7 +33,7 @@ import { extraActivity, inspectionActivity, jobActivity, scopeForJob } from './c
 // Saved state is kept only for the seed version it was made from. Change this whenever
 // the seed changes, so a browser that saved state from an older seed starts again from
 // the new one instead of mixing the two.
-export const DEMO_SEED_VERSION = 'demo-seed-1'
+export const DEMO_SEED_VERSION = 'demo-seed-2'
 
 const CLIENT = DEMO_USERS.client
 const BUILDER = DEMO_USERS.builder
@@ -99,6 +102,14 @@ const SUB_KEYS = {
   'P2 In-House': 'P2 In-House',
 }
 
+// Each sub's insurance and license as days from today until they run out: most are
+// current, Lena's and Silas's insurance runs out within two months, and Ivy's ran out
+// twelve days ago.
+const SUB_DATES = {
+  carlos: [210, 420], roman: [18, 380], kebler: [300, 260], medey: [150, 330], edgar: [45, 510],
+  victor: [260, 300], ventura: [120, 450], mario: [-12, 280], p2: [365, 400],
+}
+
 // Item names of the emulator data that are written here without a hyphen.
 const ITEM_NAMES = { 'Carrier 5-Ton RTU Unit': 'Carrier 5 Ton RTU Unit', 'Rheem 50-gal Water Heater': 'Rheem 50 Gallon Water Heater' }
 
@@ -121,15 +132,19 @@ const EXTRA_WORDS = {
 // ── Dates ─────────────────────────────────────────────────────────────────────
 
 const pad = (n) => String(n).padStart(2, '0')
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
-const US_DAY = /^\d{1,2}\/\d{1,2}\/\d{4}$/
 
 function clock(now) {
   const y = now.getFullYear()
   const m = now.getMonth()
   const d = now.getDate()
-  // The local day n days from today, as 2026-10-19.
+  // The local day n days from today, as 2026-10-19, and as invoices are dated, 10/19/2026.
   const day = (n) => toLocalDateStr(new Date(y, m, d + n))
+  const usDay = (n) => {
+    const date = new Date(y, m, d + n)
+    return `${pad(date.getMonth() + 1)}/${pad(date.getDate())}/${date.getFullYear()}`
+  }
+  // How many days back the first of this month is: 0 on the first.
+  const intoMonth = d - 1
   // A moment n days ago at a local time of day, never later than now.
   const at = (daysAgo, hour = 9, minute = 0) => {
     const when = new Date(y, m, d - daysAgo, hour, minute)
@@ -137,67 +152,184 @@ function clock(now) {
   }
   const hoursAgo = (hours) => Timestamp.fromMillis(now.getTime() - hours * 3_600_000)
   const iso = (stamp) => stamp.toDate().toISOString()
-  return { day, at, hoursAgo, iso }
+  return { day, usDay, intoMonth, at, hoursAgo, iso }
 }
 
-// Moves every day written in a value (2026-04-21 or 04/21/2026) by offset days, and
-// leaves everything else as it is.
-function shiftDays(value, offset) {
-  if (typeof value === 'string' && (ISO_DAY.test(value) || US_DAY.test(value))) {
-    const date = parseDateStr(value)
-    if (!date) return value
-    const moved = new Date(date.getFullYear(), date.getMonth(), date.getDate() + offset)
-    return ISO_DAY.test(value)
-      ? toLocalDateStr(moved)
-      : `${pad(moved.getMonth() + 1)}/${pad(moved.getDate())}/${moved.getFullYear()}`
-  }
-  if (Array.isArray(value)) return value.map((item) => shiftDays(item, offset))
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, shiftDays(inner, offset)]))
-  }
-  return value
+// ── How each job stands today ─────────────────────────────────────────────────
+//
+// The emulator data says what each job is: its id, type, manager, value, subs, phase
+// and progress. Its dates come from another time, with starts a year back, most targets
+// passed and weeks without an update, so the demo dates every job from today instead,
+// as a healthy business stands. A job has passed the inspections its phase says, nine
+// days apart, the first three weeks after it started; it was updated in the last two
+// days; its target is as far ahead as its progress says; and a job that is billed was
+// invoiced for its share of the contract two days after its last inspection passed,
+// last month or earlier. JOB_PLAN sets the few that stand otherwise.
+
+// The inspections a job has passed by its phase, in the order they are done. HVAC rough
+// in comes after the electrical service is released, since the app holds a job whose
+// HVAC is roughed in without power as blocked.
+const PASSED_BY_PHASE = {
+  'not-started': [],
+  'rough-in-passed': ['electrical.roughIn', 'plumbing.roughIn'],
+  'service-built-needs-release': ['electrical.roughIn', 'plumbing.roughIn'],
+  'service-release-passed': ['electrical.roughIn', 'plumbing.roughIn', 'hvac.roughIn'],
+  'final-phase': ['electrical.roughIn', 'plumbing.roughIn', 'hvac.roughIn', 'electrical.trim', 'plumbing.final', 'electrical.final'],
+  complete: ['electrical.roughIn', 'plumbing.roughIn', 'hvac.roughIn', 'electrical.trim', 'plumbing.final', 'electrical.final', 'hvac.final'],
 }
 
-// Merges changes into a job at every depth, so one inspection phase can be set alone.
-function withChanges(base, changes) {
-  const out = { ...base }
-  for (const [key, value] of Object.entries(changes)) {
-    out[key] = value && typeof value === 'object' && !Array.isArray(value) && base[key] && typeof base[key] === 'object'
-      ? withChanges(base[key], value)
-      : value
-  }
-  return out
+// The share of the contract billed by each phase.
+const BILLED_BY_PHASE = { 'rough-in-passed': 0.4, 'service-built-needs-release': 0.5, 'service-release-passed': 0.75, 'final-phase': 0.9, complete: 1 }
+
+// The billing statuses that have an invoice behind them.
+const INVOICED = ['invoiced', 'partial-pay', 'paid']
+
+// The days since the last update of the jobs JOB_PLAN leaves alone, by their place.
+const RECENT = [0, 1, 1, 0, 2, 1, 0]
+
+// The jobs that stand otherwise:
+//   stale              days since the last update
+//   target             the target, as days from today
+//   failed             [trade, phase, days ago] of the one failed inspection
+//   insp               phases set as they stand: passed ones are dated after the others
+//   invoicedThisMonth  days ago the invoice went out, on the first of the month at the
+//                      earliest, so that this month always has a few invoices
+//   permitsPending     still waiting on its permits
+// and anything else is set on the job as it is.
+const JOB_PLAN = {
+  'QBS-002': { invoicedThisMonth: 9 },
+  'QBS-003': { progress: 85, insp: { electrical: { trim: 'passed', final: 'scheduled' } } },
+  'QBS-005': { stale: 3 },
+  'QBS-007': { invoicedThisMonth: 2 },
+  'QBS-008': { billingStatus: 'not-invoiced' },
+  'QBS-009': { billingStatus: 'paid' },
+  'QBS-011': { status: 'needs-action', stale: 3, failed: ['plumbing', 'roughIn', 3], nextAction: 'Rework the drain slope and call the plumbing rough in again', nextActionDue: 1 },
+  'QBS-012': { status: 'blocked', stale: 8, target: -4, nextAction: 'Framing inspection has to pass before the service is set', nextActionAssignedTo: 'Marvin' },
+  'QBS-013': { permitsPending: true },
+  'QBS-022': { insp: { hvac: { roughIn: 'scheduled' } } },
+  'QBS-025': { status: 'needs-action', stale: 10, target: -9, nextAction: 'Ask the utility for the service release date', nextActionDue: 0 },
+  'QBS-028': { billingStatus: 'partial-pay', invoicedThisMonth: 4 },
+  'QBS-031': { photoCount: 6, companyCamUpdated: true },
+  'QBS-032': { permitsPending: true },
+  'QBS-033': { billingStatus: 'paid' },
+  'QBS-035': { status: 'at-risk', stale: 4, nextAction: 'Confirm the HVAC startup date with the builder', nextActionDue: 2 },
+  'QBS-038': { insp: { electrical: { trim: 'pending-verification' } } },
+  'QBS-040': { status: 'on-track', eServiceRelease: 'obtained', insp: { hvac: { final: 'scheduled' } }, nextAction: 'HVAC final is booked for Friday', nextActionDue: 4 },
+  'QBS-041': { billingStatus: 'hold', target: -2, nextAction: 'Hold billing until the punch list is signed' },
+  'QBS-044': { invoicedThisMonth: 5, photoCount: 8, companyCamUpdated: true, insp: { plumbing: { roughIn: 'scheduled' } }, nextAction: 'Plumbing rough in is booked for Thursday', nextActionDue: 3 },
 }
+
+// The plan's keys that say how to date a job, as opposed to fields set on it.
+const PLAN_KEYS = ['stale', 'target', 'failed', 'insp', 'invoicedThisMonth', 'permitsPending']
 
 const docKey = (id) => id.toLowerCase()
+
+// How a job of the emulator data stands today: its status, progress, dates,
+// inspections, permits and billing. index is its place in the data, for the small
+// differences between one job and the next.
+function standing(source, index, plan, { day, usDay, intoMonth }) {
+  const phase = source.phase
+  const complete = phase === 'complete'
+  const started = phase !== 'not-started'
+  const billing = plan.billingStatus ?? (started ? source.billingStatus : 'not-invoiced')
+  const invoiced = INVOICED.includes(billing)
+
+  // When the last inspection passed, as days from today, and when the invoice went out.
+  let invoiceDay = null
+  let lastPassed
+  if (plan.invoicedThisMonth !== undefined) {
+    invoiceDay = -Math.min(plan.invoicedThisMonth, intoMonth)
+    lastPassed = invoiceDay - 1
+  } else if (invoiced) {
+    invoiceDay = -(31 + (index % 20))
+    lastPassed = invoiceDay - 2
+  } else {
+    lastPassed = -(4 + (index % 8))
+  }
+
+  // The phases passed, oldest first, without those the job does not have, and without
+  // those the plan has failed, booked or waiting.
+  const planned = Object.entries(plan.insp ?? {}).flatMap(([trade, phases]) =>
+    Object.entries(phases).map(([name, status]) => [`${trade}.${name}`, status]))
+  const extra = planned.filter(([, status]) => status === 'passed').map(([key]) => key)
+  const otherwise = new Set(planned.filter(([, status]) => status !== 'passed').map(([key]) => key))
+  const failedKey = plan.failed ? `${plan.failed[0]}.${plan.failed[1]}` : null
+  const passed = [...PASSED_BY_PHASE[phase], ...extra]
+    .filter((key) => key !== failedKey && !otherwise.has(key))
+    .filter((key) => {
+      const [trade, name] = key.split('.')
+      return source.insp[trade]?.[name] !== undefined && source.insp[trade][name] !== 'n/a'
+    })
+  const passedOn = new Map(passed.map((key, i) => [key, lastPassed - 9 * (passed.length - 1 - i)]))
+
+  const insp = {}
+  for (const [trade, phases] of Object.entries(source.insp)) {
+    insp[trade] = {}
+    for (const [name, value] of Object.entries(phases)) {
+      if (name.endsWith('Date')) continue
+      const key = `${trade}.${name}`
+      if (value === 'n/a') insp[trade][name] = 'n/a'
+      else if (key === failedKey) {
+        insp[trade][name] = 'failed'
+        insp[trade][`${name}Date`] = day(-plan.failed[2])
+      } else if (passedOn.has(key)) {
+        insp[trade][name] = 'passed'
+        insp[trade][`${name}Date`] = day(passedOn.get(key))
+      } else {
+        insp[trade][name] = plan.insp?.[trade]?.[name] ?? 'not-started'
+      }
+    }
+  }
+
+  const progress = plan.progress ?? source.progress
+  const firstPassed = passed.length > 0 ? passedOn.get(passed[0]) : lastPassed
+  const start = started ? firstPassed - 21 : 3 + (index % 12) + (plan.permitsPending ? 10 : 0)
+  const stale = plan.stale ?? (complete ? -lastPassed : RECENT[index % RECENT.length])
+  const target = plan.target
+    ?? (complete ? lastPassed + (index % 7) - 2
+      : started ? start + Math.round(-start / (progress / 100))
+        : start + 120 - (index % 30))
+
+  // Permits are in for every job but those still waiting on them, and closed out on
+  // the jobs that are done.
+  const permits = Object.fromEntries(Object.entries(source.permits).map(([trade, status]) => [
+    trade,
+    status === null || plan.permitsPending ? status : complete ? 'finaled' : (status === 'applied' || status === 'pending' ? 'approved' : status),
+  ]))
+
+  const contract = TYPE_CONTRACT[source.type] ?? 18000
+  return {
+    status: plan.status ?? source.status,
+    progress,
+    start: day(start),
+    target: day(target),
+    lastStatusChange: day(-stale),
+    insp,
+    permits,
+    billingStatus: billing,
+    ...(invoiced
+      ? {
+        invoiceDate: usDay(invoiceDay),
+        invoiceNum: source.invoiceNum ? String(Number(source.invoiceNum) + 1000) : String(5100 + index),
+        invoiceAmount: Math.round((contract * BILLED_BY_PHASE[phase]) / 50) * 50,
+      }
+      : {}),
+  }
+}
 
 // ── The seed ──────────────────────────────────────────────────────────────────
 
 export function buildSeed(now) {
-  const { day, at, hoursAgo, iso } = clock(now)
-  const newest = Object.values(LAST_STATUS_CHANGES).sort().pop()
-  const offset = daysBetween(newest, day(-1))
-  const shift = (value) => shiftDays(value, offset)
+  const dates = clock(now)
+  const { day, at, hoursAgo, iso } = dates
 
   // ── Jobs ──
   const jobs = {}
   const byId = new Map()
   const permitNumbers = new Map()
-  const permitFor = (old) => {
-    if (!old) return undefined
-    if (!permitNumbers.has(old)) permitNumbers.set(old, `${now.getFullYear()}${String(41_000 + permitNumbers.size * 173).padStart(6, '0')}`)
-    return permitNumbers.get(old)
-  }
-
-  const changes = {
-    'QBS-011': { insp: { plumbing: { roughIn: 'failed', roughInDate: day(-3) } }, nextAction: 'Rework the drain slope and call the plumbing rough in again', nextActionDue: day(1) },
-    'QBS-012': { status: 'blocked', nextAction: 'Framing inspection has to pass before the service is set', nextActionAssignedTo: 'Marvin' },
-    'QBS-022': { insp: { hvac: { roughIn: 'scheduled' } } },
-    'QBS-028': { billingStatus: 'partial-pay' },
-    'QBS-031': { photoCount: 6, companyCamUpdated: true },
-    'QBS-035': { status: 'at-risk', nextAction: 'Confirm the HVAC startup date with the builder', nextActionDue: day(2) },
-    'QBS-041': { billingStatus: 'hold', nextAction: 'Hold billing until the punch list is signed' },
-    'QBS-044': { photoCount: 8, companyCamUpdated: true, insp: { plumbing: { roughIn: 'scheduled' } }, nextAction: 'Plumbing rough in is booked for Thursday', nextActionDue: day(3) },
+  const permitFor = (key) => {
+    if (!permitNumbers.has(key)) permitNumbers.set(key, `${now.getFullYear()}${String(41_000 + permitNumbers.size * 173).padStart(6, '0')}`)
+    return permitNumbers.get(key)
   }
 
   let named = 0
@@ -209,9 +341,14 @@ export function buildSeed(now) {
     const towns = PM_TOWNS[source.pm] ?? PM_TOWNS['Taylor Hensley']
     const [city, county] = own ? CLIENT_TOWN : towns[index % towns.length]
     const clientWords = source.client.split(' ').slice(1).join(' ')
-    const base = shift({ ...source, ...agentFields(source) })
-    const job = withChanges({
-      ...base,
+    const plan = JOB_PLAN[source.id] ?? {}
+    const stands = standing(source, index, plan, dates)
+    const set = Object.fromEntries(Object.entries(plan).filter(([key]) => !PLAN_KEYS.includes(key)))
+    const job = {
+      ...source,
+      ...agentFields(source),
+      ...stands,
+      ...set,
       name,
       client: own ? CLIENT.displayName : `${name} ${clientWords}`,
       address: own ? own.address : street,
@@ -219,12 +356,17 @@ export function buildSeed(now) {
       county,
       lead: LEADS[source.lead] ?? 'Austin',
       subs: Object.fromEntries(Object.entries(source.subs).map(([trade, sub]) => [trade, sub ? SUB_KEYS[sub] : null])),
-      ...(source.permitNumber ? { permitNumber: permitFor(source.permitNumber) } : {}),
-      ...(source.invoiceNum ? { invoiceNum: String(Number(source.invoiceNum) + 1000) } : {}),
       tenantId: 'qbs',
       clientUids: own ? [CLIENT.uid] : [],
-      createdAt: at(daysBetween(base.start, day(0)) ?? 30, 8, 0),
-    }, changes[source.id] ?? {})
+      createdAt: at(Math.max(5, daysBetween(stands.start, day(0)) + 7), 8, 0),
+    }
+    if (plan.nextActionDue !== undefined) job.nextActionDue = day(plan.nextActionDue)
+    if (plan.permitsPending) delete job.permitNumber
+    else job.permitNumber = permitFor(source.permitNumber ?? `new ${source.id}`)
+    if (!stands.invoiceDate) {
+      delete job.invoiceDate
+      delete job.invoiceNum
+    }
     delete job._seedVersion
     jobs[`job-${docKey(source.id)}`] = job
     byId.set(job.id, job)
@@ -237,17 +379,17 @@ export function buildSeed(now) {
       status: 'on-track', phase: 'rough-in-passed', progress: 35, start: day(-24), target: day(48), lastStatusChange: day(-2),
       billingStatus: 'not-invoiced', permitNumber: `${now.getFullYear()}052118`,
       subs: { electrical: 'Ivy', plumbing: 'Grant', hvac: 'Wade' },
-      permits: { electrical: 'approved', plumbing: 'approved', hvac: 'applied' },
+      permits: { electrical: 'approved', plumbing: 'approved', hvac: 'approved' },
       insp: {
         electrical: { roughIn: 'passed', roughInDate: day(-6), trim: 'not-started', final: 'not-started' },
-        plumbing: { roughIn: 'pending-verification', final: 'not-started' },
+        plumbing: { roughIn: 'passed', roughInDate: day(-4), final: 'not-started' },
         hvac: { roughIn: 'not-started', final: 'not-started' },
       },
     },
     {
       id: 'VBG-002', name: 'Hollowell', client: 'Hollowell Family', tenantId: 'vision', type: 'Residential MEP Upgrade',
       address: '208 Cardinal Ridge Ct', city: 'Lebanon, TN', county: 'Wilson', pm: 'Brendan Embry', qbsPM: 'Brendan Embry', lead: 'Ty',
-      status: 'pending', phase: 'not-started', progress: 5, start: day(6), target: day(80), lastStatusChange: day(-4),
+      status: 'pending', phase: 'not-started', progress: 5, start: day(6), target: day(80), lastStatusChange: day(-1),
       billingStatus: 'not-invoiced',
       subs: { electrical: 'P2 In-House', plumbing: 'Noel', hvac: null },
       permits: { electrical: 'applied', plumbing: 'applied', hvac: null },
@@ -260,12 +402,12 @@ export function buildSeed(now) {
     {
       id: 'VBG-003', name: 'Ostrander', client: 'Ostrander Custom Homes', tenantId: 'vision', type: 'HVAC + Electrical Upgrade',
       address: '1450 Saddle Creek Dr', city: 'Murfreesboro, TN', county: 'Rutherford', pm: 'Jeb Brooks', qbsPM: 'Jeb Brooks', lead: 'Marvin',
-      status: 'needs-action', phase: 'service-built-needs-release', progress: 60, start: day(-70), target: day(12), lastStatusChange: day(-1),
+      status: 'on-track', phase: 'service-built-needs-release', progress: 60, start: day(-70), target: day(12), lastStatusChange: day(-1),
       billingStatus: 'not-invoiced', permitNumber: `${now.getFullYear()}052466`,
       subs: { electrical: 'Theo', plumbing: null, hvac: 'Lena' },
       permits: { electrical: 'approved', plumbing: null, hvac: 'approved' },
       insp: {
-        electrical: { roughIn: 'passed', roughInDate: day(-30), trim: 'pending-verification', final: 'not-started' },
+        electrical: { roughIn: 'passed', roughInDate: day(-30), trim: 'not-started', final: 'not-started' },
         plumbing: { roughIn: 'n/a', final: 'n/a' },
         hvac: { roughIn: 'scheduled', final: 'not-started' },
       },
@@ -278,7 +420,7 @@ export function buildSeed(now) {
       subs: { electrical: 'P2 In-House', plumbing: null, hvac: null },
       permits: { electrical: 'approved', plumbing: null, hvac: null },
       insp: {
-        electrical: { roughIn: 'passed', roughInDate: day(-9), trim: 'pending-verification', final: 'not-started' },
+        electrical: { roughIn: 'passed', roughInDate: day(-9), trim: 'not-started', final: 'not-started' },
         plumbing: { roughIn: 'n/a', final: 'n/a' },
         hvac: { roughIn: 'n/a', final: 'n/a' },
       },
@@ -286,7 +428,7 @@ export function buildSeed(now) {
     {
       id: 'PEM-002', name: 'Tamsin', client: 'Tamsin Farm Supply', tenantId: 'p2-core', type: 'Commercial MEP Buildout',
       address: '4100 Depot St', city: 'Columbia, TN', county: 'Maury', pm: 'Tim King', lead: 'Trevor',
-      status: 'at-risk', phase: 'not-started', progress: 20, start: day(-15), target: day(60), lastStatusChange: day(-6),
+      status: 'at-risk', phase: 'not-started', progress: 20, start: day(-15), target: day(60), lastStatusChange: day(-5),
       billingStatus: 'not-invoiced', nextAction: 'Utility has not set the meter. Call the co op again.', nextActionDue: day(1),
       subs: { electrical: 'P2 In-House', plumbing: 'Silas', hvac: 'Wade' },
       permits: { electrical: 'applied', plumbing: 'pending', hvac: 'pending' },
@@ -344,11 +486,15 @@ export function buildSeed(now) {
   const author = { createdBy: OWNER.uid, createdByEmail: OWNER.email }
   const who = (account) => ({ uid: account.uid, email: account.email, displayName: account.displayName })
 
+  // The change orders of the emulator data, dated over the last three months. CO-004
+  // still waits for the builder; the others are approved.
   STATIC_EXTRAS.forEach((source, index) => {
     const desc = EXTRA_WORDS[source.id]
-    const pending = source.status === 'pending'
+    const pending = source.id === 'CO-004'
     extras[docKey(source.id)] = {
-      ...shift(source),
+      ...source,
+      status: pending ? 'pending' : 'approved',
+      date: day(-(12 + index * 6)),
       desc,
       lineItems: [{ desc, qty: 1, unit: 'LS', unitPrice: source.amount, extPrice: source.amount }],
       subtotal: source.amount,
@@ -356,10 +502,10 @@ export function buildSeed(now) {
       markup: 0,
       total: source.amount,
       notes: '',
-      ...(pending ? { sentAt: at(1 + index % 9, 10) } : {}),
+      ...(pending ? { sentAt: at(6, 10) } : {}),
       ...stampFor(source.job),
       ...author,
-      createdAt: at(200 - index * 5),
+      createdAt: at(12 + index * 6),
     }
   })
 
@@ -432,7 +578,7 @@ export function buildSeed(now) {
     ['QBS-011', 'plumbing', 'roughIn', OFFICE],
     ['QBS-036', 'electrical', 'roughIn', OWNER],
     ['QBS-009', 'electrical', 'final', OWNER],
-    ['QBS-040', 'hvac', 'final', OFFICE],
+    ['QBS-040', 'electrical', 'final', OFFICE],
   ]
   for (const [jobId, trade, phase, account] of inspectionNews) {
     const job = byId.get(jobId)
@@ -454,12 +600,13 @@ export function buildSeed(now) {
   }
 
   const plainNews = [
-    ['warn', 'Lena Ocampo has an expired insurance certificate. Do not assign work until it is renewed.', null, 20, false],
+    ['warn', "Ivy Castell's insurance certificate has expired. Do not assign work until it is renewed.", null, 20, false],
+    ['warn', `Lena Ocampo's insurance certificate runs out in ${SUB_DATES.roman[0]} days.`, null, 26, false],
     ['warn', 'Mara Quintero has no W9 on file, so a 1099 cannot be issued.', null, 30, false],
     ['warn', 'QBS-013 permit applications are with the city. Review takes two to three weeks.', 'QBS-013', 50, false],
     ['warn', 'QBS-012 is blocked until the framing inspection passes.', 'QBS-012', 6, false],
-    ['info', 'QBS-003 service release passed. The final walkthrough can be booked.', 'QBS-003', 70, false],
-    ['info', 'CO-007 is waiting for the builder to approve it: $4,700 (QBS-005)', 'QBS-005', 80, true],
+    ['info', 'QBS-003 is ready for its electrical final, and the final is booked.', 'QBS-003', 70, false],
+    ['info', 'CO-004 is waiting for the builder to approve it: $4,100 (QBS-003)', 'QBS-003', 80, true],
     ['success', 'QBS-008 HVAC final passed', 'QBS-008', 100, true],
   ]
   for (const [type, msg, jobId, hours, read] of plainNews) {
@@ -467,15 +614,17 @@ export function buildSeed(now) {
   }
 
   // ── Subs and materials ──
-  const subs = Object.fromEntries(STATIC_SUBS.map((source) => {
+  const subs = Object.fromEntries(STATIC_SUBS.map((source, index) => {
     const sub = SUBS[source.id]
-    return [sub.id, { ...shift(source), ...sub }]
+    const [insurance, license] = SUB_DATES[source.id]
+    return [sub.id, { ...source, ...sub, insExp: day(insurance), licExp: day(license), lastUpdate: day(-(1 + (index % 5))) }]
   }))
 
   const materials = {}
   STATIC_MATERIALS.forEach((source, index) => {
     const item = ITEM_NAMES[source.item] ?? source.item
-    materials[docKey(source.id)] = { ...shift(source), item, name: item, createdAt: at(30 + index * 4, 10) }
+    const eta = source.status === 'delivered' ? day(-(4 + index * 3)) : source.status === 'in-transit' ? day(2 + (index % 3)) : day(5 + (index % 4))
+    materials[docKey(source.id)] = { ...source, eta, item, name: item, createdAt: at(30 + index * 4, 10) }
   })
   const newMaterials = [
     ['M-009', 'QBS-044', 'Plumbing rough in kit, two baths', 1, 'ea', 640, 'Ordered', 'Ferguson', -4, 2, 30],
@@ -541,15 +690,15 @@ export function buildSeed(now) {
   // ── Daily reports ──
   const REPORTS = [
     [1, 'Austin', 'QBS-044', 'Rough-In', ['circuits', 'boxes'], 'None', true, 'Plumbing rough in is next. Electrical is ready.', '12/2 wire, one box of staples', ''],
-    [1, 'Tony', 'QBS-031', 'Rough-In', ['circuits', 'boxes', 'panel'], 'None', true, 'Ready for the electrical rough in inspection.', 'Two boxes of wire nuts', ''],
+    [1, 'Tony', 'QBS-031', 'Trim', ['devices'], 'None', true, 'Started trim in the kitchen and the baths.', 'Two boxes of wire nuts', ''],
     [1, 'Marvin', 'QBS-012', 'Rough-In', ['boxes'], 'Waiting on other trade', false, 'Framing has to pass before the service is set.', '', ''],
     [1, 'Trevor', 'QBS-036', 'Trim', ['devices', 'fixtures'], 'Material missing', false, 'Need the range receptacle before trim is finished.', '', '50A range receptacle'],
-    [2, 'Trent', 'QBS-022', 'Service Release', ['service'], 'Inspection needed', null, 'Service release inspection requested for Thursday.', '', ''],
+    [2, 'Trent', 'QBS-022', 'Rough-In', ['circuits'], 'Inspection needed', null, 'HVAC rough in inspection is booked for Thursday.', '', ''],
     [2, 'Austin', 'QBS-028', 'Trim', ['devices'], 'None', true, 'Trim is complete on the first floor.', 'Twenty devices', ''],
-    [3, 'Ty', 'QBS-020', 'Rough-In', ['circuits'], 'Owner decision', false, 'The owner is deciding where the island outlet goes.', '', ''],
+    [3, 'Ty', 'QBS-020', 'Trim', ['devices'], 'Owner decision', false, 'The owner is deciding where the island outlet goes.', '', ''],
     [3, 'Tony', 'QBS-005', 'Service Release', ['service', 'panel'], 'None', null, 'The transfer switch is still on order.', '', 'Generator transfer switch'],
-    [4, 'Marvin', 'QBS-029', 'Rough-In', ['circuits', 'boxes'], 'None', true, 'Ready for rough in.', '', ''],
-    [5, 'Trevor', 'QBS-040', 'Final', ['fixtures'], 'Inspection needed', false, 'HVAC final failed. The HVAC sub is fixing the condensate line.', '', ''],
+    [4, 'Marvin', 'QBS-029', 'Trim', ['devices', 'fixtures'], 'None', true, 'Trim is going in on the second floor.', '', ''],
+    [5, 'Trevor', 'QBS-040', 'Final', ['fixtures'], 'Inspection needed', true, 'The condensate line is fixed. The HVAC final is booked for Friday.', '', ''],
     [6, 'Ty', 'QBS-003', 'Final', ['devices', 'fixtures'], 'None', true, 'Punch list walk with the builder next week.', '', ''],
     [0, 'Austin', 'PEM-001', 'Trim', ['devices'], 'None', null, 'Started trim on the upstairs bedrooms.', '', ''],
   ]
@@ -570,8 +719,8 @@ export function buildSeed(now) {
   }
 
   const ALERTS = [
-    ['QBS-040', 'inspection_failed', 'critical', 'open', 'HVAC final failed', 'The HVAC final failed on the condensate line.', 'Schedule the HVAC sub to correct it and call the final again.', 2],
     ['QBS-011', 'inspection_failed', 'critical', 'open', 'Plumbing rough in failed', 'The drain slope failed the plumbing rough in.', 'Rework the slope and call the rough in again.', 3],
+    ['QBS-012', 'stalled', 'warning', 'open', 'Blocked for over a week', 'Framing has to pass before the service is set.', 'Ask the builder for the new framing inspection date.', 1],
     ['QBS-025', 'stalled', 'warning', 'snoozed', 'No update in over a week', 'The service is built and waits for its release.', 'Ask the PM for the release date.', 5],
     ['QBS-008', 'billing_ready', 'warning', 'open', 'Ready to bill', 'The HVAC final passed and the job is not invoiced.', 'Submit the final invoice.', 2],
     ['QBS-016', 'no_next_action', 'info', 'resolved', 'No next action set', 'The job had no next action.', 'Set the next action with the PM.', 6],

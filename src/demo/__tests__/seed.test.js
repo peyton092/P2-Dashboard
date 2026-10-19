@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { buildSeed, DEMO_SEED_VERSION } from '../seed'
 import { DEMO_USERS } from '../users'
 import { extraState } from '../../lib/extraStatus'
-import { subJobKey } from '../../lib/subs'
-import { toLocalDateStr } from '../../lib/dates'
+import { subJobKey, subInsuranceState } from '../../lib/subs'
+import { daysSince, toLocalDateStr } from '../../lib/dates'
+import { classifyRisk } from '../../agent/scoring'
+import { sumInvoices } from '../../lib/money'
 import { STATIC_JOBS, STATIC_SUBS, OLD_PM_MAP } from '../../../scripts/demo-data.mjs'
 
 // The sample data the demo opens with. Every screen of every role needs something to
@@ -196,17 +198,99 @@ describe('what the screens need', () => {
   })
 })
 
+describe('the operating picture the owner opens to', () => {
+  // What the Command Center and the sidebar make of the seed, with the app's own rules
+  // (CommandCenter.jsx, agent/scoring.js, lib/money.js, lib/subs.js): a healthy business
+  // with some real work to do.
+  const jobs = docsOf('jobs')
+  const active = jobs.filter((j) => !['complete', 'completed'].includes(j.status))
+  const stale = (j) => daysSince(j.lastStatusChange || j.start, NOW)
+  const phases = (j) => Object.values(j.insp).flatMap((trade) => Object.entries(trade).filter(([phase]) => !phase.endsWith('Date')).map(([, s]) => s))
+
+  it('asks for action on about twenty things, in each of the four kinds', () => {
+    const atRisk = active.filter((j) => ['at-risk', 'blocked', 'needs-action'].includes(j.status) || stale(j) >= 7)
+    const awaiting = active.filter((j) => phases(j).some((s) => s === 'scheduled' || s === 'pending-verification'))
+    const missingDocs = active.filter((j) => !j.permitNumber || Object.values(j.permits).some((s) => s === 'pending' || s === 'applied'))
+    const builderApproval = docsOf('extras').filter((e) => e.status === 'Sent to Builder' || e.status === 'pending')
+    const counts = [atRisk, awaiting, missingDocs, builderApproval].map((list) => list.length)
+    for (const count of counts) expect(count).toBeGreaterThan(0)
+    expect(counts.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(22)
+  })
+
+  it('has most jobs on track and updated in the last two days, a handful at risk, and two or three critical', () => {
+    const levels = active.map((j) => classifyRisk(j, NOW)?.level ?? 'none')
+    const count = (level) => levels.filter((l) => l === level).length
+    expect(count('critical')).toBeGreaterThanOrEqual(2)
+    expect(count('critical')).toBeLessThanOrEqual(3)
+    expect(count('warning')).toBeGreaterThanOrEqual(3)
+    expect(count('warning')).toBeLessThanOrEqual(6)
+    expect(active.filter((j) => j.status === 'on-track').length).toBeGreaterThan(active.length / 2)
+    expect(active.filter((j) => stale(j) <= 2).length).toBeGreaterThan(active.length * 0.8)
+  })
+
+  it('has most targets ahead and a few passed', () => {
+    const passed = active.filter((j) => daysSince(j.target, NOW) > 0)
+    expect(passed.length).toBeGreaterThan(0)
+    expect(passed.length).toBeLessThanOrEqual(3)
+  })
+
+  it('has a few invoices dated this month, every one with its amount', () => {
+    const thisMonth = jobs.filter((j) => typeof j.invoiceDate === 'string' && j.invoiceDate.startsWith('10/') && j.invoiceDate.endsWith('/2026'))
+    expect(thisMonth.length).toBeGreaterThanOrEqual(3)
+    expect(thisMonth.length).toBeLessThanOrEqual(6)
+    expect(sumInvoices(thisMonth)).toEqual({ total: expect.any(Number), missing: 0 })
+    expect(sumInvoices(thisMonth).total).toBeGreaterThan(20000)
+    expect(sumInvoices(jobs.filter((j) => j.invoiceDate)).missing).toBe(0)
+  })
+
+  it('has one inspection failed, a few booked or waiting, and the rest passed or not yet due', () => {
+    const all = jobs.flatMap(phases)
+    expect(all.filter((s) => s === 'failed')).toHaveLength(1)
+    expect(all.filter((s) => s === 'scheduled').length).toBeGreaterThanOrEqual(3)
+    expect(all.filter((s) => s === 'passed').length).toBeGreaterThan(all.filter((s) => s === 'scheduled' || s === 'pending-verification').length * 5)
+  })
+
+  it('has the inspections that are booked, waiting or failed where the plan puts them', () => {
+    const job = (id) => jobs.find((j) => j.id === id)
+    expect(job('QBS-044').insp.plumbing.roughIn).toBe('scheduled')
+    expect(job('QBS-044').insp.electrical.roughIn).toBe('passed')
+    expect(job('QBS-022').insp.hvac.roughIn).toBe('scheduled')
+    expect(job('QBS-040').insp.hvac.final).toBe('scheduled')
+    expect(job('QBS-003').insp.electrical).toMatchObject({ trim: 'passed', final: 'scheduled' })
+    expect(job('QBS-038').insp.electrical.trim).toBe('pending-verification')
+    expect(job('QBS-011').insp.plumbing).toMatchObject({ roughIn: 'failed', roughInDate: '2026-10-16' })
+    // Every passed phase has its day, and none is after today.
+    for (const j of jobs) {
+      for (const [trade, phases] of Object.entries(j.insp)) {
+        for (const [phase, status] of Object.entries(phases)) {
+          if (status !== 'passed') continue
+          expect(phases[`${phase}Date`], `${j.id} ${trade} ${phase}`).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+          expect(phases[`${phase}Date`] <= '2026-10-19', `${j.id} ${trade} ${phase}`).toBe(true)
+        }
+      }
+    }
+  })
+
+  it('has most sub insurance current, one or two expiring soon and one expired', () => {
+    const states = docsOf('subs').map((s) => subInsuranceState(s))
+    expect(states.filter((s) => s === 'expired')).toHaveLength(1)
+    const soon = states.filter((s) => s === 'expiring-30' || s === 'expiring-60').length
+    expect(soon).toBeGreaterThanOrEqual(1)
+    expect(soon).toBeLessThanOrEqual(2)
+    expect(states.filter((s) => s === 'valid').length).toBeGreaterThan(states.length / 2)
+  })
+})
+
 describe('the dates', () => {
-  it('moves every date of the sample data by one offset, so the newest status change is yesterday', () => {
+  it('dates every job from today, so a later day moves its dates by as many days', () => {
     const changes = docsOf('jobs').map((j) => j.lastStatusChange).filter(Boolean).sort()
-    expect(changes[changes.length - 1]).toBe('2026-10-18')
+    expect(changes[changes.length - 1]).toBe('2026-10-19')
     const later = buildSeed(new Date(2026, 9, 26, 10, 0, 0))
     const before = seed.jobs['job-qbs-001']
     const after = later.jobs['job-qbs-001']
-    expect(before.start).not.toBe(after.start)
     const days = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000)
-    expect(days(before.start, after.start)).toBe(7)
-    expect(days(before.lastStatusChange, after.lastStatusChange)).toBe(7)
+    for (const field of ['start', 'target', 'lastStatusChange']) expect(days(before[field], after[field]), field).toBe(7)
+    expect(days(before.insp.electrical.roughInDate, after.insp.electrical.roughInDate)).toBe(7)
   })
 
   it('is the same seed each time for the same day, so a reset gives back what the demo opened with', () => {
