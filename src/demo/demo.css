@@ -1,0 +1,12 @@
+/* The demo banner sits in the page above the app, and the app's shell and full screen
+   pages fill the viewport with h-screen and min-h-screen. While the banner is shown,
+   those two give up its height, so the shell fills exactly what is left below it and
+   the page does not scroll behind the shell. The banner keeps --demo-banner-height equal
+   to its own height (DemoBanner.jsx). This file is only in the demo build. */
+html[data-demo-banner] .h-screen {
+  height: calc(100vh - var(--demo-banner-height, 0px));
+}
+
+html[data-demo-banner] .min-h-screen {
+  min-height: calc(100vh - var(--demo-banner-height, 0px));
+}
