@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createDemoSession } from '../demoSession'
 import { DEMO_USERS } from '../users'
 import { initializeApp } from '../shims/app'
@@ -385,5 +387,13 @@ describe('the rules the demo shares with the server', () => {
 
   it.each(USER_INPUTS.map((input) => [input]))('validateNewUser(%j) answers as the server does', (input) => {
     expect(validateNewUser(input)).toEqual(serverUsers.validateNewUser(input))
+  })
+
+  it('refuses an inspection of a job that is gone with the sentence of functions/inspections.js', async () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../functions/inspections.js'), 'utf8')
+    as('owner')
+    const refusal = await call('passInspection', { jobDocId: 'gone', trade: 'electrical', phase: 'roughIn' }).catch((error) => error)
+    expect(refusal.code).toBe('functions/not-found')
+    expect(source).toContain(`const JOB_GONE = '${refusal.message}'`)
   })
 })
