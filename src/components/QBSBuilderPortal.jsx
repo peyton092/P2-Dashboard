@@ -31,7 +31,7 @@ import {
   EmptyState,
   AllClearState,
 } from './shared'
-import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
+import { BRAND, withAlpha, SEMANTIC, TONE_FOREGROUND } from '@/lib/tokens'
 import {
   CO_STATUS, INSPECTION_STATUS, PHASE,
   normalizeCoStatus, statusColor, statusLabel, statusTone, toneHex, toneText,
@@ -520,8 +520,8 @@ function ExtraRow({ co, compact = false }) {
             </p>
             <div className="flex gap-2">
               <Button
-                className="flex-1 h-10 text-xs gap-1.5 text-white font-bold"
-                style={{ backgroundColor: SEMANTIC.success }}
+                className="flex-1 h-10 text-xs gap-1.5 font-bold"
+                style={{ backgroundColor: SEMANTIC.success, color: TONE_FOREGROUND.success }}
                 disabled={busy}
                 onClick={handleApprove}
               >
@@ -556,8 +556,8 @@ function ExtraRow({ co, compact = false }) {
             />
             <div className="flex gap-2">
               <Button
-                className="flex-1 h-10 text-xs text-white font-bold"
-                style={{ backgroundColor: SEMANTIC.critical }}
+                className="flex-1 h-10 text-xs font-bold"
+                style={{ backgroundColor: SEMANTIC.critical, color: TONE_FOREGROUND.critical }}
                 disabled={busy || !rejectNotes.trim()}
                 onClick={handleReject}
               >

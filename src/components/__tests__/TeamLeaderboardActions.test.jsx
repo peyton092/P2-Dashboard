@@ -4,6 +4,8 @@ import { ToastContext } from '@/components/ui/use-toast'
 import { logError } from '@/lib/errorLogger'
 import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
 import { axe } from '@/test/axe'
+import { hexToRgb } from '@/lib/tokens'
+import { toneText } from '@/lib/status'
 
 // The leaderboard logs a referral, awards a bonus and saves the Google review link. Each
 // of those tells the person how it ended, and its panel closes only when its write went
@@ -367,6 +369,15 @@ describe('read by a screen reader', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Close the review link settings' }))
     expect(settings.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  // A rank past the medals is a small bold number, so it is in the neutral gray, which reads
+  // at 4.5 to 1 on the page and on a card, and not the mute gray, which does not.
+  it('sets the rank of a row without a medal in the neutral gray', async () => {
+    await open()
+    for (const rank of ['#2', '#4', '#6']) {
+      expect(screen.getByText(rank).style.color, rank).toBe(`rgb(${hexToRgb(toneText('mute')).join(', ')})`)
+    }
   })
 
   it('has no accessibility violations, with a card open and its bonus panel out', async () => {

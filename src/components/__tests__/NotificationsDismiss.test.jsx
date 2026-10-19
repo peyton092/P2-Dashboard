@@ -59,6 +59,27 @@ const region = () => screen.getByRole('region', { name: 'Notifications' })
 const toasts = () => [...region().querySelectorAll('[data-toast]')]
 const toastText = () => region().textContent
 
+// A read notification looks read without its words losing contrast: the row is not dimmed
+// as a whole, which took its small words under 4.5 to 1, and only the picture of its type,
+// which is hidden from a screen reader, is. Its message is text in the regular weight.
+describe('a read notification', () => {
+  const dimmed = (el) => [el, ...el.querySelectorAll('*')].filter((node) => /(?:^|\s)opacity-\d/.test(node.getAttribute('class') ?? ''))
+
+  it('dims only the picture of its type, and none of its words', () => {
+    open()
+    const read = dimmed(row(READ.msg))
+    expect(read).toHaveLength(1)
+    expect(read[0].getAttribute('aria-hidden')).toBe('true')
+    expect(read[0].textContent).toBe('')
+    expect(screen.getByText(READ.msg).tagName).toBe('P')
+  })
+
+  it('dims nothing in an unread one', () => {
+    open()
+    expect(dimmed(row(UNREAD.msg))).toEqual([])
+  })
+})
+
 describe('clearing a notification', () => {
   it('writes dismissed and read, and says so with an Undo button', async () => {
     open()

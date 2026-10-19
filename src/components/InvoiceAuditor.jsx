@@ -24,11 +24,14 @@ const KNOWN_VENDORS = ['Graybar', 'Ferguson', 'Johnstone', 'ADT Supply', 'Other'
 const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS', 'BOX', 'ROLL', 'STICK']
 const STATUS_OPTIONS = ['pending-review', 'approved', 'disputed', 'paid']
 
+// The tone of each status. Its chip is tinted with the tone and its words are in the tone's
+// text color, which reads at 4.5 to 1 on the tint where the critical red and the mute gray
+// do not.
 const STATUS_META = {
-  'pending-review': { label: 'Pending Review', color: '#eab308' },
-  'approved':       { label: 'Approved',        color: '#22c55e' },
-  'disputed':       { label: 'Disputed',         color: '#ef4444' },
-  'paid':           { label: 'Paid',             color: '#6b7280' },
+  'pending-review': { label: 'Pending Review', tone: 'warning' },
+  'approved':       { label: 'Approved',       tone: 'success' },
+  'disputed':       { label: 'Disputed',       tone: 'critical' },
+  'paid':           { label: 'Paid',           tone: 'mute' },
 }
 
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -390,7 +393,7 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
           <span className="block text-sm font-semibold" style={{ color: BRAND }}>{fmt$(inv.total)}</span>
           <span className="flex items-center gap-2">
             <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
-              style={{ color: meta.color, backgroundColor: withAlpha(meta.color, 0.13) }}>
+              style={{ color: toneText(meta.tone), backgroundColor: withAlpha(toneHex(meta.tone), 0.13) }}>
               {meta.label}
             </span>
             {liveFlags.length > 0 ? (
@@ -544,11 +547,11 @@ export default function InvoiceAuditor() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Pending Review',  value: pendingCount,  sub: fmt$(totalPending),   color: '#eab308', Icon: FileTextIcon       },
-          { label: 'Disputed',        value: disputedCount, sub: fmt$(totalDisputed),  color: '#ef4444', Icon: ShieldAlertIcon     },
-          { label: 'Audit Flags',     value: flaggedCount,  sub: 'invoices w/ flags',  color: BRAND,     Icon: AlertTriangleIcon   },
+          { label: 'Pending Review',  value: pendingCount,  sub: fmt$(totalPending),   color: toneHex('warning'),  Icon: FileTextIcon     },
+          { label: 'Disputed',        value: disputedCount, sub: fmt$(totalDisputed),  color: toneHex('critical'), Icon: ShieldAlertIcon  },
+          { label: 'Audit Flags',     value: flaggedCount,  sub: 'invoices w/ flags',  color: BRAND,              Icon: AlertTriangleIcon },
           { label: 'Approved / Paid', value: invoices.filter(i => i.status === 'approved' || i.status === 'paid').length,
-            sub: fmt$(totalApproved), color: '#22c55e', Icon: CheckCircleIcon },
+            sub: fmt$(totalApproved), color: toneHex('success'), Icon: CheckCircleIcon },
         ].map(s => (
           <div key={s.label} className="rounded-xl p-4 border border-white/10" style={{ backgroundColor: withAlpha(s.color, 0.03) }}>
             <div className="flex items-center gap-2 mb-2">

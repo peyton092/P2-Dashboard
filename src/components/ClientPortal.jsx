@@ -31,7 +31,7 @@ import {
 } from 'lucide-react'
 import Brand from './brand/Brand'
 import { DataPanel, Pill, EmptyState, AllClearState } from './shared'
-import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
+import { BRAND, withAlpha, SEMANTIC, TONE_FOREGROUND } from '@/lib/tokens'
 import {
   BILLING_STATUS, CO_STATUS, INSPECTION_STATUS, PHASE,
   normalizeCoStatus, statusColor, statusLabel, statusTone, toneHex, toneText,
@@ -312,7 +312,7 @@ function ExtraRow({ co }) {
           <>
             <p className="text-[10px] uppercase tracking-wide font-bold text-zinc-400 mb-1.5 mt-3">Review change order</p>
             <div className="flex gap-2">
-              <Button className="flex-1 h-10 text-xs gap-1.5 text-white font-bold" style={{ backgroundColor: SEMANTIC.success }} disabled={busy} onClick={handleApprove}>
+              <Button className="flex-1 h-10 text-xs gap-1.5 font-bold" style={{ backgroundColor: SEMANTIC.success, color: TONE_FOREGROUND.success }} disabled={busy} onClick={handleApprove}>
                 <CheckIcon size={14} /> {busy ? 'Approving…' : 'Approve'}
               </Button>
               <Button variant="outline" className="flex-1 h-10 text-xs gap-1.5 border-white/20 hover:bg-white/[0.05] text-zinc-200" disabled={busy} onClick={() => { setShowReject(true); setErrMsg('') }}>
@@ -329,7 +329,7 @@ function ExtraRow({ co }) {
             <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-400"
               placeholder="What should be revised? (required)" maxLength={1000} value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} />
             <div className="flex gap-2">
-              <Button className="flex-1 h-10 text-xs text-white font-bold" style={{ backgroundColor: SEMANTIC.critical }} disabled={busy || !rejectNotes.trim()} onClick={handleReject}>
+              <Button className="flex-1 h-10 text-xs font-bold" style={{ backgroundColor: SEMANTIC.critical, color: TONE_FOREGROUND.critical }} disabled={busy || !rejectNotes.trim()} onClick={handleReject}>
                 {busy ? 'Submitting…' : 'Send revision request'}
               </Button>
               <Button variant="outline" className="flex-1 h-10 text-xs border-white/20 hover:bg-white/[0.05] text-zinc-200" disabled={busy} onClick={() => { setShowReject(false); setRejectNotes(''); setErrMsg('') }}>
@@ -386,7 +386,7 @@ function InvoiceRow({ job }) {
         <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
         {payHref && job.billingStatus !== 'paid' && (
           <a href={payHref} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] font-bold text-white" style={{ backgroundColor: SEMANTIC.success }}>
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[11px] font-bold" style={{ backgroundColor: SEMANTIC.success, color: TONE_FOREGROUND.success }}>
             <CreditCardIcon size={13} /> Pay now
           </a>
         )}

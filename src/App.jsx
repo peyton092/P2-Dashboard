@@ -3469,13 +3469,15 @@ function NotificationCard({ n, onRead, onDismiss }) {
   return (
     <div
       onClick={unread ? (e) => { if (!e.target.closest(ROW_CONTROLS)) onRead(n) } : undefined}
-      className={`flex items-start gap-3 px-4 py-3.5 sm:px-5 sm:py-4 transition-colors hover:bg-white/[0.025] ${unread ? 'cursor-pointer' : 'opacity-60'}`}
+      className={`flex items-start gap-3 px-4 py-3.5 sm:px-5 sm:py-4 transition-colors hover:bg-white/[0.025] ${unread ? 'cursor-pointer' : ''}`}
       style={{ borderLeft: `3px solid ${unread ? meta.color : 'transparent'}` }}
     >
-      {/* Type icon tile, a picture of the type the pill names */}
+      {/* Type icon tile, a picture of the type the pill names. A read notification looks read
+          by this picture, dimmed, and by its message in the regular weight; its words are
+          not dimmed, since the small ones would fall under 4.5 to 1. */}
       <div
         aria-hidden="true"
-        className="shrink-0 mt-0.5 flex items-center justify-center rounded-lg"
+        className={`shrink-0 mt-0.5 flex items-center justify-center rounded-lg ${unread ? '' : 'opacity-60'}`}
         style={{ width: 32, height: 32, backgroundColor: withAlpha(meta.color, 0.13), color: meta.color }}
       >
         <TypeIcon size={16} strokeWidth={2} />
@@ -3499,7 +3501,7 @@ function NotificationCard({ n, onRead, onDismiss }) {
             <span className="sr-only">Unread notification: </span>{n.msg}
           </button>
         ) : (
-          <p id={msgId} className="text-sm leading-snug text-zinc-300">{n.msg}</p>
+          <p id={msgId} className="text-sm leading-snug text-zinc-400">{n.msg}</p>
         )}
         {fmtNotifTime(n) && (
           <p className="text-[11px] text-zinc-400 mt-0.5">{fmtNotifTime(n)}</p>

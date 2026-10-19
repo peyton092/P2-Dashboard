@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
 import { axe } from '@/test/axe'
+import { hexToRgb } from '@/lib/tokens'
+import { toneHex, toneText } from '@/lib/status'
 
 // The invoice auditor saves a new supplier invoice and changes the status of one. Each of
 // those tells the person how it ended, and the form closes only when its write went
@@ -218,6 +220,21 @@ describe('read by a screen reader', () => {
     fireEvent.click(screen.getByRole('button', { name: /Ferguson/ }))
 
     expect(screen.getByText(/^Warning/).closest('li').textContent).toBe('Warning: Invoice not assigned to a job, so it cannot be checked against POs')
+  })
+
+  // The words of a status chip are 12 pixels, so they are in the tone's text color, which
+  // reads at 4.5 to 1 on the chip's tint, and the tint is the tone itself.
+  it.each([
+    ['pending-review', 'Pending Review', 'warning'],
+    ['approved', 'Approved', 'success'],
+    ['disputed', 'Disputed', 'critical'],
+    ['paid', 'Paid', 'mute'],
+  ])('sets the words of the %s chip in the text color of its tone', (status, label, tone) => {
+    mocks.invoices = [{ ...INVOICE, status }]
+    open()
+    const chip = within(screen.getByRole('button', { name: /Graybar/ })).getByText(label)
+    expect(chip.style.color).toBe(`rgb(${hexToRgb(toneText(tone)).join(', ')})`)
+    expect(chip.style.backgroundColor).toBe(`rgba(${hexToRgb(toneHex(tone)).join(', ')}, 0.13)`)
   })
 
   it('names the lists that filter the invoices', () => {

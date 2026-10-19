@@ -20,6 +20,7 @@ import {
   CheckCircleIcon,
 } from 'lucide-react'
 import { BRAND, withAlpha } from '@/lib/tokens'
+import { toneText } from '../lib/status'
 import { ConnectionChip } from './shared'
 
 const CREW = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
@@ -238,8 +239,9 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
       {/* Main row */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer"
         onClick={() => setExpanded(e => !e)}>
+        {/* A rank past the medals is a small number, so it is in the neutral gray, not the mute. */}
         <span className="w-7 inline-flex items-center justify-center font-black text-sm shrink-0"
-          style={{ color: idx < 3 && totalPts > 0 ? BRAND : '#6b7280' }}>
+          style={{ color: idx < 3 && totalPts > 0 ? BRAND : toneText('mute') }}>
           {idx < 3 && totalPts > 0
             ? <RankBadge idx={idx} size={16} />
             : `#${idx + 1}`}

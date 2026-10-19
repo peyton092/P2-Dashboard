@@ -23,7 +23,7 @@ import {
   MapPinIcon, UserRoundCogIcon,
 } from 'lucide-react'
 import { SEVERITY, statusLabel, statusOrder, statusTone, toneText } from '../lib/status'
-import { SEMANTIC } from '@/lib/tokens'
+import { SEMANTIC, TONE_FOREGROUND } from '@/lib/tokens'
 
 // ── Categorisation ───────────────────────────────────────────────────────────
 //
@@ -581,8 +581,8 @@ function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
           <button
             type="button"
             onClick={() => onResolve(alert)}
-            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md text-white transition-colors"
-            style={{ backgroundColor: SEMANTIC.success }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md transition-colors"
+            style={{ backgroundColor: SEMANTIC.success, color: TONE_FOREGROUND.success }}
           >
             <CheckIcon size={12} /> Resolve alert
           </button>

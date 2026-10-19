@@ -45,6 +45,16 @@ export const TONE_TEXT = {
   mute:     SEMANTIC.neutral,
 }
 
+// The words on a solid fill of a status tone, such as a button filled with the success green
+// or the critical red. White words of 11 or 12 pixels on those fills are under 4.5 to 1 (2.28
+// to 1 on the green, 3.76 on the red), so they are near black, as the words on the brand fill
+// are: the page background, oklch(0.145 0.004 60). It reaches 8.69 to 1 on the green and
+// 5.26 on the red, which src/__tests__/text-contrast.test.js works out.
+export const TONE_FOREGROUND = {
+  success:  '#0b0a09',
+  critical: '#0b0a09',
+}
+
 // Font family lists. Display is for page titles and numerals, body for text,
 // mono for job ids, permit numbers, invoice numbers, amounts and timestamps.
 export const FONT = {
