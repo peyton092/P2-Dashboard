@@ -53,12 +53,14 @@ What a person does goes through the same rules as the real app. A builder or a c
 5. fails the build if any file it writes holds a Firebase or Google host, a key or the project identifier;
 6. reads no env file (`envDir: false`), so the web push key a developer keeps in `.env.local` stays out of the demo, and fails the build when a `VITE_` value is set in the shell, or when the value of a `VITE_` key in one of the project's env files turns up in a file it writes.
 
-The production build (`npm run build`) is not touched by any of this: the demo is reached only through a dynamic import that the production build drops, and its output is byte for byte what it was before the demo existed.
+The production build (`npm run build`) is not touched by any of this: the demo is reached only through a dynamic import that the production build drops, and its output is byte for byte what it was before the demo existed. Every build that is not the demo stops with an error if it loads any module under `src/demo` or `scripts/demo-data.mjs`.
+
+Tailwind reads every source file for class names, `src/demo` included, and builds the one stylesheet both builds use. That is accepted: leaving `src/demo` out would leave the demo bar's classes out of the demo, and the bar uses only classes the app already has, so the production stylesheet stays the same. So no file under `src/demo`, comments included, may hold a Tailwind class that the app does not use already, nor a plain word that happens to be the name of one: it would add a rule to the production stylesheet. Tailwind reads this page too, which is why it names no such word. After changing the demo code, build production and compare it with the build before; CI does not.
 
 ## How it is checked
 
 1. The tests under `src/demo/__tests__` cover the stand ins, the Cloud Function rules, the sample data (every role sees something through the very queries the app builds, and the text holds no dashes, no Firebase strings and none of the emulator names), the role switching and the demo bar.
-2. `src/__tests__/no-demo-in-prod.test.js` holds the one way into the demo code from the app.
+2. `src/__tests__/no-demo-in-prod.test.js` holds the one way into the demo code from the app. It reads every import, export, `import()`, `import.meta.glob` and `new URL(path, import.meta.url)` of the app, with relative, `@` and root paths, and the scripts of `index.html`.
 3. The CI job `demo-build` builds both and fails if the production build holds sample data or demo code, or if the demo build holds a Firebase or Google host, a key, a project identifier or a service worker, or lacks `_redirects`.
 
 ## How to publish it

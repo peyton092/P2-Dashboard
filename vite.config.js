@@ -1,9 +1,9 @@
-import { defineConfig } from 'vite'
+import { defineConfig, normalizePath } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync } from 'node:fs'
-import { join, normalize } from 'node:path'
+import { join, normalize, relative } from 'node:path'
 
 const buildDate = new Date().toISOString().slice(0, 10)
 const appVersion = 'V5.2'
@@ -142,10 +142,35 @@ function demoBuild() {
   }
 }
 
+// ── Every other build ─────────────────────────────────────────────────────────
+//
+// A build that is not the demo loads no demo module: nothing under src/demo, and not
+// the sample data in scripts/demo-data.mjs. main.jsx reaches the demo only through an
+// import() behind import.meta.env.VITE_DEMO === '1', which is false here, so the build
+// drops it without loading it. Should anything else ever pull a demo module in, the
+// build stops rather than ship it. src/__tests__/no-demo-in-prod.test.js reads the
+// sources for the same thing.
+function noDemoOutsideTheDemo() {
+  const demoDir = `${normalizePath(join(srcDir, 'demo'))}/`
+  const sampleData = normalizePath(join(rootDir, 'scripts', 'demo-data.mjs'))
+  return {
+    name: 'p2-no-demo-outside-the-demo',
+    apply: 'build',
+    enforce: 'pre',
+    load(id) {
+      const path = normalizePath(id.split('?')[0])
+      if (path.startsWith(demoDir) || path === sampleData) {
+        this.error(`This build would load ${relative(rootDir, path)}, which only the demo build (npm run build:demo) may hold.`)
+      }
+      return null
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const demo = mode === 'demo'
   return {
-    plugins: [react(), tailwindcss(), ...(demo ? [demoBuild()] : [])],
+    plugins: [react(), tailwindcss(), ...(demo ? [demoBuild()] : [noDemoOutsideTheDemo()])],
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
       __BUILD_DATE__:  JSON.stringify(buildDate),
