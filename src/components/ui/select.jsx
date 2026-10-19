@@ -6,7 +6,27 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+// Base UI's Select.Value shows the label of the chosen item only when the root is
+// handed the items, and the raw value otherwise (a portal picker read __ALL__). So
+// Select hands it the value and label of every SelectItem among its children, at any
+// depth, unless the screen hands it items itself.
+function itemsAmong(children, found = []) {
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return
+    if (child.type === SelectItem) found.push({ value: child.props.value, label: child.props.children })
+    else if (child.props.children != null) itemsAmong(child.props.children, found)
+  })
+  return found
+}
+
+function Select({ items, children, ...props }) {
+  const found = items ?? itemsAmong(children)
+  return (
+    <SelectPrimitive.Root items={found.length === 0 ? undefined : found} {...props}>
+      {children}
+    </SelectPrimitive.Root>
+  );
+}
 
 function SelectGroup({
   className,

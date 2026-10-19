@@ -441,16 +441,18 @@ describe('what leaves the data provider as it is', () => {
     await act(async () => { window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id: 'jobs' } })) })
     await waitFor(() => expect(firstPage().textContent).toMatch(/^Job Status/))
 
-    // The Workspace selector is only shown to internal staff. A real pointer
-    // moves over an option before it clicks, and the option ignores a click until then.
+    // The Workspace selector is only shown to internal staff, and reads the name of the
+    // workspace, not its id. A real pointer moves over an option before it clicks, and
+    // the option ignores a click until then.
     const workspace = () => document.querySelector('aside[aria-label="Primary"] [role="combobox"]')
-    expect(workspace().textContent).toContain('p2-core')
+    expect(workspace().textContent).toContain('P2 Internal')
+    expect(workspace().textContent).not.toContain('p2-core')
     await act(async () => { fireEvent.mouseDown(workspace()) })
     const option = await screen.findByRole('option', { name: 'QBS Builder Portal' })
     await act(async () => { fireEvent.mouseMove(option) })
     await act(async () => { fireEvent.click(option) })
 
-    await waitFor(() => expect(workspace().textContent).toContain('qbs'))
+    await waitFor(() => expect(workspace().textContent).toContain('QBS Builder Portal'))
     expect(firstPage().textContent).toMatch(/^Job Status/)
     expect(counter.jobs).toBe(1)
     expect(running.jobs).toBe(1)

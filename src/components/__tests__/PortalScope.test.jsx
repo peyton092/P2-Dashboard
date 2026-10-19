@@ -127,6 +127,23 @@ describe('a portal with no projects', () => {
   })
 })
 
+describe('the project picker of a portal', () => {
+  // The words in the picker's value, without the chevron beside them.
+  const picked = () => screen.getAllByRole('combobox')[0].querySelector('[data-slot="select-value"]').textContent
+
+  it('reads All QBS projects in the builder portal, not the value behind it', () => {
+    mocks.data = portalData(BUILDER)
+    openBuilderPortal()
+    expect(picked()).toBe('All QBS projects')
+  })
+
+  it('reads All my projects in the client portal', () => {
+    mocks.data = portalData(CLIENT)
+    openClientPortal()
+    expect(picked()).toBe('All my projects')
+  })
+})
+
 describe('a submission created in the client portal', () => {
   async function sendMessage() {
     openClientPortal()
