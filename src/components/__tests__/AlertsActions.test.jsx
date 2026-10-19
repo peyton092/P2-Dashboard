@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, act, waitFor, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
+import { openSettled, initialFocusLanded } from '@/test/dialog'
 
 // On the alerts screen, resolving and dismissing an alert are asked about first, because
 // each takes it out of the queue. The question closes at once when it is answered, since
@@ -73,6 +75,26 @@ const ask = async (name) => {
 }
 const gone = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 const confirm = (dialog, name) => act(async () => { fireEvent.click(within(dialog).getByRole('button', { name })) })
+
+// The two questions are modal dialogs with a title, a body and two named buttons. What is
+// checked is the question, which this task added, and not the screen behind it, whose
+// headings skip a level when it is drawn on its own without the shell around it.
+describe('accessibility', () => {
+  it('has no violations in the resolve question, or in the dismiss question', async () => {
+    open()
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve alert' }))
+    const resolve = await openSettled('Resolve this alert?')
+    await initialFocusLanded()
+    expect(await axe(resolve)).toHaveNoViolations()
+
+    fireEvent.click(within(resolve).getByRole('button', { name: 'Cancel' }))
+    await gone()
+    fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
+    const dismiss = await openSettled('Dismiss this alert?')
+    await initialFocusLanded()
+    expect(await axe(dismiss)).toHaveNoViolations()
+  })
+})
 
 describe('resolving an alert', () => {
   it('asks first, and writes nothing until it is confirmed', async () => {

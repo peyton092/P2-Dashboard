@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
+import { openSettled, initialFocusLanded } from '@/test/dialog'
 
 // Only the owner sees the Backfill access scopes button. It calls the backfillScopes
 // Cloud Function, which checks the role again on the server, and reports what the
@@ -615,6 +617,36 @@ describe.each([
   it('offers no Disconnect when it is not connected', () => {
     open('owner')
     expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull()
+  })
+})
+
+// Nine switches that each carry the name of their feature, and two questions that are modal
+// dialogs with a title, a body and two named buttons.
+describe('accessibility', () => {
+  it('has no violations on the page with its nine named switches', async () => {
+    const { container } = open('owner')
+    expect(screen.getAllByRole('switch')).toHaveLength(9)
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it.each([
+    ['QuickBooks', 'qb_config/tokens', { access_token: 'x', realmId: '123' }],
+    ['CompanyCam', 'cc_config/tokens', { access_token: 'x', scope: 'read' }],
+  ])('has no violations with the %s disconnect question open, or while it reads Working', async (name, path, data) => {
+    const pending = deferred()
+    mocks.call.mockReturnValue(pending.promise)
+    mocks.snapshots[path] = { exists: () => true, data: () => data }
+    open('owner')
+    fireEvent.click(screen.getByRole('button', { name: /^(Disconnect|Disconnecting…)$/ }))
+    const dialog = await openSettled(`Disconnect ${name}?`)
+    await initialFocusLanded()
+    expect(await axe(document.body)).toHaveNoViolations()
+
+    await press(within(dialog).getByRole('button', { name: 'Disconnect' }))
+    expect(within(dialog).getByRole('button', { name: 'Working' })).toBeTruthy()
+    expect(await axe(document.body)).toHaveNoViolations()
+    await act(async () => { pending.resolve({ data: {} }) })
+    await gone()
   })
 })
 

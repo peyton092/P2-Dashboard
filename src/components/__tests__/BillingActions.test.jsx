@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, act, waitFor, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
+import { openSettled, initialFocusLanded } from '@/test/dialog'
 
 // The billing queue marks a job invoiced, puts it on hold and takes it off, and keeps an
 // invoice number. Submitting an invoice is asked about first, because it tells the client
@@ -65,6 +67,23 @@ describe('submitting an invoice', () => {
     expect(within(dialog).getByText('QBS-003 is marked invoiced, and the client sees the invoice as submitted.')).toBeTruthy()
     expect(within(dialog).getByRole('button', { name: 'Submit invoice' }).classList.contains('bg-brand')).toBe(true)
     expect(mocks.updateJob).not.toHaveBeenCalled()
+  })
+
+  it('has no accessibility violations on the buttons, with the question open, or while it reads Working', async () => {
+    const pending = deferred()
+    mocks.updateJob.mockReturnValue(pending.promise)
+    const { container } = openIt()
+    expect(await axe(container)).toHaveNoViolations()
+
+    fireEvent.click(submit())
+    const dialog = await openSettled('Submit this invoice?')
+    await initialFocusLanded()
+    expect(await axe(document.body)).toHaveNoViolations()
+
+    await press(within(dialog).getByRole('button', { name: 'Submit invoice' }))
+    expect(within(dialog).getByRole('button', { name: 'Working' })).toBeTruthy()
+    expect(await axe(document.body)).toHaveNoViolations()
+    await act(async () => { pending.resolve() })
   })
 
   it('writes the status once it is confirmed, and says so when the dialog has closed', async () => {

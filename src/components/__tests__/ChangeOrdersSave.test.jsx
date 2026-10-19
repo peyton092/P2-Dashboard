@@ -2,6 +2,8 @@ import process from 'node:process'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
+import { openSettled, initialFocusLanded } from '@/test/dialog'
 
 // The Change Orders screen saves a change order as a draft and, for Send to
 // Builder, asks the sendExtraToBuilder Cloud Function to send it. The function
@@ -424,6 +426,21 @@ describe('removing a line item', () => {
 
     expect(lines()).toEqual(['Backflow preventer', 'Test cock'])
     await gone()
+  })
+
+  // What is checked is what this task added: the remove buttons, which have names now, and
+  // the question. The form around them has boxes with no label of their own and an empty
+  // table header that it had before.
+  it('has no accessibility violations on the remove buttons, or in the question', async () => {
+    await twoLines()
+    for (const button of screen.getAllByRole('button', { name: /^Remove line/ })) {
+      expect(await axe(button)).toHaveNoViolations()
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove line 2' }))
+    const dialog = await openSettled('Remove line 2?')
+    await initialFocusLanded()
+    expect(await axe(dialog)).toHaveNoViolations()
   })
 
   it('keeps the line when it is cancelled', async () => {

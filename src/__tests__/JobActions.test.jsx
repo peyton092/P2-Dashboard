@@ -2,6 +2,8 @@ import process from 'node:process'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
+import { openSettled, initialFocusLanded } from '@/test/dialog'
 
 // Creating a job and recording an inspection result go through Cloud Functions
 // that check the caller is staff. This covers what the screens do around those
@@ -49,7 +51,6 @@ function deferred() {
 }
 
 beforeEach(() => {
-  vi.spyOn(console, 'error').mockImplementation(() => {})
   for (const mock of [mocks.createJob, mocks.passInspection, mocks.failInspection, mocks.updateJob, mocks.toast]) {
     mock.mockReset()
   }
@@ -384,6 +385,18 @@ describe('marking an inspection failed', () => {
     expect(mocks.updateJob).not.toHaveBeenCalled()
     await gone()
     expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Rough-In marked failed.' })
+  })
+
+  // The row names its buttons and its list, and the question is a modal dialog with a title,
+  // a body and two named buttons.
+  it('has no accessibility violations on the row, or with the question open', async () => {
+    const { container } = row()
+    expect(await axe(container)).toHaveNoViolations()
+
+    fireEvent.click(fail())
+    await openSettled('Mark Rough-In failed?')
+    await initialFocusLanded()
+    expect(await axe(document.body)).toHaveNoViolations()
   })
 
   it('names the final phase of HVAC', async () => {
