@@ -21,7 +21,7 @@ Every person, client, company and street address in the sample data is invented.
 
 ## Roles
 
-A bar at the top says that this is a demo with sample data, and switches who the demo is viewed as:
+A bar at the top says that this is a demo with sample data, and switches who the demo is viewed as. It is one row, 55 pixels high. On a phone it starts with the words Demo with sample data, which open the whole sentence in a row below, and Reset sample data is an icon; from 640 pixels the row shows the whole sentence and the words of Reset sample data.
 
 1. **Owner**: the full dashboard, with every screen in the sidebar (on a phone, the bottom bar and More).
 2. **Builder**: the QBS builder portal, which shows exactly the QBS jobs. The first visit shows the terms of access, as the real portal does.

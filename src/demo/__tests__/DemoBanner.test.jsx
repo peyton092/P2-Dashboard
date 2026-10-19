@@ -52,6 +52,39 @@ describe('the demo banner', () => {
     expect(region.textContent).toContain("Demo preview with sample data. Nothing here is saved to P2's systems.")
   })
 
+  it('shows a short label on a phone that opens the whole sentence in a row below, closed at first', () => {
+    renderBanner()
+    const region = screen.getByRole('region', { name: 'Demo controls' })
+    const label = within(region).getByRole('button', { name: 'Demo with sample data' })
+    expect(label.getAttribute('aria-expanded')).toBe('false')
+    expect(label.className).toContain('sm:hidden')
+    expect(label.className).toContain('min-h-11')
+    const about = document.getElementById(label.getAttribute('aria-controls'))
+    expect(about.textContent).toBe("Demo preview with sample data. Nothing here is saved to P2's systems.")
+    // Closed, the sentence is still there for a screen reader, only not on the screen.
+    expect(about.className.split(' ')).toContain('sr-only')
+
+    fireEvent.click(label)
+    expect(label.getAttribute('aria-expanded')).toBe('true')
+    expect(about.className.split(' ')).not.toContain('sr-only')
+    fireEvent.click(label)
+    expect(label.getAttribute('aria-expanded')).toBe('false')
+    expect(about.className.split(' ')).toContain('sr-only')
+  })
+
+  it('keeps every control in one row of 44 pixel targets, Reset as an icon named for what it does', () => {
+    renderBanner()
+    const region = screen.getByRole('region', { name: 'Demo controls' })
+    const reset = within(region).getByRole('button', { name: 'Reset sample data' })
+    expect(reset.className).toContain('min-h-11')
+    expect(reset.className).toContain('min-w-11')
+    expect(reset.querySelector('svg')).not.toBeNull()
+    expect(reset.querySelector('svg').getAttribute('aria-hidden')).toBe('true')
+    // From 640 pixels the sentence is shown in full in the row, and the label goes.
+    const sentence = within(region).getAllByText("Demo preview with sample data. Nothing here is saved to P2's systems.")
+    expect(sentence.some((element) => element.className.includes('hidden sm:flex'))).toBe(true)
+  })
+
   it('offers Owner, Builder and Client, with the current one pressed', () => {
     renderBanner()
     const region = screen.getByRole('region', { name: 'Demo controls' })

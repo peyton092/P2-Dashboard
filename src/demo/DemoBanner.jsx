@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { ChevronDownIcon, ChevronUpIcon, RotateCcwIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { useConfirm } from '@/hooks/useConfirm'
@@ -12,12 +13,18 @@ import './demo.css'
 // The bar above the demo build: what this is, whom it is viewed as, and a way back to
 // the sample data it opened with. It is in the page above the app, not over it, so it
 // covers no sidebar, bottom bar, page header or dialog, and demo.css takes its height
-// off the shell, which fills the rest of the screen. On a phone the sentence is above
-// the controls; from 640 pixels they share one line.
+// off the shell, which fills the rest of the screen.
+//
+// It is one row of 44 pixel controls, so on a phone it takes as little of the screen as
+// it can. There the row starts with a short label, Demo with sample data, which opens
+// the whole sentence in a row below it; closed, that sentence is still there for a
+// screen reader, only not on the screen. From 640 pixels the row shows the whole
+// sentence instead of the label.
 //
 // The role buttons are a set of toggles, each pressed when it is the account the demo
-// shows, and 44 pixels high to be easy to hit. Brand orange is left to the focus ring:
-// the pressed role is shown in the neutral surface tones.
+// shows. Reset sample data is an icon on a phone, named for what it does, and has its
+// words beside the icon from 640 pixels. Brand orange is left to the focus ring: the
+// pressed role is shown in the neutral surface tones.
 
 const ROLES = [
   { role: 'owner', label: 'Owner' },
@@ -25,6 +32,8 @@ const ROLES = [
   { role: 'client', label: 'Client' },
 ]
 
+const SHORT = 'Demo with sample data'
+const SENTENCE = "Demo preview with sample data. Nothing here is saved to P2's systems."
 const SIGNED_OUT = 'There is no signing out of the demo, so it shows the owner again.'
 const OUT_OF_ROOM = 'This device is out of room. Changes will not be kept after you close the demo. Use Reset to start clean.'
 
@@ -36,6 +45,8 @@ export default function DemoBanner() {
   const { run } = useMutation()
   const toast = useToast()
   const bar = useRef(null)
+  const aboutId = useId()
+  const [aboutOpen, setAboutOpen] = useState(false)
 
   // Tells the page the banner is there and how tall it is, which wraps differently at
   // each width, so that demo.css can take that height off the shell. The observer
@@ -94,36 +105,49 @@ export default function DemoBanner() {
       ref={bar}
       role="region"
       aria-label="Demo controls"
-      className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:gap-4 px-4 sm:px-6 lg:px-8 py-2 border-b border-white/10 bg-white/[0.04] text-foreground"
+      className="px-4 sm:px-6 lg:px-8 border-b border-white/10 bg-white/[0.04] text-foreground"
     >
-      <p className="flex items-center min-w-0 text-sm leading-snug text-zinc-200">
-        Demo preview with sample data. Nothing here is saved to P2&apos;s systems.
-      </p>
-      <div className="flex items-center justify-between gap-2 shrink-0">
-        <div role="group" aria-label="View the demo as" className="inline-flex gap-0.5 rounded-lg border border-white/15 p-0.5">
-          {ROLES.map(({ role: value, label }) => {
-            const pressed = role === value
-            return (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={pressed}
-                onClick={() => switchDemoRole(value)}
-                className={cn(
-                  'min-h-11 px-3 rounded-md text-sm font-medium transition-colors',
-                  pressed ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5',
-                )}
-              >
-                {label}
-              </button>
-            )
-          })}
+      <div className="flex items-center gap-1.5 py-1 sm:gap-4">
+        <button
+          type="button"
+          aria-expanded={aboutOpen}
+          aria-controls={aboutId}
+          onClick={() => setAboutOpen((open) => !open)}
+          className="sm:hidden flex flex-1 min-w-0 min-h-11 items-center gap-1 rounded-md text-left text-xs leading-tight text-zinc-200 hover:text-white outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="min-w-0">{SHORT}</span>
+          {aboutOpen
+            ? <ChevronUpIcon className="size-4 shrink-0 text-zinc-400" aria-hidden="true" />
+            : <ChevronDownIcon className="size-4 shrink-0 text-zinc-400" aria-hidden="true" />}
+        </button>
+        <p className="hidden sm:flex items-center min-w-0 text-sm leading-snug text-zinc-200">{SENTENCE}</p>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <div role="group" aria-label="View the demo as" className="inline-flex rounded-lg border border-white/15">
+            {ROLES.map(({ role: value, label }) => {
+              const pressed = role === value
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={pressed}
+                  onClick={() => switchDemoRole(value)}
+                  className={cn(
+                    'min-h-11 px-2 rounded-lg text-[13px] font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
+                    pressed ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5',
+                  )}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          <Button variant="outline" aria-label="Reset sample data" onClick={askToReset} className="min-h-11 min-w-11 gap-1.5 px-2.5 text-zinc-200">
+            <RotateCcwIcon aria-hidden="true" />
+            <span className="hidden sm:inline">Reset sample data</span>
+          </Button>
         </div>
-        <Button variant="outline" aria-label="Reset sample data" onClick={askToReset} className="min-h-11 px-3 text-zinc-200">
-          <span className="sm:hidden">Reset</span>
-          <span className="hidden sm:inline">Reset sample data</span>
-        </Button>
       </div>
+      <p id={aboutId} className={aboutOpen ? 'sm:hidden pb-2 text-sm leading-snug text-zinc-200' : 'sm:hidden sr-only'}>{SENTENCE}</p>
       {dialog}
     </div>
   )
