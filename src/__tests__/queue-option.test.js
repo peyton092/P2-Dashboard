@@ -108,8 +108,11 @@ const files = sourcesUnder(srcDir).map((file) => ({
 const all = files.flatMap(({ name, calls }) => calls.map((call) => ({ name, ...call })))
 
 describe('the queue option of run', () => {
+  // The helpers are found in useFirestore.js, so a new one is covered without this test being
+  // told. The known ones are checked to be found, and the list is not pinned, so adding a
+  // helper does not fail this test.
   it('finds the calls it is meant to read, and the helpers that call a Cloud Function', () => {
-    expect(callables).toEqual(new Set(['sendExtraToBuilder', 'approveExtra', 'rejectExtra', 'passInspection', 'failInspection', 'createJob']))
+    expect([...callables]).toEqual(expect.arrayContaining(['sendExtraToBuilder', 'approveExtra', 'rejectExtra', 'passInspection', 'failInspection', 'createJob']))
     expect(all.length).toBeGreaterThan(40)
     expect(all.filter((call) => call.queued).length).toBeGreaterThan(30)
     expect(all.filter((call) => !call.queued).length).toBeGreaterThan(5)
