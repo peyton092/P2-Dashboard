@@ -174,12 +174,12 @@ describe('the controls and the one ring', () => {
   })
 
   // An element that is not itself a control may turn the outline off: the dialog panel, which
-  // takes focus only to hold it while the dialog opens, an option of a list, which shows that
-  // it is highlighted by its fill, and the main landmark, which takes focus only from the skip
-  // link, as a place to start from.
+  // takes focus only to hold it while the dialog opens, and the main landmark, which takes
+  // focus only from the skip link, as a place to start from. An option of a list is not one
+  // of them: the arrow keys move focus from option to option, and the ring is how a keyboard
+  // sees where it is, since the fill of the highlighted option is too faint to show it.
   const MAY_HIDE_THE_OUTLINE = {
     'components/ui/dialog.jsx': ['outline-none'],
-    'components/ui/select.jsx': ['outline-hidden'],
     'components/shell/AppShell.jsx': ['outline-none'],
   }
 

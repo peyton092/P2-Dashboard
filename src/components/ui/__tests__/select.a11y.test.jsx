@@ -61,4 +61,35 @@ describe('Select', () => {
 
     expect(await axe(document.body)).toHaveNoViolations()
   })
+
+  // The arrow keys move focus from option to option, and the shared ring is how a keyboard
+  // sees which one it is on. The list scrolls, so it would clip a ring drawn outside the
+  // option: the option draws it inside itself. jsdom draws nothing, so what is checked here
+  // is that no option turns the ring off and that each one moves it inside; Chromium shows
+  // the ring itself (see the Task 6 report).
+  it('keeps the keyboard ring on the option that has focus, drawn inside the option', async () => {
+    render(
+      <div className={SCREEN_SCOPE}>
+        <span id="trade-label">Trade</span>
+        <Select defaultValue="electrical">
+          <SelectTrigger aria-labelledby="trade-label">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="electrical">Electrical</SelectItem>
+            <SelectItem value="hvac">HVAC</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>,
+    )
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Trade' }))
+    await screen.findByRole('listbox')
+
+    for (const option of screen.getAllByRole('option')) {
+      const classes = option.className.split(/\s+/)
+      expect(classes, option.textContent).toContain('focus-visible:-outline-offset-2')
+      expect(classes.filter((name) => /(?:^|:)outline-(?:none|hidden)$/.test(name)), option.textContent).toEqual([])
+    }
+  })
 })
