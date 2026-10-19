@@ -113,7 +113,7 @@ export default function DemoBanner() {
           aria-expanded={aboutOpen}
           aria-controls={aboutId}
           onClick={() => setAboutOpen((open) => !open)}
-          className="sm:hidden flex flex-1 min-w-0 min-h-11 items-center gap-1 rounded-md text-left text-xs leading-tight text-zinc-200 hover:text-white outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="sm:hidden flex flex-1 min-w-0 min-h-11 items-center gap-1 rounded-md text-left text-xs leading-tight text-zinc-200 hover:text-white"
         >
           <span className="min-w-0">{SHORT}</span>
           {aboutOpen
@@ -132,7 +132,7 @@ export default function DemoBanner() {
                   aria-pressed={pressed}
                   onClick={() => switchDemoRole(value)}
                   className={cn(
-                    'min-h-11 px-2 rounded-lg text-[13px] font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
+                    'min-h-11 px-2 rounded-lg text-[13px] font-medium transition-colors',
                     pressed ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5',
                   )}
                 >
