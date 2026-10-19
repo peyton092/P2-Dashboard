@@ -54,6 +54,41 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  # The production build carries none of the demo, and the demo build carries nothing
+  # of Firebase or Google: no host, no key, no project identifier, no service worker.
+  # docs/demo-preview.md says why.
+  demo-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: The production build holds no sample data and no demo code
+        run: |
+          if grep -rIl -e 'Enclave Dr' -e 'p2-demo-state' -e 'demoStore' -e 'src/demo' dist; then
+            echo 'The production build holds sample data or demo code.'
+            exit 1
+          fi
+      - run: npm run build:demo
+      - name: The demo build reaches no Firebase or Google service
+        run: |
+          if grep -rIlE 'firebaseio|firebaseapp|googleapis|cloudfunctions\.net|AIzaSy|identitytoolkit|securetoken|666712594799|p2-dashboard' dist-demo; then
+            echo 'The demo build holds a Firebase or Google host, a key or a project identifier.'
+            exit 1
+          fi
+          if [ ! -f dist-demo/_redirects ]; then
+            echo 'The demo build has no _redirects, so its links would not open the app.'
+            exit 1
+          fi
+          if [ -e dist-demo/sw.js ] || [ -e dist-demo/firebase-messaging-sw.js ]; then
+            echo 'The demo build holds a service worker.'
+            exit 1
+          fi
+
   functions:
     runs-on: ubuntu-latest
     steps:
