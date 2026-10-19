@@ -1,5 +1,7 @@
-// Demo data for the emulator only seed script (scripts/seed-demo.mjs).
-// Nothing under src/ may import this file. Every value here is invented.
+// Demo data for the emulator only seed script (scripts/seed-demo.mjs), and the base of
+// the demo build's seed (src/demo/seed.js), which renames every person, client and
+// address in it. Nothing else under src/ may import this file. Every value here is
+// invented.
 
 export const LAST_STATUS_CHANGES = {
   'QBS-001': '2026-04-12', 'QBS-002': '2026-04-21', 'QBS-003': '2026-04-08',
