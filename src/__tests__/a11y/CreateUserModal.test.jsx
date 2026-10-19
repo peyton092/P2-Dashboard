@@ -35,11 +35,8 @@ function openOverPage() {
 }
 const focusIsInside = (dialog) => waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
 
-// A test marked it.fails is one this screen does not pass yet. The change that makes it pass
-// takes the mark off, in the same commit.
-
 describe('the create user dialog, open', () => {
-  it.fails('is a modal dialog whose title is a heading', async () => {
+  it('is a modal dialog whose title is a heading', async () => {
     const dialog = await openOverPage()
 
     expect(dialog.getAttribute('aria-modal')).toBe('true')
@@ -47,7 +44,7 @@ describe('the create user dialog, open', () => {
     expect(dialog.getAttribute('aria-labelledby')).toBe(title.id)
   })
 
-  it.fails('keeps Tab inside the dialog, from its last control round to its first', async () => {
+  it('keeps Tab inside the dialog, from its last control round to its first', async () => {
     const dialog = await openOverPage()
     await focusIsInside(dialog)
 
@@ -56,10 +53,11 @@ describe('the create user dialog, open', () => {
     pressTab()
 
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
-    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Manage users' }))
+    // The page behind is hidden from a screen reader while the dialog is open.
+    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Manage users', hidden: true }))
   })
 
-  it.fails('keeps Shift and Tab inside the dialog, from its first control round to its last', async () => {
+  it('keeps Shift and Tab inside the dialog, from its first control round to its last', async () => {
     const dialog = await openOverPage()
     await focusIsInside(dialog)
 

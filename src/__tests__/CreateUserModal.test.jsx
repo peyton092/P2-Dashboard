@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react'
 
 // Importing App.jsx pulls in the whole app, so everything that would reach
 // Firebase is replaced: the app's own firebase.js, httpsCallable, the password
@@ -67,19 +67,21 @@ describe('CreateUserModal dialog behavior', () => {
     expect(document.getElementById(titleId).textContent).toContain('Create User Account')
   })
 
-  it('takes the dark theme from the document and names its own text color', () => {
+  it('takes the dark theme from the document and names its own text color', async () => {
     // It renders outside the app shell. index.html puts the dark class on the
     // document root, so the dialog needs no scope of its own, but it still sets
-    // its foreground so the text on the dark card never depends on what is behind it.
+    // its foreground so the text on the dark panel never depends on what is behind it.
     openModal()
-    const overlay = screen.getByRole('dialog').parentElement
-    expect(overlay.classList.contains('dark')).toBe(false)
-    expect(overlay.classList.contains('text-foreground')).toBe(true)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.closest('.dark')).toBeNull()
+    expect(dialog.classList.contains('text-foreground')).toBe(true)
   })
 
-  it('focuses the Name field when it opens', () => {
+  // Base UI puts focus in the dialog on the next animation frame after it opens, so the
+  // test waits for it.
+  it('focuses the Name field when it opens', async () => {
     openModal()
-    expect(document.activeElement).toBe(screen.getByLabelText('Name'))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Name')))
   })
 
   it('closes on Escape, and only on Escape', () => {
@@ -105,12 +107,13 @@ describe('CreateUserModal dialog behavior', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('calls the newest onClose, and does not take focus back when its parent re-renders', () => {
+  it('calls the newest onClose, and does not take focus back when its parent re-renders', async () => {
     const first = vi.fn()
     const second = vi.fn()
     const { rerender } = render(<CreateUserModal onClose={first} />)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Name')))
     fireEvent.focus(screen.getByLabelText('Email'))
-    screen.getByLabelText('Email').focus()
+    act(() => { screen.getByLabelText('Email').focus() })
     rerender(<CreateUserModal onClose={second} />)
     expect(document.activeElement).toBe(screen.getByLabelText('Email'))
     fireEvent.keyDown(document, { key: 'Escape' })
@@ -124,14 +127,14 @@ describe('CreateUserModal dialog behavior', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('gives focus back to the element that opened it', () => {
+  it('gives focus back to the element that opened it', async () => {
     const opener = document.createElement('button')
     document.body.appendChild(opener)
     opener.focus()
     const { unmount } = render(<CreateUserModal onClose={() => {}} />)
-    expect(document.activeElement).not.toBe(opener)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Name')))
     unmount()
-    expect(document.activeElement).toBe(opener)
+    await waitFor(() => expect(document.activeElement).toBe(opener))
     opener.remove()
   })
 })

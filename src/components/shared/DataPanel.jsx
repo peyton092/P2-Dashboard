@@ -51,9 +51,11 @@ export default function DataPanel({
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold tracking-tight text-white truncate">
+                {/* A level two heading, under the page's PageHeader, so a screen's
+                    headings go down one level at a time. */}
+                <h2 className="font-sans text-sm font-bold tracking-tight text-white truncate">
                   {title}
-                </h3>
+                </h2>
                 {badge}
               </div>
               {description && (

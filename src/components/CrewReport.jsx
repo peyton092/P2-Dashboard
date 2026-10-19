@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useId } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { addDailyReport } from '../hooks/useFirestore'
@@ -8,6 +8,7 @@ import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Field } from '@/components/ui/field'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -18,12 +19,14 @@ import {
   EmptyState,
 } from './shared'
 import {
-  CheckCircleIcon, CheckIcon, CameraIcon, XIcon, ImageIcon, LoaderIcon,
+  CheckCircleIcon, CameraIcon, XIcon, ImageIcon, LoaderIcon,
   HardHatIcon, ClipboardListIcon, NotebookPenIcon, PackageIcon,
   ShieldAlertIcon, FilePenLineIcon, BadgeCheckIcon,
   AlertTriangleIcon, ArrowRightIcon, CalendarDaysIcon,
 } from 'lucide-react'
-import { BRAND, withAlpha } from '@/lib/tokens'
+import { BRAND, SEMANTIC, withAlpha } from '@/lib/tokens'
+import { toneHex, toneText } from '@/lib/status'
+import { cn } from '@/lib/utils'
 
 const CREW_LIST = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 const PHASES = ['Rough-In', 'Service Release', 'Trim', 'Final']
@@ -49,64 +52,53 @@ const BLOCKER_OPTIONS = [
 
 // ── Local primitives ─────────────────────────────────────────────────────────
 
-function FieldLabel({ children }) {
+// A question with two answers, as a group of two buttons named by the question, each
+// saying whether it is pressed. Each answer has a tone of its own, because what a yes
+// means turns: Yes is critical for a safety issue and success for inspection ready. The
+// tone is never the only sign, since the pressed answer is also filled and says so.
+function YesNoQuestion({ label, Icon, value, onChange, yesTone = 'success', noTone = 'critical' }) {
+  const labelId = useId()
   return (
-    <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 block mb-1.5">
-      {children}
-    </span>
-  )
-}
-
-// 2-button Yes/No toggle. Per-option colours so e.g. "Safety issue" can flip
-// the colour semantics — Yes is red there, Yes is green for "Inspection ready".
-function yesNoButtonStyle(active, activeColor) {
-  return {
-    borderColor:     active ? activeColor : '#374151',
-    backgroundColor: active ? withAlpha(activeColor, 0.13) : 'transparent',
-    color:           active ? activeColor : '#9ca3af',
-  }
-}
-
-function YesNoToggle({ value, onChange, yesColor = '#22c55e', noColor = '#ef4444' }) {
-  const yesActive = value === true
-  const noActive  = value === false
-  const cls = 'flex-1 py-2.5 rounded-lg border-2 font-bold text-sm transition-colors min-h-11'
-  return (
-    <div className="flex gap-3">
-      <button
-        type="button"
-        onClick={() => onChange(true)}
-        className={cls}
-        style={yesNoButtonStyle(yesActive, yesColor)}
-      >
-        Yes
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange(false)}
-        className={cls}
-        style={yesNoButtonStyle(noActive, noColor)}
-      >
-        No
-      </button>
+    <div>
+      <p id={labelId} className="mb-1.5 inline-flex items-center gap-1 text-xs font-medium text-zinc-200">
+        <Icon size={11} aria-hidden="true" /> {label}
+      </p>
+      <div role="group" aria-labelledby={labelId} className="flex gap-3">
+        <Answer pressed={value === true} tone={yesTone} onPress={() => onChange(true)}>Yes</Answer>
+        <Answer pressed={value === false} tone={noTone} onPress={() => onChange(false)}>No</Answer>
+      </div>
     </div>
   )
 }
 
+function Answer({ pressed, tone, onPress, children }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onPress}
+      className={cn(
+        'flex-1 py-2.5 rounded-lg border-2 font-bold text-sm transition-colors min-h-11',
+        !pressed && 'border-white/15 text-neutral',
+      )}
+      style={pressed ? { borderColor: toneHex(tone), backgroundColor: withAlpha(toneHex(tone), 0.13), color: toneText(tone) } : undefined}
+    >
+      {children}
+    </button>
+  )
+}
+
+// One item of the work done today: a real checkbox inside its label, so Space or a tap
+// anywhere on the row checks it, and a screen reader reads its name and its state.
 function WorkCheckbox({ checked, onChange, label }) {
   return (
     <label className="flex items-center gap-3 cursor-pointer select-none py-2.5 min-h-11">
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className="w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors"
-        style={{
-          borderColor: checked ? BRAND : '#4b5563',
-          backgroundColor: checked ? BRAND : 'transparent',
-        }}
-      >
-        {checked && <CheckIcon size={12} color="#fff" strokeWidth={3} />}
-      </button>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => onChange(!checked)}
+        className="size-5 shrink-0 cursor-pointer accent-brand"
+      />
       <span className="text-sm text-zinc-200">{label}</span>
     </label>
   )
@@ -300,9 +292,9 @@ export default function CrewReport() {
           <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
             <div
               className="w-20 h-20 rounded-full flex items-center justify-center mb-5"
-              style={{ backgroundColor: '#22c55e22' }}
+              style={{ backgroundColor: withAlpha(SEMANTIC.success, 0.13) }}
             >
-              <CheckCircleIcon size={40} color="#22c55e" strokeWidth={2.25} />
+              <CheckCircleIcon size={40} color={SEMANTIC.success} strokeWidth={2.25} aria-hidden="true" />
             </div>
             <p className="text-xl font-bold text-white mb-1">Field update received</p>
             <p className="text-sm text-zinc-300 max-w-md">
@@ -355,8 +347,7 @@ export default function CrewReport() {
           {/* Crew & Job */}
           <DataPanel title="Crew & Job" Icon={HardHatIcon}>
             <div className="space-y-4">
-              <div>
-                <FieldLabel>Reporter</FieldLabel>
+              <Field label="Reporter">
                 <Select value={crewMember} onValueChange={setCrewMember}>
                   <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue placeholder="Select your name…" />
@@ -367,10 +358,9 @@ export default function CrewReport() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>Job</FieldLabel>
+              <Field label="Job">
                 <Select value={jobId} onValueChange={setJobId}>
                   <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue placeholder="Select job…" />
@@ -383,10 +373,9 @@ export default function CrewReport() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>Phase</FieldLabel>
+              <Field label="Phase">
                 <Select value={phase} onValueChange={setPhase}>
                   <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue placeholder="Select phase…" />
@@ -397,7 +386,7 @@ export default function CrewReport() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
             </div>
           </DataPanel>
 
@@ -407,7 +396,7 @@ export default function CrewReport() {
             description={completedCount > 0 ? `${completedCount} item${completedCount === 1 ? '' : 's'} marked` : 'Tap each item finished today.'}
             Icon={ClipboardListIcon}
           >
-            <div className="rounded-lg border border-white/10 bg-white/[0.025] px-3 divide-y divide-white/5">
+            <div role="group" aria-label="Work completed today" className="rounded-lg border border-white/10 bg-white/[0.025] px-3 divide-y divide-white/5">
               {WORK_ITEMS.map(item => (
                 <WorkCheckbox
                   key={item.id}
@@ -422,8 +411,7 @@ export default function CrewReport() {
           {/* Materials & notes */}
           <DataPanel title="Materials & notes" Icon={PackageIcon}>
             <div className="space-y-4">
-              <div>
-                <FieldLabel>Materials used</FieldLabel>
+              <Field label="Materials used">
                 <Textarea
                   value={matUsed}
                   onChange={e => setMatUsed(e.target.value)}
@@ -431,10 +419,9 @@ export default function CrewReport() {
                   className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
                   rows={2}
                 />
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>Materials needed for next visit</FieldLabel>
+              <Field label="Materials needed for next visit">
                 <Textarea
                   value={matNeeded}
                   onChange={e => setMatNeeded(e.target.value)}
@@ -442,25 +429,23 @@ export default function CrewReport() {
                   className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
                   rows={2}
                 />
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>Next step</FieldLabel>
+              <Field label="Next step">
                 <Input
                   value={nextStep}
                   onChange={e => setNextStep(e.target.value)}
                   placeholder="e.g. Trim panel, schedule final inspection…"
                   className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 h-11"
                 />
-              </div>
+              </Field>
             </div>
           </DataPanel>
 
           {/* Status flags */}
           <DataPanel title="Status & flags" Icon={BadgeCheckIcon}>
             <div className="space-y-4">
-              <div>
-                <FieldLabel>Blocker</FieldLabel>
+              <Field label="Blocker">
                 <Select value={blocker} onValueChange={setBlocker}>
                   <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue />
@@ -471,49 +456,34 @@ export default function CrewReport() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>
-                  <span className="inline-flex items-center gap-1">
-                    <ShieldAlertIcon size={11} /> Safety issue
-                  </span>
-                </FieldLabel>
-                <YesNoToggle
-                  value={safetyIssue}
-                  onChange={setSafetyIssue}
-                  yesColor="#ef4444"
-                  noColor="#22c55e"
-                />
-              </div>
+              <YesNoQuestion
+                label="Safety issue"
+                Icon={ShieldAlertIcon}
+                value={safetyIssue}
+                onChange={setSafetyIssue}
+                yesTone="critical"
+                noTone="success"
+              />
 
-              <div>
-                <FieldLabel>
-                  <span className="inline-flex items-center gap-1">
-                    <FilePenLineIcon size={11} /> Change order needed
-                  </span>
-                </FieldLabel>
-                <YesNoToggle
-                  value={changeOrderNeeded}
-                  onChange={setChangeOrderNeeded}
-                  yesColor={BRAND}
-                  noColor="#22c55e"
-                />
-              </div>
+              <YesNoQuestion
+                label="Change order needed"
+                Icon={FilePenLineIcon}
+                value={changeOrderNeeded}
+                onChange={setChangeOrderNeeded}
+                yesTone="brand"
+                noTone="success"
+              />
 
-              <div>
-                <FieldLabel>
-                  <span className="inline-flex items-center gap-1">
-                    <BadgeCheckIcon size={11} /> Inspection ready
-                  </span>
-                </FieldLabel>
-                <YesNoToggle
-                  value={inspReady}
-                  onChange={setInspReady}
-                  yesColor="#22c55e"
-                  noColor="#ef4444"
-                />
-              </div>
+              <YesNoQuestion
+                label="Inspection ready"
+                Icon={BadgeCheckIcon}
+                value={inspReady}
+                onChange={setInspReady}
+                yesTone="success"
+                noTone="critical"
+              />
             </div>
           </DataPanel>
 
@@ -531,7 +501,7 @@ export default function CrewReport() {
               accept={ALLOWED_UPLOAD_TYPES.join(',')}
               multiple
               capture="environment"
-              className="hidden"
+              hidden
               onChange={handlePhoto}
             />
             <button

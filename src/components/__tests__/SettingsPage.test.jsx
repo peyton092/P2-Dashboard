@@ -378,10 +378,23 @@ describe('changing the password', () => {
   const start = async (current = 'old password', next = 'new password') => {
     open('owner')
     fireEvent.click(screen.getByRole('button', { name: 'Change Password' }))
-    fireEvent.change(screen.getByPlaceholderText('Current password'), { target: { value: current } })
-    fireEvent.change(screen.getByPlaceholderText('New password (min 6 characters)'), { target: { value: next } })
+    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: current } })
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: next } })
   }
   const update = () => screen.getByRole('button', { name: /^(Update Password|Saving…)$/ })
+
+  // The two boxes are on the shared Field: each is named by its label, and the new one is
+  // described by how long it has to be, which a placeholder would hide while it is typed in.
+  it('names the two password boxes by their labels, and says how long the new one must be', async () => {
+    open('owner')
+    fireEvent.click(screen.getByRole('button', { name: 'Change Password' }))
+
+    const current = screen.getByLabelText('Current password')
+    const next = screen.getByLabelText('New password')
+    expect([current.type, next.type]).toEqual(['password', 'password'])
+    expect([current.autocomplete, next.autocomplete]).toEqual(['current-password', 'new-password'])
+    expect(document.getElementById(next.getAttribute('aria-describedby')).textContent).toBe('At least 6 characters.')
+  })
   const authError = (code, message = `Firebase: Error (${code}).`) => Object.assign(new Error(message), { code })
 
   it('signs the person in again with the current password, sets the new one, and says so', async () => {
@@ -398,10 +411,10 @@ describe('changing the password', () => {
     await start()
     await press(update())
 
-    expect(screen.queryByPlaceholderText('Current password')).toBeNull()
+    expect(screen.queryByLabelText('Current password')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Change Password' }))
-    expect(screen.getByPlaceholderText('Current password').value).toBe('')
-    expect(screen.getByPlaceholderText('New password (min 6 characters)').value).toBe('')
+    expect(screen.getByLabelText('Current password').value).toBe('')
+    expect(screen.getByLabelText('New password').value).toBe('')
   })
 
   it('reads Saving and takes no second press while it is out', async () => {
@@ -429,7 +442,7 @@ describe('changing the password', () => {
 
     expect(toastCalls()).toEqual([{ tone: 'error', title: 'Could not update the password. Try again.', description: words }])
     expect(screen.getByText(words, { selector: 'p' })).toBeTruthy()
-    expect(screen.getByPlaceholderText('Current password').value).toBe('old password')
+    expect(screen.getByLabelText('Current password').value).toBe('old password')
     expect(update().disabled).toBe(false)
     expect(mocks.updatePassword).not.toHaveBeenCalled()
   })
@@ -447,13 +460,13 @@ describe('changing the password', () => {
       await act(async () => { vi.advanceTimersByTime(OFFLINE_WAIT_MS * 4) })
 
       expect(update().textContent).toBe('Saving…')
-      expect(screen.getByPlaceholderText('Current password')).toBeTruthy()
+      expect(screen.getByLabelText('Current password')).toBeTruthy()
       expect(mocks.toast).not.toHaveBeenCalled()
 
       await act(async () => { pending.resolve() })
 
       expect(toastCalls()).toEqual([{ tone: 'success', title: 'Password updated.' }])
-      expect(screen.queryByPlaceholderText('Current password')).toBeNull()
+      expect(screen.queryByLabelText('Current password')).toBeNull()
     } finally {
       vi.useRealTimers()
       onLine.mockRestore()

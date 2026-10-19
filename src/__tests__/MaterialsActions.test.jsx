@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
 
 // The Materials screen requests a material, edits one, and changes its status. Each of
 // those tells the person how it ended, and a form closes only when its write went
@@ -64,6 +65,27 @@ const requestOne = () => {
   fireEvent.click(screen.getAllByRole('button', { name: /Request material/ })[0])
   fireEvent.change(nameField(), { target: { value: '200A panel' } })
 }
+
+// The form is on the shared Field: each label points at its box or list.
+describe('the material form', () => {
+  it('names every box and list by its label, and says the name must be filled in', () => {
+    open()
+    fireEvent.click(screen.getAllByRole('button', { name: /Request material/ })[0])
+
+    expect(screen.getByRole('textbox', { name: 'Item name' })).toBe(nameField())
+    expect(nameField().getAttribute('aria-required')).toBe('true')
+    for (const name of ['Vendor', 'Notes']) expect(screen.getByRole('textbox', { name }).tagName, name).toBe('INPUT')
+    expect(screen.getByLabelText('Qty').getAttribute('type')).toBe('number')
+    for (const name of ['Date ordered', 'Date needed']) expect(screen.getByLabelText(name).getAttribute('type'), name).toBe('date')
+    for (const name of ['Unit', 'Job', 'Status']) expect(screen.getByRole('combobox', { name }), name).toBeTruthy()
+  })
+
+  it('has no accessibility violations while it is open', async () => {
+    open()
+    fireEvent.click(screen.getAllByRole('button', { name: /Request material/ })[0])
+    expect(await axe(nameField().closest('section'))).toHaveNoViolations()
+  })
+})
 
 describe('requesting a material', () => {
   it('writes the material, says it was requested, and closes and clears the form', async () => {

@@ -43,20 +43,17 @@ const open = (onAccept = vi.fn()) => {
   return onAccept
 }
 
-// A test marked it.fails is one this screen does not pass yet. The change that makes it pass
-// takes the mark off, in the same commit.
-
 describe('the terms gate', () => {
-  it.fails('is the main content of the page, under one level one heading', () => {
+  it('is the main content of the page, under one level one heading', () => {
     open()
 
     expect(screen.getByRole('main')).toBeTruthy()
     const headings = screen.getAllByRole('heading', { level: 1 })
     expect(headings).toHaveLength(1)
-    expect(headings[0].textContent).toMatch(/^Terms of Access/)
+    expect(headings[0].textContent.trim()).toMatch(/^Terms of Access/)
   })
 
-  it.fails('asks for agreement with a real checkbox, named by what is agreed to, and starts unchecked', () => {
+  it('asks for agreement with a real checkbox, named by what is agreed to, and starts unchecked', () => {
     open()
 
     const box = screen.getByRole('checkbox', { name: AGREE })
@@ -65,7 +62,7 @@ describe('the terms gate', () => {
     expect(accept().disabled).toBe(true)
   })
 
-  it.fails('checks the box with Space from the keyboard, and then Accept can be pressed', async () => {
+  it('checks the box with Space from the keyboard, and then Accept can be pressed', async () => {
     const onAccept = open()
 
     const box = screen.getByRole('checkbox', { name: AGREE })
@@ -82,7 +79,7 @@ describe('the terms gate', () => {
     expect(onAccept).toHaveBeenCalledTimes(1)
   })
 
-  it.fails('unchecks the box with Space too, and Accept goes off again', () => {
+  it('unchecks the box with Space too, and Accept goes off again', () => {
     open()
 
     const box = screen.getByRole('checkbox', { name: AGREE })
@@ -94,7 +91,7 @@ describe('the terms gate', () => {
     expect(accept().disabled).toBe(true)
   })
 
-  it.fails('reads out an acceptance that could not be recorded as an alert', async () => {
+  it('reads out an acceptance that could not be recorded as an alert', async () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     mocks.setDoc.mockRejectedValue(new Error('offline'))
     const onAccept = open()

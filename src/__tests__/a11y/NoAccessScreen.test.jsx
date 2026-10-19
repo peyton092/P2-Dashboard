@@ -8,15 +8,12 @@ import NoAccessScreen from '../../components/NoAccessScreen'
 
 afterEach(cleanup)
 
-// A test marked it.fails is one this screen does not pass yet. The change that makes it pass
-// takes the mark off, in the same commit.
-
 describe('the no access screen', () => {
-  it.fails('is the main content of the page, under one level one heading', () => {
+  it('is the main content of the page, under one level one heading', () => {
     render(<NoAccessScreen email="new.user@example.com" onLogout={() => {}} />)
 
     expect(screen.getByRole('main')).toBeTruthy()
-    expect(screen.getAllByRole('heading', { level: 1 }).map((heading) => heading.textContent)).toEqual(['No access yet'])
+    expect(screen.getAllByRole('heading', { level: 1 }).map((heading) => heading.textContent.trim())).toEqual(['No access yet'])
   })
 
   it('signs out from a button the keyboard reaches', () => {

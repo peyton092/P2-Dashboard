@@ -88,6 +88,33 @@ describe('New job form', () => {
   }
   const create = () => screen.getByRole('button', { name: /^Create job$|^Creating/ })
 
+  // The form is on the shared Field: each label points at its box or list, and the ones that
+  // must be filled in say so to a screen reader as well as with a mark.
+  it('names every box and list of the form by its label', () => {
+    open()
+    for (const name of ['Job ID', 'Street address', 'City, state ZIP', 'Client', 'Project type', 'Permit number']) {
+      expect(screen.getByRole('textbox', { name }).tagName, name).toBe('INPUT')
+    }
+    expect(screen.getByLabelText('Target date').getAttribute('type')).toBe('date')
+    for (const name of ['Tenant', 'PM', 'Electrical sub', 'Plumbing sub', 'HVAC sub']) {
+      expect(screen.getByRole('combobox', { name }), name).toBeTruthy()
+    }
+  })
+
+  it('says the id, the address and the client must be filled in', () => {
+    open()
+    for (const name of ['Job ID', 'Street address', 'Client']) {
+      expect(screen.getByRole('textbox', { name }).getAttribute('aria-required'), name).toBe('true')
+    }
+    expect(screen.getByRole('textbox', { name: 'City, state ZIP' }).hasAttribute('aria-required')).toBe(false)
+  })
+
+  it('has no accessibility violations in the open form', async () => {
+    open()
+    const form = screen.getByRole('textbox', { name: 'Job ID' }).closest('section')
+    expect(await axe(form)).toHaveNoViolations()
+  })
+
   it('cannot be sent until the id, address and client are filled in', () => {
     open()
     expect(create().disabled).toBe(true)

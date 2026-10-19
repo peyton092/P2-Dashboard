@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useId, useRef, lazy, Suspense } from 'react'
+﻿import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react'
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
   sendPasswordResetEmail,
@@ -23,6 +23,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Field } from '@/components/ui/field'
+import { Dialog, DialogBody } from '@/components/ui/dialog'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -302,8 +304,11 @@ export function LoginScreen() {
     }
   }
 
+  // The screen is the whole page: one main landmark and one level one heading. A failed
+  // sign in is an alert. What Forgot Password says arrives in a status that is in the page
+  // from the start, so that a screen reader announces it.
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
+    <main className="min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
       <div className="flex items-center gap-3">
         <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: BRAND }}>
           <ZapIcon size={22} color="#fff" />
@@ -316,14 +321,13 @@ export function LoginScreen() {
 
       <Card className="w-80 border-white/10 bg-white/5">
         <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <LockIcon size={14} style={{ color: BRAND }} /> Sign In
-          </CardTitle>
+          <h1 className="font-heading text-sm leading-snug font-medium tracking-normal flex items-center gap-2">
+            <LockIcon size={14} style={{ color: BRAND }} aria-hidden="true" /> Sign In
+          </h1>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSignIn} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Email</label>
+            <Field label="Email">
               <Input
                 type="email"
                 value={email}
@@ -333,9 +337,8 @@ export function LoginScreen() {
                 autoComplete="email"
                 required
               />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Password</label>
+            </Field>
+            <Field label="Password">
               <Input
                 type="password"
                 value={password}
@@ -345,12 +348,12 @@ export function LoginScreen() {
                 autoComplete="current-password"
                 required
               />
-            </div>
-            {error && <p className="text-xs text-red-400 font-medium">{error}</p>}
+            </Field>
+            {error && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
             <Button
               type="submit"
-              className="w-full text-white"
-              style={{ backgroundColor: BRAND }}
+              variant="brand"
+              className="w-full"
               disabled={loading}>
               {loading ? 'Signing in…' : 'Sign In'}
             </Button>
@@ -362,15 +365,17 @@ export function LoginScreen() {
               onClick={handleForgotPassword}>
               Forgot Password?
             </button>
-            {resetMsg && (
-              <p className={`text-xs text-center font-medium ${resetMsg.includes('sent to') ? 'text-green-400' : 'text-red-400'}`}>
-                {resetMsg}
-              </p>
-            )}
+            <div role="status">
+              {resetMsg && (
+                <p className={`text-xs text-center font-medium ${resetMsg.includes('sent to') ? 'text-green-400' : 'text-red-400'}`}>
+                  {resetMsg}
+                </p>
+              )}
+            </div>
           </form>
         </CardContent>
       </Card>
-    </div>
+    </main>
   )
 }
 
@@ -404,9 +409,7 @@ const FIELD_CLASS = 'bg-white/5 border-white/20'
 const SELECT_CLASS = 'h-8 w-full rounded-lg border border-white/20 bg-zinc-900 px-2.5 text-sm text-zinc-100 disabled:opacity-50'
 
 export function CreateUserModal({ onClose }) {
-  const formId = useId()
   const nameRef = useRef(null)
-  const onCloseRef = useRef(onClose)
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('internal')
@@ -416,23 +419,6 @@ export function CreateUserModal({ onClose }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [warning, setWarning] = useState('')
-
-  useEffect(() => {
-    onCloseRef.current = onClose
-  }, [onClose])
-
-  // On open: remember what had focus (the button that opened this), focus the
-  // first field, and close on Escape. On close: hand focus back.
-  useEffect(() => {
-    const opener = document.activeElement
-    nameRef.current?.focus()
-    const onKeyDown = (e) => { if (e.key === 'Escape') onCloseRef.current() }
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      if (opener instanceof HTMLElement) opener.focus()
-    }
-  }, [])
 
   const handleCreate = async (e) => {
     e.preventDefault()
@@ -471,109 +457,80 @@ export function CreateUserModal({ onClose }) {
     setLoading(false)
   }
 
-  // This renders outside AppShell. The dark theme comes from the document
-  // root (see index.html), and the overlay names its own foreground color so
-  // the text on the dark card never depends on what is behind the dialog.
+  // A modal Dialog: it keeps focus inside while it is open, starts on the Name field,
+  // closes on Escape, the scrim or its close button, and gives focus back to whatever
+  // opened it. It renders outside AppShell; the dark theme comes from the document root
+  // (see index.html), and the panel names its own foreground color. Every field is on
+  // Field, so each label points at its control and the hint describes the job ids.
   return (
-    <div className="fixed inset-0 bg-black/70 text-foreground flex items-center justify-center z-50 p-4">
-      <Card
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${formId}-title`}
-        className="w-96 max-w-full max-h-full overflow-y-auto border-white/10 bg-zinc-900"
-      >
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle id={`${formId}-title`} className="text-sm flex items-center gap-2">
-            <UsersIcon size={14} style={{ color: BRAND }} aria-hidden="true" /> Create User Account
-          </CardTitle>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <XIcon size={16} aria-hidden="true" />
-          </button>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleCreate} className="space-y-3">
-            <div className="space-y-1">
-              <label htmlFor={`${formId}-name`} className="text-xs text-muted-foreground">Name</label>
+    <Dialog open onClose={onClose} title="Create User Account" size="sm" initialFocusRef={nameRef}>
+      <DialogBody>
+        <form onSubmit={handleCreate} className="space-y-3">
+          <Field label="Name">
+            <Input
+              ref={nameRef}
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              placeholder="Mike Rodriguez"
+              autoComplete="off"
+              className={FIELD_CLASS}
+            />
+          </Field>
+          <Field label="Email">
+            <Input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="user@p2em.com"
+              autoComplete="off"
+              className={FIELD_CLASS}
+              required
+            />
+          </Field>
+          <Field label="Role">
+            <select
+              value={role}
+              onChange={e => setRole(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </Field>
+          {role === 'builder' && (
+            <Field label="Tenant">
+              <select
+                value={tenantId}
+                onChange={e => setTenantId(e.target.value)}
+                className={SELECT_CLASS}
+              >
+                {BUILDER_TENANTS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </Field>
+          )}
+          {role === 'client' && (
+            <Field
+              label="Client job ids"
+              hint="Separate ids with commas or spaces. The client will see only these projects, and the Name above is shown as their company name in the portal."
+            >
               <Input
-                id={`${formId}-name`}
-                ref={nameRef}
-                value={displayName}
-                onChange={e => setDisplayName(e.target.value)}
-                placeholder="Mike Rodriguez"
-                autoComplete="off"
-                className={FIELD_CLASS}
-              />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor={`${formId}-email`} className="text-xs text-muted-foreground">Email</label>
-              <Input
-                id={`${formId}-email`}
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="user@p2em.com"
+                value={clientJobs}
+                onChange={e => setClientJobs(e.target.value)}
+                placeholder="QBS-018, QBS-032, QBS-041"
                 autoComplete="off"
                 className={FIELD_CLASS}
                 required
               />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor={`${formId}-role`} className="text-xs text-muted-foreground">Role</label>
-              <select
-                id={`${formId}-role`}
-                value={role}
-                onChange={e => setRole(e.target.value)}
-                className={SELECT_CLASS}
-              >
-                {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-            </div>
-            {role === 'builder' && (
-              <div className="space-y-1">
-                <label htmlFor={`${formId}-tenant`} className="text-xs text-muted-foreground">Tenant</label>
-                <select
-                  id={`${formId}-tenant`}
-                  value={tenantId}
-                  onChange={e => setTenantId(e.target.value)}
-                  className={SELECT_CLASS}
-                >
-                  {BUILDER_TENANTS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
-            )}
-            {role === 'client' && (
-              <div className="space-y-1">
-                <label htmlFor={`${formId}-jobs`} className="text-xs text-muted-foreground">Client job ids</label>
-                <Input
-                  id={`${formId}-jobs`}
-                  value={clientJobs}
-                  onChange={e => setClientJobs(e.target.value)}
-                  placeholder="QBS-018, QBS-032, QBS-041"
-                  autoComplete="off"
-                  aria-describedby={`${formId}-jobs-hint`}
-                  className={FIELD_CLASS}
-                  required
-                />
-                <p id={`${formId}-jobs-hint`} className="text-[11px] text-muted-foreground">
-                  Separate ids with commas or spaces. The client will see only these projects, and the Name above is shown as their company name in the portal.
-                </p>
-              </div>
-            )}
-            {error   && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
-            {success && <p role="status" className="text-xs text-green-400 font-medium">{success}</p>}
-            {warning && <p role="status" className="text-xs text-amber-400 font-medium">{warning}</p>}
-            <Button type="submit" className="w-full text-white" style={{ backgroundColor: BRAND }} disabled={loading}>
-              {loading ? 'Creating…' : 'Create Account'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+            </Field>
+          )}
+          {error   && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
+          {success && <p role="status" className="text-xs text-green-400 font-medium">{success}</p>}
+          {warning && <p role="status" className="text-xs text-amber-400 font-medium">{warning}</p>}
+          <Button type="submit" variant="brand" className="w-full max-md:min-h-11" disabled={loading}>
+            {loading ? 'Creating…' : 'Create Account'}
+          </Button>
+        </form>
+      </DialogBody>
+    </Dialog>
   )
 }
 
@@ -613,8 +570,12 @@ export function TermsGate({ tenantId, tenantName, onAccept }) {
     }
   }
 
+  // The gate is the whole page: one main landmark and one level one heading. The terms
+  // scroll, so their box can take focus, and a keyboard can scroll it. Agreement is a real
+  // checkbox inside its label: Space checks it, and a tap anywhere on the row does too
+  // (Review Focus 2 of the plan). A refusal is read out as an alert.
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
+    <main className="min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: BRAND }}>
           <ShieldIcon size={20} color="#fff" />
@@ -627,12 +588,16 @@ export function TermsGate({ tenantId, tenantName, onAccept }) {
 
       <Card className="w-full max-w-lg border-white/10 bg-white/5">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileTextIcon size={16} style={{ color: BRAND }} /> Terms of Access · {version}
-          </CardTitle>
+          <h1 className="font-heading text-base leading-snug font-medium tracking-normal flex items-center gap-2">
+            <FileTextIcon size={16} style={{ color: BRAND }} aria-hidden="true" /> Terms of Access · {version}
+          </h1>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground space-y-3 p-4 rounded-xl bg-white/5 max-h-64 overflow-y-auto">
+          <div
+            role="region"
+            aria-label="Terms of Access"
+            tabIndex={0}
+            className="text-sm text-muted-foreground space-y-3 p-4 rounded-xl bg-white/5 max-h-64 overflow-y-auto">
             <p className="font-semibold text-foreground">P2 Field Control — Builder Portal Access Agreement</p>
             <p>By accessing this portal, you agree to the following terms:</p>
             <p><strong>1. Authorized Use.</strong> This portal is provided exclusively for authorized contractors and coordinators. Access credentials must not be shared.</p>
@@ -643,25 +608,27 @@ export function TermsGate({ tenantId, tenantName, onAccept }) {
             <p className="text-xs">Version {version} · P2 Field Services LLC · Middle Tennessee</p>
           </div>
 
-          <div className="flex items-center gap-3 p-3 rounded-xl border border-white/10 cursor-pointer" onClick={() => setChecked(c => !c)}>
-            <div className="w-5 h-5 rounded border flex items-center justify-center shrink-0"
-              style={{ borderColor: checked ? BRAND : SEMANTIC.mute, backgroundColor: checked ? BRAND : 'transparent' }}>
-              {checked && <CheckIcon size={12} color="#fff" />}
-            </div>
+          <label className="flex items-center gap-3 p-3 min-h-11 rounded-xl border border-white/10 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={e => setChecked(e.target.checked)}
+              className="size-5 shrink-0 cursor-pointer accent-brand"
+            />
             <span className="text-sm">I have read and agree to the P2 Field Control Terms of Access ({version})</span>
-          </div>
+          </label>
 
           <Button
-            className="w-full text-white"
-            style={{ backgroundColor: checked ? BRAND : '#374151' }}
+            variant="brand"
+            className="w-full"
             disabled={!checked || saving}
             onClick={handleAccept}>
             {saving ? 'Recording acceptance…' : 'Accept & Enter Portal'}
           </Button>
-          {error && <p className="text-xs text-red-400 text-center font-medium">{error}</p>}
+          {error && <p role="alert" className="text-xs text-red-400 text-center font-medium">{error}</p>}
         </CardContent>
       </Card>
-    </div>
+    </main>
   )
 }
 
@@ -1213,30 +1180,32 @@ export function JobStatus() {
           Icon={PlusIcon}
         >
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <JobFormField label="Job ID *">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Street address *">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="123 Main St" value={jobForm.address} onChange={e => setJobForm(f => ({ ...f, address: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="City, state ZIP">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Brentwood, TN 37027" value={jobForm.city} onChange={e => setJobForm(f => ({ ...f, city: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Client *">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Tenant">
+            <Field label="Job ID" required>
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
+            </Field>
+            <Field label="Street address" required>
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="123 Main St" value={jobForm.address} onChange={e => setJobForm(f => ({ ...f, address: e.target.value }))} />
+            </Field>
+            <Field label="City, state ZIP">
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="Brentwood, TN 37027" value={jobForm.city} onChange={e => setJobForm(f => ({ ...f, city: e.target.value }))} />
+            </Field>
+            <Field label="Client" required>
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
+            </Field>
+            {/* A Select takes the id Field gives it to its trigger, so the label names the
+                trigger, as it names an input. */}
+            <Field label="Tenant" required>
               <Select required items={JOB_TENANTS} value={jobForm.tenantId} onValueChange={v => setJobForm(f => ({ ...f, tenantId: v }))}>
-                <SelectTrigger aria-label="Tenant" className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {JOB_TENANTS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </JobFormField>
-            <JobFormField label="Project type">
+            </Field>
+            <Field label="Project type">
               <Input className="bg-white/[0.04] border-white/10 text-white" value={jobForm.type} onChange={e => setJobForm(f => ({ ...f, type: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="PM">
+            </Field>
+            <Field label="PM">
               <Select value={jobForm.pm} onValueChange={v => setJobForm(f => ({ ...f, pm: v }))}>
                 <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1245,14 +1214,14 @@ export function JobStatus() {
                   ))}
                 </SelectContent>
               </Select>
-            </JobFormField>
-            <JobFormField label="Target date">
+            </Field>
+            <Field label="Target date">
               <Input className="bg-white/[0.04] border-white/10 text-white" type="date" value={jobForm.target} onChange={e => setJobForm(f => ({ ...f, target: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Permit number">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Electrical sub">
+            </Field>
+            <Field label="Permit number">
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
+            </Field>
+            <Field label="Electrical sub">
               <Select value={jobForm.subElectrical} onValueChange={v => setJobForm(f => ({ ...f, subElectrical: v }))}>
                 <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
@@ -1260,8 +1229,8 @@ export function JobStatus() {
                   {elecSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </JobFormField>
-            <JobFormField label="Plumbing sub">
+            </Field>
+            <Field label="Plumbing sub">
               <Select value={jobForm.subPlumbing} onValueChange={v => setJobForm(f => ({ ...f, subPlumbing: v }))}>
                 <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
@@ -1269,8 +1238,8 @@ export function JobStatus() {
                   {plumbSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </JobFormField>
-            <JobFormField label="HVAC sub">
+            </Field>
+            <Field label="HVAC sub">
               <Select value={jobForm.subHvac} onValueChange={v => setJobForm(f => ({ ...f, subHvac: v }))}>
                 <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
@@ -1278,7 +1247,7 @@ export function JobStatus() {
                   {hvacSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </JobFormField>
+            </Field>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 mt-4">
@@ -1603,20 +1572,6 @@ function JobStatusDetail({ job }) {
           Open full view →
         </button>
       </div>
-    </div>
-  )
-}
-
-// Form-field wrapper used by the new-job panel — renders an uppercase label
-// above the input control. Sibling to the Materials FormFieldLabel; kept
-// separate so each phase's form helper stays self-contained.
-function JobFormField({ label, children }) {
-  return (
-    <div>
-      <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 block mb-1.5">
-        {label}
-      </span>
-      {children}
     </div>
   )
 }
@@ -3147,17 +3102,15 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
       Icon={PlusIcon}
     >
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div className="md:col-span-2">
-          <FormFieldLabel>Item name *</FormFieldLabel>
+        <Field label="Item name" required className="md:col-span-2">
           <Input
             className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
             placeholder="e.g. 200A Main Panel — Square D"
             value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
           />
-        </div>
-        <div>
-          <FormFieldLabel>Qty</FormFieldLabel>
+        </Field>
+        <Field label="Qty">
           <Input
             className="bg-white/[0.04] border-white/10 text-white"
             type="number"
@@ -3165,18 +3118,16 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
             value={form.qty}
             onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
           />
-        </div>
-        <div>
-          <FormFieldLabel>Unit</FormFieldLabel>
+        </Field>
+        <Field label="Unit">
           <Select value={form.unit} onValueChange={v => setForm(f => ({ ...f, unit: v }))}>
             <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {MAT_UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
             </SelectContent>
           </Select>
-        </div>
-        <div>
-          <FormFieldLabel>Job</FormFieldLabel>
+        </Field>
+        <Field label="Job">
           <Select value={form.jobId} onValueChange={v => setForm(f => ({ ...f, jobId: v }))}>
             <SelectTrigger className="bg-white/[0.04] border-white/10 w-full">
               <SelectValue placeholder="Select job" />
@@ -3189,52 +3140,47 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div>
-          <FormFieldLabel>Status</FormFieldLabel>
+        </Field>
+        <Field label="Status">
           <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
             <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue>{statusLabel(MATERIAL_STATUS, form.status)}</SelectValue></SelectTrigger>
             <SelectContent>
               {MAT_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{statusLabel(MATERIAL_STATUS, s)}</SelectItem>)}
             </SelectContent>
           </Select>
-        </div>
-        <div>
-          <FormFieldLabel>Vendor</FormFieldLabel>
+        </Field>
+        <Field label="Vendor">
           <Input
             className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
             placeholder="Graybar, Ferguson…"
             value={form.vendor}
             onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))}
           />
-        </div>
-        <div>
-          <FormFieldLabel>Date ordered</FormFieldLabel>
+        </Field>
+        <Field label="Date ordered">
           <Input
             className="bg-white/[0.04] border-white/10 text-white"
             type="date"
             value={form.dateOrdered}
             onChange={e => setForm(f => ({ ...f, dateOrdered: e.target.value }))}
           />
-        </div>
-        <div>
-          <FormFieldLabel>Date needed</FormFieldLabel>
+        </Field>
+        <Field label="Date needed">
           <Input
             className="bg-white/[0.04] border-white/10 text-white"
             type="date"
             value={form.dateNeeded}
             onChange={e => setForm(f => ({ ...f, dateNeeded: e.target.value }))}
           />
-        </div>
-        <div className="md:col-span-2">
-          <FormFieldLabel>Notes</FormFieldLabel>
+        </Field>
+        <Field label="Notes" className="md:col-span-2">
           <Input
             className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
             placeholder="Optional — sub assignments, location on site, etc."
             value={form.notes}
             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
           />
-        </div>
+        </Field>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mt-4">
@@ -3261,14 +3207,6 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
         )}
       </div>
     </DataPanel>
-  )
-}
-
-function FormFieldLabel({ children }) {
-  return (
-    <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 block mb-1.5">
-      {children}
-    </span>
   )
 }
 

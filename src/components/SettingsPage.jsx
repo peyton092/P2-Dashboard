@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Field } from '@/components/ui/field'
 import {
   SettingsIcon, ShieldIcon, ServerIcon,
   BellIcon, MailIcon, BrainCircuitIcon, CameraIcon, MapPinIcon,
@@ -564,20 +565,25 @@ export default function SettingsPage({ onLogout, role }) {
             </Button>
           ) : (
             <div className="space-y-2">
-              <Input
-                type="password"
-                placeholder="Current password"
-                className="h-8 text-sm bg-white/5 border-white/20"
-                value={curPw}
-                onChange={e => setCurPw(e.target.value)}
-              />
-              <Input
-                type="password"
-                placeholder="New password (min 6 characters)"
-                className="h-8 text-sm bg-white/5 border-white/20"
-                value={newPw}
-                onChange={e => setNewPw(e.target.value)}
-              />
+              <Field label="Current password">
+                <Input
+                  type="password"
+                  autoComplete="current-password"
+                  className="h-8 text-sm bg-white/5 border-white/20"
+                  value={curPw}
+                  onChange={e => setCurPw(e.target.value)}
+                />
+              </Field>
+              <Field label="New password" hint="At least 6 characters.">
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  className="h-8 text-sm bg-white/5 border-white/20"
+                  value={newPw}
+                  onChange={e => setNewPw(e.target.value)}
+                />
+              </Field>
+              {/* The toast reads the reason out; this is where it stays to be seen. */}
               {pwError && <p className="text-xs text-critical">{pwError}</p>}
               <div className="flex gap-2">
                 <Button

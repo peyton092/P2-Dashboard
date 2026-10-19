@@ -35,25 +35,22 @@ afterEach(cleanup)
 // fails for what it is about and not because a label is missing.
 const type = (kind, value) => fireEvent.change(document.querySelector(`input[type="${kind}"]`), { target: { value } })
 
-// A test marked it.fails is one this screen does not pass yet. The change that makes it pass
-// takes the mark off, in the same commit.
-
 describe('the sign in screen', () => {
-  it.fails('is the main content of the page, under one level one heading', () => {
+  it('is the main content of the page, under one level one heading', () => {
     render(<LoginScreen />)
 
     expect(screen.getByRole('main')).toBeTruthy()
-    expect(screen.getAllByRole('heading', { level: 1 }).map((heading) => heading.textContent)).toEqual(['Sign In'])
+    expect(screen.getAllByRole('heading', { level: 1 }).map((heading) => heading.textContent.trim())).toEqual(['Sign In'])
   })
 
-  it.fails('names the email box and the password box by their labels', () => {
+  it('names the email box and the password box by their labels', () => {
     render(<LoginScreen />)
 
     expect(screen.getByLabelText('Email').getAttribute('type')).toBe('email')
     expect(screen.getByLabelText('Password').getAttribute('type')).toBe('password')
   })
 
-  it.fails('reads out a failed sign in as an alert', async () => {
+  it('reads out a failed sign in as an alert', async () => {
     mocks.signIn.mockRejectedValue(Object.assign(new Error('Firebase: Error'), { code: 'auth/invalid-credential' }))
     render(<LoginScreen />)
     type('email', 'pat@p2em.com')
@@ -64,7 +61,7 @@ describe('the sign in screen', () => {
     expect(screen.getByRole('alert').textContent).toBe('Incorrect email or password.')
   })
 
-  it.fails('reads out that the reset link went out, in a status', async () => {
+  it('reads out that the reset link went out, in a status', async () => {
     render(<LoginScreen />)
     type('email', 'pat@p2em.com')
 
