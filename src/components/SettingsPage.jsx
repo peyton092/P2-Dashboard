@@ -392,9 +392,9 @@ export default function SettingsPage({ onLogout, role }) {
           )}
           <div className="flex flex-wrap gap-2">
             <Button
+              variant="brand"
               size="sm"
-              className="text-xs h-8 text-white"
-              style={{ backgroundColor: BRAND }}
+              className="text-xs h-8"
               onClick={handleConnectQB}
               disabled={qbConnecting || qbDisconnecting}
             >
@@ -447,9 +447,9 @@ export default function SettingsPage({ onLogout, role }) {
           )}
           <div className="flex flex-wrap gap-2">
             <Button
+              variant="brand"
               size="sm"
-              className="text-xs h-8 text-white"
-              style={{ backgroundColor: BRAND }}
+              className="text-xs h-8"
               onClick={handleConnectCC}
               disabled={ccConnecting || ccDisconnecting}
             >
@@ -505,9 +505,9 @@ export default function SettingsPage({ onLogout, role }) {
             Get alerts on this device for inspection results, change-order approvals, and billing updates.
           </p>
           <Button
+            variant="brand"
             size="sm"
-            className="text-xs h-8 text-white"
-            style={{ backgroundColor: BRAND }}
+            className="text-xs h-8"
             onClick={handleEnablePush}
             disabled={pushBusy}
           >
@@ -526,9 +526,9 @@ export default function SettingsPage({ onLogout, role }) {
           </CardHeader>
           <CardContent className="px-6 pb-5 space-y-3">
             <Button
+              variant="brand"
               size="sm"
-              className="text-xs h-8 text-white"
-              style={{ backgroundColor: BRAND }}
+              className="text-xs h-8"
               onClick={handleBackfill}
               disabled={backfilling}
             >
@@ -587,9 +587,9 @@ export default function SettingsPage({ onLogout, role }) {
               {pwError && <p className="text-xs text-critical">{pwError}</p>}
               <div className="flex gap-2">
                 <Button
+                  variant="brand"
                   size="sm"
-                  className="text-xs h-7 text-white"
-                  style={{ backgroundColor: BRAND }}
+                  className="text-xs h-7"
                   onClick={handleChangePw}
                   disabled={saving || !curPw || !newPw}
                 >
@@ -609,6 +609,7 @@ export default function SettingsPage({ onLogout, role }) {
 
           <div className="pt-2 border-t border-white/10">
             <button
+              type="button"
               className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors"
               onClick={onLogout}
             >

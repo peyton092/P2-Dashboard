@@ -1127,7 +1127,7 @@ export function JobStatus() {
             <button
               type="button"
               onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(jobFormFor(workspace)) }}
-              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground transition-colors"
               style={{ backgroundColor: BRAND }}
             >
               <PlusIcon size={13} /> New job
@@ -1255,7 +1255,7 @@ export function JobStatus() {
               type="button"
               onClick={handleCreateJob}
               disabled={creating || !jobForm.id || !jobForm.address || !jobForm.client || !jobForm.tenantId}
-              className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-brand-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{ backgroundColor: BRAND }}
             >
               {creating ? 'Creating…' : 'Create job'}
@@ -1527,7 +1527,7 @@ function JobStatusDetail({ job }) {
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-zinc-500">No subs assigned</p>
+          <p className="text-[11px] text-zinc-400">No subs assigned</p>
         )}
       </div>
 
@@ -1543,7 +1543,7 @@ function JobStatusDetail({ job }) {
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-zinc-500">No permits on file</p>
+          <p className="text-[11px] text-zinc-400">No permits on file</p>
         )}
       </div>
 
@@ -1573,7 +1573,7 @@ function JobStatusDetail({ job }) {
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: job.id } }))}
-          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white"
+          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground"
           style={{ backgroundColor: BRAND }}
         >
           Open full view →
@@ -2482,7 +2482,7 @@ function ComplianceCell({ label, valueLabel, colorOverride, stateNote }) {
       <p className="text-sm font-semibold tabular-nums truncate" style={{ color: colorOverride || '#fff' }}>
         {valueLabel}
       </p>
-      {stateNote && <p className="text-[10px] text-zinc-500 truncate">{stateNote}</p>}
+      {stateNote && <p className="text-[10px] text-zinc-400 truncate">{stateNote}</p>}
     </div>
   )
 }
@@ -2581,7 +2581,7 @@ function LooseEndsInput({ job: j, stored }) {
 
   return (
     <Textarea
-      className="bg-white/[0.04] border-white/10 text-[12px] resize-none min-h-14 placeholder:text-zinc-500"
+      className="bg-white/[0.04] border-white/10 text-[12px] resize-none min-h-14 placeholder:text-zinc-400"
       placeholder="Loose ends: incomplete work, punch list items, notes…"
       value={field.value}
       onClick={e => e.stopPropagation()}
@@ -2782,7 +2782,7 @@ export function Materials() {
           <button
             type="button"
             onClick={openRequest}
-            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground transition-colors"
             style={{ backgroundColor: BRAND }}
           >
             <PlusIcon size={13} /> Request material
@@ -2931,7 +2931,7 @@ function MaterialsEmptyState({ filter, hasJobFilter, onRequest }) {
         <button
           type="button"
           onClick={onRequest}
-          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground transition-colors"
           style={{ backgroundColor: BRAND }}
         >
           <PlusIcon size={13} /> Request material
@@ -3090,11 +3090,11 @@ function MaterialHistoryRow({ entry }) {
     : '—'
   return (
     <li className="flex items-start gap-2 text-[11px] text-zinc-400">
-      <span className="w-16 shrink-0 text-zinc-500">{ts}</span>
+      <span className="w-16 shrink-0 text-zinc-400">{ts}</span>
       {entry.type === 'status_change' ? (
         <span className="min-w-0">
           <span style={{ color: from.color }}>{from.words}</span>
-          <span className="text-zinc-500 mx-1">to</span>
+          <span className="text-zinc-400 mx-1">to</span>
           <span style={{ color: to.color }}>{to.words}</span>
         </span>
       ) : (
@@ -3116,7 +3116,7 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <Field label="Item name" required className="md:col-span-2">
           <Input
-            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
+            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400"
             placeholder="e.g. 200A Main Panel — Square D"
             value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
@@ -3163,7 +3163,7 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
         </Field>
         <Field label="Vendor">
           <Input
-            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
+            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400"
             placeholder="Graybar, Ferguson…"
             value={form.vendor}
             onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))}
@@ -3187,7 +3187,7 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
         </Field>
         <Field label="Notes" className="md:col-span-2">
           <Input
-            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
+            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400"
             placeholder="Optional — sub assignments, location on site, etc."
             value={form.notes}
             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -3200,7 +3200,7 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
           type="button"
           onClick={onSave}
           disabled={saving || !form.name.trim()}
-          className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-brand-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           style={{ backgroundColor: BRAND }}
         >
           {saving ? 'Saving…' : editing ? 'Save changes' : 'Submit request'}
@@ -3822,6 +3822,7 @@ export default function P2DashboardV4() {
           </p>
           {!ok && (
             <button
+              type="button"
               className="text-xs text-muted-foreground underline hover:text-white"
               onClick={() => { setOauthState(null); setInitialTab('settings') }}
             >

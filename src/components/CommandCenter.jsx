@@ -606,7 +606,7 @@ function BillingRow({ label, amount, count, subtitle, note, tone = 'neutral' }) 
         <p className="text-[11px] text-zinc-400 truncate">
           {count} item{count === 1 ? '' : 's'}{subtitle ? ` · ${subtitle}` : ''}
         </p>
-        {note && <p className="text-[10px] text-zinc-500 leading-snug">{note}</p>}
+        {note && <p className="text-[10px] text-zinc-400 leading-snug">{note}</p>}
       </div>
       <p
         className="text-base font-semibold tabular-nums shrink-0"

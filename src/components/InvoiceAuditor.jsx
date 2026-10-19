@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useId, useState, useMemo } from 'react'
 import { useData } from '../use-data'
 import { useSupplierInvoices, addSupplierInvoice, updateSupplierInvoice } from '../hooks/useFirestore'
 import { useMutation } from '../hooks/useMutation'
 import { toLocalDateStr } from '../lib/dates'
 import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
+import { IconButton } from '@/components/ui/icon-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -16,6 +18,7 @@ import {
   ShieldAlertIcon, ReceiptIcon, SearchIcon, PencilIcon,
 } from 'lucide-react'
 import { BRAND, withAlpha } from '@/lib/tokens'
+import { SEVERITY, statusLabel, statusTone, toneHex, toneText } from '../lib/status'
 
 const KNOWN_VENDORS = ['Graybar', 'Ferguson', 'Johnstone', 'ADT Supply', 'Other']
 const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS', 'BOX', 'ROLL', 'STICK']
@@ -87,15 +90,40 @@ function auditInvoice(invoice, allInvoices, materials) {
 
   // No job assigned
   if (!invoice.jobId) {
-    flags.push({ type: 'no-job', severity: 'warning', message: 'Invoice not assigned to a job — cannot verify against POs' })
+    flags.push({ type: 'no-job', severity: 'warning', message: 'Invoice not assigned to a job, so it cannot be checked against POs' })
   }
 
   // Very high total (>$15k) — manual review flag
   if ((invoice.total || 0) > 15000 && invoice.status === 'pending-review') {
-    flags.push({ type: 'high-value', severity: 'warning', message: `High-value invoice (${fmt$(invoice.total)}) — requires manager approval before payment` })
+    flags.push({ type: 'high-value', severity: 'warning', message: `High value invoice (${fmt$(invoice.total)}) needs manager approval before payment` })
   }
 
   return flags
+}
+
+// The audit flags of an invoice. Each one is led by how serious it is, in words, so the
+// color of the row is not the only thing that says so.
+function FlagList({ flags }) {
+  return (
+    <ul className="space-y-1.5">
+      {flags.map((f, i) => {
+        const tone = statusTone(SEVERITY, f.severity)
+        return (
+          <li key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg border text-xs"
+            style={{ borderColor: withAlpha(toneHex(tone), 0.27), backgroundColor: withAlpha(toneHex(tone), 0.03), color: toneText(tone) }}>
+            <ShieldAlertIcon size={12} className="shrink-0 mt-0.5" />
+            <span><span className="font-bold">{statusLabel(SEVERITY, f.severity)}:</span> {f.message}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+// How many flags an invoice has and how many of them are critical, such as 2 flags, 1 critical.
+function flagWords(flags) {
+  const critical = flags.filter(f => f.severity === 'critical').length
+  return `${flags.length} flag${flags.length === 1 ? '' : 's'}${critical > 0 ? `, ${critical} critical` : ''}`
 }
 
 // ── New Invoice Form ──────────────────────────────────────────────────────────
@@ -177,39 +205,37 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10">
+        <IconButton label="Close the invoice form" onClick={onClose}>
           <XIcon size={16} />
-        </button>
+        </IconButton>
         <h2 className="text-lg font-semibold" style={{ color: BRAND }}>New Supplier Invoice</h2>
       </div>
 
       {/* Meta */}
       <Card className="border-white/10">
         <CardContent className="p-4">
+          {/* A list takes its name from the label of its Field, but not the aria attributes
+              Field gives the control, so the trigger is told it is required itself. */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Vendor *</label>
+            <Field label="Vendor" required>
               <Select value={form.vendor} onValueChange={v => setForm(f => ({ ...f, vendor: v }))}>
-                <SelectTrigger className="bg-white/5 border-white/20">
+                <SelectTrigger aria-required="true" className="bg-white/5 border-white/20">
                   <SelectValue placeholder="Select vendor…" />
                 </SelectTrigger>
                 <SelectContent>
                   {KNOWN_VENDORS.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Invoice # *</label>
+            </Field>
+            <Field label="Invoice #" required>
               <Input className="bg-white/5 border-white/20" placeholder="INV-12345"
                 value={form.invoiceNum} onChange={e => setForm(f => ({ ...f, invoiceNum: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Invoice Date *</label>
+            </Field>
+            <Field label="Invoice date" required>
               <Input type="date" className="bg-white/5 border-white/20"
                 value={form.invoiceDate} onChange={e => setForm(f => ({ ...f, invoiceDate: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Job (optional)</label>
+            </Field>
+            <Field label="Job (optional)">
               <Select value={form.jobId || ''} onValueChange={v => setForm(f => ({ ...f, jobId: v || null }))}>
                 <SelectTrigger className="bg-white/5 border-white/20">
                   <SelectValue placeholder="Unassigned" />
@@ -219,26 +245,13 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
                   {jobs.map(j => <SelectItem key={j.id} value={j.id}>{j.id} — {j.name || j.client}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
           </div>
         </CardContent>
       </Card>
 
       {/* Live audit flags */}
-      {previewFlags.length > 0 && (
-        <div className="space-y-1.5">
-          {previewFlags.map((f, i) => (
-            <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg border text-xs"
-              style={{
-                borderColor: f.severity === 'critical' ? '#ef444444' : '#eab30844',
-                backgroundColor: f.severity === 'critical' ? '#ef444408' : '#eab30808',
-              }}>
-              <ShieldAlertIcon size={12} style={{ color: f.severity === 'critical' ? '#ef4444' : '#eab308', marginTop: 1 }} className="shrink-0" />
-              <span style={{ color: f.severity === 'critical' ? '#ef4444' : '#eab308' }}>{f.message}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {previewFlags.length > 0 && <FlagList flags={previewFlags} />}
 
       {/* Line items */}
       <Card className="border-white/10">
@@ -261,30 +274,30 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
                   <th className="text-center px-3 py-2 font-medium" style={{ width: 80 }}>Unit</th>
                   <th className="text-right px-3 py-2 font-medium" style={{ width: 110 }}>Unit Price</th>
                   <th className="text-right px-3 py-2 font-medium" style={{ width: 110 }}>Extended</th>
-                  <th className="px-3 py-2" style={{ width: 36 }}></th>
+                  <th className="px-3 py-2" style={{ width: 36 }}><span className="sr-only">Remove</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {form.lineItems.map((li, idx) => (
                   <tr key={li._id}>
                     <td className="px-4 py-2">
-                      <Input className="bg-white/5 border-white/20 h-8 text-sm" placeholder="Item description…"
+                      <Input aria-label={`Description of line ${idx + 1}`} className="bg-white/5 border-white/20 h-8 text-sm" placeholder="Item description…"
                         value={li.desc} onChange={e => setLine(idx, 'desc', e.target.value)} />
                     </td>
                     <td className="px-3 py-2">
-                      <Input className="bg-white/5 border-white/20 h-8 text-sm text-right" type="number" min="0" step="0.01"
+                      <Input aria-label={`Quantity of line ${idx + 1}`} className="bg-white/5 border-white/20 h-8 text-sm text-right" type="number" min="0" step="0.01"
                         value={li.qty} onChange={e => setLine(idx, 'qty', e.target.value)} />
                     </td>
                     <td className="px-3 py-2">
                       <Select value={li.unit} onValueChange={v => setLine(idx, 'unit', v)}>
-                        <SelectTrigger className="bg-white/5 border-white/20 h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectTrigger aria-label={`Unit of line ${idx + 1}`} className="bg-white/5 border-white/20 h-8 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>{UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
                       </Select>
                     </td>
                     <td className="px-3 py-2">
                       <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
-                        <Input className="bg-white/5 border-white/20 h-8 text-sm text-right pl-5" type="number" min="0" step="0.01"
+                        <span aria-hidden="true" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                        <Input aria-label={`Unit price of line ${idx + 1}`} className="bg-white/5 border-white/20 h-8 text-sm text-right pl-5" type="number" min="0" step="0.01"
                           value={li.unitPrice} onChange={e => setLine(idx, 'unitPrice', e.target.value)} />
                       </div>
                     </td>
@@ -293,10 +306,11 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
                     </td>
                     <td className="px-3 py-2">
                       {form.lineItems.length > 1 && (
-                        <button onClick={() => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }))}
-                          className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400">
+                        <IconButton label={`Remove line ${idx + 1}`}
+                          onClick={() => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }))}
+                          className="text-muted-foreground hover:text-red-400">
                           <XIcon size={12} />
-                        </button>
+                        </IconButton>
                       )}
                     </td>
                   </tr>
@@ -314,16 +328,15 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
       </Card>
 
       {/* Notes */}
-      <div>
-        <label className="text-xs text-muted-foreground mb-1 block">Notes / Dispute Reason</label>
+      <Field label="Notes or dispute reason">
         <Textarea className="bg-white/5 border-white/20 min-h-16 resize-none" placeholder="Optional notes…"
           value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
-      </div>
+      </Field>
 
       {error && <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">{error}</p>}
 
       <div className="flex gap-3">
-        <Button className="text-white" style={{ backgroundColor: BRAND }} onClick={handleSave} disabled={saving}>
+        <Button variant="brand" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving…' : 'Save Invoice'}
         </Button>
         <Button variant="outline" className="border-white/20" onClick={onClose}>Cancel</Button>
@@ -337,6 +350,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
 function InvoiceRow({ inv, jobs, allInvoices, materials }) {
   const { run } = useMutation()
   const [expanded, setExpanded] = useState(false)
+  const detailId = useId()
 
   const meta = STATUS_META[inv.status] || STATUS_META['pending-review']
   const job = jobs.find(j => j.id === inv.jobId)
@@ -347,71 +361,57 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
     [inv, allInvoices, materials]
   )
 
+  // The dot says by its color how serious the worst flag is, and the words beside it say the
+  // same: how many flags and how many are critical, or, to a screen reader, No flags.
+  const flagTone = liveFlags.some(f => f.severity === 'critical') ? 'critical' : liveFlags.length > 0 ? 'warning' : 'success'
+
+  // The whole row header is the button that opens the row: it says whether the row is open
+  // and names the detail it opens. It holds words only, laid out with spans.
   return (
     <div className="border-b border-white/5 last:border-0">
-      {/* Main row */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 cursor-pointer transition-colors"
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={detailId}
         onClick={() => setExpanded(v => !v)}
+        className="w-full text-left flex items-center gap-3 px-4 py-3 hover:bg-white/5 cursor-pointer transition-colors"
       >
-        {/* Flag indicator */}
-        <div className="w-2 h-2 rounded-full shrink-0"
-          style={{ backgroundColor: liveFlags.some(f => f.severity === 'critical') ? '#ef4444' : liveFlags.length > 0 ? '#eab308' : '#22c55e' }} />
+        <span aria-hidden="true" className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: toneHex(flagTone) }} />
 
-        <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-5 gap-2 items-center">
-          <div className="min-w-0">
-            <p className="text-sm font-bold truncate">{inv.vendor}</p>
-            <p className="text-xs text-muted-foreground">#{inv.invoiceNum}</p>
-          </div>
-          <div className="hidden sm:block">
-            <p className="text-xs text-muted-foreground">{inv.invoiceDate || '—'}</p>
-          </div>
-          <div className="hidden sm:block">
-            <p className="text-xs">{inv.jobId ? (
-              <span className="px-1.5 py-0.5 rounded bg-white/10">{inv.jobId}</span>
-            ) : <span className="text-muted-foreground">—</span>}</p>
-          </div>
-          <div>
-            <p className="text-sm font-semibold" style={{ color: BRAND }}>{fmt$(inv.total)}</p>
-          </div>
-          <div className="flex items-center gap-2">
+        <span className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-5 gap-2 items-center">
+          <span className="block min-w-0">
+            <span className="block text-sm font-bold truncate">{inv.vendor}</span>
+            <span className="block text-xs text-muted-foreground">#{inv.invoiceNum}</span>
+          </span>
+          <span className="hidden sm:block text-xs text-muted-foreground">{inv.invoiceDate || 'No date'}</span>
+          <span className="hidden sm:block text-xs">
+            {inv.jobId
+              ? <span className="px-1.5 py-0.5 rounded bg-white/10">{inv.jobId}</span>
+              : <span className="text-muted-foreground">No job</span>}
+          </span>
+          <span className="block text-sm font-semibold" style={{ color: BRAND }}>{fmt$(inv.total)}</span>
+          <span className="flex items-center gap-2">
             <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
               style={{ color: meta.color, backgroundColor: withAlpha(meta.color, 0.13) }}>
               {meta.label}
             </span>
-            {liveFlags.length > 0 && (
+            {liveFlags.length > 0 ? (
               <span className="text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0"
-                style={{ backgroundColor: '#ef444422', color: '#ef4444' }}>
-                {liveFlags.length} flag{liveFlags.length !== 1 ? 's' : ''}
+                style={{ backgroundColor: withAlpha(toneHex(flagTone), 0.13), color: toneText(flagTone) }}>
+                {flagWords(liveFlags)}
               </span>
-            )}
-          </div>
-        </div>
+            ) : <span className="sr-only">No flags</span>}
+          </span>
+        </span>
 
-        <div className="text-muted-foreground shrink-0">
+        <span aria-hidden="true" className="text-muted-foreground shrink-0">
           {expanded ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} />}
-        </div>
-      </div>
+        </span>
+      </button>
 
-      {/* Expanded detail */}
       {expanded && (
-        <div className="px-4 pb-4 space-y-3 bg-white/3">
-          {/* Audit flags */}
-          {liveFlags.length > 0 && (
-            <div className="space-y-1.5">
-              {liveFlags.map((f, i) => (
-                <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg border text-xs"
-                  style={{
-                    borderColor: f.severity === 'critical' ? '#ef444444' : '#eab30844',
-                    backgroundColor: f.severity === 'critical' ? '#ef444408' : '#eab30808',
-                  }}>
-                  <ShieldAlertIcon size={12} className="shrink-0 mt-0.5"
-                    style={{ color: f.severity === 'critical' ? '#ef4444' : '#eab308' }} />
-                  <span style={{ color: f.severity === 'critical' ? '#ef4444' : '#eab308' }}>{f.message}</span>
-                </div>
-              ))}
-            </div>
-          )}
+        <div id={detailId} className="px-4 pb-4 space-y-3 bg-white/3">
+          {liveFlags.length > 0 && <FlagList flags={liveFlags} />}
 
           {/* Line items table */}
           {(inv.lineItems || []).length > 0 && (
@@ -448,7 +448,7 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
           {/* Status update + job info */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Status:</span>
+              <span aria-hidden="true" className="text-xs text-muted-foreground">Status:</span>
               <Select
                 value={inv.status || 'pending-review'}
                 onValueChange={v => inv._docId && run(() => updateSupplierInvoice(inv._docId, { status: v }), {
@@ -457,7 +457,7 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
                   queue: true,
                 })}
               >
-                <SelectTrigger className="h-7 text-xs px-2 bg-white/5 border-white/20 w-36">
+                <SelectTrigger aria-label={`Status of invoice ${inv.invoiceNum}`} className="h-7 text-xs px-2 bg-white/5 border-white/20 w-36">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -538,7 +538,7 @@ export default function InvoiceAuditor() {
             Audit supplier invoices against POs · flag price variances, duplicates &amp; discrepancies
           </p>
         </div>
-        <Button className="text-white gap-2" style={{ backgroundColor: BRAND }} onClick={() => setShowForm(true)}>
+        <Button variant="brand" className="gap-2" onClick={() => setShowForm(true)}>
           <PlusIcon size={14} /> New Invoice
         </Button>
       </div>
@@ -567,11 +567,11 @@ export default function InvoiceAuditor() {
       <div className="flex gap-3 flex-wrap items-center">
         <div className="relative flex-1 min-w-48 max-w-sm">
           <SearchIcon size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-8 bg-white/5 border-white/20 h-9 text-sm" placeholder="Search vendor, invoice #, job…"
+          <Input aria-label="Search invoices" className="pl-8 bg-white/5 border-white/20 h-9 text-sm" placeholder="Search vendor, invoice #, job…"
             value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <Select value={vendorFilter} onValueChange={setVendorFilter}>
-          <SelectTrigger className="w-40 bg-white/5 border-white/20 h-9 text-sm">
+          <SelectTrigger aria-label="Filter by vendor" className="w-40 bg-white/5 border-white/20 h-9 text-sm">
             <SelectValue placeholder="All Vendors" />
           </SelectTrigger>
           <SelectContent>
@@ -580,7 +580,7 @@ export default function InvoiceAuditor() {
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40 bg-white/5 border-white/20 h-9 text-sm">
+          <SelectTrigger aria-label="Filter by status" className="w-40 bg-white/5 border-white/20 h-9 text-sm">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -613,7 +613,7 @@ export default function InvoiceAuditor() {
                 {invoices.length === 0 ? 'No invoices yet — add your first one above' : 'No invoices match the current filters'}
               </p>
               {invoices.length === 0 && (
-                <Button className="text-white gap-2 text-xs" style={{ backgroundColor: BRAND }} onClick={() => setShowForm(true)}>
+                <Button variant="brand" className="gap-2 text-xs" onClick={() => setShowForm(true)}>
                   <PlusIcon size={12} /> Add First Invoice
                 </Button>
               )}

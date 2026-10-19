@@ -5,16 +5,19 @@ import { toLocalDateStr } from '../lib/dates'
 import { PageHeader, Pill } from './shared'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarClockIcon } from 'lucide-react'
 import { BRAND } from '@/lib/tokens'
-import { INSPECTION_STATUS, statusColor, toneHex } from '../lib/status'
+import { INSPECTION_STATUS, statusColor, statusLabel, toneHex } from '../lib/status'
+import { PHASE_LABEL } from '../lib/inspections'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
+// Each kind of event has a color for its dot and a word that is written before it, so what
+// an event is never rests on its color: an inspection says Passed or Failed.
 const EVENT_META = {
-  target: { color: BRAND,                                    label: 'Target completion' },
-  start:  { color: toneHex('info'),                          label: 'Job start' },
-  pass:   { color: statusColor(INSPECTION_STATUS, 'passed'), label: 'Inspection passed' },
-  fail:   { color: statusColor(INSPECTION_STATUS, 'failed'), label: 'Inspection failed' },
+  target: { color: BRAND,                                    word: 'Target',                                   label: 'Target completion' },
+  start:  { color: toneHex('info'),                          word: 'Start',                                    label: 'Job start' },
+  pass:   { color: statusColor(INSPECTION_STATUS, 'passed'), word: statusLabel(INSPECTION_STATUS, 'passed'), label: 'Inspection passed' },
+  fail:   { color: statusColor(INSPECTION_STATUS, 'failed'), word: statusLabel(INSPECTION_STATUS, 'failed'), label: 'Inspection failed' },
 }
 
 const jobLabel = (j) => j.name || j.client || j.id
@@ -23,13 +26,13 @@ const openJob = (id) => window.dispatchEvent(new CustomEvent('p2:open-job', { de
 
 function jobEvents(job) {
   const evs = []
-  if (job.target) evs.push({ date: isoDay(job.target), type: 'target', jobId: job.id, label: `${jobLabel(job)} — target` })
-  if (job.start)  evs.push({ date: isoDay(job.start),  type: 'start',  jobId: job.id, label: `${jobLabel(job)} — start` })
+  if (job.target) evs.push({ date: isoDay(job.target), type: 'target', jobId: job.id, label: jobLabel(job) })
+  if (job.start)  evs.push({ date: isoDay(job.start),  type: 'start',  jobId: job.id, label: jobLabel(job) })
   const insp = job.insp || {}
   ;['electrical', 'plumbing', 'hvac'].forEach(t => {
     const tr = insp[t] || {}
-    if (tr.roughInDate) evs.push({ date: isoDay(tr.roughInDate), type: tr.roughIn === 'failed' ? 'fail' : 'pass', jobId: job.id, label: `${job.id} ${t} rough-in` })
-    if (tr.finalDate)   evs.push({ date: isoDay(tr.finalDate),   type: tr.final === 'failed' ? 'fail' : 'pass',   jobId: job.id, label: `${job.id} ${t} final` })
+    if (tr.roughInDate) evs.push({ date: isoDay(tr.roughInDate), type: tr.roughIn === 'failed' ? 'fail' : 'pass', jobId: job.id, label: `${job.id} ${t} ${PHASE_LABEL.roughIn.toLowerCase()}` })
+    if (tr.finalDate)   evs.push({ date: isoDay(tr.finalDate),   type: tr.final === 'failed' ? 'fail' : 'pass',   jobId: job.id, label: `${job.id} ${t} ${PHASE_LABEL.final.toLowerCase()}` })
   })
   return evs
 }
@@ -96,7 +99,7 @@ export default function Calendar() {
       <div className="flex flex-wrap gap-3">
         {Object.entries(EVENT_META).map(([k, m]) => (
           <span key={k} className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400">
-            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: m.color }} /> {m.label}
+            <span aria-hidden="true" className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: m.color }} /> {m.label}
           </span>
         ))}
       </div>
@@ -105,7 +108,7 @@ export default function Calendar() {
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
         <div className="grid grid-cols-7 border-b border-white/10">
           {WEEKDAYS.map(d => (
-            <div key={d} className="px-2 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500 text-center">{d}</div>
+            <div key={d} className="px-2 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400 text-center">{d}</div>
           ))}
         </div>
         <div className="grid grid-cols-7">
@@ -116,13 +119,16 @@ export default function Calendar() {
               style={{ backgroundColor: c.inMonth ? 'transparent' : 'rgba(255,255,255,0.015)', borderRight: (i % 7 === 6) ? 'none' : undefined }}
             >
               <div className="flex items-center justify-between mb-1">
+                {/* Today is filled with the brand color, a day of another month is dimmer. */}
                 <span
-                  className="text-[11px] font-semibold w-5 h-5 flex items-center justify-center rounded-full"
-                  style={c.isToday ? { backgroundColor: BRAND, color: '#fff' } : { color: c.inMonth ? '#d4d4d8' : '#52525b' }}
+                  aria-current={c.isToday ? 'date' : undefined}
+                  className={`text-[11px] font-semibold w-5 h-5 flex items-center justify-center rounded-full ${
+                    c.isToday ? 'bg-brand text-brand-foreground' : c.inMonth ? 'text-zinc-200' : 'text-zinc-400'
+                  }`}
                 >
                   {c.day}
                 </span>
-                {c.events.length > 3 && <span className="text-[9px] text-zinc-500">+{c.events.length - 3}</span>}
+                {c.events.length > 3 && <span className="text-[9px] text-zinc-400">+{c.events.length - 3}</span>}
               </div>
               <div className="space-y-1">
                 {c.events.slice(0, 3).map((e, idx) => {
@@ -132,11 +138,11 @@ export default function Calendar() {
                       key={idx}
                       type="button"
                       onClick={() => openJob(e.jobId)}
-                      title={e.label}
+                      title={`${m.word} ${e.label}`}
                       className="w-full text-left flex items-center gap-1 rounded px-1 py-0.5 text-[10px] truncate hover:bg-white/[0.06] transition-colors"
-                      style={{ color: m.color }}
                     >
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                      <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                      <span className="shrink-0 font-semibold text-zinc-100">{m.word}</span>{' '}
                       <span className="truncate text-zinc-300">{e.label}</span>
                     </button>
                   )
@@ -148,7 +154,7 @@ export default function Calendar() {
       </div>
 
       {monthEventCount === 0 && (
-        <div className="flex items-center gap-2 text-sm text-zinc-500">
+        <div className="flex items-center gap-2 text-sm text-zinc-400">
           <CalendarClockIcon size={15} /> No scheduled events this month.
           <Pill tone="neutral" size="xs">Try another month</Pill>
         </div>

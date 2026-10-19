@@ -548,7 +548,7 @@ function ExtraRow({ co, compact = false }) {
               Tell P2 what needs to change
             </p>
             <Textarea
-              className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
+              className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-400"
               placeholder="What should be revised? (required)"
               maxLength={1000}
               value={rejectNotes}
@@ -733,8 +733,8 @@ function QBSSubmit({ qbsPM, jobs }) {
               onChange={e => setReplyText(e.target.value)}
             />
             <Button
-              className="w-full h-9 text-white text-xs gap-1.5"
-              style={{ backgroundColor: BRAND }}
+              variant="brand"
+              className="w-full h-9 text-xs gap-1.5"
               disabled={replying || !replyText.trim()}
               onClick={handleReply}
             >
@@ -754,6 +754,7 @@ function QBSSubmit({ qbsPM, jobs }) {
             })}
           >
             <SelectTrigger
+              aria-label="Status"
               className="h-7 py-0 px-3 text-[10px] font-bold border rounded-full w-auto gap-1"
               style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}
             >
@@ -798,7 +799,7 @@ function QBSSubmit({ qbsPM, jobs }) {
             <div>
               <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Job (optional)</label>
               <Select value={form.jobId} onValueChange={v => setForm(f => ({ ...f, jobId: v }))}>
-                <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs">
+                <SelectTrigger aria-label="Job (optional)" className="bg-white/5 border-white/20 h-9 text-xs">
                   <SelectValue placeholder="No specific job" />
                 </SelectTrigger>
                 <SelectContent>
@@ -813,7 +814,7 @@ function QBSSubmit({ qbsPM, jobs }) {
               <div>
                 <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Category</label>
                 <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label="Category" className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
@@ -822,7 +823,7 @@ function QBSSubmit({ qbsPM, jobs }) {
               <div>
                 <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Priority</label>
                 <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label="Priority" className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                   </SelectContent>
@@ -837,8 +838,7 @@ function QBSSubmit({ qbsPM, jobs }) {
                 onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
               />
             </div>
-            <Button className="w-full h-9 text-white text-xs"
-              style={{ backgroundColor: BRAND }}
+            <Button variant="brand" className="w-full h-9 text-xs"
               disabled={submitting || !form.subject.trim() || !form.body.trim()}
               onClick={handleNew}>
               {submitting ? 'Submitting…' : 'Send to P2'}
@@ -864,8 +864,8 @@ function QBSSubmit({ qbsPM, jobs }) {
           </p>
         </div>
         <Button
-          className="h-9 text-white text-xs gap-1.5 font-bold shrink-0"
-          style={{ backgroundColor: BRAND }}
+          variant="brand"
+          className="h-9 text-xs gap-1.5 font-bold shrink-0"
           onClick={() => setView('new')}
         >
           <PlusIcon size={13} /> New message
@@ -879,8 +879,8 @@ function QBSSubmit({ qbsPM, jobs }) {
           description="Send your P2 contact an RFI, question, or change request and the thread appears here."
           action={
             <Button
-              className="text-white text-xs h-9 font-bold gap-1.5"
-              style={{ backgroundColor: BRAND }}
+              variant="brand"
+              className="text-xs h-9 font-bold gap-1.5"
               onClick={() => setView('new')}
             >
               <PlusIcon size={13} /> Create first message
@@ -894,6 +894,7 @@ function QBSSubmit({ qbsPM, jobs }) {
             const sc = ticketColor[s.status || 'Open']
             return (
               <button
+                type="button"
                 key={s._docId}
                 className="w-full text-left flex items-start gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/25 transition-colors"
                 onClick={() => { setSelectedId(s._docId); setView('thread') }}
@@ -964,6 +965,7 @@ function QBSNotifications({ notifs }) {
             const color = typeColor[n.type] || SEMANTIC.neutral
             return (
               <button
+                type="button"
                 key={n._docId || n.id || i}
                 className={`w-full text-left flex items-start gap-3 p-3 rounded-xl border transition-colors ${
                   n.read
@@ -1112,7 +1114,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
         {/* PM selector + stat tiles */}
         <div className="px-4 sm:px-8 pb-4 grid gap-3 sm:grid-cols-[260px_1fr]">
           <Select value={selectedPM} onValueChange={setSelectedPM}>
-            <SelectTrigger className="bg-white/[0.04] border-white/10 text-zinc-100 h-9 text-xs">
+            <SelectTrigger aria-label="Show project manager" className="bg-white/[0.04] border-white/10 text-zinc-100 h-9 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1317,7 +1319,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                 <span className="text-[10px] font-semibold leading-none">{t.label}</span>
                 {t.count > 0 && (
                   <span
-                    className="absolute top-1 right-[26%] text-[9px] text-white font-black rounded-full flex items-center justify-center"
+                    className="absolute top-1 right-[26%] text-[9px] text-brand-foreground font-black rounded-full flex items-center justify-center"
                     style={{ backgroundColor: BRAND, minWidth: 14, height: 14, padding: '0 3px' }}
                   >
                     {t.count > 99 ? '99+' : t.count}

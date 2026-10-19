@@ -722,7 +722,7 @@ function NextActionField({ job, placeholder }) {
         onChange={field.onChange}
         onBlur={field.onBlur}
         placeholder={placeholder || 'Next action…'}
-        className="flex-1 min-w-0 bg-white/[0.04] border border-white/10 rounded-md text-[12px] font-semibold text-zinc-100 px-2.5 py-1.5 placeholder:text-zinc-500 placeholder:font-medium focus:border-white/30 transition-colors"
+        className="flex-1 min-w-0 bg-white/[0.04] border border-white/10 rounded-md text-[12px] font-semibold text-zinc-100 px-2.5 py-1.5 placeholder:text-zinc-400 placeholder:font-medium focus:border-white/30 transition-colors"
       />
       {field.saving && <span className="text-[10px] text-zinc-400 shrink-0">saving…</span>}
     </div>

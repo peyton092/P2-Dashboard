@@ -131,7 +131,7 @@ export default function Activity() {
                       <p className="text-sm text-zinc-100 leading-snug">{item.text}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         {item.actor && <span className="text-[11px] text-zinc-400">{item.actor}</span>}
-                        <span className="text-[11px] text-zinc-500">{relTime(item.ts)}</span>
+                        <span className="text-[11px] text-zinc-400">{relTime(item.ts)}</span>
                         {item.jobId && <Pill tone="neutral" size="xs">{item.jobId}</Pill>}
                       </div>
                     </div>

@@ -303,7 +303,7 @@ export default function CrewReport() {
             <button
               type="button"
               onClick={reset}
-              className="mt-6 inline-flex items-center gap-2 text-sm font-bold px-6 py-3 rounded-lg text-white transition-colors min-h-11"
+              className="mt-6 inline-flex items-center gap-2 text-sm font-bold px-6 py-3 rounded-lg text-brand-foreground transition-colors min-h-11"
               style={{ backgroundColor: BRAND }}
             >
               Submit another report
@@ -416,7 +416,7 @@ export default function CrewReport() {
                   value={matUsed}
                   onChange={e => setMatUsed(e.target.value)}
                   placeholder="e.g. 12/2 Romex 50ft, 4 boxes, 2 GFCI outlets…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 resize-none"
                   rows={2}
                 />
               </Field>
@@ -426,7 +426,7 @@ export default function CrewReport() {
                   value={matNeeded}
                   onChange={e => setMatNeeded(e.target.value)}
                   placeholder="e.g. 200A panel, 10/3 wire…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 resize-none"
                   rows={2}
                 />
               </Field>
@@ -436,7 +436,7 @@ export default function CrewReport() {
                   value={nextStep}
                   onChange={e => setNextStep(e.target.value)}
                   placeholder="e.g. Trim panel, schedule final inspection…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 h-11"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 h-11"
                 />
               </Field>
             </div>
@@ -532,7 +532,7 @@ export default function CrewReport() {
             )}
 
             {photos.length === 0 && (
-              <p className="flex items-center gap-2 text-zinc-500 text-[11px] mt-2">
+              <p className="flex items-center gap-2 text-zinc-400 text-[11px] mt-2">
                 <ImageIcon size={12} />
                 No photos attached
               </p>
@@ -550,7 +550,7 @@ export default function CrewReport() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full h-12 rounded-lg text-base font-bold text-white inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait transition-colors"
+            className="w-full h-12 rounded-lg text-base font-bold text-brand-foreground inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait transition-colors"
             style={{ backgroundColor: BRAND }}
           >
             {submitting ? (
@@ -650,7 +650,7 @@ function RecentReportRow({ report }) {
         <span>{summary}</span>
       </div>
       {report.materialsNeeded && (
-        <p className="text-[11px] text-zinc-500 mt-1 truncate" title={report.materialsNeeded}>
+        <p className="text-[11px] text-zinc-400 mt-1 truncate" title={report.materialsNeeded}>
           Needs: {report.materialsNeeded}
         </p>
       )}

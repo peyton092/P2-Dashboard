@@ -88,6 +88,7 @@ export function ErrorState({
       <p className="text-xs text-zinc-400 mt-1 max-w-sm">{description}</p>
       {onRetry && (
         <button
+          type="button"
           onClick={onRetry}
           className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-200 px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 hover:text-white transition-colors"
         >

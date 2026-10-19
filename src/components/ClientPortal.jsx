@@ -326,7 +326,7 @@ function ExtraRow({ co }) {
         {isPending && showReject && (
           <div className="mt-3 space-y-2">
             <p className="text-[10px] uppercase tracking-wide font-bold text-zinc-300">Tell P2 what needs to change</p>
-            <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
+            <Textarea className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-400"
               placeholder="What should be revised? (required)" maxLength={1000} value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} />
             <div className="flex gap-2">
               <Button className="flex-1 h-10 text-xs text-white font-bold" style={{ backgroundColor: SEMANTIC.critical }} disabled={busy || !rejectNotes.trim()} onClick={handleReject}>
@@ -468,7 +468,7 @@ function JobFiles({ job }) {
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-4 text-center">
             <CameraIcon size={18} className="mx-auto mb-1.5 text-zinc-500" />
             <p className="text-xs text-zinc-400">No photos or documents shared yet.</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Jobsite photos appear here once CompanyCam sync is enabled.</p>
+            <p className="text-[10px] text-zinc-400 mt-0.5">Jobsite photos appear here once CompanyCam sync is enabled.</p>
           </div>
         ) : (
           <>
@@ -652,7 +652,7 @@ function ClientMessages({ jobs, clientName }) {
         <Card className="border-white/10">
           <CardContent className="p-3 space-y-2">
             <Textarea className="bg-white/5 border-white/20 min-h-20 text-xs" placeholder="Write a reply…" value={replyText} onChange={e => setReplyText(e.target.value)} />
-            <Button className="w-full h-9 text-white text-xs gap-1.5" style={{ backgroundColor: BRAND }} disabled={replying || !replyText.trim()} onClick={handleReply}>
+            <Button variant="brand" className="w-full h-9 text-xs gap-1.5" disabled={replying || !replyText.trim()} onClick={handleReply}>
               <SendIcon size={13} /> {replying ? 'Sending…' : 'Send reply'}
             </Button>
           </CardContent>
@@ -678,7 +678,7 @@ function ClientMessages({ jobs, clientName }) {
             <div>
               <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Project *</label>
               <Select value={form.jobId} onValueChange={v => setForm(f => ({ ...f, jobId: v }))}>
-                <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue placeholder="Select a project" /></SelectTrigger>
+                <SelectTrigger aria-label="Project" className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue placeholder="Select a project" /></SelectTrigger>
                 <SelectContent>
                   {jobs.map(j => <SelectItem key={j.id} value={j.id}>{j.id} — {jobName(j)}</SelectItem>)}
                 </SelectContent>
@@ -691,7 +691,7 @@ function ClientMessages({ jobs, clientName }) {
             <div>
               <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Category</label>
               <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
-                <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Category" className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
               </Select>
             </div>
@@ -699,7 +699,7 @@ function ClientMessages({ jobs, clientName }) {
               <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Message *</label>
               <Textarea className="bg-white/5 border-white/20 min-h-24 text-xs" placeholder="How can P2 help?" value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} />
             </div>
-            <Button className="w-full h-9 text-white text-xs" style={{ backgroundColor: BRAND }} disabled={submitting || !form.subject.trim() || !form.body.trim() || !form.jobId} onClick={handleNew}>
+            <Button variant="brand" className="w-full h-9 text-xs" disabled={submitting || !form.subject.trim() || !form.body.trim() || !form.jobId} onClick={handleNew}>
               {submitting ? 'Sending…' : 'Send to P2'}
             </Button>
           </CardContent>
@@ -718,7 +718,7 @@ function ClientMessages({ jobs, clientName }) {
           <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Messages</h2>
           <p className="text-xs text-zinc-400 mt-1">{openCount} open · {myMessages.length} total</p>
         </div>
-        <Button className="h-9 text-white text-xs gap-1.5 font-bold shrink-0" style={{ backgroundColor: BRAND }} onClick={() => setView('new')} disabled={jobs.length === 0}>
+        <Button variant="brand" className="h-9 text-xs gap-1.5 font-bold shrink-0" onClick={() => setView('new')} disabled={jobs.length === 0}>
           <PlusIcon size={13} /> New message
         </Button>
       </div>
@@ -729,7 +729,7 @@ function ClientMessages({ jobs, clientName }) {
           title="No messages yet"
           description="Send your P2 team a question, schedule request, or issue about your project and the conversation appears here."
           action={jobs.length > 0 ? (
-            <Button className="text-white text-xs h-9 font-bold gap-1.5" style={{ backgroundColor: BRAND }} onClick={() => setView('new')}>
+            <Button variant="brand" className="text-xs h-9 font-bold gap-1.5" onClick={() => setView('new')}>
               <PlusIcon size={13} /> Start a message
             </Button>
           ) : null}
@@ -739,7 +739,7 @@ function ClientMessages({ jobs, clientName }) {
           {myMessages.map(s => {
             const sc = ticketColor[s.status || 'Open']
             return (
-              <button key={s._docId} className="w-full text-left flex items-start gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/25 transition-colors"
+              <button type="button" key={s._docId} className="w-full text-left flex items-start gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/25 transition-colors"
                 onClick={() => { setSelectedId(s._docId); setView('thread') }}>
                 <div className="shrink-0 flex items-center justify-center rounded-lg" style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}>
                   <MessageSquareIcon size={14} />
@@ -894,7 +894,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
         {/* Project selector + stat tiles */}
         <div className="px-4 sm:px-8 pb-4 grid gap-3 sm:grid-cols-[260px_1fr]">
           <Select value={projectFilter} onValueChange={setProjectFilter}>
-            <SelectTrigger className="bg-white/[0.04] border-white/10 text-zinc-100 h-9 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Show project" className="bg-white/[0.04] border-white/10 text-zinc-100 h-9 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__ALL__">All my projects</SelectItem>
               {jobs.map(j => <SelectItem key={j.id} value={j.id}>{j.id} — {jobName(j)}</SelectItem>)}
@@ -1054,7 +1054,7 @@ export default function ClientPortal({ clientName = 'Client', userName = '', onL
                 <t.Icon size={20} strokeWidth={active ? 2.25 : 2} />
                 <span className="text-[10px] font-semibold leading-none">{t.label}</span>
                 {t.count > 0 && (
-                  <span className="absolute top-1 right-[26%] text-[9px] text-white font-black rounded-full flex items-center justify-center"
+                  <span className="absolute top-1 right-[26%] text-[9px] text-brand-foreground font-black rounded-full flex items-center justify-center"
                     style={{ backgroundColor: BRAND, minWidth: 14, height: 14, padding: '0 3px' }}>
                     {t.count > 99 ? '99+' : t.count}
                   </span>

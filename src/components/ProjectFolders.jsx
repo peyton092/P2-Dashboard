@@ -6,6 +6,7 @@ import { safeHttpUrl } from '../lib/safeUrl'
 import { validateUpload, sanitizeFileName, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -85,8 +86,7 @@ export default function ProjectFolders() {
       <Card className="border-white/10">
         <CardContent className="p-4 space-y-3">
           <div className="flex flex-wrap items-end gap-4">
-            <div className="flex-1 min-w-48">
-              <label className="text-xs text-muted-foreground mb-1 block">Select Job</label>
+            <Field label="Job" className="flex-1 min-w-48">
               <Select value={selectedJobId} onValueChange={setSelectedJobId}>
                 <SelectTrigger className="bg-white/5 border-white/20">
                   <SelectValue placeholder="Choose a job…" />
@@ -97,23 +97,22 @@ export default function ProjectFolders() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
             {selectedJob && (
               <>
-                <div className="min-w-32">
-                  <label className="text-xs text-muted-foreground mb-1 block">File Type</label>
+                <Field label="File type" className="min-w-32">
                   <Select value={fileType} onValueChange={setFileType}>
                     <SelectTrigger className="bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {FILE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                </div>
+                </Field>
                 <div>
                   <input ref={fileInputRef} type="file" accept={ALLOWED_UPLOAD_TYPES.join(',')} className="hidden" onChange={handleFileSelect} />
                   <Button
-                    style={{ backgroundColor: BRAND }}
-                    className="text-white gap-2"
+                    variant="brand"
+                    className="gap-2"
                     disabled={uploading}
                     onClick={() => fileInputRef.current?.click()}>
                     <UploadCloudIcon size={14} />

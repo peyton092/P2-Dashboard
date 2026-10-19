@@ -3,6 +3,7 @@ import { useData } from '../use-data'
 import { addSubmit, updateSubmit, useSubmitReplies, addSubmitReply } from '../hooks/useFirestore'
 import { useMutation } from '../hooks/useMutation'
 import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -103,6 +104,7 @@ export default function SubmitInbox() {
               queue: true,
             })}>
             <SelectTrigger
+              aria-label="Status"
               className="h-auto py-1 px-3 text-xs font-bold border rounded-full w-auto gap-1 shrink-0"
               style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}>
               <SelectValue />
@@ -176,8 +178,8 @@ export default function SubmitInbox() {
               onChange={e => setReplyText(e.target.value)}
             />
             <Button
-              style={{ backgroundColor: BRAND }}
-              className="text-white gap-2"
+              variant="brand"
+              className="gap-2"
               onClick={handleReply}
               disabled={replying || !replyText.trim()}>
               <SendIcon size={14} /> {replying ? 'Sending…' : 'Send Reply'}
@@ -199,36 +201,32 @@ export default function SubmitInbox() {
         </div>
         <Card className="border-white/10 max-w-2xl" style={{ borderColor: withAlpha(BRAND, 0.2) }}>
           <CardContent className="p-6 space-y-4">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Subject *</label>
+            <Field label="Subject" required>
               <Input
                 className="bg-white/5 border-white/20"
                 placeholder="Brief summary of the issue or request"
                 value={form.subject}
                 onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
               />
-            </div>
+            </Field>
             <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Category</label>
+              <Field label="Category">
                 <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
                   <SelectTrigger className="bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Priority</label>
+              </Field>
+              <Field label="Priority">
                 <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}>
                   <SelectTrigger className="bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Portal</label>
+              </Field>
+              <Field label="Portal">
                 <Select value={form.portal} onValueChange={v => setForm(f => ({ ...f, portal: v }))}>
                   <SelectTrigger className="bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -236,20 +234,19 @@ export default function SubmitInbox() {
                     <SelectItem value="Builder">Builder</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Message *</label>
+            <Field label="Message" required>
               <Textarea
                 className="bg-white/5 border-white/20 min-h-32"
                 placeholder="Describe the issue or request in detail…"
                 value={form.body}
                 onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
               />
-            </div>
+            </Field>
             <Button
-              className="w-full text-white"
-              style={{ backgroundColor: BRAND }}
+              variant="brand"
+              className="w-full"
               onClick={handleNewSubmit}
               disabled={submitting || !form.subject || !form.body}>
               {submitting ? 'Submitting…' : 'Submit'}
@@ -268,7 +265,7 @@ export default function SubmitInbox() {
         title="Submit / Inbox"
         subtitle={`${openCount} open · ${submits.length} total`}
         actions={
-          <Button style={{ backgroundColor: BRAND }} className="text-white gap-2" onClick={() => setView('new')}>
+          <Button variant="brand" className="gap-2" onClick={() => setView('new')}>
             <PlusIcon size={14} /> New Submit
           </Button>
         }
@@ -278,7 +275,7 @@ export default function SubmitInbox() {
         <div className="text-center py-20 text-muted-foreground">
           <MessageSquareIcon size={48} className="mx-auto mb-4 opacity-20" />
           <p className="mb-4">No submits yet</p>
-          <Button className="text-white" style={{ backgroundColor: BRAND }} onClick={() => setView('new')}>
+          <Button variant="brand" onClick={() => setView('new')}>
             Create First Submit
           </Button>
         </div>

@@ -51,7 +51,7 @@ function TradeInspections({ trade, data }) {
             <div key={phase} className="flex items-center justify-between gap-2 text-xs">
               <span className="text-zinc-400">{PHASE_LABEL[phase] || phase}</span>
               <span className="flex items-center gap-2">
-                {date && <span className="text-[10px] text-zinc-500">{fmtDate(date)}</span>}
+                {date && <span className="text-[10px] text-zinc-400">{fmtDate(date)}</span>}
                 <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: toneText(statusTone(INSPECTION_STATUS, status)), backgroundColor: withAlpha(color, 0.13) }}>{statusLabel(INSPECTION_STATUS, status)}</span>
               </span>
             </div>
@@ -78,7 +78,7 @@ export default function JobDetail({ jobId, onBack }) {
   if (!job) {
     return (
       <div className="space-y-4">
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
           <ChevronLeftIcon size={15} /> Back
         </button>
         <EmptyState Icon={HardHatIcon} title="Job not found" description="This job may have been removed or isn't loaded yet." />
@@ -105,7 +105,7 @@ export default function JobDetail({ jobId, onBack }) {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white mb-3">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white mb-3">
           <ChevronLeftIcon size={15} /> Back to jobs
         </button>
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] overflow-hidden" style={{ borderLeftWidth: 3, borderLeftColor: railColor }}>
@@ -127,7 +127,7 @@ export default function JobDetail({ jobId, onBack }) {
                 <p className="text-sm text-zinc-400 mt-1">{job.client}{job.type ? ` · ${job.type}` : ''}</p>
               </div>
               {hasInvoice && (
-                <button onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: BRAND }}>
+                <button type="button" onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground" style={{ backgroundColor: BRAND }}>
                   <DownloadIcon size={13} /> Invoice PDF
                 </button>
               )}
@@ -274,7 +274,7 @@ export default function JobDetail({ jobId, onBack }) {
               <li key={r._docId} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-zinc-200">{r.crewMember || r.author || 'Crew'}</span>
-                  <span className="text-[11px] text-zinc-500">{r.date || fmtDate(r.createdAt)}</span>
+                  <span className="text-[11px] text-zinc-400">{r.date || fmtDate(r.createdAt)}</span>
                 </div>
                 {r.notes && <p className="text-xs text-zinc-400 mt-1 line-clamp-3">{r.notes}</p>}
               </li>
@@ -293,7 +293,7 @@ function DetailField({ Icon, label, value, sub }) {
         {Icon && <Icon size={11} />} {label}
       </p>
       <p className="font-semibold text-zinc-100 truncate mt-0.5">{value}</p>
-      {sub && <p className="text-[10px] text-zinc-500 truncate">{sub}</p>}
+      {sub && <p className="text-[10px] text-zinc-400 truncate">{sub}</p>}
     </div>
   )
 }

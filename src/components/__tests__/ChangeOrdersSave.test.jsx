@@ -194,6 +194,24 @@ describe('saving a change order', () => {
   })
 })
 
+// The list of change orders, drawn as a table and as cards, with one that can be edited and
+// one that is approved.
+describe('the list of change orders', () => {
+  it('has no accessibility violations', async () => {
+    mocks.data.extras = [saved(), saved({ _docId: 'x2', coNumber: 'CO-2026-002', status: 'Approved' })]
+    const { container } = open()
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('names each action of a row after the change order it acts on', () => {
+    mocks.data.extras = [saved()]
+    open()
+    expect(screen.getAllByRole('button', { name: 'Download PDF of CO-2026-001' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Edit CO-2026-001' }).length).toBeGreaterThan(0)
+    expect(screen.getByRole('combobox', { name: 'Filter by job' })).toBeTruthy()
+  })
+})
+
 describe('an approved change order is read only', () => {
   const HINT = 'Approved change orders cannot be edited.'
   const REFUSAL = 'This change order is approved. Raise a new change order for any additional work.'
@@ -428,14 +446,11 @@ describe('removing a line item', () => {
     await gone()
   })
 
-  // What is checked is what this task added: the remove buttons, which have names now, and
-  // the question. The form around them has boxes with no label of their own and an empty
-  // table header that it had before.
-  it('has no accessibility violations on the remove buttons, or in the question', async () => {
+  // The whole form is checked, with its two lines: every box and list on it has a name, and
+  // so has every column of the line table.
+  it('has no accessibility violations on the whole form, or in the question', async () => {
     await twoLines()
-    for (const button of screen.getAllByRole('button', { name: /^Remove line/ })) {
-      expect(await axe(button)).toHaveNoViolations()
-    }
+    expect(await axe(document.body)).toHaveNoViolations()
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove line 2' }))
     const dialog = await openSettled('Remove line 2?')

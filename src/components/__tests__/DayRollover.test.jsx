@@ -36,10 +36,8 @@ afterEach(() => {
 const oneMinute = () => act(() => { vi.advanceTimersByTime(60_000) })
 
 describe('Calendar', () => {
-  // The marked day is the only day number on a colored background.
-  const markedDay = () => [...document.querySelectorAll('span')]
-    .filter((span) => /^\d{1,2}$/.test(span.textContent) && span.style.backgroundColor)
-    .map((span) => span.textContent)
+  // The marked day is the one the calendar says is the current date.
+  const markedDay = () => [...document.querySelectorAll('[aria-current="date"]')].map((day) => day.textContent)
 
   it('marks the local day, and marks the next one when midnight passes', () => {
     render(<Calendar />)

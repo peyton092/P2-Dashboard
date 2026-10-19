@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
 import { logError } from '@/lib/errorLogger'
 import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
+import { axe } from '@/test/axe'
 
 // The leaderboard logs a referral, awards a bonus and saves the Google review link. Each
 // of those tells the person how it ended, and its panel closes only when its write went
@@ -91,7 +92,7 @@ describe('a crew score that is not there yet', () => {
     expect(logError).toHaveBeenCalledTimes(1)
     expect(logError).toHaveBeenCalledWith(failure, 'crew score seed')
     expect(toastCalls()).toEqual([])
-    expect(screen.getAllByTitle('+Referral').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Log a referral for Austin' })).toBeTruthy()
   })
 })
 
@@ -116,7 +117,7 @@ describe('a crew score that the listener hears missing again', () => {
     expect(logError).toHaveBeenCalledTimes(1)
     expect(logError).toHaveBeenCalledWith(failure, 'crew score seed')
     expect(toastCalls()).toEqual([])
-    expect(screen.getAllByTitle('+Referral').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Log a referral for Austin' })).toBeTruthy()
   })
 
   it('is written once for each crew member that is missing', async () => {
@@ -155,7 +156,7 @@ describe('a crew score that the listener hears missing again', () => {
 describe('logging a referral', () => {
   const start = async () => {
     await open()
-    fireEvent.click(screen.getAllByTitle('+Referral')[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Log a referral for Austin' }))
   }
 
   it('writes one more referral for the person, says so, and closes the panel', async () => {
@@ -187,7 +188,7 @@ describe('logging a referral', () => {
 describe('awarding a bonus', () => {
   const start = async (points = '25', reason = 'Stayed late') => {
     await open()
-    fireEvent.click(screen.getAllByTitle('+Bonus')[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Award bonus points to Austin' }))
     fireEvent.change(screen.getByPlaceholderText('pts'), { target: { value: points } })
     fireEvent.change(screen.getByPlaceholderText('Reason (optional)'), { target: { value: reason } })
   }
@@ -246,7 +247,7 @@ describe('saving the Google review link', () => {
   const link = () => screen.getByPlaceholderText('https://g.page/r/YOUR_PLACE_ID/review')
   const start = async () => {
     await open()
-    fireEvent.click(screen.getByTitle('Configure Google Review URL'))
+    fireEvent.click(screen.getByRole('button', { name: 'Set the Google review link' }))
     fireEvent.change(link(), { target: { value: '  https://g.page/r/new/review  ' } })
   }
   const save = () => screen.getByRole('button', { name: /^(Save|Saving…)$/ })
@@ -291,7 +292,7 @@ describe('saving the Google review link', () => {
       expect(save().textContent).toBe('Saving…')
       expect(link().value).toBe('  https://g.page/r/new/review  ')
       expect(toastCalls()).toEqual([])
-      fireEvent.click(screen.getAllByTitle('Google Review link')[0])
+      fireEvent.click(screen.getByRole('button', { name: 'Google review link for Austin' }))
       expect(screen.getByText('https://g.page/r/old/review')).toBeTruthy()
 
       await act(async () => { finish() })
@@ -318,5 +319,63 @@ describe('saving the Google review link', () => {
     }])
     expect(link().value).toBe('  https://g.page/r/new/review  ')
     expect(save().disabled).toBe(false)
+  })
+})
+
+// Every button on the board that is only an icon says what it does, the ones that open a
+// panel say whether it is open, and each crew card opens its score breakdown from a button.
+describe('read by a screen reader', () => {
+  it('names the buttons of a crew card, and says which panel is open', async () => {
+    await open()
+    const referral = screen.getByRole('button', { name: 'Log a referral for Austin', expanded: false })
+    const bonus = screen.getByRole('button', { name: 'Award bonus points to Austin', expanded: false })
+    const link = screen.getByRole('button', { name: 'Google review link for Austin', expanded: false })
+
+    fireEvent.click(referral)
+    expect(referral.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel the referral' }))
+    expect(referral.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(bonus)
+    expect(bonus.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel the bonus' }))
+    expect(bonus.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(link)
+    expect(link.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Close the review link' }))
+    expect(link.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('opens the score breakdown of a card from a button that says whether it is open', async () => {
+    await open()
+    const toggle = screen.getByRole('button', { name: 'Score breakdown for Austin', expanded: false })
+    const controls = toggle.getAttribute('aria-controls')
+
+    fireEvent.click(toggle)
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(within(document.getElementById(controls)).getByText('Auto pts')).toBeTruthy()
+  })
+
+  it('names the button that sets the review link, and the one that closes its panel', async () => {
+    await open()
+    const settings = screen.getByRole('button', { name: 'Set the Google review link', expanded: false })
+    fireEvent.click(settings)
+    expect(settings.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('textbox', { name: 'Google Business Review URL' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close the review link settings' }))
+    expect(settings.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('has no accessibility violations, with a card open and its bonus panel out', async () => {
+    const { container } = render(<ToastContext.Provider value={mocks.toast}><TeamLeaderboard /></ToastContext.Provider>)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Score breakdown for Austin' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Award bonus points to Austin' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Set the Google review link' }))
+
+    expect(await axe(container)).toHaveNoViolations()
   })
 })

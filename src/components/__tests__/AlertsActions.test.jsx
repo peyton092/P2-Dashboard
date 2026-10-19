@@ -76,10 +76,14 @@ const ask = async (name) => {
 const gone = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 const confirm = (dialog, name) => act(async () => { fireEvent.click(within(dialog).getByRole('button', { name })) })
 
-// The two questions are modal dialogs with a title, a body and two named buttons. What is
-// checked is the question, which this task added, and not the screen behind it, whose
-// headings skip a level when it is drawn on its own without the shell around it.
+// The two questions are modal dialogs with a title, a body and two named buttons, and the
+// screen behind them has its headings in order and a name on every control.
 describe('accessibility', () => {
+  it('has no violations on the whole screen, with an alert in the queue', async () => {
+    const { container } = open()
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
   it('has no violations in the resolve question, or in the dismiss question', async () => {
     open()
     fireEvent.click(screen.getByRole('button', { name: 'Resolve alert' }))

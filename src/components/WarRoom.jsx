@@ -29,6 +29,8 @@ import {
   RadarIcon, CrosshairIcon,
 } from 'lucide-react'
 import { BRAND, SEMANTIC } from '@/lib/tokens'
+import { INSPECTION_STATUS, TRADE, statusLabel } from '../lib/status'
+import { PHASE_LABEL } from '../lib/inspections'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -91,8 +93,16 @@ function nextActionFor(job, now) {
   return 'Continue scheduled work'
 }
 
-// Compact per-trade inspection summary (E/P/H + rough+final dot).
+// Compact per-trade inspection summary: the trade's letter (E, P, H) and a short mark.
+// F is a failure, F+ a passed final, R+ a passed rough in, S a scheduled inspection, and
+// a pending one is marked Pending, so none of them rests on the color of its pill. Each
+// pill also holds what it means in words, such as Electrical rough in pending, for a
+// screen reader and for the tooltip.
 const TRADE_LETTER = { electrical: 'E', plumbing: 'P', hvac: 'H' }
+const PENDING = ['pending', 'pending-verification']
+const inWords = (trade, phase, status) =>
+  `${statusLabel(TRADE, trade)} ${PHASE_LABEL[phase].toLowerCase()} ${statusLabel(INSPECTION_STATUS, status).toLowerCase()}`
+
 function buildInspectionPills(job) {
   const insp = job.insp || {}
   const out = []
@@ -102,28 +112,27 @@ function buildInspectionPills(job) {
     const r = t.roughIn, f = t.final
     if ((!r || r === 'n/a') && (!f || f === 'n/a')) continue
 
-    // No unicode symbols — color carries pass/fail; the ASCII suffix carries
-    // which phase (R = Rough, F = Final). `+` after the letter means passed.
-    let tone = 'mute', dot = null
-    if (f === 'failed' || r === 'failed' || t.trim === 'failed') {
-      tone = 'critical'; dot = 'F'
+    // The first phase, in the order final, rough in, trim, whose status is one of these.
+    const phaseWith = (...statuses) => ['final', 'roughIn', 'trim'].find(p => statuses.includes(t[p]))
+
+    let tone = 'mute', dot = null, words
+    if (phaseWith('failed')) {
+      tone = 'critical'; dot = 'F'; words = inWords(trade, phaseWith('failed'), 'failed')
     } else if (f === 'passed') {
-      tone = 'success'; dot = 'F+'
+      tone = 'success'; dot = 'F+'; words = inWords(trade, 'final', 'passed')
     } else if (r === 'passed') {
-      tone = 'success'; dot = 'R+'
-    } else if (
-      f === 'scheduled' || r === 'scheduled' || t.trim === 'scheduled'
-    ) {
-      tone = 'warning'; dot = 'S'
-    } else if (
-      r === 'pending' || r === 'pending-verification' ||
-      f === 'pending' || f === 'pending-verification'
-    ) {
-      // Pending shows in muted color with no secondary mark — the gray pill
-      // tells you the trade is in progress without adding visual noise.
-      tone = 'mute'; dot = null
+      tone = 'success'; dot = 'R+'; words = inWords(trade, 'roughIn', 'passed')
+    } else if (phaseWith('scheduled')) {
+      tone = 'warning'; dot = 'S'; words = inWords(trade, phaseWith('scheduled'), 'scheduled')
+    } else if (PENDING.includes(r) || PENDING.includes(f)) {
+      // A rough in that waits comes before a final that waits.
+      const phase = PENDING.includes(r) ? 'roughIn' : 'final'
+      dot = statusLabel(INSPECTION_STATUS, 'pending'); words = inWords(trade, phase, t[phase])
+    } else {
+      const phase = r && r !== 'n/a' ? 'roughIn' : 'final'
+      words = inWords(trade, phase, t[phase])
     }
-    out.push({ trade, letter: TRADE_LETTER[trade], tone, dot })
+    out.push({ trade, letter: TRADE_LETTER[trade], tone, dot, words })
   }
   return out
 }
@@ -381,6 +390,7 @@ export default function WarRoom() {
         trailing={
           <>
             <select
+              aria-label="Filter by zone"
               value={zoneFilter}
               onChange={e => setZoneFilter(e.target.value)}
               className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
@@ -391,6 +401,7 @@ export default function WarRoom() {
               ))}
             </select>
             <select
+              aria-label="Sort by"
               value={sortBy}
               onChange={e => setSortBy(e.target.value)}
               className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
@@ -485,7 +496,7 @@ export default function WarRoom() {
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 function RiskPill({ risk, size = 'xs' }) {
-  if (!risk) return <span className="text-zinc-500 text-xs">—</span>
+  if (!risk) return <span className="text-zinc-400 text-xs">None</span>
   const tone =
     risk.level === 'critical' ? 'critical' :
     risk.level === 'warning'  ? 'warning'  :
@@ -500,14 +511,17 @@ function RiskPill({ risk, size = 'xs' }) {
 function InspectionPills({ job }) {
   const pills = buildInspectionPills(job)
   if (pills.length === 0) {
-    return <span className="text-zinc-500 text-xs">—</span>
+    return <span className="text-zinc-400 text-xs">None</span>
   }
   return (
     <div className="flex items-center gap-1">
       {pills.map(p => (
-        <Pill key={p.trade} tone={p.tone} size="xs">
-          <span className="">{p.letter}</span>
-          {p.dot && <span className="ml-0.5">{p.dot}</span>}
+        <Pill key={p.trade} tone={p.tone} size="xs" title={p.words}>
+          <span aria-hidden="true">
+            {p.letter}
+            {p.dot && <span className="ml-0.5">{p.dot}</span>}
+          </span>
+          <span className="sr-only">{p.words}</span>
         </Pill>
       ))}
     </div>

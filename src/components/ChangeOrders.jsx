@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { withAuthor, sendExtraToBuilder } from '../hooks/useFirestore'
@@ -10,6 +10,8 @@ import { useConfirm } from '../hooks/useConfirm'
 import { daysSince, toDate, toLocalDateStr } from '../lib/dates'
 import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
+import { IconButton } from '@/components/ui/icon-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -140,6 +142,7 @@ function jobLabel(jobs, jobId) {
 function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
   const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
   const { ask, dialog } = useConfirm()
+  const statusId = useId()
 
   // The price on a line goes with it, so taking one off is asked about first. It is a
   // change to the form and nothing is written until the form is saved, so the question
@@ -175,9 +178,9 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={onCancel} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+        <IconButton label="Back to change orders" onClick={onCancel}>
           <ChevronLeftIcon size={18} />
-        </button>
+        </IconButton>
         <div className="flex-1">
           <h2 className="text-2xl font-semibold" style={{ color: BRAND }}>{form.coNumber}</h2>
           <p className="text-sm text-muted-foreground">Change Order</p>
@@ -202,8 +205,8 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
             <SaveIcon size={14} /> Save Draft
           </Button>
           <Button
-            className="gap-2 text-white"
-            style={{ backgroundColor: BRAND }}
+            variant="brand"
+            className="gap-2"
             onClick={() => onSave(true)}
             disabled={saving || !canSave}
           >
@@ -215,11 +218,13 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
       {/* Meta row */}
       <Card className="border-white/10">
         <CardContent className="p-4">
+          {/* A list takes its name from the label of its Field, but not the aria attributes
+              Field gives the control, so the trigger is told it is required and where its
+              hint is itself. */}
           <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Job *</label>
+            <Field label="Job" required>
               <Select value={form.job} onValueChange={v => setForm(f => ({ ...f, job: v }))}>
-                <SelectTrigger className="bg-white/5 border-white/20 w-full">
+                <SelectTrigger aria-required="true" className="bg-white/5 border-white/20 w-full">
                   <SelectValue placeholder="Select job…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -228,28 +233,25 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">CO Date</label>
+            </Field>
+            <Field label="CO date">
               <Input
                 type="date"
                 className="bg-white/5 border-white/20"
                 value={form.date}
                 onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
               />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Status</label>
+            </Field>
+            <Field id={statusId} label="Status" hint="Set when the change order is sent, approved or rejected.">
               <Select value={form.status} disabled>
-                <SelectTrigger className="bg-white/5 border-white/20 w-full">
+                <SelectTrigger aria-describedby={`${statusId}-hint`} className="bg-white/5 border-white/20 w-full">
                   <SelectValue>{statusLabel(CO_STATUS, normalizeCoStatus(form.status || 'Draft'))}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {CO_STATUSES.map(s => <SelectItem key={s} value={s}>{statusLabel(CO_STATUS, s)}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="text-[10px] text-muted-foreground mt-1">Set when the change order is sent, approved or rejected.</p>
-            </div>
+            </Field>
           </div>
         </CardContent>
       </Card>
@@ -279,7 +281,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                   <th className="text-center px-3 py-2 font-medium" style={{ width: 80 }}>Unit</th>
                   <th className="text-right px-3 py-2 font-medium" style={{ width: 110 }}>Unit Price</th>
                   <th className="text-right px-3 py-2 font-medium" style={{ width: 110 }}>Extended</th>
-                  <th className="px-3 py-2" style={{ width: 40 }}></th>
+                  <th className="px-3 py-2" style={{ width: 40 }}><span className="sr-only">Remove</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -287,6 +289,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                   <tr key={li._id}>
                     <td className="px-4 py-2">
                       <Input
+                        aria-label={`Description of line ${idx + 1}`}
                         className="bg-white/5 border-white/20 text-sm h-8"
                         placeholder="Describe the work…"
                         value={li.desc}
@@ -295,6 +298,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     </td>
                     <td className="px-3 py-2">
                       <Input
+                        aria-label={`Quantity of line ${idx + 1}`}
                         className="bg-white/5 border-white/20 text-sm h-8 text-right"
                         type="number"
                         min="0"
@@ -305,7 +309,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     </td>
                     <td className="px-3 py-2">
                       <Select value={li.unit} onValueChange={v => setLine(idx, 'unit', v)}>
-                        <SelectTrigger className="bg-white/5 border-white/20 h-8 text-xs">
+                        <SelectTrigger aria-label={`Unit of line ${idx + 1}`} className="bg-white/5 border-white/20 h-8 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -315,8 +319,9 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     </td>
                     <td className="px-3 py-2">
                       <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                        <span aria-hidden="true" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
                         <Input
+                          aria-label={`Unit price of line ${idx + 1}`}
                           className="bg-white/5 border-white/20 text-sm h-8 text-right pl-5"
                           type="number"
                           min="0"
@@ -331,14 +336,13 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     </td>
                     <td className="px-3 py-2">
                       {form.lineItems.length > 1 && (
-                        <button
-                          type="button"
-                          aria-label={`Remove line ${idx + 1}`}
+                        <IconButton
+                          label={`Remove line ${idx + 1}`}
                           onClick={() => removeLine(li, idx)}
-                          className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400 transition-colors"
+                          className="text-muted-foreground hover:text-red-400"
                         >
                           <XIcon size={12} />
-                        </button>
+                        </IconButton>
                       )}
                     </td>
                   </tr>
@@ -359,6 +363,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                   <span>Markup</span>
                   <div className="relative flex items-center">
                     <Input
+                      aria-label="Markup percent"
                       className="bg-white/5 border-white/20 h-7 text-xs text-right w-16"
                       type="number"
                       min="0"
@@ -388,6 +393,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
         </CardHeader>
         <CardContent>
           <Textarea
+            aria-label="Notes or justification"
             className="bg-white/5 border-white/20 min-h-24 resize-y"
             placeholder="Describe why this change order is needed, scope changes, owner-requested additions, field conditions, etc."
             value={form.notes}
@@ -633,9 +639,9 @@ export default function ChangeOrders() {
               <DownloadIcon size={14} /> Export CSV
             </Button>
             <Button
+              variant="brand"
               onClick={startNew}
-              style={{ backgroundColor: BRAND }}
-              className="text-white gap-2 font-bold"
+              className="gap-2 font-bold"
             >
               <PlusIcon size={14} /> New CO
             </Button>
@@ -691,6 +697,7 @@ export default function ChangeOrders() {
         trailing={
           <>
             <select
+              aria-label="Filter by job"
               value={jobFilter}
               onChange={e => setJobFilter(e.target.value)}
               className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[220px]"
@@ -795,7 +802,7 @@ function COEmptyState({ filter, hasJobFilter, onNew }) {
           ? 'Adjust the filters or create a new change order for this job.'
           : 'Draft a CO when scope changes — protect revenue before work starts.'}
         action={
-          <Button onClick={onNew} style={{ backgroundColor: BRAND }} className="text-white gap-2">
+          <Button variant="brand" onClick={onNew} className="gap-2">
             <PlusIcon size={13} /> New CO
           </Button>
         }
@@ -857,7 +864,7 @@ function CORow({ co, job, now, onEdit, onPdf }) {
       <TableCell className="text-zinc-200 truncate">{job?.pm || '—'}</TableCell>
       <TableCell>
         {age == null
-          ? <span className="text-zinc-500 text-xs">—</span>
+          ? <span className="text-zinc-400 text-xs">No date</span>
           : <Pill tone={ageTone} size="xs">{age}d</Pill>}
       </TableCell>
       <TableCell last>
@@ -876,25 +883,25 @@ function CORow({ co, job, now, onEdit, onPdf }) {
           )}
           <div className="flex items-center gap-1 justify-end">
             {isNew && (
-              <button
-                type="button"
+              <IconButton
+                label={`Download PDF of ${coNum}`}
                 onClick={onPdf}
-                className="p-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.08] transition-colors"
-                title="Download PDF"
+                className="text-zinc-300 hover:text-white"
               >
                 <DownloadIcon size={13} />
-              </button>
+              </IconButton>
             )}
-            <button
-              type="button"
+            {/* The tooltip says why an approved change order cannot be edited, so the button
+                still takes the pointer when it is switched off. */}
+            <IconButton
+              label={`Edit ${coNum}`}
               onClick={() => onEdit(co)}
-              className="p-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.08] transition-colors"
+              className="text-zinc-300 hover:text-white disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-40"
               title={locked ? APPROVED_HINT : isNew ? 'Edit or resend' : 'Edit'}
               disabled={!canEdit}
-              style={!canEdit ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
             >
               <PencilIcon size={13} />
-            </button>
+            </IconButton>
           </div>
         </div>
       </TableCell>
@@ -977,7 +984,7 @@ function COCard({ co, job, now, onEdit, onPdf }) {
             onClick={() => onEdit(co)}
             disabled={!isNew || locked}
             title={locked ? APPROVED_HINT : undefined}
-            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-brand-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             style={{ backgroundColor: BRAND }}
           >
             <PencilIcon size={12} /> {isDraft(co) ? 'Submit for approval' : isRejected(co) ? 'Revise & resend' : 'Edit'}

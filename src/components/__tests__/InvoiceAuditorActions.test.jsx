@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
 
 // The invoice auditor saves a new supplier invoice and changes the status of one. Each of
 // those tells the person how it ended, and the form closes only when its write went
@@ -145,5 +146,90 @@ describe('the status of an invoice', () => {
       title: 'Could not change the status. Try again.',
       description: 'You do not have permission to do that.',
     }])
+  })
+})
+
+// The form names every box and list on it, the buttons that are only an icon say what they
+// do, and a row of the list opens from a button that says whether it is open. How serious
+// the flags on an invoice are is said in words, not only by the color of its dot.
+describe('read by a screen reader', () => {
+  // Two invoices with the same number from the same vendor: each is flagged as a duplicate,
+  // which is critical. The third has no job, which is a warning.
+  const DUPLICATE = { ...INVOICE, _docId: 'i2', total: 500 }
+  const NO_JOB = { ...INVOICE, _docId: 'i3', vendor: 'Ferguson', invoiceNum: 'F-9', jobId: null, total: 900 }
+
+  it('names every box, list and icon button on the new invoice form', async () => {
+    open()
+    fireEvent.click(screen.getAllByRole('button', { name: /New Invoice/ })[0])
+    fireEvent.click(screen.getByRole('button', { name: /Add Line/ }))
+
+    for (const name of ['Vendor', 'Job (optional)', 'Unit of line 1', 'Unit of line 2']) {
+      expect(screen.getByRole('combobox', { name }), name).toBeTruthy()
+    }
+    for (const name of ['Invoice #', 'Description of line 1', 'Notes or dispute reason']) {
+      expect(screen.getByRole('textbox', { name }), name).toBeTruthy()
+    }
+    for (const name of ['Quantity of line 2', 'Unit price of line 2']) {
+      expect(screen.getByRole('spinbutton', { name }), name).toBeTruthy()
+    }
+    // A date box has no role of its own; its label ends in the mark that says it is required.
+    expect(screen.getByLabelText(/^Invoice date/).type).toBe('date')
+    expect(screen.getByRole('button', { name: 'Remove line 2' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close the invoice form' }))
+    expect(screen.queryByPlaceholderText('INV-12345')).toBeNull()
+  })
+
+  it('has no accessibility violations on the form', async () => {
+    const { container } = open()
+    fireEvent.click(screen.getAllByRole('button', { name: /New Invoice/ })[0])
+    fireEvent.click(screen.getByRole('button', { name: /Add Line/ }))
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('opens an invoice from a row header button that says whether it is open', () => {
+    open()
+    const header = screen.getByRole('button', { name: /Graybar/, expanded: false })
+    const controls = header.getAttribute('aria-controls')
+
+    fireEvent.click(header)
+
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(within(document.getElementById(controls)).getByText('Panel')).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Status of invoice INV-100' })).toBeTruthy()
+  })
+
+  it('says how many flags an invoice has and how many are critical, in words', () => {
+    mocks.invoices = [INVOICE, DUPLICATE, NO_JOB]
+    open()
+
+    expect(screen.getAllByText('1 flag, 1 critical')).toHaveLength(2)
+    expect(screen.getByText('1 flag')).toBeTruthy()
+  })
+
+  it('says an invoice has no flags, in words', () => {
+    open()
+    expect(within(screen.getByRole('button', { name: /Graybar/ })).getByText('No flags')).toBeTruthy()
+  })
+
+  it('names the severity of each flag in the open invoice', () => {
+    mocks.invoices = [INVOICE, DUPLICATE, NO_JOB]
+    open()
+    fireEvent.click(screen.getByRole('button', { name: /Ferguson/ }))
+
+    expect(screen.getByText(/^Warning/).closest('li').textContent).toBe('Warning: Invoice not assigned to a job, so it cannot be checked against POs')
+  })
+
+  it('names the lists that filter the invoices', () => {
+    open()
+    expect(screen.getByRole('combobox', { name: 'Filter by vendor' })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Filter by status' })).toBeTruthy()
+  })
+
+  it('has no accessibility violations on the list, with an invoice open', async () => {
+    mocks.invoices = [INVOICE, DUPLICATE, NO_JOB]
+    const { container } = open()
+    fireEvent.click(screen.getByRole('button', { name: /Ferguson/ }))
+    expect(await axe(container)).toHaveNoViolations()
   })
 })

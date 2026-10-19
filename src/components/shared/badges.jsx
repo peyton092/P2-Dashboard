@@ -32,10 +32,11 @@ const SIZE = {
   md: 'text-[11px] px-2.5 py-1 tracking-wide',
 }
 
-export function Pill({ tone = 'neutral', size = 'sm', className = '', children, Icon }) {
+export function Pill({ tone = 'neutral', size = 'sm', className = '', children, Icon, title }) {
   const t = TONE[tone] || TONE.neutral
   return (
     <span
+      title={title}
       className={cn(
         'inline-flex items-center gap-1 rounded-full font-bold uppercase whitespace-nowrap',
         SIZE[size] || SIZE.sm,
