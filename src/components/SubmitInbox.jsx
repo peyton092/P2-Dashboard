@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useData } from '../use-data'
 import { addSubmit, updateSubmit, useSubmitReplies, addSubmitReply } from '../hooks/useFirestore'
+import { useMutation } from '../hooks/useMutation'
 import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,67 +13,69 @@ import {
 import {
   ChevronLeftIcon, ChevronRightIcon, PlusIcon, SendIcon, MessageSquareIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
-
-function SectionHeader({ title, sub, action }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-      {action}
-    </div>
-  )
-}
+import { BRAND, withAlpha } from '@/lib/tokens'
+import { PageHeader } from './shared'
 
 export default function SubmitInbox() {
   const { submits } = useData()
+  const { run: runSend, busy: submitting } = useMutation()
+  const { run: runReply, busy: replying } = useMutation()
+  const { run: runStatus } = useMutation()
   const [view, setView] = useState('inbox')
   const [selectedSubmitId, setSelectedSubmitId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
-  const [submitting, setSubmitting] = useState(false)
   const [replyText, setReplyText] = useState('')
-  const [replying, setReplying] = useState(false)
 
   const selectedSubmit = submits.find(s => s._docId === selectedSubmitId) || null
   const { replies } = useSubmitReplies(selectedSubmit?._docId)
 
   const CATEGORIES = ['RFI', 'Issue', 'Question', 'Change Order', 'Approval', 'Other']
   const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
-  const priorityColor = { Low: '#22c55e', Medium: '#eab308', High: O, Critical: '#ef4444' }
-  const statusColor = { Open: '#ef4444', 'In Progress': O, Resolved: '#22c55e' }
+  const priorityColor = { Low: '#22c55e', Medium: '#eab308', High: BRAND, Critical: '#ef4444' }
+  const statusColor = { Open: '#ef4444', 'In Progress': BRAND, Resolved: '#22c55e' }
 
   const handleNewSubmit = async () => {
     if (!form.subject || !form.body) return
-    setSubmitting(true)
-    await addSubmit({
+    const { ok } = await runSend(() => addSubmit({
       subject: form.subject,
       category: form.category,
       priority: form.priority,
       body: form.body,
       portal: form.portal,
       status: 'Open',
+    }), {
+      success: 'Submit created.',
+      error: 'Could not create the submit. Try again.',
+      queue: true,
     })
-    setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
-    setSubmitting(false)
-    setView('inbox')
+    // A refused submit leaves the form with what was typed, so it can be sent again.
+    if (ok) {
+      setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', portal: 'P2' })
+      setView('inbox')
+    }
   }
 
+  // A reply is two writes: the reply, and then moving an open submit to In Progress. The
+  // box is cleared once the reply is in, and the second write says so on its own if it fails.
   const handleReply = async () => {
     if (!replyText.trim() || !selectedSubmit?._docId) return
-    setReplying(true)
-    await addSubmitReply(selectedSubmit._docId, {
+    const { ok } = await runReply(() => addSubmitReply(selectedSubmit._docId, {
       body: replyText,
       author: 'P2 Team',
       authorRole: 'internal',
+    }), {
+      success: 'Reply sent.',
+      error: 'Could not send the reply. Try again.',
+      queue: true,
     })
-    if (selectedSubmit.status === 'Open') {
-      await updateSubmit(selectedSubmit._docId, { status: 'In Progress' })
-    }
+    if (!ok) return
     setReplyText('')
-    setReplying(false)
+    if (selectedSubmit.status === 'Open') {
+      await runReply(() => updateSubmit(selectedSubmit._docId, { status: 'In Progress' }), {
+        error: 'The reply was sent, but the submit did not move to In Progress.',
+        queue: true,
+      })
+    }
   }
 
   if (view === 'thread' && selectedSubmit) {
@@ -94,10 +98,15 @@ export default function SubmitInbox() {
           </div>
           <Select
             value={selectedSubmit.status || 'Open'}
-            onValueChange={v => selectedSubmit._docId && updateSubmit(selectedSubmit._docId, { status: v })}>
+            onValueChange={v => selectedSubmit._docId && runStatus(() => updateSubmit(selectedSubmit._docId, { status: v }), {
+              success: `Status set to ${v.toLowerCase()}.`,
+              error: 'Could not change the status. Try again.',
+              queue: true,
+            })}>
             <SelectTrigger
+              aria-label="Status"
               className="h-auto py-1 px-3 text-xs font-bold border rounded-full w-auto gap-1 shrink-0"
-              style={{ backgroundColor: sc + '22', color: sc, borderColor: sc + '55' }}>
+              style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -113,7 +122,7 @@ export default function SubmitInbox() {
             <div className="flex items-start gap-3">
               <div
                 className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                style={{ backgroundColor: O + '33', color: O }}>
+                style={{ backgroundColor: withAlpha(BRAND, 0.2), color: BRAND }}>
                 {(selectedSubmit.portal || 'P2').slice(0, 2).toUpperCase()}
               </div>
               <div className="flex-1">
@@ -124,7 +133,7 @@ export default function SubmitInbox() {
                   </span>
                   <span
                     className="text-xs px-1.5 py-0.5 rounded-full ml-auto"
-                    style={{ backgroundColor: pc + '22', color: pc }}>
+                    style={{ backgroundColor: withAlpha(pc, 0.13), color: pc }}>
                     {selectedSubmit.priority}
                   </span>
                 </div>
@@ -169,8 +178,8 @@ export default function SubmitInbox() {
               onChange={e => setReplyText(e.target.value)}
             />
             <Button
-              style={{ backgroundColor: O }}
-              className="text-white gap-2"
+              variant="brand"
+              className="gap-2"
               onClick={handleReply}
               disabled={replying || !replyText.trim()}>
               <SendIcon size={14} /> {replying ? 'Sending…' : 'Send Reply'}
@@ -190,38 +199,34 @@ export default function SubmitInbox() {
           </Button>
           <h2 className="text-xl font-bold">New Submit</h2>
         </div>
-        <Card className="border-white/10 max-w-2xl" style={{ borderColor: O + '33' }}>
+        <Card className="border-white/10 max-w-2xl" style={{ borderColor: withAlpha(BRAND, 0.2) }}>
           <CardContent className="p-6 space-y-4">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Subject *</label>
+            <Field label="Subject" required>
               <Input
                 className="bg-white/5 border-white/20"
                 placeholder="Brief summary of the issue or request"
                 value={form.subject}
                 onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
               />
-            </div>
+            </Field>
             <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Category</label>
+              <Field label="Category">
                 <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
                   <SelectTrigger className="bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Priority</label>
+              </Field>
+              <Field label="Priority">
                 <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}>
                   <SelectTrigger className="bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Portal</label>
+              </Field>
+              <Field label="Portal">
                 <Select value={form.portal} onValueChange={v => setForm(f => ({ ...f, portal: v }))}>
                   <SelectTrigger className="bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -229,20 +234,19 @@ export default function SubmitInbox() {
                     <SelectItem value="Builder">Builder</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Message *</label>
+            <Field label="Message" required>
               <Textarea
                 className="bg-white/5 border-white/20 min-h-32"
                 placeholder="Describe the issue or request in detail…"
                 value={form.body}
                 onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
               />
-            </div>
+            </Field>
             <Button
-              className="w-full text-white"
-              style={{ backgroundColor: O }}
+              variant="brand"
+              className="w-full"
               onClick={handleNewSubmit}
               disabled={submitting || !form.subject || !form.body}>
               {submitting ? 'Submitting…' : 'Submit'}
@@ -257,11 +261,11 @@ export default function SubmitInbox() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader
+      <PageHeader
         title="Submit / Inbox"
-        sub={`${openCount} open · ${submits.length} total`}
-        action={
-          <Button style={{ backgroundColor: O }} className="text-white gap-2" onClick={() => setView('new')}>
+        subtitle={`${openCount} open · ${submits.length} total`}
+        actions={
+          <Button variant="brand" className="gap-2" onClick={() => setView('new')}>
             <PlusIcon size={14} /> New Submit
           </Button>
         }
@@ -271,7 +275,7 @@ export default function SubmitInbox() {
         <div className="text-center py-20 text-muted-foreground">
           <MessageSquareIcon size={48} className="mx-auto mb-4 opacity-20" />
           <p className="mb-4">No submits yet</p>
-          <Button className="text-white" style={{ backgroundColor: O }} onClick={() => setView('new')}>
+          <Button variant="brand" onClick={() => setView('new')}>
             Create First Submit
           </Button>
         </div>
@@ -280,41 +284,45 @@ export default function SubmitInbox() {
           {submits.map(s => {
             const pc = priorityColor[s.priority] || '#6b7280'
             const sc = statusColor[s.status || 'Open'] || '#6b7280'
+            // The whole row is the button that opens the thread, so a keyboard reaches it. A
+            // button holds phrasing content only, so its lines are spans, and its name is the
+            // words it shows; the dots between them are not read.
             return (
-              <div
+              <button
+                type="button"
                 key={s._docId}
-                className="flex items-start gap-4 p-4 rounded-xl border border-white/10 hover:bg-white/5 transition-colors cursor-pointer"
+                className="flex w-full items-start gap-4 p-4 rounded-xl border border-white/10 text-left hover:bg-white/5 transition-colors cursor-pointer"
                 onClick={() => { setSelectedSubmitId(s._docId); setView('thread') }}>
-                <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: O + '22' }}>
-                  <MessageSquareIcon size={14} style={{ color: O }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span aria-hidden="true" className="p-2 rounded-lg shrink-0" style={{ backgroundColor: withAlpha(BRAND, 0.13) }}>
+                  <MessageSquareIcon size={14} style={{ color: BRAND }} />
+                </span>
+                <span className="block flex-1 min-w-0">
+                  <span className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-medium text-sm">{s.subject}</span>
                     <span
                       className="text-xs px-1.5 py-0.5 rounded-full"
-                      style={{ backgroundColor: pc + '22', color: pc }}>
+                      style={{ backgroundColor: withAlpha(pc, 0.13), color: pc }}>
                       {s.priority}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                  </span>
+                  <span className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                     <span>{s.category}</span>
-                    <span>·</span>
+                    <span aria-hidden="true">·</span>
                     <span>{s.portal}</span>
-                    <span>·</span>
+                    <span aria-hidden="true">·</span>
                     <span>{s.createdAt?.toDate?.()?.toLocaleDateString?.() || ''}</span>
-                  </div>
-                  {s.body && <p className="text-xs text-muted-foreground mt-1 truncate">{s.body}</p>}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
+                  </span>
+                  {s.body && <span className="block text-xs text-muted-foreground mt-1 truncate">{s.body}</span>}
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
                   <span
                     className="text-xs font-bold px-2 py-1 rounded-full"
-                    style={{ backgroundColor: sc + '22', color: sc }}>
+                    style={{ backgroundColor: withAlpha(sc, 0.13), color: sc }}>
                     {s.status || 'Open'}
                   </span>
-                  <ChevronRightIcon size={14} className="text-muted-foreground" />
-                </div>
-              </div>
+                  <ChevronRightIcon size={14} aria-hidden="true" className="text-muted-foreground" />
+                </span>
+              </button>
             )
           })}
         </div>

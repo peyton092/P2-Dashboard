@@ -8,6 +8,12 @@ import { auth, db, functions } from './firebase'
 import { httpsCallable } from 'firebase/functions'
 import { DataProvider } from './DataContext'
 import { useData } from './use-data'
+import { useNow } from './hooks/useNow'
+import { useConnectionState } from './hooks/useConnectionState'
+import { useMutation } from './hooks/useMutation'
+import { useSavedField } from './hooks/useSavedField'
+import { useConfirm } from './hooks/useConfirm'
+import { daysSince, fmtLongDate, toLocalDateStr } from './lib/dates'
 import {
   updateNotification, updateJob,
   passInspection, failInspection, createJob,
@@ -15,15 +21,15 @@ import {
 } from './hooks/useFirestore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { useToast } from '@/components/ui/use-toast'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Field } from '@/components/ui/field'
+import { Dialog, DialogBody } from '@/components/ui/dialog'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  ShieldIcon, ShieldCheckIcon, AlertTriangleIcon, CheckCircleIcon, Building2Icon, BanIcon,
+  ShieldIcon, AlertTriangleIcon, CheckCircleIcon, Building2Icon,
   DollarSignIcon, FileTextIcon, BellIcon,
   UsersIcon, PackageIcon, ClipboardIcon, MapPinIcon,
   ZapIcon, TruckIcon, CalendarIcon, ClockIcon, TrendingUpIcon,
@@ -74,34 +80,26 @@ import NoAccessScreen from './components/NoAccessScreen'
 import { resolveSession } from './lib/session'
 import { callableMessage } from './lib/callableError'
 import {
-  PageHeader, MetricTile, DataPanel, Pill,
+  PageHeader, StatBand, DataPanel, Pill, StatusBadge, PermitBadge,
   EmptyState, AllClearState, FilterBar, PageSkeleton,
   // Phase 19 — primitives extracted from App.jsx
-  ProgressBar, StatCard,
-  iMeta,
-  InspBadge, JobBadge,
+  ProgressBar,
   InlineStatusSelect, InlinePhaseSelect,
   BillingStatusSelect, MatStatusBadge,
 } from './components/shared'
-// daysSince is defined locally in this file with identical semantics, so we
-// don't re-import it from agent/scoring (would be a duplicate declaration).
 import { classifyRisk, hasFailedInspection, isBillingReady } from './agent/scoring'
 import { ZONES, getZoneId } from './agent/zones'
 
 // Phase 18 — Domain helpers extracted from App.jsx into src/lib/.
 // Pure data + pure functions. No behavior change.
-import { BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR } from './lib/billing'
-import {
-  INSP_STATUSES, TRADE_META, PHASE_LABEL,
-  inspectionStatusTone, inspectionStatusLabel, inspJobStatusTone,
-} from './lib/inspections'
+import { INSP_STATUSES, TRADE_META, PHASE_LABEL } from './lib/inspections'
 import {
   NOTIF_TYPE_META, NOTIF_FILTERS, NOTIF_CATEGORY_LABEL, NOTIF_CATEGORY_ICON,
   notifCategory, notifMatchesFilter, notifTimestampMs, fmtNotifTime,
   notifAgeLabel, notifIsWithinHours,
 } from './lib/notifications'
 import {
-  MAT_STATUS_OPTIONS, MAT_STATUS_COLOR, MAT_UNITS, MAT_STATUS_TONE,
+  MAT_STATUS_OPTIONS, MAT_UNITS,
   MAT_FILTERS, MAT_FORM_INITIAL,
   normalizeMatStatus,
   matName, matJobId, matOrdered,
@@ -109,7 +107,7 @@ import {
   matNextAction, matMatchesFilter, fmtMatDate,
 } from './lib/materials'
 import {
-  SUB_STATUS_OPTIONS, SUB_STATUS_COLOR, SUB_FILTERS, TRADE_FILTERS,
+  SUB_STATUS_OPTIONS, SUB_FILTERS, TRADE_FILTERS,
   daysUntilDate,
   subInsuranceState, subLicenseState,
   subHasMissingDocs, subInsuranceExpired, subInsuranceExpiringSoon, subLicenseExpired,
@@ -122,16 +120,16 @@ import {
   isJobComplete, jobStaleness, jobMatchesFilter,
   jobNextAction, jobRiskMeta, fmtJobDate,
 } from './lib/jobs'
+import { BRIEF_CATEGORY_META, buildBriefingItems } from './lib/briefing'
 import {
-  BRIEF_CATEGORY_META, SEVERITY_RANK,
-  severityTone, severityColor, buildBriefingItems,
-} from './lib/briefing'
+  INSPECTION_STATUS, MATERIAL_STATUS, SEVERITY, SUB_STATUS, TRADE,
+  statusColor, statusLabel, statusTone, toneHex, toneText,
+} from './lib/status'
 import { exportToCsv } from './lib/exportCsv'
 import AppShell from './components/shell/AppShell'
 import Sidebar from './components/shell/Sidebar'
 import MobileNav from './components/shell/MobileNav'
-
-const O = '#F47920'
+import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
 
 const TENANTS = [
   { id: 'p2-core', name: 'P2 Internal',          slug: 'p2'     },
@@ -225,44 +223,32 @@ const MOBILE_MORE = [
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // jobName moved to src/lib/jobs.js (Phase 18).
-// BILLING_STATUSES, BILLING_STATUS_LABEL, BILLING_STATUS_COLOR moved to
-// src/lib/billing.js (Phase 18).
 
-// inspMeta, iMeta, statusMeta, sMeta moved to
-// src/components/shared/legacy-badges.jsx (Phase 19) and re-exported here
-// via the named imports at the top of this file.
-
-const tradeColor = { HVAC: '#3b82f6', Plumbing: '#06b6d4', Electrical: O }
+// The color of a trade. A sub's trade is stored as written (Electrical, HVAC) and
+// the vocabulary in status.js is keyed in lower case. A trade it does not have
+// reads as neutral.
+const tradeColor = (trade) => {
+  const key = String(trade).toLowerCase()
+  return Object.hasOwn(TRADE, key) ? statusColor(TRADE, key) : toneHex('neutral')
+}
 
 const CREW_LIST = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
-const TODAY = new Date()
-const _yd = new Date(TODAY); _yd.setDate(_yd.getDate() - 1)
-const YESTERDAY_STR = _yd.toISOString().slice(0, 10)
 
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
+// The day before now, as the date string a crew report is filed under (the local day
+// it was made). It moves on at midnight with the now it is given.
+const yesterdayOf = (now) => toLocalDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
 
 // phaseLabel moved to src/lib/jobs.js (Phase 18).
 
 // ── Reusable components ───────────────────────────────────────────────────────
 //
-// ProgressBar, StatCard, InspBadge, JobBadge, BillingStatusSelect,
-// InlineStatusSelect, InlinePhaseSelect (and their JOB_STATUS_OPTIONS /
-// PHASE_OPTIONS data) moved to src/components/shared/* (Phase 19) and
-// re-imported via the named-imports block at the top of this file.
-// The legacy local SectionHeader (used by Architecture + Permits) moved
-// alongside those tabs in Phase 20 — see src/components/Architecture.jsx
-// and src/components/Permits.jsx.
+// ProgressBar, BillingStatusSelect, InlineStatusSelect and
+// InlinePhaseSelect moved to src/components/shared/* (Phase 19) and are imported
+// by name at the top of this file. Their words and menus are in src/lib/status.js.
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
 
-function LoginScreen() {
+export function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -318,28 +304,30 @@ function LoginScreen() {
     }
   }
 
+  // The screen is the whole page: one main landmark and one level one heading. A failed
+  // sign in is an alert. What Forgot Password says arrives in a status that is in the page
+  // from the start, so that a screen reader announces it.
   return (
-    <div className="dark min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
+    <main className="min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: O }}>
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: BRAND }}>
           <ZapIcon size={22} color="#fff" />
         </div>
         <div>
-          <p className="font-semibold text-2xl leading-none" style={{ color: O }}>P2</p>
+          <p className="font-semibold text-2xl leading-none" style={{ color: BRAND }}>P2</p>
           <p className="text-xs text-zinc-400 leading-tight">Electrical &amp; Mechanical</p>
         </div>
       </div>
 
       <Card className="w-80 border-white/10 bg-white/5">
         <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <LockIcon size={14} style={{ color: O }} /> Sign In
-          </CardTitle>
+          <h1 className="font-heading text-sm leading-snug font-medium tracking-normal flex items-center gap-2">
+            <LockIcon size={14} style={{ color: BRAND }} aria-hidden="true" /> Sign In
+          </h1>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSignIn} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Email</label>
+            <Field label="Email">
               <Input
                 type="email"
                 value={email}
@@ -349,9 +337,8 @@ function LoginScreen() {
                 autoComplete="email"
                 required
               />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Password</label>
+            </Field>
+            <Field label="Password">
               <Input
                 type="password"
                 value={password}
@@ -361,32 +348,34 @@ function LoginScreen() {
                 autoComplete="current-password"
                 required
               />
-            </div>
-            {error && <p className="text-xs text-red-400 font-medium">{error}</p>}
+            </Field>
+            {error && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
             <Button
               type="submit"
-              className="w-full text-white"
-              style={{ backgroundColor: O }}
+              variant="brand"
+              className="w-full"
               disabled={loading}>
               {loading ? 'Signing in…' : 'Sign In'}
             </Button>
             <button
               type="button"
               className="w-full text-center text-xs transition-colors"
-              style={{ color: O, opacity: resetLoading ? 0.5 : 1 }}
+              style={{ color: BRAND, opacity: resetLoading ? 0.5 : 1 }}
               disabled={resetLoading}
               onClick={handleForgotPassword}>
               Forgot Password?
             </button>
-            {resetMsg && (
-              <p className={`text-xs text-center font-medium ${resetMsg.includes('sent to') ? 'text-green-400' : 'text-red-400'}`}>
-                {resetMsg}
-              </p>
-            )}
+            <div role="status">
+              {resetMsg && (
+                <p className={`text-xs text-center font-medium ${resetMsg.includes('sent to') ? 'text-green-400' : 'text-red-400'}`}>
+                  {resetMsg}
+                </p>
+              )}
+            </div>
           </form>
         </CardContent>
       </Card>
-    </div>
+    </main>
   )
 }
 
@@ -417,12 +406,10 @@ const createFailureMessage = (err) => callableMessage(err, CREATE_FAILED)
 const FIELD_CLASS = 'bg-white/5 border-white/20'
 // A native select, styled like Input. The solid background keeps the option
 // list readable in browsers that draw it from the select's own colors.
-const SELECT_CLASS = 'h-8 w-full rounded-lg border border-white/20 bg-zinc-900 px-2.5 text-sm text-zinc-100 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50'
+const SELECT_CLASS = 'h-8 w-full rounded-lg border border-white/20 bg-zinc-900 px-2.5 text-sm text-zinc-100 disabled:opacity-50'
 
 export function CreateUserModal({ onClose }) {
-  const formId = useId()
   const nameRef = useRef(null)
-  const onCloseRef = useRef(onClose)
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('internal')
@@ -432,23 +419,6 @@ export function CreateUserModal({ onClose }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [warning, setWarning] = useState('')
-
-  useEffect(() => {
-    onCloseRef.current = onClose
-  }, [onClose])
-
-  // On open: remember what had focus (the button that opened this), focus the
-  // first field, and close on Escape. On close: hand focus back.
-  useEffect(() => {
-    const opener = document.activeElement
-    nameRef.current?.focus()
-    const onKeyDown = (e) => { if (e.key === 'Escape') onCloseRef.current() }
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      if (opener instanceof HTMLElement) opener.focus()
-    }
-  }, [])
 
   const handleCreate = async (e) => {
     e.preventDefault()
@@ -487,115 +457,100 @@ export function CreateUserModal({ onClose }) {
     setLoading(false)
   }
 
-  // This renders outside AppShell, so it brings its own `dark` scope and
-  // foreground color; without them the text inherits the light theme's near
-  // black and cannot be read on the dark card.
+  // A modal Dialog: it keeps focus inside while it is open, starts on the Name field,
+  // closes on Escape, the scrim or its close button, and gives focus back to whatever
+  // opened it. It renders outside AppShell; the dark theme comes from the document root
+  // (see index.html), and the panel names its own foreground color. Every field is on
+  // Field, so each label points at its control and the hint describes the job ids.
   return (
-    <div className="dark fixed inset-0 bg-black/70 text-foreground flex items-center justify-center z-50 p-4">
-      <Card
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${formId}-title`}
-        className="w-96 max-w-full max-h-full overflow-y-auto border-white/10 bg-zinc-900"
-      >
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle id={`${formId}-title`} className="text-sm flex items-center gap-2">
-            <UsersIcon size={14} style={{ color: O }} aria-hidden="true" /> Create User Account
-          </CardTitle>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <XIcon size={16} aria-hidden="true" />
-          </button>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleCreate} className="space-y-3">
-            <div className="space-y-1">
-              <label htmlFor={`${formId}-name`} className="text-xs text-muted-foreground">Name</label>
+    <Dialog open onClose={onClose} title="Create User Account" size="sm" initialFocusRef={nameRef}>
+      <DialogBody>
+        <form onSubmit={handleCreate} className="space-y-3">
+          <Field label="Name">
+            <Input
+              ref={nameRef}
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              placeholder="Mike Rodriguez"
+              autoComplete="off"
+              className={FIELD_CLASS}
+            />
+          </Field>
+          <Field label="Email">
+            <Input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="user@p2em.com"
+              autoComplete="off"
+              className={FIELD_CLASS}
+              required
+            />
+          </Field>
+          <Field label="Role">
+            <select
+              value={role}
+              onChange={e => setRole(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </Field>
+          {role === 'builder' && (
+            <Field label="Tenant">
+              <select
+                value={tenantId}
+                onChange={e => setTenantId(e.target.value)}
+                className={SELECT_CLASS}
+              >
+                {BUILDER_TENANTS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </Field>
+          )}
+          {role === 'client' && (
+            <Field
+              label="Client job ids"
+              hint="Separate ids with commas or spaces. The client will see only these projects, and the Name above is shown as their company name in the portal."
+            >
               <Input
-                id={`${formId}-name`}
-                ref={nameRef}
-                value={displayName}
-                onChange={e => setDisplayName(e.target.value)}
-                placeholder="Mike Rodriguez"
-                autoComplete="off"
-                className={FIELD_CLASS}
-              />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor={`${formId}-email`} className="text-xs text-muted-foreground">Email</label>
-              <Input
-                id={`${formId}-email`}
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="user@p2em.com"
+                value={clientJobs}
+                onChange={e => setClientJobs(e.target.value)}
+                placeholder="QBS-018, QBS-032, QBS-041"
                 autoComplete="off"
                 className={FIELD_CLASS}
                 required
               />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor={`${formId}-role`} className="text-xs text-muted-foreground">Role</label>
-              <select
-                id={`${formId}-role`}
-                value={role}
-                onChange={e => setRole(e.target.value)}
-                className={SELECT_CLASS}
-              >
-                {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-            </div>
-            {role === 'builder' && (
-              <div className="space-y-1">
-                <label htmlFor={`${formId}-tenant`} className="text-xs text-muted-foreground">Tenant</label>
-                <select
-                  id={`${formId}-tenant`}
-                  value={tenantId}
-                  onChange={e => setTenantId(e.target.value)}
-                  className={SELECT_CLASS}
-                >
-                  {BUILDER_TENANTS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
-            )}
-            {role === 'client' && (
-              <div className="space-y-1">
-                <label htmlFor={`${formId}-jobs`} className="text-xs text-muted-foreground">Client job ids</label>
-                <Input
-                  id={`${formId}-jobs`}
-                  value={clientJobs}
-                  onChange={e => setClientJobs(e.target.value)}
-                  placeholder="QBS-018, QBS-032, QBS-041"
-                  autoComplete="off"
-                  aria-describedby={`${formId}-jobs-hint`}
-                  className={FIELD_CLASS}
-                  required
-                />
-                <p id={`${formId}-jobs-hint`} className="text-[11px] text-muted-foreground">
-                  Separate ids with commas or spaces. The client will see only these projects, and the Name above is shown as their company name in the portal.
-                </p>
-              </div>
-            )}
-            {error   && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
-            {success && <p role="status" className="text-xs text-green-400 font-medium">{success}</p>}
-            {warning && <p role="status" className="text-xs text-amber-400 font-medium">{warning}</p>}
-            <Button type="submit" className="w-full text-white" style={{ backgroundColor: O }} disabled={loading}>
-              {loading ? 'Creating…' : 'Create Account'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+            </Field>
+          )}
+          {error   && <p role="alert" className="text-xs text-red-400 font-medium">{error}</p>}
+          {/* In the document from the start, so that what arrives in it is announced: Working
+              while the account is being made, then how it went. */}
+          <div role="status">
+            {loading && <span className="sr-only">Working</span>}
+            {success && <p className="text-xs text-green-400 font-medium">{success}</p>}
+            {warning && <p className="text-xs text-amber-400 font-medium">{warning}</p>}
+          </div>
+          {/* aria-disabled and not disabled while the account is being made, as ConfirmDialog
+              does, so a person who pressed it keeps focus in the dialog and not on the page
+              behind. handleCreate ignores a submit while it runs. */}
+          <Button
+            type="submit"
+            variant="brand"
+            className="w-full max-md:min-h-11 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            disabled={loading}
+            focusableWhenDisabled
+          >
+            {loading ? 'Creating…' : 'Create Account'}
+          </Button>
+        </form>
+      </DialogBody>
+    </Dialog>
   )
 }
 
 // ── Terms Gate ────────────────────────────────────────────────────────────────
 
-function TermsGate({ tenantId, tenantName, onAccept }) {
+export function TermsGate({ tenantId, tenantName, onAccept }) {
   const [checked, setChecked] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -629,10 +584,14 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
     }
   }
 
+  // The gate is the whole page: one main landmark and one level one heading. The terms
+  // scroll, so their box can take focus, and a keyboard can scroll it. Agreement is a real
+  // checkbox inside its label: Space checks it, and a tap anywhere on the row does too
+  // (Review Focus 2 of the plan). A refusal is read out as an alert.
   return (
-    <div className="dark min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
+    <main className="min-h-screen bg-background flex flex-col items-center justify-center gap-8 p-6">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: O }}>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: BRAND }}>
           <ShieldIcon size={20} color="#fff" />
         </div>
         <div>
@@ -643,12 +602,16 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
 
       <Card className="w-full max-w-lg border-white/10 bg-white/5">
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileTextIcon size={16} style={{ color: O }} /> Terms of Access · {version}
-          </CardTitle>
+          <h1 className="font-heading text-base leading-snug font-medium tracking-normal flex items-center gap-2">
+            <FileTextIcon size={16} style={{ color: BRAND }} aria-hidden="true" /> Terms of Access · {version}
+          </h1>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground space-y-3 p-4 rounded-xl bg-white/5 max-h-64 overflow-y-auto">
+          <div
+            role="region"
+            aria-label="Terms of Access"
+            tabIndex={0}
+            className="text-sm text-muted-foreground space-y-3 p-4 rounded-xl bg-white/5 max-h-64 overflow-y-auto">
             <p className="font-semibold text-foreground">P2 Field Control — Builder Portal Access Agreement</p>
             <p>By accessing this portal, you agree to the following terms:</p>
             <p><strong>1. Authorized Use.</strong> This portal is provided exclusively for authorized contractors and coordinators. Access credentials must not be shared.</p>
@@ -659,25 +622,27 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
             <p className="text-xs">Version {version} · P2 Field Services LLC · Middle Tennessee</p>
           </div>
 
-          <div className="flex items-center gap-3 p-3 rounded-xl border border-white/10 cursor-pointer" onClick={() => setChecked(c => !c)}>
-            <div className="w-5 h-5 rounded border flex items-center justify-center shrink-0"
-              style={{ borderColor: checked ? O : '#6b7280', backgroundColor: checked ? O : 'transparent' }}>
-              {checked && <CheckIcon size={12} color="#fff" />}
-            </div>
+          <label className="flex items-center gap-3 p-3 min-h-11 rounded-xl border border-white/10 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={e => setChecked(e.target.checked)}
+              className="size-5 shrink-0 cursor-pointer accent-brand"
+            />
             <span className="text-sm">I have read and agree to the P2 Field Control Terms of Access ({version})</span>
-          </div>
+          </label>
 
           <Button
-            className="w-full text-white"
-            style={{ backgroundColor: checked ? O : '#374151' }}
+            variant="brand"
+            className="w-full"
             disabled={!checked || saving}
             onClick={handleAccept}>
             {saving ? 'Recording acceptance…' : 'Accept & Enter Portal'}
           </Button>
-          {error && <p className="text-xs text-red-400 text-center font-medium">{error}</p>}
+          {error && <p role="alert" className="text-xs text-red-400 text-center font-medium">{error}</p>}
         </CardContent>
       </Card>
-    </div>
+    </main>
   )
 }
 
@@ -688,8 +653,8 @@ function TermsGate({ tenantId, tenantName, onAccept }) {
 // orders, materials, sub compliance, PM workload, and yesterday's crew
 // reports. No write paths — only read derivations from useData().
 
-// BRIEF_CATEGORY_META, SEVERITY_RANK, severityTone, severityColor, and
-// buildBriefingItems moved to src/lib/briefing.js (Phase 18).
+// BRIEF_CATEGORY_META and buildBriefingItems moved to src/lib/briefing.js
+// (Phase 18). The words and colors of a severity are in src/lib/status.js.
 
 
 function MorningBriefing() {
@@ -700,10 +665,12 @@ function MorningBriefing() {
     extras = [],
     materials = [],
   } = useData()
+  const now = useNow()
+  const yesterday = yesterdayOf(now)
 
   const submittedYesterday = useMemo(
-    () => new Set((dailyReports || []).filter(r => r.date === YESTERDAY_STR).map(r => r.crewMember)),
-    [dailyReports],
+    () => new Set((dailyReports || []).filter(r => r.date === yesterday).map(r => r.crewMember)),
+    [dailyReports, yesterday],
   )
 
   const items = useMemo(
@@ -744,9 +711,7 @@ function MorningBriefing() {
   // Top priority list — first ~12 items (already sorted by severity then age).
   const priorityItems = items.slice(0, 12)
 
-  const dateStr = TODAY.toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const dateStr = fmtLongDate(now)
   const submittedCount = CREW_LIST.filter(n => submittedYesterday.has(n)).length
 
   return (
@@ -757,13 +722,6 @@ function MorningBriefing() {
         subtitle="What needs attention today, ranked by severity and age. Read top to bottom before the day starts."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{dateStr}</span>
             <span>Middle Tennessee</span>
             {kpis.critical > 0 && (
@@ -773,48 +731,42 @@ function MorningBriefing() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Briefing summary"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Jobs Needing Action"
-          value={kpis.needsAction}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
-          sub={kpis.needsAction > 0 ? 'Risk + needs action' : 'No PM issues this morning'}
-        />
-        <MetricTile
-          label="Failed Inspections"
-          value={kpis.failedInsp}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.failedInsp > 0 ? 'critical' : 'success'}
-          sub={kpis.failedInsp > 0 ? 'Coordinate rework' : 'No failures'}
-        />
-        <MetricTile
-          label="Billing Blockers"
-          value={kpis.billing}
-          Icon={DollarSignIcon}
-          emphasis={kpis.billing > 0 ? 'warning' : 'success'}
-          sub={kpis.billing > 0 ? 'Hold, missing docs, or CO' : 'Clean billing pipe'}
-        />
-        <MetricTile
-          label="Pending Change Orders"
-          value={kpis.pendingCO}
-          Icon={FilePenLineIcon}
-          emphasis={kpis.pendingCO > 0 ? 'warning' : 'mute'}
-          sub={kpis.pendingCO > 0 ? 'Awaiting approval' : 'No COs in flight'}
-        />
-        <MetricTile
-          label="Materials Blockers"
-          value={kpis.materials}
-          Icon={PackageIcon}
-          emphasis={kpis.materials > 0 ? 'critical' : 'success'}
-          sub={kpis.materials > 0 ? 'Overdue or blocking soon' : 'No materials blocking work'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Jobs Needing Action',
+            value: kpis.needsAction,
+            sub: kpis.needsAction > 0 ? 'Risk + needs action' : 'No PM issues this morning',
+            tone: kpis.needsAction > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Failed Inspections',
+            value: kpis.failedInsp,
+            sub: kpis.failedInsp > 0 ? 'Coordinate rework' : 'No failures',
+            tone: kpis.failedInsp > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Billing Blockers',
+            value: kpis.billing,
+            sub: kpis.billing > 0 ? 'Hold, missing docs, or CO' : 'Clean billing pipe',
+            tone: kpis.billing > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Pending Change Orders',
+            value: kpis.pendingCO,
+            sub: kpis.pendingCO > 0 ? 'Awaiting approval' : 'No COs in flight',
+            tone: kpis.pendingCO > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Materials Blockers',
+            value: kpis.materials,
+            sub: kpis.materials > 0 ? 'Overdue or blocking soon' : 'No materials blocking work',
+            tone: kpis.materials > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Today's priority list — combined feed across all categories */}
       <DataPanel
@@ -856,7 +808,7 @@ function MorningBriefing() {
 
       {/* Yesterday's crew reports — preserved daily ritual signal */}
       <DataPanel
-        title={`Yesterday's crew reports — ${YESTERDAY_STR}`}
+        title={`Yesterday's crew reports for ${yesterday}`}
         description={`${submittedCount} of ${CREW_LIST.length} submitted`}
         Icon={ClipboardListIcon}
         badge={
@@ -871,19 +823,19 @@ function MorningBriefing() {
         >
           {CREW_LIST.map(name => {
             const submitted = submittedYesterday.has(name)
-            const tone = submitted ? '#22c55e' : '#ef4444'
+            const tone = submitted ? SEMANTIC.success : SEMANTIC.critical
             return (
               <div
                 key={name}
                 className="flex flex-col items-center gap-2 px-3 py-3 rounded-xl border min-w-0"
                 style={{
-                  borderColor: tone + '44',
-                  backgroundColor: tone + '0a',
+                  borderColor: withAlpha(tone, 0.27),
+                  backgroundColor: withAlpha(tone, 0.04),
                 }}
               >
                 <div
                   className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: tone + '22' }}
+                  style={{ backgroundColor: withAlpha(tone, 0.13) }}
                 >
                   {submitted
                     ? <CheckIcon size={18} color={tone} />
@@ -903,8 +855,10 @@ function MorningBriefing() {
 }
 
 function BriefingItem({ item }) {
-  const sev = severityTone(item.severity)
-  const railColor = severityColor(item.severity)
+  // A severity the app does not know is shown as info.
+  const severity = Object.hasOwn(SEVERITY, item.severity) ? item.severity : 'info'
+  const sev = statusTone(SEVERITY, severity)
+  const railColor = statusColor(SEVERITY, severity)
   const meta = BRIEF_CATEGORY_META[item.category] || BRIEF_CATEGORY_META['job-risk']
   const CatIcon = meta.Icon
   return (
@@ -933,7 +887,7 @@ function BriefingItem({ item }) {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-zinc-400">
             {item.owner && <span>{item.owner}</span>}
             {item.age !== null && item.age !== undefined && (
-              <span className="font-semibold" style={{ color: item.age >= 7 ? '#ef4444' : item.age >= 3 ? '#eab308' : '#9ca3af' }}>
+              <span className="font-semibold" style={{ color: item.age >= 7 ? SEMANTIC.critical : item.age >= 3 ? SEMANTIC.warning : SEMANTIC.neutral }}>
                 {item.age === 0 ? 'today' : item.age === 1 ? '1d' : `${item.age}d`}
               </span>
             )}
@@ -1005,7 +959,7 @@ function BriefingGroup({ category, items }) {
 
 export function JobStatus() {
   const { jobs = [], subs = [], tenantId: workspace } = useData()
-  const toast = useToast()
+  const { run, busy: creating } = useMutation()
   const [search, setSearch]         = useState('')
   const [filter, setFilter]         = useState('all')
   const [pmFilter, setPmFilter]     = useState('all')
@@ -1013,7 +967,6 @@ export function JobStatus() {
   const [expanded, setExpanded]     = useState(null)
   const [showNewJob, setShowNewJob] = useState(false)
   const [jobForm, setJobForm]       = useState(() => jobFormFor(workspace))
-  const [creating, setCreating]     = useState(false)
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -1108,44 +1061,38 @@ export function JobStatus() {
 
   const handleCreateJob = async () => {
     if (!jobForm.id || !jobForm.address || !jobForm.client || !jobForm.tenantId) return
-    setCreating(true)
-    try {
-      await createJob({
-        id:           jobForm.id,
-        address:      jobForm.address,
-        city:         jobForm.city,
-        client:       jobForm.client,
-        type:         jobForm.type,
-        pm:           jobForm.pm,
-        status:       'active',
-        progress:     0,
-        extras:       0,
-        tenantId:     jobForm.tenantId,
-        lead:         '',
-        start:        new Date().toISOString().slice(0, 10),
-        target:       jobForm.target || '',
-        county:       '',
-        billingStatus:'not-invoiced',
-        permitNumber: jobForm.permitNumber || '',
-        subs:    { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
-        permits: { electrical: 'pending', plumbing: 'pending', hvac: 'pending' },
-        insp: {
-          electrical: { roughIn: 'pending', trim: 'blocked', final: 'blocked' },
-          plumbing:   { roughIn: 'pending', final: 'blocked' },
-          hvac:       { roughIn: 'pending', final: 'blocked' },
-        },
-      })
+    const { ok } = await run(() => createJob({
+      id:           jobForm.id,
+      address:      jobForm.address,
+      city:         jobForm.city,
+      client:       jobForm.client,
+      type:         jobForm.type,
+      pm:           jobForm.pm,
+      status:       'active',
+      progress:     0,
+      extras:       0,
+      tenantId:     jobForm.tenantId,
+      lead:         '',
+      start:        toLocalDateStr(),
+      target:       jobForm.target || '',
+      county:       '',
+      billingStatus:'not-invoiced',
+      permitNumber: jobForm.permitNumber || '',
+      subs:    { electrical: jobForm.subElectrical || null, plumbing: jobForm.subPlumbing || null, hvac: jobForm.subHvac || null },
+      permits: { electrical: 'pending', plumbing: 'pending', hvac: 'pending' },
+      insp: {
+        electrical: { roughIn: 'pending', trim: 'blocked', final: 'blocked' },
+        plumbing:   { roughIn: 'pending', final: 'blocked' },
+        hvac:       { roughIn: 'pending', final: 'blocked' },
+      },
+    }), {
+      success: `Job ${jobForm.id} created.`,
+      error: 'Could not create the job. Try again.',
+    })
+    // A refused job leaves the form open with what was typed, so it can be corrected and sent again.
+    if (ok) {
       setJobForm(jobFormFor(workspace))
       setShowNewJob(false)
-    } catch (err) {
-      // The form stays open with what was typed, so it can be corrected and sent again.
-      toast({
-        tone: 'error',
-        title: 'Could not create the job',
-        description: callableMessage(err, 'Check your connection and try again.'),
-      })
-    } finally {
-      setCreating(false)
     }
   }
 
@@ -1175,13 +1122,6 @@ export function JobStatus() {
         subtitle="Active and completed jobs across the portfolio — risk, phase, ownership, next action."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{kpis.active} active · {kpis.completed} complete</span>
             {kpis.atRisk > 0 && (
               <span className="text-amber-300">{kpis.atRisk} at risk</span>
@@ -1201,8 +1141,8 @@ export function JobStatus() {
             <button
               type="button"
               onClick={() => { setShowNewJob(v => !v); if (!showNewJob) setJobForm(jobFormFor(workspace)) }}
-              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
-              style={{ backgroundColor: O }}
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground transition-colors"
+              style={{ backgroundColor: BRAND }}
             >
               <PlusIcon size={13} /> New job
             </button>
@@ -1210,47 +1150,41 @@ export function JobStatus() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Portfolio status"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Active Jobs"
-          value={kpis.active}
-          Icon={ActivityIcon}
-          sub={`${kpis.total} on roster`}
-        />
-        <MetricTile
-          label="Completed"
-          value={kpis.completed}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.completed > 0 ? 'success' : 'mute'}
-          sub={kpis.completed > 0 ? 'Lifetime closeouts' : 'No closeouts yet'}
-        />
-        <MetricTile
-          label="At-Risk Jobs"
-          value={kpis.atRisk}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.atRisk > 0 ? 'critical' : 'success'}
-          sub={kpis.atRisk > 0 ? 'Warning + critical' : 'All active jobs are on track'}
-        />
-        <MetricTile
-          label="Needs Action"
-          value={kpis.needsAction}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
-          sub={kpis.needsAction > 0 ? 'Failed inspection or open' : 'Nothing pending'}
-        />
-        <MetricTile
-          label="Blocked / Stale"
-          value={kpis.blockedStale}
-          Icon={BanIcon}
-          emphasis={kpis.blockedStale > 0 ? 'critical' : 'success'}
-          sub={kpis.blockedStale > 0 ? 'Blocked, on hold, or 7+ days stale' : 'No blockers'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Active Jobs',
+            value: kpis.active,
+            sub: `${kpis.total} on roster`,
+          },
+          {
+            label: 'Completed',
+            value: kpis.completed,
+            sub: kpis.completed > 0 ? 'Lifetime closeouts' : 'No closeouts yet',
+            tone: kpis.completed > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'At-Risk Jobs',
+            value: kpis.atRisk,
+            sub: kpis.atRisk > 0 ? 'Warning + critical' : 'All active jobs are on track',
+            tone: kpis.atRisk > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Needs Action',
+            value: kpis.needsAction,
+            sub: kpis.needsAction > 0 ? 'Failed inspection or open' : 'Nothing pending',
+            tone: kpis.needsAction > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Blocked / Stale',
+            value: kpis.blockedStale,
+            sub: kpis.blockedStale > 0 ? 'Blocked, on hold, or 7+ days stale' : 'No blockers',
+            tone: kpis.blockedStale > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* New-job form */}
       {showNewJob && (
@@ -1260,30 +1194,32 @@ export function JobStatus() {
           Icon={PlusIcon}
         >
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <JobFormField label="Job ID *">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Street address *">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="123 Main St" value={jobForm.address} onChange={e => setJobForm(f => ({ ...f, address: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="City, state ZIP">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Brentwood, TN 37027" value={jobForm.city} onChange={e => setJobForm(f => ({ ...f, city: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Client *">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Tenant">
+            <Field label="Job ID" required>
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="QBS-045" value={jobForm.id} onChange={e => setJobForm(f => ({ ...f, id: e.target.value }))} />
+            </Field>
+            <Field label="Street address" required>
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="123 Main St" value={jobForm.address} onChange={e => setJobForm(f => ({ ...f, address: e.target.value }))} />
+            </Field>
+            <Field label="City, state ZIP">
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="Brentwood, TN 37027" value={jobForm.city} onChange={e => setJobForm(f => ({ ...f, city: e.target.value }))} />
+            </Field>
+            <Field label="Client" required>
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="Client name" value={jobForm.client} onChange={e => setJobForm(f => ({ ...f, client: e.target.value }))} />
+            </Field>
+            {/* A Select takes the id Field gives it to its trigger, so the label names the
+                trigger, as it names an input. */}
+            <Field label="Tenant" required>
               <Select required items={JOB_TENANTS} value={jobForm.tenantId} onValueChange={v => setJobForm(f => ({ ...f, tenantId: v }))}>
-                <SelectTrigger aria-label="Tenant" className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {JOB_TENANTS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </JobFormField>
-            <JobFormField label="Project type">
+            </Field>
+            <Field label="Project type">
               <Input className="bg-white/[0.04] border-white/10 text-white" value={jobForm.type} onChange={e => setJobForm(f => ({ ...f, type: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="PM">
+            </Field>
+            <Field label="PM">
               <Select value={jobForm.pm} onValueChange={v => setJobForm(f => ({ ...f, pm: v }))}>
                 <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1292,14 +1228,14 @@ export function JobStatus() {
                   ))}
                 </SelectContent>
               </Select>
-            </JobFormField>
-            <JobFormField label="Target date">
+            </Field>
+            <Field label="Target date">
               <Input className="bg-white/[0.04] border-white/10 text-white" type="date" value={jobForm.target} onChange={e => setJobForm(f => ({ ...f, target: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Permit number">
-              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
-            </JobFormField>
-            <JobFormField label="Electrical sub">
+            </Field>
+            <Field label="Permit number">
+              <Input className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400" placeholder="2026012345" value={jobForm.permitNumber} onChange={e => setJobForm(f => ({ ...f, permitNumber: e.target.value }))} />
+            </Field>
+            <Field label="Electrical sub">
               <Select value={jobForm.subElectrical} onValueChange={v => setJobForm(f => ({ ...f, subElectrical: v }))}>
                 <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
@@ -1307,8 +1243,8 @@ export function JobStatus() {
                   {elecSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </JobFormField>
-            <JobFormField label="Plumbing sub">
+            </Field>
+            <Field label="Plumbing sub">
               <Select value={jobForm.subPlumbing} onValueChange={v => setJobForm(f => ({ ...f, subPlumbing: v }))}>
                 <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
@@ -1316,8 +1252,8 @@ export function JobStatus() {
                   {plumbSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </JobFormField>
-            <JobFormField label="HVAC sub">
+            </Field>
+            <Field label="HVAC sub">
               <Select value={jobForm.subHvac} onValueChange={v => setJobForm(f => ({ ...f, subHvac: v }))}>
                 <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
@@ -1325,7 +1261,7 @@ export function JobStatus() {
                   {hvacSubs.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </JobFormField>
+            </Field>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 mt-4">
@@ -1333,8 +1269,8 @@ export function JobStatus() {
               type="button"
               onClick={handleCreateJob}
               disabled={creating || !jobForm.id || !jobForm.address || !jobForm.client || !jobForm.tenantId}
-              className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              style={{ backgroundColor: O }}
+              className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-brand-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ backgroundColor: BRAND }}
             >
               {creating ? 'Creating…' : 'Create job'}
             </button>
@@ -1360,7 +1296,7 @@ export function JobStatus() {
             <select
               value={pmFilter}
               onChange={e => setPmFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[180px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[180px]"
               aria-label="Filter by PM"
             >
               <option value="all">All PMs</option>
@@ -1369,7 +1305,7 @@ export function JobStatus() {
             <select
               value={zoneFilter}
               onChange={e => setZoneFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[180px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[180px]"
               aria-label="Filter by zone"
             >
               <option value="all">All zones</option>
@@ -1437,56 +1373,60 @@ function JobStatusEmptyState({ filter, hasOtherFilters }) {
   return <EmptyState Icon={HardHatIcon} title="No jobs yet" description="Create the first job to populate the portfolio." />
 }
 
-function JobStatusRow({
+// What a click on a clickable row leaves alone, because it is a control of its own: a button,
+// a link, a box, or a list and its options, which open in a portal.
+const ROW_CONTROLS = 'button, a, input, select, textarea, [role="combobox"], [role="listbox"], [role="option"]'
+
+export function JobStatusRow({
   job, complete, risk, stale, failed, billRdy, zone,
   expanded, onToggle,
 }) {
   const riskMeta    = jobRiskMeta(job)
   const next        = jobNextAction(job)
-  const railColor   = failed ? '#ef4444'
-                    : (risk?.level === 'critical' ? '#ef4444'
-                    : risk?.level === 'warning'  ? '#eab308'
-                    : complete                   ? '#22c55e'
-                    : '#3b82f6')
-  const nextColor   = failed ? '#ef4444'
-                    : (risk?.level === 'critical' ? '#ef4444'
-                    : risk?.level === 'warning'  ? '#eab308'
-                    : billRdy                    ? '#22c55e'
-                    : O)
+  const railColor   = failed ? SEMANTIC.critical
+                    : (risk?.level === 'critical' ? SEMANTIC.critical
+                    : risk?.level === 'warning'  ? SEMANTIC.warning
+                    : complete                   ? SEMANTIC.success
+                    : SEMANTIC.info)
+  const nextColor   = failed ? SEMANTIC.critical
+                    : (risk?.level === 'critical' ? SEMANTIC.critical
+                    : risk?.level === 'warning'  ? SEMANTIC.warning
+                    : billRdy                    ? SEMANTIC.success
+                    : BRAND)
   const progress    = Math.max(0, Math.min(100, Number(job.progress) || 0))
   const progressMuted = complete || (risk?.level === 'critical')
-  const handleKey = (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button') && !e.target.closest('select') && !e.target.closest('[role="combobox"]')) {
-      e.preventDefault()
-      onToggle()
-    }
-  }
+  const detailId = useId()
 
+  // The row header, the id and the name, is the button that opens the row: it says whether
+  // the row is open and names the detail it opens. The status and phase lists sit beside it
+  // and not in it, because a control cannot be inside a button. A click anywhere else on the
+  // row opens it too, for a pointer.
   return (
     <div>
       <div
-        role="button"
-        tabIndex={0}
-        onClick={(e) => {
-          if (e.target.closest('button') || e.target.closest('[role="combobox"]') || e.target.closest('select')) return
-          onToggle()
-        }}
-        onKeyDown={handleKey}
-        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:outline-none focus:bg-white/[0.04]"
+        onClick={(e) => { if (!e.target.closest(ROW_CONTROLS)) onToggle() }}
+        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025]"
         style={{ borderLeft: `3px solid ${railColor}` }}
-        aria-expanded={expanded}
       >
         <div className="flex items-start gap-3 sm:gap-4">
           {/* Body */}
           <div className="flex-1 min-w-0">
-            {/* Header row — id pill, name, status select, phase select */}
+            {/* Header row: the button with the id and the name, then the status and phase lists */}
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
-                {job.id}
-              </span>
-              <span className="text-base font-bold text-white truncate min-w-0">
-                {jobName(job)}
-              </span>
+              <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={expanded}
+                aria-controls={detailId}
+                className="inline-flex items-center gap-2 min-w-0 rounded-md text-left"
+              >
+                <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
+                  {job.id}
+                </span>
+                <span className="text-base font-bold text-white truncate min-w-0">
+                  {jobName(job)}
+                </span>
+              </button>
               <InlineStatusSelect job={job} />
               <InlinePhaseSelect job={job} />
             </div>
@@ -1515,7 +1455,7 @@ function JobStatusRow({
               {stale !== null && stale >= 3 && !complete && (
                 <span
                   className="font-semibold"
-                  style={{ color: stale >= 7 ? '#ef4444' : '#eab308' }}
+                  style={{ color: stale >= 7 ? SEMANTIC.critical : SEMANTIC.warning }}
                 >
                   {stale === 1 ? '1d since update' : `${stale}d since update`}
                 </span>
@@ -1543,12 +1483,12 @@ function JobStatusRow({
                 <span className="truncate">{job.type || 'Project'}</span>
                 <span
                   className="font-semibold tabular-nums"
-                  style={{ color: progressMuted ? '#9ca3af' : O }}
+                  style={{ color: progressMuted ? SEMANTIC.neutral : BRAND }}
                 >
                   {progress}%
                 </span>
               </div>
-              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : O} />
+              <ProgressBar value={progress} tone={progressMuted ? 'neutral' : 'brand'} />
             </div>
           </div>
 
@@ -1556,28 +1496,31 @@ function JobStatusRow({
           <div className="hidden sm:flex flex-col items-end shrink-0 w-40">
             <p
               className="text-2xl font-semibold tabular-nums leading-none"
-              style={{ color: progressMuted ? '#9ca3af' : O }}
+              style={{ color: progressMuted ? SEMANTIC.neutral : BRAND }}
             >
               {progress}%
             </p>
             <div className="w-full mt-1.5">
-              <ProgressBar value={progress} color={progressMuted ? '#9ca3af' : O} />
+              <ProgressBar value={progress} tone={progressMuted ? 'neutral' : 'brand'} />
             </div>
             <p className="text-[10px] text-zinc-400 mt-1.5 truncate max-w-full" title={job.type}>
               {job.type || 'Project'}
             </p>
           </div>
 
-          {/* Expand chevron */}
+          {/* Expand chevron, a picture of what the header button says */}
           <ChevronRightIcon
             size={16}
+            aria-hidden="true"
             className="hidden md:block shrink-0 text-zinc-400 mt-1 transition-transform"
             style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}
           />
         </div>
       </div>
 
-      {expanded && <JobStatusDetail job={job} />}
+      <div id={detailId}>
+        {expanded && <JobStatusDetail job={job} />}
+      </div>
     </div>
   )
 }
@@ -1598,7 +1541,7 @@ function JobStatusDetail({ job }) {
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-zinc-500">No subs assigned</p>
+          <p className="text-[11px] text-zinc-400">No subs assigned</p>
         )}
       </div>
 
@@ -1609,12 +1552,12 @@ function JobStatusDetail({ job }) {
             {['electrical','plumbing','hvac'].map(t => job.permits?.[t] && (
               <li key={t} className="flex items-center justify-between text-[12px]">
                 <span className="capitalize text-zinc-400">{t}</span>
-                <InspBadge status={job.permits[t]} />
+                <PermitBadge status={job.permits[t]} size="xs" />
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-zinc-500">No permits on file</p>
+          <p className="text-[11px] text-zinc-400">No permits on file</p>
         )}
       </div>
 
@@ -1644,26 +1587,12 @@ function JobStatusDetail({ job }) {
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: job.id } }))}
-          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white"
-          style={{ backgroundColor: O }}
+          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground"
+          style={{ backgroundColor: BRAND }}
         >
           Open full view →
         </button>
       </div>
-    </div>
-  )
-}
-
-// Form-field wrapper used by the new-job panel — renders an uppercase label
-// above the input control. Sibling to the Materials FormFieldLabel; kept
-// separate so each phase's form helper stays self-contained.
-function JobFormField({ label, children }) {
-  return (
-    <div>
-      <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 block mb-1.5">
-        {label}
-      </span>
-      {children}
     </div>
   )
 }
@@ -1676,34 +1605,48 @@ function Extras() {
 
 // ── Tab: Inspections ──────────────────────────────────────────────────────────
 
-// INSP_STATUSES, TRADE_META, PHASE_LABEL, inspection* helpers moved to
-// src/lib/inspections.js (Phase 18).
+// INSP_STATUSES, TRADE_META and PHASE_LABEL moved to src/lib/inspections.js
+// (Phase 18). The words and colors of an inspection status are in
+// src/lib/status.js.
 
-export function PhaseRow({ label, status, note, docId, field }) {
-  const toast = useToast()
-  const [busy, setBusy] = useState(false)
+export function PhaseRow({ label, status, note, docId, field, jobId }) {
+  // Two mutations, because the buttons and the list are switched off only while a result
+  // is being recorded. A plain edit of the status is a Firestore write that is applied on
+  // the screen at once, and it must not hold them off while it waits for the server.
+  const result = useMutation()
+  const edit = useMutation()
+  const { ask, dialog } = useConfirm()
+  const busy = result.busy
   const canEdit = !!docId
   const [, trade, phase] = field ? field.split('.') : []
-  const meta = iMeta(status)
+  // Every job's card has a row for each phase of each trade, so the controls of a row name
+  // the job, the trade and the phase: QBS-003 Electrical Rough in.
+  const subject = [jobId, TRADE_META[trade]?.label, label].filter(Boolean).join(' ')
+  // A phase with no recorded result is pending.
+  const current = status || 'pending'
+  const color = statusColor(INSPECTION_STATUS, current)
 
   // Passing or failing a phase goes through a Cloud Function: it checks that the
   // caller is staff, dates the result, and writes the notification and the
   // history entry. One call at a time, since each call raises an alert.
-  const record = async (action) => {
-    if (busy) return
-    setBusy(true)
-    try {
-      await action(docId, trade, phase)
-    } catch (err) {
-      toast({
-        tone: 'error',
-        title: 'Could not record the inspection result',
-        description: callableMessage(err, 'Check your connection and try again.'),
-      })
-    } finally {
-      setBusy(false)
-    }
+  const record = (action, success) => {
+    if (busy) return undefined
+    return result.run(() => action(docId, trade, phase), {
+      success,
+      error: 'Could not record the inspection result. Try again.',
+    })
   }
+  const markPassed = () => record(passInspection, `${label} marked passed.`)
+  // A failed result raises an alert for the whole team, so it is asked about first, whether
+  // it comes from the red button or from the list. The dialog stays open while the call is
+  // out, and a refusal leaves it open under the error toast.
+  const markFailed = () => ask({
+    title: `Mark ${subject} failed?`,
+    body: 'The failed result is recorded on the job and the team is alerted.',
+    confirmLabel: 'Mark failed',
+    tone: 'critical',
+    onConfirm: () => record(failInspection, `${label} marked failed.`),
+  })
   return (
     <div className="flex items-center justify-between py-2 border-b border-white/5 gap-2">
       <span className="text-sm text-zinc-300 shrink-0">{label}</span>
@@ -1716,65 +1659,74 @@ export function PhaseRow({ label, status, note, docId, field }) {
         {canEdit ? (
           <>
             <select
-              value={status || 'pending'}
+              value={current}
               onChange={e => {
                 // Passed and failed are recorded by the Cloud Functions, like the two
                 // buttons beside this list. Any other status is a plain edit of the job.
                 const next = e.target.value
-                if (next === 'passed') record(passInspection)
-                else if (next === 'failed') record(failInspection)
-                else updateJob(docId, { [field]: next })
+                if (next === 'passed') markPassed()
+                else if (next === 'failed') markFailed()
+                else {
+                  edit.run(() => updateJob(docId, { [field]: next }), {
+                    success: `${label} set to ${statusLabel(INSPECTION_STATUS, next).toLowerCase()}.`,
+                    error: 'Could not change the inspection status. Try again.',
+                    queue: true,
+                  })
+                }
               }}
               disabled={busy}
               className="text-[11px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none disabled:opacity-50"
               style={{
-                color: meta.color,
-                backgroundColor: meta.color + '22',
-                border: `1px solid ${meta.color}44`,
+                color: toneText(statusTone(INSPECTION_STATUS, current)),
+                backgroundColor: withAlpha(color, 0.13),
+                border: `1px solid ${withAlpha(color, 0.27)}`,
               }}
-              aria-label={`Update ${label} status`}
+              aria-label={`Update ${subject} status`}
             >
               {INSP_STATUSES.map(s => (
                 <option key={s} value={s} style={{ backgroundColor: '#111', color: '#fff' }}>
-                  {inspectionStatusLabel(s)}
+                  {statusLabel(INSPECTION_STATUS, s)}
                 </option>
               ))}
             </select>
             <button
               type="button"
-              onClick={() => record(passInspection)}
+              onClick={markPassed}
               disabled={busy}
               title="Mark passed"
-              aria-label={`Mark ${label} passed`}
+              aria-label={`Mark ${subject} passed`}
               className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
-              style={{ backgroundColor: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}
+              style={{ backgroundColor: withAlpha(SEMANTIC.success, 0.13), color: SEMANTIC.success, border: `1px solid ${withAlpha(SEMANTIC.success, 0.27)}` }}
             >
               <CheckIcon size={13} strokeWidth={2.5} />
             </button>
             <button
               type="button"
-              onClick={() => record(failInspection)}
+              onClick={markFailed}
               disabled={busy}
               title="Mark failed"
-              aria-label={`Mark ${label} failed`}
+              aria-label={`Mark ${subject} failed`}
               className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
-              style={{ backgroundColor: '#ef444422', color: '#ef4444', border: '1px solid #ef444444' }}
+              style={{ backgroundColor: withAlpha(SEMANTIC.critical, 0.13), color: SEMANTIC.critical, border: `1px solid ${withAlpha(SEMANTIC.critical, 0.27)}` }}
             >
               <XIcon size={13} strokeWidth={2.5} />
             </button>
           </>
         ) : (
-          <Pill tone={inspectionStatusTone(status)} size="xs">
-            {inspectionStatusLabel(status)}
+          <Pill tone={statusTone(INSPECTION_STATUS, current)} size="xs">
+            {statusLabel(INSPECTION_STATUS, current)}
           </Pill>
         )}
       </div>
+      {dialog}
     </div>
   )
 }
 
 function Inspections() {
   const { jobs = [], dailyReports = [] } = useData()
+  const now = useNow()
+  const yesterday = yesterdayOf(now)
   const [filter, setFilter] = useState('all')
   const [tradeFilter, setTradeFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -1802,7 +1754,7 @@ function Inspections() {
     const allPassed = phases.length > 0 && phases.every(p => p.status === 'passed')
 
     // Readiness gate — mirrors the original 4-check logic.
-    const crewReport = (dailyReports || []).some(r => r.date === YESTERDAY_STR && r.jobId === j.id)
+    const crewReport = (dailyReports || []).some(r => r.date === yesterday && r.jobId === j.id)
     const photosOk   = (j.photoCount || 0) >= 3
     const phaseOk    = ['passed', 'finaled'].some(s =>
       [j.insp?.electrical?.roughIn, j.insp?.plumbing?.roughIn, j.insp?.hvac?.roughIn].includes(s),
@@ -1820,7 +1772,7 @@ function Inspections() {
       ready,
       gate: { crewReport, photosOk, phaseOk, camOk },
     }
-  }), [activeJobs, dailyReports])
+  }), [activeJobs, dailyReports, yesterday])
 
   // KPI counts — aggregated across active jobs.
   const kpis = useMemo(() => {
@@ -1908,13 +1860,6 @@ function Inspections() {
         subtitle="Across active jobs. Surface ready-to-call, scheduled, and rework needed."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{activeJobs.length} active jobs</span>
             {kpis.failed > 0 && (
               <span className="text-red-300">
@@ -1936,48 +1881,42 @@ function Inspections() {
         </p>
       </DataPanel>
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Inspection pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Ready for Inspection"
-          value={kpis.ready}
-          Icon={BadgeCheckIcon}
-          emphasis={kpis.ready > 0 ? 'success' : 'mute'}
-          sub={kpis.ready > 0 ? 'Gate passed — call in' : 'No jobs cleared yet'}
-        />
-        <MetricTile
-          label="Scheduled"
-          value={kpis.scheduled}
-          Icon={ClockIcon}
-          emphasis={kpis.scheduled > 0 ? 'warning' : 'mute'}
-          sub={kpis.scheduled > 0 ? 'Inspector booked' : 'Nothing on the books'}
-        />
-        <MetricTile
-          label="Passed"
-          value={kpis.passed}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.passed > 0 ? 'success' : 'mute'}
-          sub={kpis.passed > 0 ? 'Phases cleared' : 'No passes yet'}
-        />
-        <MetricTile
-          label="Failed"
-          value={kpis.failed}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.failed > 0 ? 'critical' : 'success'}
-          sub={kpis.failed > 0 ? 'Rework required' : 'No failures'}
-        />
-        <MetricTile
-          label="Rework Needed"
-          value={kpis.rework}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.rework > 0 ? 'critical' : 'success'}
-          sub={kpis.rework > 0 ? 'Failed or blocked jobs' : 'No rework on the board'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Ready for Inspection',
+            value: kpis.ready,
+            sub: kpis.ready > 0 ? 'Gate passed, call in' : 'No jobs cleared yet',
+            tone: kpis.ready > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Scheduled',
+            value: kpis.scheduled,
+            sub: kpis.scheduled > 0 ? 'Inspector booked' : 'Nothing on the books',
+            tone: kpis.scheduled > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Passed',
+            value: kpis.passed,
+            sub: kpis.passed > 0 ? 'Phases cleared' : 'No passes yet',
+            tone: kpis.passed > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Failed',
+            value: kpis.failed,
+            sub: kpis.failed > 0 ? 'Rework required' : 'No failures',
+            tone: kpis.failed > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Rework Needed',
+            value: kpis.rework,
+            sub: kpis.rework > 0 ? 'Failed or blocked jobs' : 'No rework on the board',
+            tone: kpis.rework > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar
@@ -1990,7 +1929,7 @@ function Inspections() {
             <select
               value={tradeFilter}
               onChange={e => setTradeFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
               aria-label="Filter by trade"
             >
               <option value="all">All trades</option>
@@ -2060,8 +1999,6 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
     { label: 'CompanyCam updated',            ok: gate.camOk      },
   ]
   const allOk = checks.every(c => c.ok)
-  const statusTone = inspJobStatusTone(j.status)
-  const statusLabel = (j.status || 'active').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.025] overflow-hidden">
@@ -2074,7 +2011,7 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
                 {j.id}
               </span>
               <span className="text-base font-bold text-white truncate">{jobName(j)}</span>
-              <Pill tone={statusTone} size="xs">{statusLabel}</Pill>
+              <StatusBadge status={j.status || 'active'} size="xs" />
             </div>
             <p className="text-[11px] text-zinc-400 mt-1 truncate">
               {j.address || '—'}{j.pm ? ` · PM ${j.pm}` : ''}{j.lead ? ` · Lead ${j.lead}` : ''}
@@ -2111,21 +2048,22 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
                     note={trade === 'electrical' && phase === 'trim' ? j.insp?.[trade]?.note : undefined}
                     docId={j._docId}
                     field={`insp.${trade}.${phase}`}
+                    jobId={j.id}
                   />
                 ))}
                 {trade === 'hvac' && j.insp?.hvac?.roughIn === 'failed' && (
                   <div
                     className="mt-2 flex items-center gap-2 px-2 py-1.5 rounded-md"
-                    style={{ backgroundColor: '#3b82f60d', border: '1px solid #3b82f655' }}
+                    style={{ backgroundColor: withAlpha(SEMANTIC.info, 0.05), border: `1px solid ${withAlpha(SEMANTIC.info, 0.33)}` }}
                   >
-                    <AlertCircleIcon size={12} color="#3b82f6" className="shrink-0" />
+                    <AlertCircleIcon size={12} color={SEMANTIC.info} className="shrink-0" />
                     <span className="text-[11px] text-blue-300 leading-snug">
                       Final blocked — rough-in must pass first
                     </span>
                   </div>
                 )}
                 <div className="mt-2.5">
-                  <ProgressBar value={progressPct} color={meta.color} />
+                  <ProgressBar value={progressPct} tone={statusTone(TRADE, trade)} />
                 </div>
               </div>
             )
@@ -2152,19 +2090,19 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
                 key={c.label}
                 className="flex items-center gap-2 px-2 py-2 rounded-lg"
                 style={{
-                  backgroundColor: c.ok ? '#22c55e0d' : '#ef44440d',
-                  border: `1px solid ${c.ok ? '#22c55e22' : '#ef444422'}`,
+                  backgroundColor: c.ok ? withAlpha(SEMANTIC.success, 0.05) : withAlpha(SEMANTIC.critical, 0.05),
+                  border: `1px solid ${c.ok ? withAlpha(SEMANTIC.success, 0.13) : withAlpha(SEMANTIC.critical, 0.13)}`,
                 }}
               >
                 <div
                   className="w-4 h-4 rounded flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: c.ok ? '#22c55e22' : '#ef444422' }}
+                  style={{ backgroundColor: c.ok ? withAlpha(SEMANTIC.success, 0.13) : withAlpha(SEMANTIC.critical, 0.13) }}
                 >
                   {c.ok
-                    ? <CheckIcon size={10} color="#22c55e" />
-                    : <XIcon size={10} color="#ef4444" />}
+                    ? <CheckIcon size={10} color={SEMANTIC.success} />
+                    : <XIcon size={10} color={SEMANTIC.critical} />}
                 </div>
-                <p className="text-[11px] leading-tight" style={{ color: c.ok ? '#22c55e' : '#ef4444' }}>
+                <p className="text-[11px] leading-tight" style={{ color: c.ok ? SEMANTIC.success : SEMANTIC.critical }}>
                   {c.label}
                 </p>
               </div>
@@ -2182,6 +2120,7 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
 
 function SubsTab() {
   const { subs: SUBS = [], jobs = [] } = useData()
+  const now = useNow()
   const [filter, setFilter]           = useState('all')
   const [tradeFilter, setTradeFilter] = useState('all')
   const [search, setSearch]           = useState('')
@@ -2208,11 +2147,11 @@ function SubsTab() {
       licState:       subLicenseState(s),
       insDays:        daysUntilDate(s.insExp),
       licDays:        daysUntilDate(s.licExp),
-      lastUpdateDays: daysSince(s.lastUpdate),
+      lastUpdateDays: daysSince(s.lastUpdate, now),
       subJobs,
       activeJobCount: activeJobs.length,
     }
-  }), [SUBS, jobs])
+  }), [SUBS, jobs, now])
 
   // KPI counts — derived from full set, not the filtered list.
   const kpis = useMemo(() => {
@@ -2274,13 +2213,6 @@ function SubsTab() {
         subtitle="Active subcontractors, compliance status, and live job assignments — protect against insurance lapse."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{kpis.active} subs · {kpis.approved} approved</span>
             {kpis.expired > 0 && (
               <span className="text-red-300">{kpis.expired} expired</span>
@@ -2292,47 +2224,41 @@ function SubsTab() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Subcontractor compliance"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Active Subs"
-          value={kpis.active}
-          Icon={UsersRoundIcon}
-          sub={kpis.tiedToJobs > 0 ? `${kpis.tiedToJobs} tied to active jobs` : 'On the roster'}
-        />
-        <MetricTile
-          label="Approved"
-          value={kpis.approved}
-          Icon={ShieldCheckIcon}
-          emphasis={kpis.approved > 0 ? 'success' : 'mute'}
-          sub={kpis.approved > 0 ? 'Cleared to work' : 'No subs cleared yet'}
-        />
-        <MetricTile
-          label="Missing Documents"
-          value={kpis.missing}
-          Icon={FileTextIcon}
-          emphasis={kpis.missing > 0 ? 'warning' : 'success'}
-          sub={kpis.missing > 0 ? 'W-9 not on file' : 'All W-9s on file'}
-        />
-        <MetricTile
-          label="Expired Insurance"
-          value={kpis.expired}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.expired > 0 ? 'critical' : 'success'}
-          sub={kpis.expired > 0 ? 'Do not assign' : 'No expired coverage'}
-        />
-        <MetricTile
-          label="Expiring Soon"
-          value={kpis.expSoon}
-          Icon={ClockIcon}
-          emphasis={kpis.expSoon > 0 ? 'warning' : 'success'}
-          sub={kpis.expSoon > 0 ? 'Within 60 days' : 'No upcoming expirations'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Active Subs',
+            value: kpis.active,
+            sub: kpis.tiedToJobs > 0 ? `${kpis.tiedToJobs} tied to active jobs` : 'On the roster',
+          },
+          {
+            label: 'Approved',
+            value: kpis.approved,
+            sub: kpis.approved > 0 ? 'Cleared to work' : 'No subs cleared yet',
+            tone: kpis.approved > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Missing Documents',
+            value: kpis.missing,
+            sub: kpis.missing > 0 ? 'W-9 not on file' : 'All W-9s on file',
+            tone: kpis.missing > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Expired Insurance',
+            value: kpis.expired,
+            sub: kpis.expired > 0 ? 'Do not assign' : 'No expired coverage',
+            tone: kpis.expired > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Expiring Soon',
+            value: kpis.expSoon,
+            sub: kpis.expSoon > 0 ? 'Within 60 days' : 'No upcoming expirations',
+            tone: kpis.expSoon > 0 ? 'warning' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters — chips + trade select + search + clear */}
       <FilterBar
@@ -2345,7 +2271,7 @@ function SubsTab() {
             <select
               value={tradeFilter}
               onChange={e => setTradeFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[180px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[180px]"
               aria-label="Filter by trade"
             >
               {TRADE_FILTERS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
@@ -2407,27 +2333,27 @@ function SubsEmptyState({ filter, hasOtherFilters }) {
   return <EmptyState Icon={UsersRoundIcon} title="No subs yet" description="Subcontractors will appear here once they're on the roster." />
 }
 
-function SubRow({ item, expanded, onToggle }) {
+export function SubRow({ item, expanded, onToggle }) {
   const { s, verdict, insState, licState, insDays, licDays, lastUpdateDays, subJobs, activeJobCount } = item
-  const tColor   = tradeColor[s.trade] || '#9ca3af'
+  const tColor   = tradeColor(s.trade)
   const initials = (s.name || '—').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
   const action   = subNextAction(s)
 
   // Severity rail color follows the verdict — critical/warning/success.
-  const railColor = verdict.tone === 'critical' ? '#ef4444'
-                  : verdict.tone === 'warning'  ? '#eab308'
-                  : '#22c55e'
+  const railColor = verdict.tone === 'critical' ? SEMANTIC.critical
+                  : verdict.tone === 'warning'  ? SEMANTIC.warning
+                  : SEMANTIC.success
 
-  const insColor = insState === 'expired'         ? '#ef4444'
-                 : insState === 'expiring-30'     ? '#ef4444'
-                 : insState === 'expiring-60'     ? '#eab308'
-                 : insState === 'valid'           ? '#22c55e'
-                 : '#9ca3af'
+  const insColor = insState === 'expired'         ? SEMANTIC.critical
+                 : insState === 'expiring-30'     ? SEMANTIC.critical
+                 : insState === 'expiring-60'     ? SEMANTIC.warning
+                 : insState === 'valid'           ? SEMANTIC.success
+                 : SEMANTIC.neutral
 
-  const licColor = licState === 'expired'         ? '#ef4444'
-                 : licState === 'expiring-60'     ? '#eab308'
-                 : licState === 'valid'           ? '#22c55e'
-                 : '#9ca3af'
+  const licColor = licState === 'expired'         ? SEMANTIC.critical
+                 : licState === 'expiring-60'     ? SEMANTIC.warning
+                 : licState === 'valid'           ? SEMANTIC.success
+                 : SEMANTIC.neutral
 
   const insLabel = insState === 'expired'      ? `${Math.abs(insDays || 0)}d ago`
                  : insState === 'expiring-30'  ? `${insDays}d left`
@@ -2441,58 +2367,59 @@ function SubRow({ item, expanded, onToggle }) {
                  : '—'
 
   const score = s.score ?? null
-  const scoreColor = score === null ? '#9ca3af'
-                   : score >= 90 ? '#22c55e'
-                   : score >= 80 ? O
-                   : '#ef4444'
+  const scoreColor = score === null ? SEMANTIC.neutral
+                   : score >= 90 ? SEMANTIC.success
+                   : score >= 80 ? BRAND
+                   : SEMANTIC.critical
 
-  const updateColor = lastUpdateDays === null ? '#9ca3af'
-                    : lastUpdateDays > 5 ? '#ef4444'
-                    : lastUpdateDays > 2 ? '#eab308'
-                    : '#22c55e'
+  const updateColor = lastUpdateDays === null ? SEMANTIC.neutral
+                    : lastUpdateDays > 5 ? SEMANTIC.critical
+                    : lastUpdateDays > 2 ? SEMANTIC.warning
+                    : SEMANTIC.success
   const updateLabel = lastUpdateDays === null ? 'No data'
                     : lastUpdateDays === 0    ? 'Today'
                     : lastUpdateDays === 1    ? '1d ago'
                     : `${lastUpdateDays}d ago`
 
-  const handleKey = (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button') && !e.target.closest('[role="combobox"]') && !e.target.closest('select') && !e.target.closest('textarea')) {
-      e.preventDefault()
-      onToggle()
-    }
-  }
+  const detailId = useId()
 
+  // The row header, the sub's name, is the button that opens the row: it says whether the row
+  // is open and names the assignments it opens. The phone link sits beside it and not in it,
+  // because a link cannot be inside a button. A click anywhere else on the row opens it too,
+  // for a pointer.
   return (
     <div>
       <div
-        role="button"
-        tabIndex={0}
-        onClick={(e) => {
-          if (e.target.closest('button') || e.target.closest('[role="combobox"]') || e.target.closest('select') || e.target.closest('textarea')) return
-          onToggle()
-        }}
-        onKeyDown={handleKey}
-        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:outline-none focus:bg-white/[0.04]"
+        onClick={(e) => { if (!e.target.closest(ROW_CONTROLS)) onToggle() }}
+        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025]"
         style={{ borderLeft: `3px solid ${railColor}` }}
-        aria-expanded={expanded}
       >
         <div className="flex items-start gap-3">
-          {/* Avatar with trade color */}
+          {/* Avatar with trade color, a picture of the name beside it */}
           <div
+            aria-hidden="true"
             className="shrink-0 mt-0.5 flex items-center justify-center rounded-full text-[11px] font-bold"
-            style={{ width: 36, height: 36, backgroundColor: tColor + '22', color: tColor }}
+            style={{ width: 36, height: 36, backgroundColor: withAlpha(tColor, 0.13), color: tColor }}
           >
             {initials}
           </div>
 
           {/* Body */}
           <div className="flex-1 min-w-0">
-            {/* Header row — name + trade pill + verdict + active job count */}
+            {/* Header row: the button with the name, then the trade, the verdict and the active job count */}
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-sm font-semibold text-white truncate">{s.name || '—'}</span>
+              <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={expanded}
+                aria-controls={detailId}
+                className="min-w-0 truncate rounded-md text-left text-sm font-semibold text-white"
+              >
+                {s.name || 'Unnamed sub'}
+              </button>
               <span
                 className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
-                style={{ color: tColor, backgroundColor: tColor + '22', border: `1px solid ${tColor}55` }}
+                style={{ color: tColor, backgroundColor: withAlpha(tColor, 0.13), border: `1px solid ${withAlpha(tColor, 0.33)}` }}
               >
                 {s.trade}
               </span>
@@ -2549,16 +2476,19 @@ function SubRow({ item, expanded, onToggle }) {
             </div>
           </div>
 
-          {/* Expand chevron */}
+          {/* Expand chevron, a picture of what the header button says */}
           <ChevronRightIcon
             size={16}
+            aria-hidden="true"
             className="hidden md:block shrink-0 text-zinc-400 mt-1.5 transition-transform"
             style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}
           />
         </div>
       </div>
 
-      {expanded && <SubAssignments subJobs={subJobs} />}
+      <div id={detailId}>
+        {expanded && <SubAssignments subJobs={subJobs} />}
+      </div>
     </div>
   )
 }
@@ -2570,7 +2500,7 @@ function ComplianceCell({ label, valueLabel, colorOverride, stateNote }) {
       <p className="text-sm font-semibold tabular-nums truncate" style={{ color: colorOverride || '#fff' }}>
         {valueLabel}
       </p>
-      {stateNote && <p className="text-[10px] text-zinc-500 truncate">{stateNote}</p>}
+      {stateNote && <p className="text-[10px] text-zinc-400 truncate">{stateNote}</p>}
     </div>
   )
 }
@@ -2596,12 +2526,12 @@ function SubAssignments({ subJobs }) {
   )
 }
 
-function SubAssignmentRow({ job: j }) {
+export function SubAssignmentRow({ job: j }) {
+  const { run } = useMutation()
   const subStatus = (j.subsStatus || {})[j.trade] || 'active'
   const looseEnds = (j.subsLooseEnds || {})[j.trade] || ''
-  const sc = SUB_STATUS_COLOR[subStatus] || '#6b7280'
-  const tradeKey  = j.trade.charAt(0).toUpperCase() + j.trade.slice(1)
-  const tColor    = tradeColor[tradeKey] || '#9ca3af'
+  const sc = statusColor(SUB_STATUS, subStatus)
+  const tColor    = tradeColor(j.trade)
   const isComplete = ['complete', 'completed'].includes(j.status)
 
   return (
@@ -2614,7 +2544,7 @@ function SubAssignmentRow({ job: j }) {
           <span className="text-sm font-semibold text-white truncate">{jobName(j)}</span>
           <span
             className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full capitalize whitespace-nowrap"
-            style={{ color: tColor, backgroundColor: tColor + '22', border: `1px solid ${tColor}55` }}
+            style={{ color: tColor, backgroundColor: withAlpha(tColor, 0.13), border: `1px solid ${withAlpha(tColor, 0.33)}` }}
           >
             {j.trade}
           </span>
@@ -2622,52 +2552,85 @@ function SubAssignmentRow({ job: j }) {
         <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
           <Select
             value={subStatus}
-            onValueChange={v => j._docId && updateJob(j._docId, { [`subsStatus.${j.trade}`]: v })}
+            onValueChange={v => j._docId && run(() => updateJob(j._docId, { [`subsStatus.${j.trade}`]: v }), {
+              success: `Sub status set to ${statusLabel(SUB_STATUS, v).toLowerCase()}.`,
+              error: 'Could not change the sub status. Try again.',
+              queue: true,
+            })}
           >
             <SelectTrigger
+              aria-label={`Sub status on ${j.id}`}
               className="h-auto py-0.5 px-2.5 text-[11px] font-bold border rounded-full"
-              style={{ backgroundColor: sc + '22', color: sc, borderColor: sc + '55' }}
+              style={{ backgroundColor: withAlpha(sc, 0.13), color: toneText(statusTone(SUB_STATUS, subStatus)), borderColor: withAlpha(sc, 0.33) }}
             >
-              <SelectValue />
+              <SelectValue>{statusLabel(SUB_STATUS, subStatus)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {SUB_STATUS_OPTIONS.map(o => (
-                <SelectItem key={o} value={o} className="capitalize">{o}</SelectItem>
+                <SelectItem key={o} value={o}>{statusLabel(SUB_STATUS, o)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {!isComplete && <JobBadge status={j.status} />}
+          {!isComplete && <StatusBadge status={j.status} size="xs" />}
         </div>
       </div>
-      <Textarea
-        className="bg-white/[0.04] border-white/10 text-[12px] resize-none min-h-14 placeholder:text-zinc-500"
-        placeholder="Loose ends — incomplete work, punch list items, notes…"
-        value={looseEnds}
-        onClick={e => e.stopPropagation()}
-        onChange={e => j._docId && updateJob(j._docId, { [`subsLooseEnds.${j.trade}`]: e.target.value })}
-      />
+      <LooseEndsInput key={`${j._docId}:${j.trade}`} job={j} stored={looseEnds} />
     </li>
+  )
+}
+
+// The loose ends of one sub on one job. What the person types stays in the box and is saved
+// once, when they leave it, so a write is a finished sentence and not a stream of half
+// words. It is also saved when the box goes away or the page is hidden with something typed
+// in it, because nothing is sent for a box that was never left, and the old write on every
+// key lost nothing. The box shows what is stored while nothing is typed in it, so a change
+// made elsewhere shows up here and leaving the box never writes an older copy back. What is
+// typed stays until it is saved, through the apply of the write to Firestore's cache and
+// the rollback of one the rules refuse, so it can be tried again (see useSavedField).
+function LooseEndsInput({ job: j, stored }) {
+  const field = useSavedField({
+    stored,
+    enabled: !!j._docId,
+    write: value => updateJob(j._docId, { [`subsLooseEnds.${j.trade}`]: value }),
+    success: 'Loose ends saved.',
+    error: 'Could not save the loose ends. Try again.',
+    saveOnLeave: true,
+  })
+
+  return (
+    <Textarea
+      className="bg-white/[0.04] border-white/10 text-[12px] resize-none min-h-14 placeholder:text-zinc-400"
+      placeholder="Loose ends: incomplete work, punch list items, notes…"
+      value={field.value}
+      onClick={e => e.stopPropagation()}
+      onChange={field.onChange}
+      onBlur={field.onBlur}
+    />
   )
 }
 
 // ── Tab: Materials ────────────────────────────────────────────────────────────
 
-// MAT_STATUS_OPTIONS / MAT_STATUS_COLOR moved to src/lib/materials.js (Phase 18).
+// MAT_STATUS_OPTIONS moved to src/lib/materials.js (Phase 18); the words and
+// colors of a material status are in src/lib/status.js.
 // MatStatusBadge moved to src/components/shared/inline-edits.jsx (Phase 19).
 // Materials helpers moved to src/lib/materials.js (Phase 18).
 
 // ── Materials tab ────────────────────────────────────────────────────────────
 
-function Materials() {
+export function Materials() {
   const { jobs = [], materials: MATERIALS = [], scope } = useData()
   const { history: HISTORY = [] } = useHistory(scope)
+  // One for the form and one for the status lists, so a status that is changing does not
+  // switch off the Save button of a form that is open.
+  const { run: runSave, busy: saving } = useMutation()
+  const { run: runStatus } = useMutation()
   const [filter, setFilter]               = useState('all')
   const [filterJob, setFilterJob]         = useState('all')
   const [showForm, setShowForm]           = useState(false)
   const [editId, setEditId]               = useState(null)
   const [expandedHistory, setExpandedHistory] = useState(null)
   const [form, setForm]                   = useState(MAT_FORM_INITIAL)
-  const [saving, setSaving]               = useState(false)
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
@@ -2734,20 +2697,26 @@ function Materials() {
     const m = MATERIALS.find(x => x._docId === docId)
     if (!m) return
     const oldStatus = normalizeMatStatus(m.status)
-    await updateMaterial(docId, { status: newStatus })
-    await addHistory({
+    const { ok } = await runStatus(() => updateMaterial(docId, { status: newStatus }), {
+      success: `${matName(m)} set to ${statusLabel(MATERIAL_STATUS, newStatus).toLowerCase()}.`,
+      error: 'Could not update the material. Try again.',
+      queue: true,
+    })
+    if (!ok) return
+    // The status is saved. Its history entry is a second write, and says so on its own if
+    // it fails, so the person is not told the status was not saved.
+    await runStatus(() => addHistory({
       materialDocId: docId,
       materialName:  matName(m),
       jobId:         matJobId(m),
       fromStatus:    oldStatus,
       toStatus:      newStatus,
       type:          'status_change',
-    })
+    }), { error: 'The status changed, but its history entry was not saved.', queue: true })
   }
 
   const handleSave = async () => {
     if (!form.name.trim()) return
-    setSaving(true)
     const job = jobs.find(j => j.id === form.jobId)
     const data = {
       name:        form.name.trim(),
@@ -2764,16 +2733,25 @@ function Materials() {
       notes:       form.notes.trim(),
       cost:        0,
     }
-    if (editId) {
-      await updateMaterial(editId, data)
-      await addHistory({ materialDocId: editId, materialName: data.name, jobId: data.jobId, type: 'edited' })
-    } else {
-      await addMaterial(data)
-    }
+    const editing = editId
+    const { ok } = await runSave(() => (editing ? updateMaterial(editing, data) : addMaterial(data)), {
+      success: editing ? 'Material updated.' : 'Material requested.',
+      error: 'Could not save the material. Try again.',
+      queue: true,
+    })
+    // A refused save leaves the form open with what was typed, so it can be sent again.
+    if (!ok) return
     setForm(MAT_FORM_INITIAL)
     setShowForm(false)
     setEditId(null)
-    setSaving(false)
+    // The material is saved. Its history entry is a second write, and says so on its own if it
+    // fails, so the person is not told the material was not saved and does not save it twice.
+    if (editing) {
+      await runStatus(() => addHistory({ materialDocId: editing, materialName: data.name, jobId: data.jobId, type: 'edited' }), {
+        error: 'The material was saved, but its history entry was not.',
+        queue: true,
+      })
+    }
   }
 
   const openRequest = () => {
@@ -2812,13 +2790,6 @@ function Materials() {
         subtitle="Order, track, and confirm everything the field needs to keep work moving."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{kpis.open} open</span>
             {kpis.urgent > 0 && (
               <span className="text-red-300">{kpis.urgent} overdue</span>
@@ -2829,56 +2800,50 @@ function Materials() {
           <button
             type="button"
             onClick={openRequest}
-            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
-            style={{ backgroundColor: O }}
+            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground transition-colors"
+            style={{ backgroundColor: BRAND }}
           >
             <PlusIcon size={13} /> Request material
           </button>
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Materials pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Open Requests"
-          value={kpis.open}
-          Icon={PackageIcon}
-          emphasis={kpis.open > 0 ? 'default' : 'success'}
-          sub={kpis.open > 0 ? 'Ordered or in transit' : 'Nothing pending'}
-        />
-        <MetricTile
-          label="Urgent"
-          value={kpis.urgent}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.urgent > 0 ? 'critical' : 'success'}
-          sub={kpis.urgent > 0 ? 'Past needed-by date' : 'No overdue items'}
-        />
-        <MetricTile
-          label="Blocking Jobs"
-          value={kpis.blockJobs}
-          Icon={HardHatIcon}
-          emphasis={kpis.blockJobs > 0 ? 'warning' : 'success'}
-          sub={kpis.blockJobs > 0 ? 'Jobs awaiting materials' : 'No materials blocking work'}
-        />
-        <MetricTile
-          label="Delivered / Ready"
-          value={kpis.delivered}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.delivered > 0 ? 'success' : 'mute'}
-          sub={kpis.delivered > 0 ? 'On site or delivered' : 'No deliveries logged'}
-        />
-        <MetricTile
-          label="Recent Updates"
-          value={kpis.recent}
-          Icon={TruckIcon}
-          emphasis={kpis.recent > 0 ? 'default' : 'mute'}
-          sub="Last 24 hours"
-        />
-      </section>
+        stats={[
+          {
+            label: 'Open Requests',
+            value: kpis.open,
+            sub: kpis.open > 0 ? 'Ordered or in transit' : 'Nothing pending',
+            tone: kpis.open > 0 ? undefined : 'success',
+          },
+          {
+            label: 'Urgent',
+            value: kpis.urgent,
+            sub: kpis.urgent > 0 ? 'Past needed-by date' : 'No overdue items',
+            tone: kpis.urgent > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Blocking Jobs',
+            value: kpis.blockJobs,
+            sub: kpis.blockJobs > 0 ? 'Jobs awaiting materials' : 'No materials blocking work',
+            tone: kpis.blockJobs > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Delivered / Ready',
+            value: kpis.delivered,
+            sub: kpis.delivered > 0 ? 'On site or delivered' : 'No deliveries logged',
+            tone: kpis.delivered > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Recent Updates',
+            value: kpis.recent,
+            sub: 'Last 24 hours',
+            tone: kpis.recent > 0 ? undefined : 'mute',
+          },
+        ]}
+      />
 
       {/* Filters — chips + job select */}
       <FilterBar
@@ -2888,7 +2853,7 @@ function Materials() {
             <select
               value={filterJob}
               onChange={e => setFilterJob(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[220px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[220px]"
               aria-label="Filter by job"
             >
               <option value="all">All jobs</option>
@@ -2973,7 +2938,7 @@ function MaterialsEmptyState({ filter, hasJobFilter, onRequest }) {
   if (filter === 'blocking')  return <AllClearState title="No materials blocking work" description="No open items needed within 7 days." />
   if (filter === 'needed')    return <AllClearState title="Nothing needed" description="Every active material has been delivered or used." />
   if (filter === 'ordered')   return <EmptyState   title="No materials in 'Ordered' status" description="Items waiting on a supplier will appear here." />
-  if (filter === 'delivered') return <EmptyState   title="No deliveries yet" description="Items marked Delivered or At Job Site will appear here." />
+  if (filter === 'delivered') return <EmptyState   title="No deliveries yet" description="Items marked Delivered or At job site will appear here." />
   if (hasJobFilter)           return <EmptyState   title="No materials for that job" description="Try clearing the job filter or request a new material." />
   return (
     <EmptyState
@@ -2984,8 +2949,8 @@ function MaterialsEmptyState({ filter, hasJobFilter, onRequest }) {
         <button
           type="button"
           onClick={onRequest}
-          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white transition-colors"
-          style={{ backgroundColor: O }}
+          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground transition-colors"
+          style={{ backgroundColor: BRAND }}
         >
           <PlusIcon size={13} /> Request material
         </button>
@@ -2999,10 +2964,10 @@ function MaterialCard({
   history, showHistory, onToggleHistory,
   onEdit, onStatusChange,
 }) {
-  const tone = MAT_STATUS_TONE[status] || 'mute'
+  const tone = statusTone(MATERIAL_STATUS, status)
   const railColor = overdue
-    ? '#ef4444'
-    : (MAT_STATUS_COLOR[status] || '#6b7280')
+    ? SEMANTIC.critical
+    : statusColor(MATERIAL_STATUS, status)
   const action = matNextAction(m)
   const orderedDate = matOrdered(m)
   const neededDate  = m.dateNeeded
@@ -3020,8 +2985,8 @@ function MaterialCard({
   })()
 
   const neededColor =
-    overdue ? '#ef4444' :
-    (daysUntil !== null && daysUntil <= 7) ? '#eab308' : '#9ca3af'
+    overdue ? SEMANTIC.critical :
+    (daysUntil !== null && daysUntil <= 7) ? SEMANTIC.warning : SEMANTIC.neutral
 
   return (
     <div
@@ -3085,13 +3050,13 @@ function MaterialCard({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <MatStatusBadge status={status} docId={m._docId} onUpdate={onStatusChange} />
+          <MatStatusBadge status={status} docId={m._docId} onUpdate={onStatusChange} label={`Status of ${matName(m)}`} />
           <button
             type="button"
             onClick={onEdit}
             className="h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
-            title="Edit material"
-            aria-label="Edit material"
+            title={`Edit ${matName(m)}`}
+            aria-label={`Edit ${matName(m)}`}
           >
             <PencilIcon size={13} />
           </button>
@@ -3100,8 +3065,8 @@ function MaterialCard({
               type="button"
               onClick={onToggleHistory}
               className="h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
-              title={showHistory ? 'Hide history' : 'View history'}
-              aria-label={showHistory ? 'Hide history' : 'View history'}
+              title={`${showHistory ? 'Hide' : 'View'} the history of ${matName(m)}`}
+              aria-label={`${showHistory ? 'Hide' : 'View'} the history of ${matName(m)}`}
               aria-expanded={showHistory}
             >
               <ActivityIcon size={13} />
@@ -3110,7 +3075,7 @@ function MaterialCard({
         </div>
 
         {/* Tone-only Pill — purely visual, gives a quick read of the current status */}
-        <Pill tone={tone} size="xs" className="hidden sm:inline-flex">{status}</Pill>
+        <Pill tone={tone} size="xs" className="hidden sm:inline-flex">{statusLabel(MATERIAL_STATUS, status)}</Pill>
       </div>
 
       {/* History drawer */}
@@ -3129,21 +3094,26 @@ function MaterialCard({
 }
 
 function MaterialHistoryRow({ entry }) {
+  // A status in the history as words and a color. An entry from before the
+  // status was recorded has none, and reads as not set.
+  const shown = (raw) => {
+    if (!raw) return { words: 'Not set', color: toneHex('neutral') }
+    const key = normalizeMatStatus(raw)
+    return { words: statusLabel(MATERIAL_STATUS, key), color: toneText(statusTone(MATERIAL_STATUS, key)) }
+  }
+  const from = shown(entry.fromStatus)
+  const to   = shown(entry.toStatus)
   const ts = entry.createdAt?.toDate
     ? entry.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '—'
   return (
     <li className="flex items-start gap-2 text-[11px] text-zinc-400">
-      <span className="w-16 shrink-0 text-zinc-500">{ts}</span>
+      <span className="w-16 shrink-0 text-zinc-400">{ts}</span>
       {entry.type === 'status_change' ? (
         <span className="min-w-0">
-          <span style={{ color: MAT_STATUS_COLOR[entry.fromStatus] || '#9ca3af' }}>
-            {entry.fromStatus || '—'}
-          </span>
-          <span className="text-zinc-500 mx-1">to</span>
-          <span style={{ color: MAT_STATUS_COLOR[entry.toStatus] || '#9ca3af' }}>
-            {entry.toStatus || '—'}
-          </span>
+          <span style={{ color: from.color }}>{from.words}</span>
+          <span className="text-zinc-400 mx-1">to</span>
+          <span style={{ color: to.color }}>{to.words}</span>
         </span>
       ) : (
         <span className="capitalize">{entry.type?.replace(/_/g, ' ') || 'updated'}</span>
@@ -3162,17 +3132,15 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
       Icon={PlusIcon}
     >
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div className="md:col-span-2">
-          <FormFieldLabel>Item name *</FormFieldLabel>
+        <Field label="Item name" required className="md:col-span-2">
           <Input
-            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
+            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400"
             placeholder="e.g. 200A Main Panel — Square D"
             value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
           />
-        </div>
-        <div>
-          <FormFieldLabel>Qty</FormFieldLabel>
+        </Field>
+        <Field label="Qty">
           <Input
             className="bg-white/[0.04] border-white/10 text-white"
             type="number"
@@ -3180,18 +3148,16 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
             value={form.qty}
             onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
           />
-        </div>
-        <div>
-          <FormFieldLabel>Unit</FormFieldLabel>
+        </Field>
+        <Field label="Unit">
           <Select value={form.unit} onValueChange={v => setForm(f => ({ ...f, unit: v }))}>
             <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {MAT_UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
             </SelectContent>
           </Select>
-        </div>
-        <div>
-          <FormFieldLabel>Job</FormFieldLabel>
+        </Field>
+        <Field label="Job">
           <Select value={form.jobId} onValueChange={v => setForm(f => ({ ...f, jobId: v }))}>
             <SelectTrigger className="bg-white/[0.04] border-white/10 w-full">
               <SelectValue placeholder="Select job" />
@@ -3204,52 +3170,47 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div>
-          <FormFieldLabel>Status</FormFieldLabel>
+        </Field>
+        <Field label="Status">
           <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
-            <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="bg-white/[0.04] border-white/10 w-full"><SelectValue>{statusLabel(MATERIAL_STATUS, form.status)}</SelectValue></SelectTrigger>
             <SelectContent>
-              {MAT_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              {MAT_STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{statusLabel(MATERIAL_STATUS, s)}</SelectItem>)}
             </SelectContent>
           </Select>
-        </div>
-        <div>
-          <FormFieldLabel>Vendor</FormFieldLabel>
+        </Field>
+        <Field label="Vendor">
           <Input
-            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
+            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400"
             placeholder="Graybar, Ferguson…"
             value={form.vendor}
             onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))}
           />
-        </div>
-        <div>
-          <FormFieldLabel>Date ordered</FormFieldLabel>
+        </Field>
+        <Field label="Date ordered">
           <Input
             className="bg-white/[0.04] border-white/10 text-white"
             type="date"
             value={form.dateOrdered}
             onChange={e => setForm(f => ({ ...f, dateOrdered: e.target.value }))}
           />
-        </div>
-        <div>
-          <FormFieldLabel>Date needed</FormFieldLabel>
+        </Field>
+        <Field label="Date needed">
           <Input
             className="bg-white/[0.04] border-white/10 text-white"
             type="date"
             value={form.dateNeeded}
             onChange={e => setForm(f => ({ ...f, dateNeeded: e.target.value }))}
           />
-        </div>
-        <div className="md:col-span-2">
-          <FormFieldLabel>Notes</FormFieldLabel>
+        </Field>
+        <Field label="Notes" className="md:col-span-2">
           <Input
-            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500"
+            className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400"
             placeholder="Optional — sub assignments, location on site, etc."
             value={form.notes}
             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
           />
-        </div>
+        </Field>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mt-4">
@@ -3257,8 +3218,8 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
           type="button"
           onClick={onSave}
           disabled={saving || !form.name.trim()}
-          className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          style={{ backgroundColor: O }}
+          className="inline-flex items-center gap-1.5 text-sm font-bold px-4 py-2 rounded-lg text-brand-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          style={{ backgroundColor: BRAND }}
         >
           {saving ? 'Saving…' : editing ? 'Save changes' : 'Submit request'}
         </button>
@@ -3279,14 +3240,6 @@ function MaterialForm({ form, setForm, jobs, editing, saving, onSave, onCancel }
   )
 }
 
-function FormFieldLabel({ children }) {
-  return (
-    <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 block mb-1.5">
-      {children}
-    </span>
-  )
-}
-
 // ── Tab: Permits ──────────────────────────────────────────────────────────────
 
 function Permits() {
@@ -3304,8 +3257,9 @@ function ProjectFolders() {
 
 // Notification helpers moved to src/lib/notifications.js (Phase 18).
 
-function Notifications() {
+export function Notifications() {
   const { notifs = [] } = useData()
+  const { run } = useMutation()
   const [filter, setFilter] = useState('all')
 
   // Live = not dismissed. Dismiss is the user's "clear" gesture; archived
@@ -3339,17 +3293,34 @@ function Notifications() {
       })
   }, [live, filter])
 
-  // Lifecycle mutations — preserved verbatim from prior implementation.
+  // Lifecycle mutations. Marking one read says nothing when it works, because the dot goes
+  // out. Dismissing and marking all read can be taken back, so they are not asked about
+  // first: the toast carries an Undo that puts back what was there, the read flag included.
   const markRead = (n) => {
     if (n.read || !n._docId) return
-    updateNotification(n._docId, { read: true })
+    run(() => updateNotification(n._docId, { read: true }), {
+      error: 'Could not mark the notification read. Try again.',
+      queue: true,
+    })
   }
   const dismiss = (n) => {
     if (!n._docId) return
-    updateNotification(n._docId, { dismissed: true, read: true })
+    run(() => updateNotification(n._docId, { dismissed: true, read: true }), {
+      success: 'Notification dismissed.',
+      error: 'Could not dismiss the notification. Try again.',
+      queue: true,
+      undo: () => updateNotification(n._docId, { dismissed: false, read: !!n.read }),
+    })
   }
   const markAll = () => {
-    live.filter(n => !n.read && n._docId).forEach(n => updateNotification(n._docId, { read: true }))
+    const unread = live.filter(n => !n.read && n._docId)
+    if (unread.length === 0) return
+    run(() => Promise.all(unread.map(n => updateNotification(n._docId, { read: true }))), {
+      success: `Marked ${unread.length} notification${unread.length === 1 ? '' : 's'} read.`,
+      error: 'Could not mark the notifications read. Try again.',
+      queue: true,
+      undo: () => Promise.all(unread.map(n => updateNotification(n._docId, { read: false }))),
+    })
   }
 
   const filterChips = NOTIF_FILTERS.map(f => ({
@@ -3368,13 +3339,6 @@ function Notifications() {
         subtitle="Recent activity across active jobs — read, action, or clear from the queue."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{kpis.total} live</span>
             {kpis.unread > 0 && <span>{kpis.unread} unread</span>}
             {kpis.actionNeeded > 0 && (
@@ -3395,48 +3359,42 @@ function Notifications() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Notification pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Unread"
-          value={kpis.unread}
-          Icon={BellIcon}
-          emphasis={kpis.unread > 0 ? 'warning' : 'success'}
-          sub={kpis.unread > 0 ? 'Review and clear' : 'All caught up'}
-        />
-        <MetricTile
-          label="Action Needed"
-          value={kpis.actionNeeded}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.actionNeeded > 0 ? 'critical' : 'success'}
-          sub={kpis.actionNeeded > 0 ? 'Warning + error' : 'Nothing flagged'}
-        />
-        <MetricTile
-          label="Recent Updates"
-          value={kpis.recent}
-          Icon={ActivityIcon}
-          emphasis={kpis.recent > 0 ? 'default' : 'mute'}
-          sub="Last 24 hours"
-        />
-        <MetricTile
-          label="Critical"
-          value={kpis.critical}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.critical > 0 ? 'critical' : 'success'}
-          sub={kpis.critical > 0 ? 'System errors' : 'No errors'}
-        />
-        <MetricTile
-          label="Total Live"
-          value={kpis.total}
-          Icon={ClipboardListIcon}
-          emphasis={kpis.total > 0 ? 'default' : 'success'}
-          sub={`${notifs.length} ever`}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Unread',
+            value: kpis.unread,
+            sub: kpis.unread > 0 ? 'Review and clear' : 'All caught up',
+            tone: kpis.unread > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Action Needed',
+            value: kpis.actionNeeded,
+            sub: kpis.actionNeeded > 0 ? 'Warning + error' : 'Nothing flagged',
+            tone: kpis.actionNeeded > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Recent Updates',
+            value: kpis.recent,
+            sub: 'Last 24 hours',
+            tone: kpis.recent > 0 ? undefined : 'mute',
+          },
+          {
+            label: 'Critical',
+            value: kpis.critical,
+            sub: kpis.critical > 0 ? 'System errors' : 'No errors',
+            tone: kpis.critical > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Total Live',
+            value: kpis.total,
+            sub: `${notifs.length} ever`,
+            tone: kpis.total > 0 ? undefined : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar
@@ -3497,30 +3455,34 @@ function NotificationCard({ n, onRead, onDismiss }) {
   const cat = notifCategory(n)
   const CatIcon = NOTIF_CATEGORY_ICON[cat] || InfoIcon
   const TypeIcon = meta.Icon
+  const msgId = useId()
+  const clearRef = useRef(null)
+  const unread = !n.read
 
-  // Outer is a clickable div (not <button>) so we can nest the <button>
-  // dismiss action without invalid HTML. Keyboard support via role/tabIndex.
-  const handleKey = (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button')) {
-      e.preventDefault()
-      onRead(n)
-    }
+  // An unread notification's message is the button that marks it read, and says it is
+  // unread. Marking it read takes that button away, so focus goes to the Clear button of
+  // the same row, which stays, and the person keeps their place. A read one has nothing
+  // left to do but be cleared, so its message is text. Clear sits beside the message and
+  // not in it, and is described by it. A click anywhere else on an unread row marks it
+  // read too, for a pointer.
+  const markRead = () => {
+    onRead(n)
+    clearRef.current?.focus()
   }
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={(e) => { if (!e.target.closest('button')) onRead(n) }}
-      onKeyDown={handleKey}
-      className={`flex items-start gap-3 px-4 py-3.5 sm:px-5 sm:py-4 cursor-pointer transition-colors hover:bg-white/[0.025] focus:outline-none focus:bg-white/[0.04] ${n.read ? 'opacity-60' : ''}`}
-      style={{ borderLeft: `3px solid ${n.read ? 'transparent' : meta.color}` }}
-      aria-label={n.read ? `Notification: ${n.msg}` : `Unread notification: ${n.msg}`}
+      onClick={unread ? (e) => { if (!e.target.closest(ROW_CONTROLS)) onRead(n) } : undefined}
+      className={`flex items-start gap-3 px-4 py-3.5 sm:px-5 sm:py-4 transition-colors hover:bg-white/[0.025] ${unread ? 'cursor-pointer' : ''}`}
+      style={{ borderLeft: `3px solid ${unread ? meta.color : 'transparent'}` }}
     >
-      {/* Type icon tile */}
+      {/* Type icon tile, a picture of the type the pill names. A read notification looks read
+          by this picture, dimmed, and by its message in the regular weight; its words are
+          not dimmed, since the small ones would fall under 4.5 to 1. */}
       <div
-        className="shrink-0 mt-0.5 flex items-center justify-center rounded-lg"
-        style={{ width: 32, height: 32, backgroundColor: meta.color + '22', color: meta.color }}
+        aria-hidden="true"
+        className={`shrink-0 mt-0.5 flex items-center justify-center rounded-lg ${unread ? '' : 'opacity-60'}`}
+        style={{ width: 32, height: 32, backgroundColor: withAlpha(meta.color, 0.13), color: meta.color }}
       >
         <TypeIcon size={16} strokeWidth={2} />
       </div>
@@ -3530,34 +3492,45 @@ function NotificationCard({ n, onRead, onDismiss }) {
         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
           <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
           <Pill tone="neutral" size="xs" Icon={CatIcon}>{NOTIF_CATEGORY_LABEL[cat]}</Pill>
-          <span className="text-[10px] text-zinc-500">·</span>
+          <span className="text-[10px] text-zinc-400" aria-hidden="true">·</span>
           <span className="text-[10px] text-zinc-400">{notifAgeLabel(n)}</span>
         </div>
-        <p className={`text-sm leading-snug ${n.read ? 'text-zinc-300' : 'font-semibold text-white'}`}>
-          {n.msg}
-        </p>
+        {unread ? (
+          <button
+            type="button"
+            id={msgId}
+            onClick={markRead}
+            className="block w-full rounded-md text-left text-sm leading-snug font-semibold text-white"
+          >
+            <span className="sr-only">Unread notification: </span>{n.msg}
+          </button>
+        ) : (
+          <p id={msgId} className="text-sm leading-snug text-zinc-400">{n.msg}</p>
+        )}
         {fmtNotifTime(n) && (
-          <p className="text-[11px] text-zinc-500 mt-0.5">{fmtNotifTime(n)}</p>
+          <p className="text-[11px] text-zinc-400 mt-0.5">{fmtNotifTime(n)}</p>
         )}
       </div>
 
       {/* Right column: unread dot + dismiss */}
       <div className="flex items-start gap-1.5 shrink-0">
-        {!n.read && (
+        {unread && (
           <span
+            aria-hidden="true"
             className="w-2 h-2 rounded-full mt-2"
-            style={{ backgroundColor: O }}
-            aria-label="Unread"
+            style={{ backgroundColor: BRAND }}
           />
         )}
         <button
+          ref={clearRef}
           type="button"
-          onClick={(e) => { e.stopPropagation(); onDismiss(n) }}
-          className="h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors shrink-0"
+          onClick={() => onDismiss(n)}
+          aria-describedby={msgId}
+          className="h-9 w-9 max-md:h-11 max-md:w-11 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors shrink-0"
           title="Clear notification"
           aria-label="Clear notification"
         >
-          <XIcon size={14} />
+          <XIcon size={14} aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -3584,6 +3557,17 @@ function Architecture() {
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
+
+// Keeps the connection probe running on the screens that show no connection chip
+// (Settings, a job page, Analytics), so the chip on the next screen starts from what is
+// already known and does not flash Syncing. The answer is not needed here. The call is in
+// a component of its own that renders nothing, because a hook subscribes the component
+// that calls it to every change of connection, and the dashboard should not render again
+// for each one.
+function ConnectionKeepalive() {
+  useConnectionState()
+  return null
+}
 
 function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange, onLogout, onCreateUser, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'command-center')
@@ -3618,13 +3602,13 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
       if (['complete','completed'].includes(j.status)) return false
       const insp = j.insp || {}
       const failed = Object.values(insp).some(t => Object.values(t || {}).some(s => s === 'failed'))
-      const stale  = ((new Date() - new Date(j.lastStatusChange || j.start)) / 86400000) >= 2
+      const stale  = (jobStaleness(j) ?? 0) >= 2
       return failed || (stale && j.status !== 'pending')
     }).length,
     jobs:          (jobs    || []).filter(j => j.status === 'needs-action').length,
     extras:        (extras  || []).filter(e => e.status === 'pending' && !e.qbs).length,
     notifications: (notifs  || []).filter(n => !n.read).length,
-    subs:          (subs    || []).filter(s => !s.w9 || (new Date(s.insExp) - new Date()) / 86400000 < 60).length,
+    subs:          (subs    || []).filter(s => subHasMissingDocs(s) || subInsuranceExpired(s) || subInsuranceExpiringSoon(s)).length,
     submit:        (submits || []).filter(s => !s.status || s.status === 'new').length,
     alerts:        (agentAlerts || []).filter(a => a.status === 'open' && a.severity === 'critical').length,
     inspections:   (jobs    || []).filter(j => {
@@ -3637,13 +3621,16 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
 
   if (loading) {
     return (
-      <div className="dark flex h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 animate-spin"
-            style={{ borderColor: O + '33', borderTopColor: O }} />
-          <p className="text-sm text-muted-foreground">Loading field data…</p>
+      <>
+        <ConnectionKeepalive />
+        <div className="flex h-screen items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-10 h-10 rounded-full border-2 animate-spin"
+              style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
+            <p className="text-sm text-muted-foreground">Loading field data…</p>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
 
@@ -3722,14 +3709,17 @@ function MainDashboard({ role = 'internal', tenantId = 'p2-core', onTenantChange
   )
 
   return (
-    <AppShell sidebar={sidebar} mobileNav={mobileNav}>
-      <CommandPalette />
-      <Suspense fallback={<PageSkeleton />}>
-        <div key={activeTab} className="p2-page-enter">
-          {TAB_COMPONENTS[activeTab]}
-        </div>
-      </Suspense>
-    </AppShell>
+    <>
+      <ConnectionKeepalive />
+      <AppShell sidebar={sidebar} mobileNav={mobileNav}>
+        <CommandPalette />
+        <Suspense fallback={<PageSkeleton />}>
+          <div key={activeTab} className="p2-page-enter">
+            {TAB_COMPONENTS[activeTab]}
+          </div>
+        </Suspense>
+      </AppShell>
+    </>
   )
 }
 
@@ -3823,9 +3813,9 @@ export default function P2DashboardV4() {
 
   if (authLoading || oauthState === 'loading') {
     return (
-      <div className="dark min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center animate-pulse" style={{ backgroundColor: O }}>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center animate-pulse" style={{ backgroundColor: BRAND }}>
             <ZapIcon size={18} color="#fff" />
           </div>
           <p className="text-muted-foreground text-sm">
@@ -3839,19 +3829,20 @@ export default function P2DashboardV4() {
   if (oauthState === 'success' || (oauthState && oauthState.error)) {
     const ok = oauthState === 'success'
     return (
-      <div className="dark min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-center px-6">
           <div className="w-12 h-12 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: ok ? '#22c55e22' : '#ef444422' }}>
+            style={{ backgroundColor: ok ? withAlpha(SEMANTIC.success, 0.13) : withAlpha(SEMANTIC.critical, 0.13) }}>
             {ok
-              ? <CheckCircleIcon size={24} color="#22c55e" />
-              : <AlertCircleIcon size={24} color="#ef4444" />}
+              ? <CheckCircleIcon size={24} color={SEMANTIC.success} />
+              : <AlertCircleIcon size={24} color={SEMANTIC.critical} />}
           </div>
-          <p className="text-sm font-medium" style={{ color: ok ? '#22c55e' : '#ef4444' }}>
+          <p className="text-sm font-medium" style={{ color: ok ? SEMANTIC.success : SEMANTIC.critical }}>
             {ok ? `${oauthProvider} connected successfully!` : oauthState.error}
           </p>
           {!ok && (
             <button
+              type="button"
               className="text-xs text-muted-foreground underline hover:text-white"
               onClick={() => { setOauthState(null); setInitialTab('settings') }}
             >
@@ -3934,9 +3925,9 @@ export default function P2DashboardV4() {
 
 function PortalLoading() {
   return (
-    <div className="dark min-h-screen bg-background flex items-center justify-center">
+    <div className="min-h-screen bg-background flex items-center justify-center">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center animate-pulse" style={{ backgroundColor: O }}>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center animate-pulse" style={{ backgroundColor: BRAND }}>
           <ZapIcon size={18} color="#fff" />
         </div>
         <p className="text-muted-foreground text-sm">Loading portal…</p>

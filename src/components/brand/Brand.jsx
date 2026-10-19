@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-
-const O = '#F47920'
+import { BRAND } from '@/lib/tokens'
 
 // P2 brand mark.
 //
@@ -8,7 +7,7 @@ const O = '#F47920'
 //   1. If `public/p2-logo.svg` exists, the full lockup uses it via <img>.
 //   2. If `public/p2-mark.svg` exists, the icon-only mark uses it via <img>.
 //   3. Otherwise, a clearly-marked SVG placeholder renders (orange circle +
-//      gear ring + lightning bolt) using only the brand orange `#F47920`
+//      gear ring + lightning bolt) using only the brand orange from tokens.js,
 //      already present in the codebase. No new colors are introduced.
 //
 // To replace the placeholder with the official artwork:
@@ -60,7 +59,7 @@ export function BrandMark({ size = 36, className = '', title = 'P2 Electrical & 
     >
       <title>{title}</title>
       {/* Gear ring (12 teeth) — same orange */}
-      <g fill={O}>
+      <g fill={BRAND}>
         {Array.from({ length: 12 }).map((_, i) => {
           const a = (i * Math.PI * 2) / 12
           const x = 32 + Math.cos(a) * 28
@@ -79,7 +78,7 @@ export function BrandMark({ size = 36, className = '', title = 'P2 Electrical & 
         })}
       </g>
       {/* Solid orange disc */}
-      <circle cx="32" cy="32" r="24" fill={O} />
+      <circle cx="32" cy="32" r="24" fill={BRAND} />
       {/* Inner ring cutout for gear feel */}
       <circle cx="32" cy="32" r="20" fill="none" stroke="#000" strokeOpacity="0.18" strokeWidth="1.5" />
       {/* Lightning bolt — black for high contrast on orange */}

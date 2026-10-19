@@ -1,11 +1,15 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useId } from 'react'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '../firebase'
 import { addDailyReport } from '../hooks/useFirestore'
 import { validateUpload, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
+import { callableMessage } from '../lib/callableError'
+import { fmtLongDate, toLocalDateStr } from '../lib/dates'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Field } from '@/components/ui/field'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -16,13 +20,14 @@ import {
   EmptyState,
 } from './shared'
 import {
-  CheckCircleIcon, CheckIcon, CameraIcon, XIcon, ImageIcon, LoaderIcon,
+  CheckCircleIcon, CameraIcon, XIcon, ImageIcon, LoaderIcon,
   HardHatIcon, ClipboardListIcon, NotebookPenIcon, PackageIcon,
   ShieldAlertIcon, FilePenLineIcon, BadgeCheckIcon,
   AlertTriangleIcon, ArrowRightIcon, CalendarDaysIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, SEMANTIC, withAlpha } from '@/lib/tokens'
+import { toneHex, toneText } from '@/lib/status'
+import { cn } from '@/lib/utils'
 
 const CREW_LIST = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 const PHASES = ['Rough-In', 'Service Release', 'Trim', 'Final']
@@ -37,6 +42,14 @@ const WORK_ITEMS = [
   { id: 'other',    label: 'Other' },
 ]
 
+// The lists a report cannot be sent without, in the order of the form, each with what it
+// says when it is left empty.
+const REQUIRED = [
+  ['crewMember', 'Pick your name to continue.'],
+  ['jobId',      'Pick a job to continue.'],
+  ['phase',      'Pick a phase to continue.'],
+]
+
 const BLOCKER_OPTIONS = [
   'None',
   'Waiting on other trade',
@@ -46,70 +59,55 @@ const BLOCKER_OPTIONS = [
   'Other',
 ]
 
-const TODAY_LABEL = new Date().toLocaleDateString('en-US', {
-  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-})
-
 // ── Local primitives ─────────────────────────────────────────────────────────
 
-function FieldLabel({ children }) {
+// A question with two answers, as a group of two buttons named by the question, each
+// saying whether it is pressed. Each answer has a tone of its own, because what a yes
+// means turns: Yes is critical for a safety issue and success for inspection ready. The
+// tone is never the only sign, since the pressed answer is also filled and says so.
+function YesNoQuestion({ label, Icon, value, onChange, yesTone = 'success', noTone = 'critical' }) {
+  const labelId = useId()
   return (
-    <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400 block mb-1.5">
-      {children}
-    </span>
-  )
-}
-
-// 2-button Yes/No toggle. Per-option colours so e.g. "Safety issue" can flip
-// the colour semantics — Yes is red there, Yes is green for "Inspection ready".
-function yesNoButtonStyle(active, activeColor) {
-  return {
-    borderColor:     active ? activeColor : '#374151',
-    backgroundColor: active ? activeColor + '22' : 'transparent',
-    color:           active ? activeColor : '#9ca3af',
-  }
-}
-
-function YesNoToggle({ value, onChange, yesColor = '#22c55e', noColor = '#ef4444' }) {
-  const yesActive = value === true
-  const noActive  = value === false
-  const cls = 'flex-1 py-2.5 rounded-lg border-2 font-bold text-sm transition-colors min-h-11'
-  return (
-    <div className="flex gap-3">
-      <button
-        type="button"
-        onClick={() => onChange(true)}
-        className={cls}
-        style={yesNoButtonStyle(yesActive, yesColor)}
-      >
-        Yes
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange(false)}
-        className={cls}
-        style={yesNoButtonStyle(noActive, noColor)}
-      >
-        No
-      </button>
+    <div>
+      <p id={labelId} className="mb-1.5 inline-flex items-center gap-1 text-xs font-medium text-zinc-200">
+        <Icon size={11} aria-hidden="true" /> {label}
+      </p>
+      <div role="group" aria-labelledby={labelId} className="flex gap-3">
+        <Answer pressed={value === true} tone={yesTone} onPress={() => onChange(true)}>Yes</Answer>
+        <Answer pressed={value === false} tone={noTone} onPress={() => onChange(false)}>No</Answer>
+      </div>
     </div>
   )
 }
 
+function Answer({ pressed, tone, onPress, children }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onPress}
+      className={cn(
+        'flex-1 py-2.5 rounded-lg border-2 font-bold text-sm transition-colors min-h-11',
+        !pressed && 'border-white/15 text-neutral',
+      )}
+      style={pressed ? { borderColor: toneHex(tone), backgroundColor: withAlpha(toneHex(tone), 0.13), color: toneText(tone) } : undefined}
+    >
+      {children}
+    </button>
+  )
+}
+
+// One item of the work done today: a real checkbox inside its label, so Space or a tap
+// anywhere on the row checks it, and a screen reader reads its name and its state.
 function WorkCheckbox({ checked, onChange, label }) {
   return (
     <label className="flex items-center gap-3 cursor-pointer select-none py-2.5 min-h-11">
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className="w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors"
-        style={{
-          borderColor: checked ? O : '#4b5563',
-          backgroundColor: checked ? O : 'transparent',
-        }}
-      >
-        {checked && <CheckIcon size={12} color="#fff" strokeWidth={3} />}
-      </button>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => onChange(!checked)}
+        className="size-5 shrink-0 cursor-pointer accent-brand"
+      />
       <span className="text-sm text-zinc-200">{label}</span>
     </label>
   )
@@ -150,6 +148,8 @@ function fmtReportDate(r) {
 
 export default function CrewReport() {
   const { jobs = [], dailyReports = [] } = useData()
+  const now = useNow()
+  const todayLabel = fmtLongDate(now)
   const activeJobs = useMemo(
     () => jobs.filter(j => !['complete', 'completed'].includes(j.status)),
     [jobs],
@@ -170,8 +170,18 @@ export default function CrewReport() {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess]       = useState(false)
   const [error, setError]           = useState('')
+  // What each required list says while it is empty after a refused submit, by its key.
+  const [missing, setMissing]       = useState({})
 
   const cameraRef = useRef(null)
+  const reporterRef = useRef(null)
+  const jobRef      = useRef(null)
+  const phaseRef    = useRef(null)
+  // A list that is picked loses its mark at once.
+  const pick = (key, set) => (value) => {
+    set(value)
+    setMissing(m => ({ ...m, [key]: undefined }))
+  }
 
   const selectedJob = useMemo(
     () => activeJobs.find(j => j.id === jobId) || null,
@@ -232,17 +242,27 @@ export default function CrewReport() {
   // ── Submit (writes only the original 12 fields — Safety / CO toggles are
   //   folded into `nextStep` so we don't introduce new Firestore fields). ──
 
+  // A report missing its reporter, job or phase is refused before anything is written: each
+  // empty list says why on its own Field, which reads it out as an alert and marks the list
+  // invalid, and focus goes to the first of them.
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!crewMember) { setError('Pick your name to continue.'); return }
-    if (!jobId)      { setError('Pick a job to continue.');     return }
-    if (!phase)      { setError('Pick a phase to continue.');   return }
+    const values = { crewMember, jobId, phase }
+    const needs = Object.fromEntries(REQUIRED.filter(([key]) => !values[key]))
+    setMissing(needs)
+    const first = REQUIRED.find(([key]) => needs[key])
+    if (first) {
+      const lists = { crewMember: reporterRef, jobId: jobRef, phase: phaseRef }
+      lists[first[0]].current?.focus()
+      return
+    }
 
     setError('')
     setSubmitting(true)
 
     try {
-      const dateStr = new Date().toISOString().slice(0, 10)
+      // The day of the report is the day it is submitted, where the crew member is.
+      const dateStr = toLocalDateStr()
       const photoUrls = await uploadPhotos(dateStr, jobId)
       const job = activeJobs.find(j => j.id === jobId)
 
@@ -273,7 +293,9 @@ export default function CrewReport() {
       await addDailyReport(payload)
       setSuccess(true)
     } catch (err) {
-      setError('Submit failed: ' + (err.message || 'Unknown error'))
+      // The words a person can act on: the reason when the app gave one, and a plain
+      // sentence for an error written for developers (standing ruling 17).
+      setError(`Could not submit the report. ${callableMessage(err, 'Try again.')}`)
     } finally {
       setSubmitting(false)
     }
@@ -283,7 +305,7 @@ export default function CrewReport() {
     setCrewMember(''); setJobId(''); setPhase(''); setWorkDone({}); setPhotos([])
     setMatUsed(''); setMatNeeded(''); setBlocker('None')
     setInspReady(null); setSafetyIssue(null); setChangeOrderNeeded(null)
-    setNextStep(''); setSuccess(false); setError('')
+    setNextStep(''); setSuccess(false); setError(''); setMissing({})
   }
 
   // ── Success state ───────────────────────────────────────────────────────────
@@ -294,15 +316,15 @@ export default function CrewReport() {
         <PageHeader
           eyebrow="Field Report"
           title="Daily report"
-          subtitle={TODAY_LABEL}
+          subtitle={todayLabel}
         />
         <DataPanel title="Field update received" Icon={CheckCircleIcon}>
           <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
             <div
               className="w-20 h-20 rounded-full flex items-center justify-center mb-5"
-              style={{ backgroundColor: '#22c55e22' }}
+              style={{ backgroundColor: withAlpha(SEMANTIC.success, 0.13) }}
             >
-              <CheckCircleIcon size={40} color="#22c55e" strokeWidth={2.25} />
+              <CheckCircleIcon size={40} color={SEMANTIC.success} strokeWidth={2.25} aria-hidden="true" />
             </div>
             <p className="text-xl font-bold text-white mb-1">Field update received</p>
             <p className="text-sm text-zinc-300 max-w-md">
@@ -311,8 +333,8 @@ export default function CrewReport() {
             <button
               type="button"
               onClick={reset}
-              className="mt-6 inline-flex items-center gap-2 text-sm font-bold px-6 py-3 rounded-lg text-white transition-colors min-h-11"
-              style={{ backgroundColor: O }}
+              className="mt-6 inline-flex items-center gap-2 text-sm font-bold px-6 py-3 rounded-lg text-brand-foreground transition-colors min-h-11"
+              style={{ backgroundColor: BRAND }}
             >
               Submit another report
             </button>
@@ -334,7 +356,7 @@ export default function CrewReport() {
           <>
             <span className="inline-flex items-center gap-1.5">
               <CalendarDaysIcon size={12} />
-              {TODAY_LABEL}
+              {todayLabel}
             </span>
             {crewMember && <span>Reporter: <span className="text-zinc-200 font-semibold">{crewMember}</span></span>}
             {selectedJob && (
@@ -355,10 +377,9 @@ export default function CrewReport() {
           {/* Crew & Job */}
           <DataPanel title="Crew & Job" Icon={HardHatIcon}>
             <div className="space-y-4">
-              <div>
-                <FieldLabel>Reporter</FieldLabel>
-                <Select value={crewMember} onValueChange={setCrewMember}>
-                  <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
+              <Field label="Reporter" required error={missing.crewMember}>
+                <Select value={crewMember} onValueChange={pick('crewMember', setCrewMember)}>
+                  <SelectTrigger ref={reporterRef} className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue placeholder="Select your name…" />
                   </SelectTrigger>
                   <SelectContent>
@@ -367,12 +388,11 @@ export default function CrewReport() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>Job</FieldLabel>
-                <Select value={jobId} onValueChange={setJobId}>
-                  <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
+              <Field label="Job" required error={missing.jobId}>
+                <Select value={jobId} onValueChange={pick('jobId', setJobId)}>
+                  <SelectTrigger ref={jobRef} className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue placeholder="Select job…" />
                   </SelectTrigger>
                   <SelectContent>
@@ -383,12 +403,11 @@ export default function CrewReport() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>Phase</FieldLabel>
-                <Select value={phase} onValueChange={setPhase}>
-                  <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
+              <Field label="Phase" required error={missing.phase}>
+                <Select value={phase} onValueChange={pick('phase', setPhase)}>
+                  <SelectTrigger ref={phaseRef} className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue placeholder="Select phase…" />
                   </SelectTrigger>
                   <SelectContent>
@@ -397,7 +416,7 @@ export default function CrewReport() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
             </div>
           </DataPanel>
 
@@ -407,7 +426,7 @@ export default function CrewReport() {
             description={completedCount > 0 ? `${completedCount} item${completedCount === 1 ? '' : 's'} marked` : 'Tap each item finished today.'}
             Icon={ClipboardListIcon}
           >
-            <div className="rounded-lg border border-white/10 bg-white/[0.025] px-3 divide-y divide-white/5">
+            <div role="group" aria-label="Work completed today" className="rounded-lg border border-white/10 bg-white/[0.025] px-3 divide-y divide-white/5">
               {WORK_ITEMS.map(item => (
                 <WorkCheckbox
                   key={item.id}
@@ -422,45 +441,41 @@ export default function CrewReport() {
           {/* Materials & notes */}
           <DataPanel title="Materials & notes" Icon={PackageIcon}>
             <div className="space-y-4">
-              <div>
-                <FieldLabel>Materials used</FieldLabel>
+              <Field label="Materials used">
                 <Textarea
                   value={matUsed}
                   onChange={e => setMatUsed(e.target.value)}
                   placeholder="e.g. 12/2 Romex 50ft, 4 boxes, 2 GFCI outlets…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 resize-none"
                   rows={2}
                 />
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>Materials needed for next visit</FieldLabel>
+              <Field label="Materials needed for next visit">
                 <Textarea
                   value={matNeeded}
                   onChange={e => setMatNeeded(e.target.value)}
                   placeholder="e.g. 200A panel, 10/3 wire…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 resize-none"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 resize-none"
                   rows={2}
                 />
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>Next step</FieldLabel>
+              <Field label="Next step">
                 <Input
                   value={nextStep}
                   onChange={e => setNextStep(e.target.value)}
                   placeholder="e.g. Trim panel, schedule final inspection…"
-                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-500 h-11"
+                  className="bg-white/[0.04] border-white/10 text-white placeholder:text-zinc-400 h-11"
                 />
-              </div>
+              </Field>
             </div>
           </DataPanel>
 
           {/* Status flags */}
           <DataPanel title="Status & flags" Icon={BadgeCheckIcon}>
             <div className="space-y-4">
-              <div>
-                <FieldLabel>Blocker</FieldLabel>
+              <Field label="Blocker">
                 <Select value={blocker} onValueChange={setBlocker}>
                   <SelectTrigger className="bg-white/[0.04] border-white/10 text-white h-11">
                     <SelectValue />
@@ -471,49 +486,34 @@ export default function CrewReport() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
 
-              <div>
-                <FieldLabel>
-                  <span className="inline-flex items-center gap-1">
-                    <ShieldAlertIcon size={11} /> Safety issue
-                  </span>
-                </FieldLabel>
-                <YesNoToggle
-                  value={safetyIssue}
-                  onChange={setSafetyIssue}
-                  yesColor="#ef4444"
-                  noColor="#22c55e"
-                />
-              </div>
+              <YesNoQuestion
+                label="Safety issue"
+                Icon={ShieldAlertIcon}
+                value={safetyIssue}
+                onChange={setSafetyIssue}
+                yesTone="critical"
+                noTone="success"
+              />
 
-              <div>
-                <FieldLabel>
-                  <span className="inline-flex items-center gap-1">
-                    <FilePenLineIcon size={11} /> Change order needed
-                  </span>
-                </FieldLabel>
-                <YesNoToggle
-                  value={changeOrderNeeded}
-                  onChange={setChangeOrderNeeded}
-                  yesColor={O}
-                  noColor="#22c55e"
-                />
-              </div>
+              <YesNoQuestion
+                label="Change order needed"
+                Icon={FilePenLineIcon}
+                value={changeOrderNeeded}
+                onChange={setChangeOrderNeeded}
+                yesTone="brand"
+                noTone="success"
+              />
 
-              <div>
-                <FieldLabel>
-                  <span className="inline-flex items-center gap-1">
-                    <BadgeCheckIcon size={11} /> Inspection ready
-                  </span>
-                </FieldLabel>
-                <YesNoToggle
-                  value={inspReady}
-                  onChange={setInspReady}
-                  yesColor="#22c55e"
-                  noColor="#ef4444"
-                />
-              </div>
+              <YesNoQuestion
+                label="Inspection ready"
+                Icon={BadgeCheckIcon}
+                value={inspReady}
+                onChange={setInspReady}
+                yesTone="success"
+                noTone="critical"
+              />
             </div>
           </DataPanel>
 
@@ -531,7 +531,7 @@ export default function CrewReport() {
               accept={ALLOWED_UPLOAD_TYPES.join(',')}
               multiple
               capture="environment"
-              className="hidden"
+              hidden
               onChange={handlePhoto}
             />
             <button
@@ -562,17 +562,17 @@ export default function CrewReport() {
             )}
 
             {photos.length === 0 && (
-              <p className="flex items-center gap-2 text-zinc-500 text-[11px] mt-2">
+              <p className="flex items-center gap-2 text-zinc-400 text-[11px] mt-2">
                 <ImageIcon size={12} />
                 No photos attached
               </p>
             )}
           </DataPanel>
 
-          {/* Error + Submit */}
+          {/* A photo that cannot be sent, or a submit that failed, is read out as an alert. */}
           {error && (
-            <div className="flex items-start gap-2 text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
-              <AlertTriangleIcon size={16} className="mt-0.5 shrink-0" />
+            <div role="alert" className="flex items-start gap-2 text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+              <AlertTriangleIcon size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
               <span>{error}</span>
             </div>
           )}
@@ -580,8 +580,8 @@ export default function CrewReport() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full h-12 rounded-lg text-base font-bold text-white inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait transition-colors"
-            style={{ backgroundColor: O }}
+            className="w-full h-12 rounded-lg text-base font-bold text-brand-foreground inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-wait transition-colors"
+            style={{ backgroundColor: BRAND }}
           >
             {submitting ? (
               <><LoaderIcon size={16} className="animate-spin" /> Submitting…</>
@@ -680,7 +680,7 @@ function RecentReportRow({ report }) {
         <span>{summary}</span>
       </div>
       {report.materialsNeeded && (
-        <p className="text-[11px] text-zinc-500 mt-1 truncate" title={report.materialsNeeded}>
+        <p className="text-[11px] text-zinc-400 mt-1 truncate" title={report.materialsNeeded}>
           Needs: {report.materialsNeeded}
         </p>
       )}

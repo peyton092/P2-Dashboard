@@ -3,10 +3,15 @@ import { addDoc, updateDoc, doc, collection, serverTimestamp } from 'firebase/fi
 import { db } from '../firebase'
 import { withAuthor, sendExtraToBuilder } from '../hooks/useFirestore'
 import { extraState, statusOnSave } from '../lib/extraStatus'
-import { callableMessage } from '../lib/callableError'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
+import { useMutation } from '../hooks/useMutation'
+import { useConfirm } from '../hooks/useConfirm'
+import { daysSince, toDate, toLocalDateStr } from '../lib/dates'
 import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
+import { IconButton } from '@/components/ui/icon-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -15,7 +20,7 @@ import {
 } from '@/components/ui/select'
 import {
   PlusIcon, XIcon, SendIcon, SaveIcon, ChevronLeftIcon,
-  CheckCircleIcon, ClockIcon, FileTextIcon,
+  CheckCircleIcon, FileTextIcon,
   DollarSignIcon, PencilIcon, DownloadIcon,
   FilePenLineIcon, FileCheckIcon,
 } from 'lucide-react'
@@ -23,7 +28,7 @@ import { generateCOPdf } from '../lib/generateCOPdf'
 import { exportToCsv } from '../lib/exportCsv'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   EmptyState,
@@ -35,31 +40,18 @@ import {
   TableRow,
   TableCell,
 } from './shared'
+import { BRAND, SEMANTIC, withAlpha } from '@/lib/tokens'
+import { CO_STATUS, normalizeCoStatus, statusLabel, statusTone, toneText } from '../lib/status'
 
-const O = '#F47920'
 const UNITS = ['EA', 'LF', 'SF', 'HR', 'LS']
 // An approved change order is read only: its price was agreed, so more or changed
 // work is a new change order.
 const APPROVED_HINT = 'Approved change orders cannot be edited.'
 const APPROVED_REFUSAL = 'This change order is approved. Raise a new change order for any additional work.'
-const CO_STATUSES = ['Draft', 'Sent to Builder', 'Approved', 'Rejected']
-
-const STATUS_COLOR = {
-  'Draft':           '#6b7280',
-  'Sent to Builder': '#3b82f6',
-  'Approved':        '#22c55e',
-  'Rejected':        '#ef4444',
-  'pending':         '#eab308',
-  'approved':        '#22c55e',
-  'rejected':        '#ef4444',
-}
+const CO_STATUSES = Object.keys(CO_STATUS)
 
 function fmt$(n) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10)
 }
 
 function newLine() {
@@ -83,40 +75,29 @@ function calcTotals(lineItems, markupPct) {
 }
 
 function emptyForm(coNumber) {
-  return { coNumber, job: '', date: todayStr(), status: 'Draft', lineItems: [newLine()], markupPct: 15, notes: '' }
+  return { coNumber, job: '', date: toLocalDateStr(), status: 'Draft', lineItems: [newLine()], markupPct: 15, notes: '' }
 }
 
 // ── Status pill (uses Phase 1 primitive) ──────────────────────────────────────
 
+// The words and tone come from status.js. An older lower case status reads as
+// the Title Case one it stands for.
 function COStatusPill({ status, size = 'xs' }) {
-  const tone =
-    status === 'Approved' || status === 'approved' ? 'success'  :
-    status === 'Rejected' || status === 'rejected' ? 'critical' :
-    status === 'Sent to Builder'                   ? 'info'     :
-    status === 'Draft'                             ? 'mute'     :
-    status === 'pending'                           ? 'warning'  :
-    'mute'
-  const label = status || 'Draft'
-  return <Pill tone={tone} size={size}>{label}</Pill>
+  const key = normalizeCoStatus(status)
+  return <Pill tone={statusTone(CO_STATUS, key)} size={size}>{statusLabel(CO_STATUS, key)}</Pill>
 }
 
 // ── Operational helpers ──────────────────────────────────────────────────────
 
-const TODAY_MS = Date.now()
-
-function coAgeDays(co) {
+function coAgeDays(co, now) {
   // Prefer `sentAt` for sent COs, fall back to `date`, then `createdAt`.
-  const sentTs = co.sentAt?.toDate?.() || (co.sentAt ? new Date(co.sentAt) : null)
-  const dateTs = co.date ? new Date(co.date) : null
-  const createdTs = co.createdAt?.toDate?.() || (co.createdAt ? new Date(co.createdAt) : null)
-  const t = sentTs || dateTs || createdTs
-  if (!t || isNaN(t.getTime())) return null
-  return Math.floor((TODAY_MS - t.getTime()) / 86400000)
+  return daysSince(co.sentAt || co.date || co.createdAt, now)
 }
 
 function fmtDateShort(dateStr) {
   if (!dateStr) return '—'
-  const d = new Date(dateStr)
+  // Text that is not a date becomes an invalid Date, which the next line turns into the placeholder.
+  const d = toDate(dateStr) ?? new Date(NaN)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -129,10 +110,10 @@ const APPROVAL_REQUIRED_THRESHOLD = 3   // days a CO can sit "Sent to Builder" b
 
 const sumOf = (list) => list.reduce((s, e) => s + Number(e.total ?? e.amount ?? 0), 0)
 
-function nextActionFor(co) {
+function nextActionFor(co, now) {
   if (isDraft(co))     return { text: 'Submit for approval',         tone: 'brand'    }
   if (isSubmitted(co)) {
-    const age = coAgeDays(co)
+    const age = coAgeDays(co, now)
     if (age != null && age >= 7) return { text: 'Escalate — long pending',     tone: 'critical' }
     if (age != null && age >= APPROVAL_REQUIRED_THRESHOLD) {
       return { text: 'Follow up with builder', tone: 'warning' }
@@ -160,6 +141,23 @@ function jobLabel(jobs, jobId) {
 
 function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
   const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
+  const { ask, dialog } = useConfirm()
+
+  // The price on a line goes with it, so taking one off is asked about first. It is a
+  // change to the form and nothing is written until the form is saved, so the question
+  // closes as soon as it is answered. The line is taken off by its own _id and not by its
+  // place, so that a confirm that arrives twice takes off the one line and not the next.
+  function removeLine(line, idx) {
+    const words = (line.desc || '').trim()
+    ask({
+      title: `Remove line ${idx + 1}?`,
+      body: `${words || 'This line'} is taken off this change order. Nothing is saved until you save the change order.`,
+      confirmLabel: 'Remove line',
+      tone: 'critical',
+      instant: true,
+      onConfirm: () => setForm(f => ({ ...f, lineItems: f.lineItems.filter(li => li._id !== line._id) })),
+    })
+  }
 
   function setLine(idx, field, val) {
     setForm(f => ({
@@ -179,11 +177,11 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={onCancel} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+        <IconButton label="Back to change orders" onClick={onCancel}>
           <ChevronLeftIcon size={18} />
-        </button>
+        </IconButton>
         <div className="flex-1">
-          <h2 className="text-2xl font-semibold" style={{ color: O }}>{form.coNumber}</h2>
+          <h2 className="text-2xl font-semibold" style={{ color: BRAND }}>{form.coNumber}</h2>
           <p className="text-sm text-muted-foreground">Change Order</p>
         </div>
         <div className="flex gap-2">
@@ -206,8 +204,8 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
             <SaveIcon size={14} /> Save Draft
           </Button>
           <Button
-            className="gap-2 text-white"
-            style={{ backgroundColor: O }}
+            variant="brand"
+            className="gap-2"
             onClick={() => onSave(true)}
             disabled={saving || !canSave}
           >
@@ -220,8 +218,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
       <Card className="border-white/10">
         <CardContent className="p-4">
           <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Job *</label>
+            <Field label="Job" required>
               <Select value={form.job} onValueChange={v => setForm(f => ({ ...f, job: v }))}>
                 <SelectTrigger className="bg-white/5 border-white/20 w-full">
                   <SelectValue placeholder="Select job…" />
@@ -232,28 +229,25 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">CO Date</label>
+            </Field>
+            <Field label="CO date">
               <Input
                 type="date"
                 className="bg-white/5 border-white/20"
                 value={form.date}
                 onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
               />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Status</label>
+            </Field>
+            <Field label="Status" hint="Set when the change order is sent, approved or rejected.">
               <Select value={form.status} disabled>
                 <SelectTrigger className="bg-white/5 border-white/20 w-full">
-                  <SelectValue />
+                  <SelectValue>{statusLabel(CO_STATUS, normalizeCoStatus(form.status || 'Draft'))}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {CO_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  {CO_STATUSES.map(s => <SelectItem key={s} value={s}>{statusLabel(CO_STATUS, s)}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="text-[10px] text-muted-foreground mt-1">Set when the change order is sent, approved or rejected.</p>
-            </div>
+            </Field>
           </div>
         </CardContent>
       </Card>
@@ -283,7 +277,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                   <th className="text-center px-3 py-2 font-medium" style={{ width: 80 }}>Unit</th>
                   <th className="text-right px-3 py-2 font-medium" style={{ width: 110 }}>Unit Price</th>
                   <th className="text-right px-3 py-2 font-medium" style={{ width: 110 }}>Extended</th>
-                  <th className="px-3 py-2" style={{ width: 40 }}></th>
+                  <th className="px-3 py-2" style={{ width: 40 }}><span className="sr-only">Remove</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -291,6 +285,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                   <tr key={li._id}>
                     <td className="px-4 py-2">
                       <Input
+                        aria-label={`Description of line ${idx + 1}`}
                         className="bg-white/5 border-white/20 text-sm h-8"
                         placeholder="Describe the work…"
                         value={li.desc}
@@ -299,6 +294,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     </td>
                     <td className="px-3 py-2">
                       <Input
+                        aria-label={`Quantity of line ${idx + 1}`}
                         className="bg-white/5 border-white/20 text-sm h-8 text-right"
                         type="number"
                         min="0"
@@ -309,7 +305,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     </td>
                     <td className="px-3 py-2">
                       <Select value={li.unit} onValueChange={v => setLine(idx, 'unit', v)}>
-                        <SelectTrigger className="bg-white/5 border-white/20 h-8 text-xs">
+                        <SelectTrigger aria-label={`Unit of line ${idx + 1}`} className="bg-white/5 border-white/20 h-8 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -319,8 +315,9 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                     </td>
                     <td className="px-3 py-2">
                       <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                        <span aria-hidden="true" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
                         <Input
+                          aria-label={`Unit price of line ${idx + 1}`}
                           className="bg-white/5 border-white/20 text-sm h-8 text-right pl-5"
                           type="number"
                           min="0"
@@ -330,17 +327,18 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                         />
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right text-sm font-semibold" style={{ color: O }}>
+                    <td className="px-3 py-2 text-right text-sm font-semibold" style={{ color: BRAND }}>
                       {fmt$(li.extPrice)}
                     </td>
                     <td className="px-3 py-2">
                       {form.lineItems.length > 1 && (
-                        <button
-                          onClick={() => setForm(f => ({ ...f, lineItems: f.lineItems.filter((_, i) => i !== idx) }))}
-                          className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-red-400 transition-colors"
+                        <IconButton
+                          label={`Remove line ${idx + 1}`}
+                          onClick={() => removeLine(li, idx)}
+                          className="text-muted-foreground hover:text-red-400"
                         >
                           <XIcon size={12} />
-                        </button>
+                        </IconButton>
                       )}
                     </td>
                   </tr>
@@ -361,6 +359,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
                   <span>Markup</span>
                   <div className="relative flex items-center">
                     <Input
+                      aria-label="Markup percent"
                       className="bg-white/5 border-white/20 h-7 text-xs text-right w-16"
                       type="number"
                       min="0"
@@ -376,7 +375,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
               </div>
               <div className="flex justify-between py-2 border-t border-white/20 mt-1">
                 <span className="font-semibold text-base">TOTAL</span>
-                <span className="font-semibold text-xl" style={{ color: O }}>{fmt$(total)}</span>
+                <span className="font-semibold text-xl" style={{ color: BRAND }}>{fmt$(total)}</span>
               </div>
             </div>
           </div>
@@ -390,6 +389,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
         </CardHeader>
         <CardContent>
           <Textarea
+            aria-label="Notes or justification"
             className="bg-white/5 border-white/20 min-h-24 resize-y"
             placeholder="Describe why this change order is needed, scope changes, owner-requested additions, field conditions, etc."
             value={form.notes}
@@ -397,6 +397,7 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
           />
         </CardContent>
       </Card>
+      {dialog}
     </div>
   )
 }
@@ -405,7 +406,9 @@ function COForm({ form, setForm, jobs, onSave, onCancel, saving, isEditing }) {
 
 export default function ChangeOrders() {
   const { jobs: JOBS, extras: ALL_EXTRAS, loading } = useData()
+  const now = useNow()
   const toast = useToast()
+  const { run } = useMutation()
   const [view, setView] = useState('list')
   const [editingCO, setEditingCO] = useState(null)
   const [form, setForm] = useState(null)
@@ -441,7 +444,10 @@ export default function ChangeOrders() {
   // Saves the change order as a draft. With sendToBuilder it then asks the Cloud
   // Function to send it: the status, the send times, the notification and the
   // history entry are all written there, so this screen writes none of them (nor
-  // the qbs flag), and it never changes a status itself (see statusOnSave).
+  // the qbs flag), and it never changes a status itself (see statusOnSave). The save
+  // and the send are two writes with a toast each way: a save on its own says it was
+  // saved, and a send says only that it was sent, since the draft that went with it
+  // is no news. A send that fails says the draft was saved, so nobody saves it twice.
   async function saveCO(sendToBuilder) {
     if (!form.job || !form.lineItems.some(li => li.desc.trim())) return
 
@@ -455,61 +461,68 @@ export default function ChangeOrders() {
     }
 
     setSaving(true)
-    let saved = false
     try {
-      const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
-
-      // The constructed object below names every saved field explicitly, so
-      // the UI-only `_id` (used as a React key on the form rows) never lands
-      // in Firestore. No destructuring needed — the explicit shape is the
-      // contract.
-      const cleanLines = form.lineItems.map(li => ({
-        desc: li.desc,
-        qty: parseFloat(li.qty) || 0,
-        unit: li.unit || 'EA',
-        unitPrice: parseFloat(li.unitPrice) || 0,
-        extPrice: (parseFloat(li.qty) || 0) * (parseFloat(li.unitPrice) || 0),
-      }))
-
-      const firstLine = cleanLines.find(l => l.desc)?.desc || ''
-      const data = {
-        coNumber: form.coNumber,
-        job: form.job,
-        date: form.date,
-        ...statusOnSave(editingCO),
-        lineItems: cleanLines,
-        subtotal,
-        markupPct: parseFloat(form.markupPct) || 15,
-        markup,
-        total,
-        notes: form.notes || '',
-        amount: total,
-        desc: `${form.coNumber}${firstLine ? `: ${firstLine}` : ''}`,
-      }
-
       let docId = editingCO?._docId
-      if (docId) {
-        await updateDoc(doc(db, 'extras', docId), data)
-      } else {
-        const created = await addDoc(collection(db, 'extras'), withAuthor({ ...data, createdAt: serverTimestamp() }))
-        docId = created.id
-        // The draft exists now. If sending it fails below, the form stays open on
-        // this saved draft, so trying again updates it and does not add a second.
-        setEditingCO({ ...data, _docId: docId })
-      }
-      saved = true
+      // This run is not given queue: true. It adds the draft and then keeps the id the add
+      // gives back, which the send and a second try depend on, so it waits for the add however
+      // long it takes, and offline that is until the connection is back. A run that stopped
+      // waiting would carry on without the id (see ChangeOrdersOffline.test.jsx).
+      const draft = await run(async () => {
+        const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
 
-      if (sendToBuilder) await sendExtraToBuilder(docId)
+        // The constructed object below names every saved field explicitly, so
+        // the UI-only `_id` (used as a React key on the form rows) never lands
+        // in Firestore. No destructuring needed; the explicit shape is the
+        // contract.
+        const cleanLines = form.lineItems.map(li => ({
+          desc: li.desc,
+          qty: parseFloat(li.qty) || 0,
+          unit: li.unit || 'EA',
+          unitPrice: parseFloat(li.unitPrice) || 0,
+          extPrice: (parseFloat(li.qty) || 0) * (parseFloat(li.unitPrice) || 0),
+        }))
+
+        const firstLine = cleanLines.find(l => l.desc)?.desc || ''
+        const data = {
+          coNumber: form.coNumber,
+          job: form.job,
+          date: form.date,
+          ...statusOnSave(editingCO),
+          lineItems: cleanLines,
+          subtotal,
+          markupPct: parseFloat(form.markupPct) || 15,
+          markup,
+          total,
+          notes: form.notes || '',
+          amount: total,
+          desc: `${form.coNumber}${firstLine ? `: ${firstLine}` : ''}`,
+        }
+
+        if (docId) {
+          await updateDoc(doc(db, 'extras', docId), data)
+        } else {
+          const created = await addDoc(collection(db, 'extras'), withAuthor({ ...data, createdAt: serverTimestamp() }))
+          docId = created.id
+          // The draft exists now. If sending it fails below, the form stays open on
+          // this saved draft, so trying again updates it and does not add a second.
+          setEditingCO({ ...data, _docId: docId })
+        }
+      }, {
+        success: sendToBuilder ? undefined : 'Change order saved.',
+        error: 'Could not save the change order. Try again.',
+      })
+      if (!draft.ok) return
+
+      if (sendToBuilder) {
+        const sent = await run(() => sendExtraToBuilder(docId), {
+          success: 'Change order sent to the builder.',
+          error: 'Saved, but not sent. Try Send to Builder again.',
+        })
+        if (!sent.ok) return
+      }
       setView('list')
       setForm(null)
       setEditingCO(null)
-    } catch (err) {
-      console.error('[ChangeOrders] Save failed:', err)
-      toast({
-        tone: 'error',
-        title: saved ? 'Saved, but not sent' : 'Could not save the change order',
-        description: callableMessage(err, saved ? 'Try Send to Builder again.' : 'Check your connection and try again.'),
-      })
     } finally {
       setSaving(false)
     }
@@ -550,7 +563,7 @@ export default function ChangeOrders() {
   const approved          = EXTRAS.filter(isApproved)
   const rejected          = EXTRAS.filter(isRejected)
   const approvalRequired  = submitted.filter(co => {
-    const age = coAgeDays(co)
+    const age = coAgeDays(co, now)
     return age != null && age >= APPROVAL_REQUIRED_THRESHOLD
   })
 
@@ -598,10 +611,6 @@ export default function ChangeOrders() {
         subtitle="Track every CO from draft to approved billable. Work should not start until approved."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{EXTRAS.length} change orders total</span>
             {approvalRequired.length > 0 && (
               <span className="text-amber-300">{approvalRequired.length} need follow-up</span>
@@ -626,9 +635,9 @@ export default function ChangeOrders() {
               <DownloadIcon size={14} /> Export CSV
             </Button>
             <Button
+              variant="brand"
               onClick={startNew}
-              style={{ backgroundColor: O }}
-              className="text-white gap-2 font-bold"
+              className="gap-2 font-bold"
             >
               <PlusIcon size={14} /> New CO
             </Button>
@@ -636,55 +645,41 @@ export default function ChangeOrders() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Change order pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Drafts"
-          value={drafts.length}
-          Icon={FilePenLineIcon}
-          sub={drafts.length > 0 ? `${fmtCompact(totals.drafts)} drafted` : 'Nothing in draft'}
-        />
-        <MetricTile
-          label="Submitted"
-          value={submitted.length}
-          Icon={SendIcon}
-          emphasis={submitted.length > 0 ? 'default' : 'mute'}
-          sub={submitted.length > 0 ? `${fmtCompact(totals.submitted)} awaiting builder` : 'No COs in flight'}
-        />
-        <MetricTile
-          label="Approval Required"
-          value={approvalRequired.length}
-          Icon={ClockIcon}
-          emphasis={approvalRequired.length > 0 ? 'warning' : 'success'}
-          sub={
-            approvalRequired.length > 0
-              ? `${APPROVAL_REQUIRED_THRESHOLD}+ days pending`
-              : 'No follow-ups needed'
-          }
-        />
-        <MetricTile
-          label="Approved Value"
-          value={fmtCompact(totals.approved)}
-          Icon={FileCheckIcon}
-          emphasis="success"
-          sub={`${approved.length} approved CO${approved.length === 1 ? '' : 's'}`}
-        />
-        <MetricTile
-          label="Rejected"
-          value={rejected.length}
-          Icon={XIcon}
-          emphasis={rejected.length > 0 ? 'critical' : 'success'}
-          sub={
-            rejected.length > 0
-              ? `${fmtCompact(totals.rejected)} needs revision`
-              : 'No rejections'
-          }
-        />
-      </section>
+        stats={[
+          {
+            label: 'Drafts',
+            value: drafts.length,
+            sub: drafts.length > 0 ? `${fmtCompact(totals.drafts)} drafted` : 'Nothing in draft',
+          },
+          {
+            label: 'Submitted',
+            value: submitted.length,
+            sub: submitted.length > 0 ? `${fmtCompact(totals.submitted)} awaiting builder` : 'No COs in flight',
+            tone: submitted.length > 0 ? undefined : 'mute',
+          },
+          {
+            label: 'Approval Required',
+            value: approvalRequired.length,
+            sub: approvalRequired.length > 0 ? `${APPROVAL_REQUIRED_THRESHOLD}+ days pending` : 'No follow-ups needed',
+            tone: approvalRequired.length > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Approved Value',
+            value: fmtCompact(totals.approved),
+            sub: `${approved.length} approved CO${approved.length === 1 ? '' : 's'}`,
+            tone: 'success',
+          },
+          {
+            label: 'Rejected',
+            value: rejected.length,
+            sub: rejected.length > 0 ? `${fmtCompact(totals.rejected)} needs revision` : 'No rejections',
+            tone: rejected.length > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar
@@ -698,9 +693,10 @@ export default function ChangeOrders() {
         trailing={
           <>
             <select
+              aria-label="Filter by job"
               value={jobFilter}
               onChange={e => setJobFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[220px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[220px]"
             >
               <option value="all">All Jobs</option>
               {JOBS.map(j => (
@@ -760,6 +756,7 @@ export default function ChangeOrders() {
                       key={co._docId || i}
                       co={co}
                       job={jobMap.get(co.job)}
+                      now={now}
                       onEdit={openEdit}
                       onPdf={() => generateCOPdf(co, jobLabel(JOBS, co.job))}
                     />
@@ -775,6 +772,7 @@ export default function ChangeOrders() {
                   <COCard
                     co={co}
                     job={jobMap.get(co.job)}
+                    now={now}
                     onEdit={openEdit}
                     onPdf={() => generateCOPdf(co, jobLabel(JOBS, co.job))}
                   />
@@ -800,7 +798,7 @@ function COEmptyState({ filter, hasJobFilter, onNew }) {
           ? 'Adjust the filters or create a new change order for this job.'
           : 'Draft a CO when scope changes — protect revenue before work starts.'}
         action={
-          <Button onClick={onNew} style={{ backgroundColor: '#F47920' }} className="text-white gap-2">
+          <Button variant="brand" onClick={onNew} className="gap-2">
             <PlusIcon size={13} /> New CO
           </Button>
         }
@@ -815,26 +813,18 @@ function COEmptyState({ filter, hasJobFilter, onNew }) {
   return <EmptyState title="No change orders" />
 }
 
-function tonesToColor(tone) {
-  return (
-    tone === 'critical' ? '#ef4444' :
-    tone === 'warning'  ? '#eab308' :
-    tone === 'success'  ? '#22c55e' :
-    tone === 'info'     ? '#3b82f6' :
-    tone === 'brand'    ? O :
-    '#9ca3af'
-  )
-}
-
-function CORow({ co, job, onEdit, onPdf }) {
+function CORow({ co, job, now, onEdit, onPdf }) {
   const isNew     = !!co.lineItems
   const locked    = isApproved(co)
   const canEdit   = isNew && !locked
   const coNum     = co.coNumber || co.id || '—'
+  // What the actions of the row are named after: a record with neither a number nor an id
+  // is named in words, not by the placeholder the row shows.
+  const coName    = co.coNumber || co.id || 'this change order'
   const desc      = co.desc || co.lineItems?.[0]?.desc || '—'
   const total     = co.total ?? co.amount ?? 0
-  const next      = nextActionFor(co)
-  const age       = coAgeDays(co)
+  const next      = nextActionFor(co, now)
+  const age       = coAgeDays(co, now)
   const builder   = job?.client || job?.qbsPM || '—'
   const jobName   = job?.name || job?.address || co.job
   const ageTone   =
@@ -851,7 +841,7 @@ function CORow({ co, job, onEdit, onPdf }) {
         : ''
       }
     >
-      <TableCell first className="font-bold" style={{ color: O }}>
+      <TableCell first className="font-bold" style={{ color: BRAND }}>
         {coNum}
       </TableCell>
       <TableCell className="min-w-0">
@@ -866,21 +856,21 @@ function CORow({ co, job, onEdit, onPdf }) {
       <TableCell className="text-zinc-200 max-w-[24rem] truncate" title={desc}>
         {desc}
       </TableCell>
-      <TableCell align="right" className="font-bold tabular-nums" style={{ color: total > 0 ? O : '#9ca3af' }}>
+      <TableCell align="right" className="font-bold tabular-nums" style={{ color: total > 0 ? BRAND : SEMANTIC.neutral }}>
         {total > 0 ? '$' + Math.round(total).toLocaleString() : '—'}
       </TableCell>
       <TableCell><COStatusPill status={co.status || 'Draft'} /></TableCell>
       <TableCell className="text-zinc-200 truncate">{job?.pm || '—'}</TableCell>
       <TableCell>
         {age == null
-          ? <span className="text-zinc-500 text-xs">—</span>
+          ? <span className="text-zinc-400 text-xs">No date</span>
           : <Pill tone={ageTone} size="xs">{age}d</Pill>}
       </TableCell>
       <TableCell last>
         <div className="flex flex-col items-stretch gap-1.5">
           <p
             className="text-[11px] font-semibold leading-snug"
-            style={{ color: tonesToColor(next.tone) }}
+            style={{ color: toneText(next.tone) }}
             title={next.text}
           >
             {next.text}
@@ -892,25 +882,25 @@ function CORow({ co, job, onEdit, onPdf }) {
           )}
           <div className="flex items-center gap-1 justify-end">
             {isNew && (
-              <button
-                type="button"
+              <IconButton
+                label={`Download PDF of ${coName}`}
                 onClick={onPdf}
-                className="p-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.08] transition-colors"
-                title="Download PDF"
+                className="text-zinc-300 hover:text-white"
               >
                 <DownloadIcon size={13} />
-              </button>
+              </IconButton>
             )}
-            <button
-              type="button"
+            {/* The tooltip says why an approved change order cannot be edited, so the button
+                still takes the pointer when it is switched off. */}
+            <IconButton
+              label={`Edit ${coName}`}
               onClick={() => onEdit(co)}
-              className="p-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-white/[0.08] transition-colors"
+              className="text-zinc-300 hover:text-white disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-40"
               title={locked ? APPROVED_HINT : isNew ? 'Edit or resend' : 'Edit'}
               disabled={!canEdit}
-              style={!canEdit ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
             >
               <PencilIcon size={13} />
-            </button>
+            </IconButton>
           </div>
         </div>
       </TableCell>
@@ -918,17 +908,17 @@ function CORow({ co, job, onEdit, onPdf }) {
   )
 }
 
-function COCard({ co, job, onEdit, onPdf }) {
+function COCard({ co, job, now, onEdit, onPdf }) {
   const isNew    = !!co.lineItems
   const locked   = isApproved(co)
   const coNum    = co.coNumber || co.id || '—'
   const desc     = co.desc || co.lineItems?.[0]?.desc || '—'
   const total    = co.total ?? co.amount ?? 0
-  const next     = nextActionFor(co)
-  const age      = coAgeDays(co)
+  const next     = nextActionFor(co, now)
+  const age      = coAgeDays(co, now)
   const builder  = job?.client || job?.qbsPM || '—'
   const jobName  = job?.name || job?.address || co.job
-  const accent   = tonesToColor(next.tone)
+  const accent   = toneText(next.tone)
 
   return (
     <article
@@ -937,7 +927,7 @@ function COCard({ co, job, onEdit, onPdf }) {
     >
       <header className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <p className="text-sm font-bold" style={{ color: O }}>{coNum}</p>
+          <p className="text-sm font-bold" style={{ color: BRAND }}>{coNum}</p>
           <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">
             {co.job}
           </span>
@@ -947,7 +937,7 @@ function COCard({ co, job, onEdit, onPdf }) {
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-lg font-semibold tabular-nums" style={{ color: total > 0 ? O : '#9ca3af' }}>
+          <p className="text-lg font-semibold tabular-nums" style={{ color: total > 0 ? BRAND : SEMANTIC.neutral }}>
             {total > 0 ? '$' + Math.round(total).toLocaleString() : '—'}
           </p>
           {age != null && (
@@ -964,8 +954,8 @@ function COCard({ co, job, onEdit, onPdf }) {
       </div>
 
       {isRejected(co) && co.rejectNotes && (
-        <div className="rounded-lg border border-red-500/30 px-3 py-2 mb-3" style={{ backgroundColor: '#ef44440a' }}>
-          <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: '#ef4444' }}>
+        <div className="rounded-lg border border-red-500/30 px-3 py-2 mb-3" style={{ backgroundColor: withAlpha(SEMANTIC.critical, 0.04) }}>
+          <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: SEMANTIC.critical }}>
             Rejection note
           </p>
           <p className="text-[11px] text-zinc-200 italic">“{co.rejectNotes}”</p>
@@ -993,8 +983,8 @@ function COCard({ co, job, onEdit, onPdf }) {
             onClick={() => onEdit(co)}
             disabled={!isNew || locked}
             title={locked ? APPROVED_HINT : undefined}
-            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            style={{ backgroundColor: O }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-brand-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            style={{ backgroundColor: BRAND }}
           >
             <PencilIcon size={12} /> {isDraft(co) ? 'Submit for approval' : isRejected(co) ? 'Revise & resend' : 'Edit'}
           </button>

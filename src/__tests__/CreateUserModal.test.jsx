@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react'
 
 // Importing App.jsx pulls in the whole app, so everything that would reach
 // Firebase is replaced: the app's own firebase.js, httpsCallable, the password
@@ -67,18 +67,21 @@ describe('CreateUserModal dialog behavior', () => {
     expect(document.getElementById(titleId).textContent).toContain('Create User Account')
   })
 
-  it('brings its own dark scope, because it renders outside the app shell', () => {
-    // Without .dark the text inherits the light theme's near black and cannot be
-    // read on the dark card (the old dialog had this problem).
+  it('takes the dark theme from the document and names its own text color', async () => {
+    // It renders outside the app shell. index.html puts the dark class on the
+    // document root, so the dialog needs no scope of its own, but it still sets
+    // its foreground so the text on the dark panel never depends on what is behind it.
     openModal()
-    const overlay = screen.getByRole('dialog').parentElement
-    expect(overlay.classList.contains('dark')).toBe(true)
-    expect(overlay.classList.contains('text-foreground')).toBe(true)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.closest('.dark')).toBeNull()
+    expect(dialog.classList.contains('text-foreground')).toBe(true)
   })
 
-  it('focuses the Name field when it opens', () => {
+  // Base UI puts focus in the dialog on the next animation frame after it opens, so the
+  // test waits for it.
+  it('focuses the Name field when it opens', async () => {
     openModal()
-    expect(document.activeElement).toBe(screen.getByLabelText('Name'))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Name')))
   })
 
   it('closes on Escape, and only on Escape', () => {
@@ -104,12 +107,13 @@ describe('CreateUserModal dialog behavior', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('calls the newest onClose, and does not take focus back when its parent re-renders', () => {
+  it('calls the newest onClose, and does not take focus back when its parent re-renders', async () => {
     const first = vi.fn()
     const second = vi.fn()
     const { rerender } = render(<CreateUserModal onClose={first} />)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Name')))
     fireEvent.focus(screen.getByLabelText('Email'))
-    screen.getByLabelText('Email').focus()
+    act(() => { screen.getByLabelText('Email').focus() })
     rerender(<CreateUserModal onClose={second} />)
     expect(document.activeElement).toBe(screen.getByLabelText('Email'))
     fireEvent.keyDown(document, { key: 'Escape' })
@@ -123,14 +127,14 @@ describe('CreateUserModal dialog behavior', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('gives focus back to the element that opened it', () => {
+  it('gives focus back to the element that opened it', async () => {
     const opener = document.createElement('button')
     document.body.appendChild(opener)
     opener.focus()
     const { unmount } = render(<CreateUserModal onClose={() => {}} />)
-    expect(document.activeElement).not.toBe(opener)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Name')))
     unmount()
-    expect(document.activeElement).toBe(opener)
+    await waitFor(() => expect(document.activeElement).toBe(opener))
     opener.remove()
   })
 })
@@ -369,19 +373,36 @@ describe('CreateUserModal submit', () => {
     expect(screen.getByLabelText('Email').value).toBe('')
   })
 
-  it('disables the button while the account is being created and ignores a second submit', async () => {
+  // While the account is being created the button says Creating and takes no second press.
+  // It is aria-disabled and not disabled, so the person who pressed it keeps focus inside the
+  // dialog instead of losing it to the page behind, and a status that is there from the start
+  // reads Working, as ConfirmDialog does.
+  it('turns the button off while the account is being created, keeps focus on it, and says Working', async () => {
     let finish
     mocks.callable.mockReturnValue(new Promise((resolve) => { finish = resolve }))
     openModal()
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Name')))
     fill('Email', 'pat@example.com')
+    const status = screen.getByRole('status')
+    expect(status.textContent).toBe('')
+    const button = screen.getByRole('button', { name: 'Create Account' })
+    act(() => { button.focus() })
     submit()
-    const button = await screen.findByRole('button', { name: 'Creating…' })
-    expect(button.disabled).toBe(true)
+
+    expect(await screen.findByRole('button', { name: 'Creating…' })).toBe(button)
+    expect(button.getAttribute('aria-disabled')).toBe('true')
+    expect(button.disabled).toBe(false)
+    expect(document.activeElement).toBe(button)
+    expect(status.textContent).toBe('Working')
+    fireEvent.click(button)
     fireEvent.submit(button.closest('form'))
     expect(mocks.callable).toHaveBeenCalledTimes(1)
-    finish({ data: { uid: 'u' } })
+
+    await act(async () => { finish({ data: { uid: 'u' } }) })
     await screen.findByText(SUCCESS('pat@example.com'))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Create Account' }).disabled).toBe(false))
+    expect(screen.getByRole('status')).toBe(status)
+    expect(status.textContent).toBe(SUCCESS('pat@example.com'))
+    expect(screen.getByRole('button', { name: 'Create Account' }).getAttribute('aria-disabled')).not.toBe('true')
   })
 
   it('no longer creates accounts or user documents from the browser', async () => {

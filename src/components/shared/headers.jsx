@@ -1,13 +1,17 @@
 import { cn } from '@/lib/utils'
+import { BRAND } from '@/lib/tokens'
+import { ConnectionChip } from './ConnectionChip'
 
-const O = '#F47920'
-
+// A page header carries the connection chip, first in its meta row, because every
+// screen shows live data. A screen that shows none, such as the architecture notes,
+// passes live={false}.
 export function PageHeader({
   eyebrow,
   title,
   subtitle,
   actions,
   meta,
+  live = true,
   className = '',
 }) {
   return (
@@ -22,7 +26,7 @@ export function PageHeader({
         {eyebrow && (
           <p
             className="text-[10px] font-semibold uppercase tracking-wider mb-1.5"
-            style={{ color: O }}
+            style={{ color: BRAND }}
           >
             {eyebrow}
           </p>
@@ -35,8 +39,9 @@ export function PageHeader({
             {subtitle}
           </p>
         )}
-        {meta && (
+        {(live || meta) && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-zinc-400">
+            {live && <ConnectionChip />}
             {meta}
           </div>
         )}
@@ -65,7 +70,7 @@ export function SectionHeader({
           {Icon && (
             <Icon
               size={16}
-              style={{ color: O }}
+              style={{ color: BRAND }}
               className="shrink-0"
               aria-hidden="true"
             />

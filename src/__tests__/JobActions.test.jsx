@@ -1,6 +1,12 @@
+import process from 'node:process'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
+import { openSettled, initialFocusLanded } from '@/test/dialog'
+import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
+import { hexToRgb } from '@/lib/tokens'
+import { toneText } from '@/lib/status'
 
 // Creating a job and recording an inspection result go through Cloud Functions
 // that check the caller is staff. This covers what the screens do around those
@@ -31,6 +37,9 @@ vi.mock('../hooks/useFirestore', async (importOriginal) => ({
   failInspection: mocks.failInspection,
   updateJob: mocks.updateJob,
 }))
+// The chip in every page header asks this hook for the connection. What it says is
+// not what this file is about, and the real one would start Firestore.
+vi.mock('../hooks/useConnectionState', () => ({ useConnectionState: () => 'online' }))
 
 import { JobStatus, PhaseRow } from '../App'
 
@@ -45,7 +54,6 @@ function deferred() {
 }
 
 beforeEach(() => {
-  vi.spyOn(console, 'error').mockImplementation(() => {})
   for (const mock of [mocks.createJob, mocks.passInspection, mocks.failInspection, mocks.updateJob, mocks.toast]) {
     mock.mockReset()
   }
@@ -55,9 +63,14 @@ beforeEach(() => {
   mocks.data = { jobs: [], subs: [] }
 })
 
+const originalZone = process.env.TZ
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.useRealTimers()
+  if (originalZone === undefined) delete process.env.TZ
+  else process.env.TZ = originalZone
 })
 
 const withToast = (ui) => <ToastContext.Provider value={mocks.toast}>{ui}</ToastContext.Provider>
@@ -74,6 +87,33 @@ describe('New job form', () => {
     type('Client name', 'Dana Lee')
   }
   const create = () => screen.getByRole('button', { name: /^Create job$|^Creating/ })
+
+  // The form is on the shared Field: each label points at its box or list, and the ones that
+  // must be filled in say so to a screen reader as well as with a mark.
+  it('names every box and list of the form by its label', () => {
+    open()
+    for (const name of ['Job ID', 'Street address', 'City, state ZIP', 'Client', 'Project type', 'Permit number']) {
+      expect(screen.getByRole('textbox', { name }).tagName, name).toBe('INPUT')
+    }
+    expect(screen.getByLabelText('Target date').getAttribute('type')).toBe('date')
+    for (const name of ['Tenant', 'PM', 'Electrical sub', 'Plumbing sub', 'HVAC sub']) {
+      expect(screen.getByRole('combobox', { name }), name).toBeTruthy()
+    }
+  })
+
+  it('says the id, the address and the client must be filled in', () => {
+    open()
+    for (const name of ['Job ID', 'Street address', 'Client']) {
+      expect(screen.getByRole('textbox', { name }).getAttribute('aria-required'), name).toBe('true')
+    }
+    expect(screen.getByRole('textbox', { name: 'City, state ZIP' }).hasAttribute('aria-required')).toBe(false)
+  })
+
+  it('has no accessibility violations in the open form', async () => {
+    open()
+    const form = screen.getByRole('textbox', { name: 'Job ID' }).closest('section')
+    expect(await axe(form)).toHaveNoViolations()
+  })
 
   it('cannot be sent until the id, address and client are filled in', () => {
     open()
@@ -105,6 +145,20 @@ describe('New job form', () => {
     expect(job.subs).toEqual({ electrical: null, plumbing: null, hvac: null })
   })
 
+  it('starts the job on the local day, in the evening when UTC is already tomorrow', async () => {
+    // Half past nine at night on the 18th in Nashville is half past two in the morning
+    // on the 19th in UTC. Only the clock is faked, so the screen can still wait for its call.
+    process.env.TZ = 'America/Chicago'
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 18, 21, 30))
+    open()
+    fill()
+    fireEvent.click(create())
+    await waitFor(() => expect(mocks.createJob).toHaveBeenCalledTimes(1))
+
+    expect(mocks.createJob.mock.calls[0][0].start).toBe('2026-10-18')
+  })
+
   it('shows Creating while the call is out, and one call only', async () => {
     const pending = deferred()
     mocks.createJob.mockReturnValue(pending.promise)
@@ -119,14 +173,48 @@ describe('New job form', () => {
     await waitFor(() => expect(screen.queryByPlaceholderText('QBS-045')).toBeNull())
   })
 
+  // Creating a job is a call to a Cloud Function, and nothing queues one. The form is not
+  // closed and cleared on "saved on this device" for a job that does not exist yet.
+  it('keeps the form open on Creating past the wait while the device is offline, and says nothing is saved on this device', async () => {
+    const pending = deferred()
+    mocks.createJob.mockReturnValue(pending.promise)
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    open()
+    fill()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      fireEvent.click(create())
+      await act(async () => { vi.advanceTimersByTime(OFFLINE_WAIT_MS * 4) })
+
+      expect(create().textContent).toBe('Creating…')
+      expect(screen.getByPlaceholderText('QBS-045').value).toBe('QBS-045')
+      expect(mocks.toast).not.toHaveBeenCalled()
+
+      await act(async () => { pending.resolve({ ok: true }) })
+
+      expect(mocks.toast.mock.calls).toEqual([[{ tone: 'success', title: 'Job QBS-045 created.' }]])
+      expect(screen.queryByPlaceholderText('QBS-045')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      onLine.mockRestore()
+    }
+  })
+
   it('closes the form and clears it once the job is created', async () => {
     open()
     fill()
     fireEvent.click(create())
     await waitFor(() => expect(screen.queryByPlaceholderText('QBS-045')).toBeNull())
-    expect(mocks.toast).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /New job/ }))
     expect(screen.getByPlaceholderText('QBS-045').value).toBe('')
+  })
+
+  it('says the job was created, by its id', async () => {
+    open()
+    fill()
+    fireEvent.click(create())
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Job QBS-045 created.' })
   })
 
   it('keeps the form open with what was typed, and shows the message, when the function refuses', async () => {
@@ -137,7 +225,7 @@ describe('New job form', () => {
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
-      title: 'Could not create the job',
+      title: 'Could not create the job. Try again.',
       description: 'A job with that ID already exists.',
     })
     expect(screen.getByPlaceholderText('QBS-045').value).toBe('QBS-045')
@@ -153,7 +241,7 @@ describe('New job form', () => {
     fill()
     fireEvent.click(create())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
-    expect(mocks.toast.mock.calls[0][0].description).toBe('Check your connection and try again.')
+    expect(mocks.toast.mock.calls[0][0]).toEqual({ tone: 'error', title: 'Could not create the job. Try again.' })
   })
 
   // The tenant decides who outside P2 sees the job, so it is chosen on the form, and
@@ -237,10 +325,10 @@ describe('New job form', () => {
 
 describe('inspection result buttons', () => {
   const row = (props = {}) => render(withToast(
-    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" {...props} />,
+    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" {...props} />,
   ))
-  const pass = () => screen.getByRole('button', { name: 'Mark Rough-In passed' })
-  const fail = () => screen.getByRole('button', { name: 'Mark Rough-In failed' })
+  const pass = () => screen.getByRole('button', { name: 'Mark QBS-003 Electrical Rough-In passed' })
+  const fail = () => screen.getByRole('button', { name: 'Mark QBS-003 Electrical Rough-In failed' })
 
   it('pass calls passInspection with the job document id, the trade and the phase', async () => {
     row()
@@ -251,18 +339,55 @@ describe('inspection result buttons', () => {
     expect(mocks.updateJob).not.toHaveBeenCalled()
   })
 
-  it('fail calls failInspection the same way', async () => {
-    row({ label: 'Final', field: 'insp.hvac.final' })
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Final failed' }))
-    await waitFor(() => expect(mocks.failInspection).toHaveBeenCalledTimes(1))
-    expect(mocks.failInspection).toHaveBeenCalledWith('job1', 'hvac', 'final')
-    expect(mocks.passInspection).not.toHaveBeenCalled()
+  // Every job's card has a row for each phase of each trade, so a row's controls name the
+  // job, the trade and the phase, and no two rows of a list share a name.
+  it('names the job, the trade and the phase in each of its controls', () => {
+    render(withToast(<>
+      <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" />
+      <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.plumbing.roughIn" jobId="QBS-003" />
+      <PhaseRow label="Rough-In" status="pending" docId="job2" field="insp.electrical.roughIn" jobId="QBS-004" />
+    </>))
+    for (const subject of ['QBS-003 Electrical Rough-In', 'QBS-003 Plumbing Rough-In', 'QBS-004 Electrical Rough-In']) {
+      expect(screen.getByRole('button', { name: `Mark ${subject} passed` }), subject).toBeTruthy()
+      expect(screen.getByRole('button', { name: `Mark ${subject} failed` }), subject).toBeTruthy()
+      expect(screen.getByRole('combobox', { name: `Update ${subject} status` }), subject).toBeTruthy()
+    }
   })
 
   it('names the trim phase of electrical', async () => {
     row({ label: 'Trim', field: 'insp.electrical.trim' })
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Trim passed' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mark QBS-003 Electrical Trim passed' }))
     await waitFor(() => expect(mocks.passInspection).toHaveBeenCalledWith('job1', 'electrical', 'trim'))
+  })
+
+  it('says the phase was marked passed', async () => {
+    row()
+    fireEvent.click(pass())
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Rough-In marked passed.' })
+  })
+
+  it('keeps the buttons off past the wait while the device is offline, and says nothing is saved on this device', async () => {
+    const pending = deferred()
+    mocks.passInspection.mockReturnValue(pending.promise)
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    row()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      fireEvent.click(pass())
+      await act(async () => { vi.advanceTimersByTime(OFFLINE_WAIT_MS * 4) })
+
+      expect(pass().disabled).toBe(true)
+      expect(mocks.toast).not.toHaveBeenCalled()
+
+      await act(async () => { pending.resolve({ ok: true }) })
+
+      expect(mocks.toast.mock.calls).toEqual([[{ tone: 'success', title: 'Rough-In marked passed.' }]])
+      expect(pass().disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+      onLine.mockRestore()
+    }
   })
 
   it('takes one call at a time: the buttons and the list are off while it is out', async () => {
@@ -272,11 +397,12 @@ describe('inspection result buttons', () => {
     fireEvent.click(pass())
     expect(pass().disabled).toBe(true)
     expect(fail().disabled).toBe(true)
-    expect(screen.getByRole('combobox', { name: /Update Rough-In status/ }).disabled).toBe(true)
+    expect(screen.getByRole('combobox', { name: /Update QBS-003 Electrical Rough-In status/ }).disabled).toBe(true)
     fireEvent.click(pass())
     fireEvent.click(fail())
     expect(mocks.passInspection).toHaveBeenCalledTimes(1)
     expect(mocks.failInspection).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
     pending.resolve({ ok: true })
     await waitFor(() => expect(pass().disabled).toBe(false))
   })
@@ -288,38 +414,172 @@ describe('inspection result buttons', () => {
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
     expect(mocks.toast).toHaveBeenCalledWith({
       tone: 'error',
-      title: 'Could not record the inspection result',
+      title: 'Could not record the inspection result. Try again.',
       description: 'Staff access required.',
     })
     expect(pass().disabled).toBe(false)
   })
 
   it('shows a plain message when no reply came back, and never the bare code', async () => {
-    mocks.failInspection.mockRejectedValue(sdkError('internal', 'internal'))
+    mocks.passInspection.mockRejectedValue(sdkError('internal', 'internal'))
     row()
-    fireEvent.click(fail())
+    fireEvent.click(pass())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
-    expect(mocks.toast.mock.calls[0][0].description).toBe('Check your connection and try again.')
+    expect(mocks.toast.mock.calls[0][0]).toEqual({ tone: 'error', title: 'Could not record the inspection result. Try again.' })
   })
 
   it('the buttons are not offered for a row with no job document', () => {
     row({ docId: undefined })
-    expect(screen.queryByRole('button', { name: /Mark Rough-In/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Mark QBS-003 Electrical Rough-In/ })).toBeNull()
+  })
+})
+
+// A failed inspection raises an alert for the whole team and shows on the job, so it is
+// asked about first. The question is the same from the red button and from the list.
+describe('marking an inspection failed', () => {
+  const row = (props = {}) => render(withToast(
+    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" {...props} />,
+  ))
+  const fail = () => screen.getByRole('button', { name: 'Mark QBS-003 Electrical Rough-In failed' })
+  const list = () => screen.getByRole('combobox', { name: /Update QBS-003 Electrical Rough-In status/ })
+  // Base UI puts focus inside a dialog on the next animation frame after it mounts. A test
+  // that presses a button in it waits for that first, or the frame lands later on a slow
+  // machine, on top of what the test did.
+  const ask = async () => {
+    const dialog = await screen.findByRole('dialog', { name: 'Mark QBS-003 Electrical Rough-In failed?' })
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+    return dialog
+  }
+  const confirm = (dialog) => fireEvent.click(within(dialog).getByRole('button', { name: 'Mark failed' }))
+  const gone = () => waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  it.each([
+    ['the red button', () => fireEvent.click(fail())],
+    ['the list', () => fireEvent.change(list(), { target: { value: 'failed' } })],
+  ])('asks first from %s, and records nothing until it is confirmed', async (_name, start) => {
+    row()
+    start()
+    const dialog = await ask()
+
+    expect(within(dialog).getByText('The failed result is recorded on the job and the team is alerted.')).toBeTruthy()
+    expect(mocks.failInspection).not.toHaveBeenCalled()
+    expect(mocks.updateJob).not.toHaveBeenCalled()
   })
 
-  it('does not toast a result that was recorded', async () => {
+  it.each([
+    ['the red button', () => fireEvent.click(fail())],
+    ['the list', () => fireEvent.change(list(), { target: { value: 'failed' } })],
+  ])('calls failInspection with the job, the trade and the phase once it is confirmed from %s', async (_name, start) => {
     row()
-    fireEvent.click(pass())
-    await waitFor(() => expect(mocks.passInspection).toHaveBeenCalled())
-    expect(mocks.toast).not.toHaveBeenCalled()
+    start()
+    confirm(await ask())
+
+    await waitFor(() => expect(mocks.failInspection).toHaveBeenCalledTimes(1))
+    expect(mocks.failInspection).toHaveBeenCalledWith('job1', 'electrical', 'roughIn')
+    expect(mocks.passInspection).not.toHaveBeenCalled()
+    expect(mocks.updateJob).not.toHaveBeenCalled()
+    await gone()
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Rough-In marked failed.' })
+  })
+
+  // The row names its buttons and its list, and the question is a modal dialog with a title,
+  // a body and two named buttons.
+  it('has no accessibility violations on the row, or with the question open', async () => {
+    const { container } = row()
+    expect(await axe(container)).toHaveNoViolations()
+
+    fireEvent.click(fail())
+    await openSettled('Mark QBS-003 Electrical Rough-In failed?')
+    await initialFocusLanded()
+    expect(await axe(document.body)).toHaveNoViolations()
+  })
+
+  it('names the final phase of HVAC', async () => {
+    row({ label: 'Final', field: 'insp.hvac.final' })
+    fireEvent.click(screen.getByRole('button', { name: 'Mark QBS-003 HVAC Final failed' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Mark QBS-003 HVAC Final failed?' })
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+    confirm(dialog)
+    await waitFor(() => expect(mocks.failInspection).toHaveBeenCalledWith('job1', 'hvac', 'final'))
+  })
+
+  it('records nothing when it is cancelled, and the list goes back to the status the phase has', async () => {
+    row()
+    fireEvent.change(list(), { target: { value: 'failed' } })
+    const dialog = await ask()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await gone()
+    expect(mocks.failInspection).not.toHaveBeenCalled()
+    expect(list().value).toBe('pending')
+  })
+
+  it('reads Working while the call is out, and closes when it is recorded', async () => {
+    const pending = deferred()
+    mocks.failInspection.mockReturnValue(pending.promise)
+    row()
+    fireEvent.click(fail())
+    confirm(await ask())
+
+    expect(await screen.findByRole('button', { name: 'Working' })).toBeTruthy()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(mocks.failInspection).toHaveBeenCalledTimes(1)
+
+    await act(async () => { pending.resolve({ ok: true }) })
+    await gone()
+  })
+
+  it('stays open under the error toast when the call is refused, so it can be tried again', async () => {
+    mocks.failInspection.mockRejectedValueOnce(sdkError('permission-denied', 'Staff access required.'))
+    row()
+    fireEvent.click(fail())
+    const dialog = await ask()
+    confirm(dialog)
+
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({
+      tone: 'error',
+      title: 'Could not record the inspection result. Try again.',
+      description: 'Staff access required.',
+    })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Mark failed' })).toBeTruthy())
+
+    confirm(dialog)
+    await waitFor(() => expect(mocks.failInspection).toHaveBeenCalledTimes(2))
+    await gone()
+  })
+
+  it('returns focus to the control that asked', async () => {
+    row()
+    act(() => { fail().focus() })
+    fireEvent.click(fail())
+    const dialog = await ask()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await gone()
+
+    await waitFor(() => expect(document.activeElement).toBe(fail()))
   })
 })
 
 describe('inspection status list', () => {
-  const list = () => screen.getByRole('combobox', { name: /Update Rough-In status/ })
+  const list = () => screen.getByRole('combobox', { name: /Update QBS-003 Electrical Rough-In status/ })
   const row = () => render(withToast(
-    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" />,
+    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" />,
   ))
+
+  // The list is a pill with 11 pixel words, so they are in the text color of the tone: a
+  // pending result in the neutral gray and not the dimmer mute, a failed one a lighter red.
+  it.each([
+    ['pending', 'mute'],
+    ['failed', 'critical'],
+    ['blocked', 'info'],
+  ])('sets the words of a %s result in the text color of %s', (status, tone) => {
+    render(withToast(<PhaseRow label="Rough-In" status={status} docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" />))
+    expect(list().style.color).toBe(`rgb(${hexToRgb(toneText(tone)).join(', ')})`)
+  })
 
   it('records passed through passInspection, not as a plain edit of the job', async () => {
     row()
@@ -328,14 +588,7 @@ describe('inspection status list', () => {
     expect(mocks.updateJob).not.toHaveBeenCalled()
   })
 
-  it('records failed through failInspection, not as a plain edit of the job', async () => {
-    row()
-    fireEvent.change(list(), { target: { value: 'failed' } })
-    await waitFor(() => expect(mocks.failInspection).toHaveBeenCalledWith('job1', 'electrical', 'roughIn'))
-    expect(mocks.updateJob).not.toHaveBeenCalled()
-  })
-
-  it('still edits the other statuses on the job directly, since they are not results', () => {
+  it('still edits the other statuses on the job directly, since they are not results', async () => {
     row()
     for (const value of ['scheduled', 'blocked', 'n/a']) {
       fireEvent.change(list(), { target: { value } })
@@ -343,6 +596,42 @@ describe('inspection status list', () => {
     }
     expect(mocks.passInspection).not.toHaveBeenCalled()
     expect(mocks.failInspection).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(3))
+  })
+
+  // A Firestore write is applied on the screen at once and acknowledged later, which can be
+  // long after when the connection is poor, so the list is not held off while it waits.
+  it('does not switch the list or the buttons off while a plain edit waits for the server', async () => {
+    const pending = deferred()
+    mocks.updateJob.mockReturnValue(pending.promise)
+    row()
+    fireEvent.change(list(), { target: { value: 'scheduled' } })
+
+    expect(list().disabled).toBe(false)
+    expect(screen.getByRole('button', { name: 'Mark QBS-003 Electrical Rough-In passed' }).disabled).toBe(false)
+
+    await act(async () => { pending.resolve() })
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+  })
+
+  it('says what the status was set to, in words', async () => {
+    row()
+    fireEvent.change(list(), { target: { value: 'scheduled' } })
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Rough-In set to scheduled.' })
+  })
+
+  it('shows the message when a plain edit of the status is refused', async () => {
+    mocks.updateJob.mockRejectedValue(Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' }))
+    row()
+    fireEvent.change(list(), { target: { value: 'blocked' } })
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
+    expect(mocks.toast).toHaveBeenCalledWith({
+      tone: 'error',
+      title: 'Could not change the inspection status. Try again.',
+      description: 'You do not have permission to do that.',
+    })
   })
 
   it('shows the message when recording a result from the list is refused', async () => {

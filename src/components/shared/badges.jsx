@@ -1,17 +1,29 @@
 import { cn } from '@/lib/utils'
+import { withAlpha } from '@/lib/tokens'
+import {
+  JOB_STATUS, INSPECTION_STATUS, PERMIT_STATUS, BILLING_STATUS,
+  statusLabel, statusTone, toneHex, toneText,
+} from '@/lib/status'
 
-const O = '#F47920'
-
-// Existing-palette tones only. Do NOT introduce new colors.
+// How each tone paints a pill: a tint of the tone's color for the fill and a stronger
+// tint for the border, and the tone's text color for the words. The words are 9 to 11
+// pixels, so they take the text color, which is lighter than the tone where the tone is
+// too dim for small text on a card (see TONE_TEXT in tokens.js). Neutral and mute sit on
+// white at a low alpha so they read as quiet, and muted words are in the neutral gray.
+const tint = (tone) => ({
+  fg: toneText(tone),
+  bg: withAlpha(toneHex(tone), 0.13),
+  bd: withAlpha(toneHex(tone), 0.33),
+})
 const TONE = {
-  brand:    { fg: O,         bg: O + '22',         bd: O + '55' },
-  success:  { fg: '#22c55e', bg: '#22c55e22',      bd: '#22c55e55' },
-  warning:  { fg: '#eab308', bg: '#eab30822',      bd: '#eab30855' },
-  critical: { fg: '#ef4444', bg: '#ef444422',      bd: '#ef444455' },
-  info:     { fg: '#3b82f6', bg: '#3b82f622',      bd: '#3b82f655' },
-  cyan:     { fg: '#06b6d4', bg: '#06b6d422',      bd: '#06b6d455' },
-  neutral:  { fg: '#9ca3af', bg: 'rgba(255,255,255,0.06)', bd: 'rgba(255,255,255,0.12)' },
-  mute:     { fg: '#6b7280', bg: 'rgba(255,255,255,0.04)', bd: 'rgba(255,255,255,0.08)' },
+  brand:    tint('brand'),
+  success:  tint('success'),
+  warning:  tint('warning'),
+  critical: tint('critical'),
+  info:     tint('info'),
+  cyan:     tint('cyan'),
+  neutral:  { fg: toneText('neutral'), bg: 'rgba(255,255,255,0.06)', bd: 'rgba(255,255,255,0.12)' },
+  mute:     { fg: toneText('mute'),    bg: 'rgba(255,255,255,0.04)', bd: 'rgba(255,255,255,0.08)' },
 }
 
 const SIZE = {
@@ -20,10 +32,11 @@ const SIZE = {
   md: 'text-[11px] px-2.5 py-1 tracking-wide',
 }
 
-export function Pill({ tone = 'neutral', size = 'sm', className = '', children, Icon }) {
+export function Pill({ tone = 'neutral', size = 'sm', className = '', children, Icon, title }) {
   const t = TONE[tone] || TONE.neutral
   return (
     <span
+      title={title}
       className={cn(
         'inline-flex items-center gap-1 rounded-full font-bold uppercase whitespace-nowrap',
         SIZE[size] || SIZE.sm,
@@ -37,49 +50,30 @@ export function Pill({ tone = 'neutral', size = 'sm', className = '', children, 
   )
 }
 
-// Job status pill — maps codebase status keys to tones from the existing palette.
-const JOB_STATUS = {
-  'on-track':     { tone: 'success',  label: 'On Track'     },
-  'needs-action': { tone: 'brand',    label: 'Needs Action' },
-  'at-risk':      { tone: 'warning',  label: 'At Risk'      },
-  'blocked':      { tone: 'critical', label: 'Blocked'      },
-  'complete':     { tone: 'success',  label: 'Complete'     },
-  'completed':    { tone: 'success',  label: 'Completed'    },
-  'active':       { tone: 'brand',    label: 'Active'       },
-  'hold':         { tone: 'critical', label: 'On Hold'      },
-  'pending':      { tone: 'mute',     label: 'Pending'      },
+// The status badges read their words and tones from status.js, so a status looks
+// the same here as in a menu, a chart or a list.
+function StatusPill({ map, status, size, className }) {
+  return <Pill tone={statusTone(map, status)} size={size} className={className}>{statusLabel(map, status)}</Pill>
 }
+
+// Job status pill
 export function StatusBadge({ status, size = 'sm', className = '' }) {
-  const meta = JOB_STATUS[status] || { tone: 'neutral', label: (status || '').toUpperCase() || '—' }
-  return <Pill tone={meta.tone} size={size} className={className}>{meta.label}</Pill>
+  return <StatusPill map={JOB_STATUS} status={status} size={size} className={className} />
 }
 
 // Inspection result pill
-const INSP_STATUS = {
-  'passed':                 { tone: 'success',  label: 'Passed'    },
-  'failed':                 { tone: 'critical', label: 'Failed'    },
-  'scheduled':              { tone: 'warning',  label: 'Scheduled' },
-  'pending':                { tone: 'mute',     label: 'Pending'   },
-  'pending-verification':   { tone: 'mute',     label: 'Pending'   },
-  'blocked':                { tone: 'info',     label: 'Blocked'   },
-  'n/a':                    { tone: 'neutral',  label: 'N/A'       },
-  'not-started':            { tone: 'neutral',  label: 'Not Started' },
-}
 export function InspectionBadge({ status, size = 'sm', className = '' }) {
-  const meta = INSP_STATUS[status] || { tone: 'neutral', label: (status || '—').toUpperCase() }
-  return <Pill tone={meta.tone} size={size} className={className}>{meta.label}</Pill>
+  return <StatusPill map={INSPECTION_STATUS} status={status} size={size} className={className} />
 }
 
-// Billing status pill
-const BILLING_STATUS = {
-  'not-invoiced': { tone: 'mute',    label: 'Not Invoiced' },
-  'invoiced':     { tone: 'info',    label: 'Invoiced'     },
-  'partial-pay':  { tone: 'warning', label: 'Partial Pay'  },
-  'paid':         { tone: 'success', label: 'Paid'         },
+// Permit status pill
+export function PermitBadge({ status, size = 'sm', className = '' }) {
+  return <StatusPill map={PERMIT_STATUS} status={status} size={size} className={className} />
 }
-export function BillingBadge({ status = 'not-invoiced', size = 'sm', className = '' }) {
-  const meta = BILLING_STATUS[status] || BILLING_STATUS['not-invoiced']
-  return <Pill tone={meta.tone} size={size} className={className}>{meta.label}</Pill>
+
+// Billing status pill. A job with no billing status has not been invoiced.
+export function BillingBadge({ status, size = 'sm', className = '' }) {
+  return <StatusPill map={BILLING_STATUS} status={status || 'not-invoiced'} size={size} className={className} />
 }
 
 // Priority pill (CRITICAL / HIGH / MEDIUM / LOW)

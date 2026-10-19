@@ -38,16 +38,34 @@ const NOTIF_TITLE = {
 const USER_CHUNK = 10
 const MULTICAST_LIMIT = 500
 
+// The most bytes Firestore allows in a document id.
+const ID_MAX_BYTES = 1500
+
+// Whether a uid can be asked for as users/{uid}. A read that names an id Firestore
+// refuses fails, and with it the whole event, so one such token would stop everyone
+// else's push. A uid is left out when it:
+//   is not a string, or is empty;
+//   holds a slash, which would point the path somewhere else;
+//   is "." or "..";
+//   starts and ends with two underscores, like __name__, which Firestore reserves;
+//   is over 1500 bytes once encoded as UTF 8.
+const namesAUserDocument = (uid) =>
+  nonEmptyString(uid)
+  && !uid.includes('/')
+  && uid !== '.'
+  && uid !== '..'
+  && !/^__.*__$/.test(uid)
+  && Buffer.byteLength(uid, 'utf8') <= ID_MAX_BYTES
+
 // The users documents of these uids, as { [uid]: { role, tenantId, clientJobIds } }:
 // the fields push-targets.js reads. The tenant is the one the claims sync gives the
 // account (tenantForRole): a builder keeps qbs or vision and otherwise has none, so a
 // builder whose document names any other tenant matches no tenant scoped push, as the
 // rules show them nothing scoped. A uid whose document does not exist is left out,
-// which leaves its devices out of the fan out. So is a uid that is not a string, is
-// empty, or holds a slash (which would point the path somewhere else), so that one
-// such token cannot stop everyone else's push.
+// which leaves its devices out of the fan out. So is a uid that cannot name a document
+// (see namesAUserDocument), without stopping the others.
 async function loadUsers(uids) {
-  const named = [...new Set(uids)].filter((uid) => nonEmptyString(uid) && !uid.includes('/'))
+  const named = [...new Set(uids)].filter(namesAUserDocument)
   const entries = []
   for (const part of chunks(named, USER_CHUNK)) {
     const snaps = await db.getAll(...part.map((uid) => db.collection('users').doc(uid)))

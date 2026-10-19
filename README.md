@@ -115,6 +115,8 @@ firebase deploy --only functions
 
 Indexes, rules, functions and hosting have to go out in a set order, and the callables need an invoker grant afterwards. Follow the Deploying section of [`SECURITY.md`](./SECURITY.md).
 
+The business time zone is America/Chicago, used wherever the server writes a day (the day an inspection was recorded, for one), and changed in one constant, `BUSINESS_TIME_ZONE` in `functions/lib/business-time.js`.
+
 Both providers redirect back to the same URL with `?code=…&state=…`; only Intuit appends `&realmId=…`, which is how `src/App.jsx` routes the callback to the right function.
 
 ## Conventions

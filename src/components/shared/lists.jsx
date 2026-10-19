@@ -1,8 +1,7 @@
 import { cn } from '@/lib/utils'
-import { SearchIcon, ChevronRightIcon } from 'lucide-react'
+import { SearchIcon } from 'lucide-react'
 import { StatusBadge, BillingBadge, PriorityBadge } from './badges'
-
-const O = '#F47920'
+import { withAlpha } from '@/lib/tokens'
 
 // ── ActionBar ─────────────────────────────────────────────────────────────────
 // Inline horizontal bar for primary actions sitting above content sections.
@@ -39,7 +38,7 @@ export function FilterBar({
             value={search}
             onChange={e => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full bg-white/[0.04] border border-white/10 rounded-lg text-sm text-zinc-100 pl-8 pr-3 py-2 placeholder:text-zinc-500 focus:outline-none focus:border-white/30 transition-colors"
+            className="w-full bg-white/[0.04] border border-white/10 rounded-lg text-sm text-zinc-100 pl-8 pr-3 py-2 placeholder:text-zinc-400 focus:border-white/30 transition-colors"
           />
         </label>
       )}
@@ -57,7 +56,7 @@ export function FilterBar({
                   ? 'border-white/30 text-white bg-white/[0.06]'
                   : 'border-white/10 text-zinc-300 hover:text-white hover:border-white/20',
               )}
-              style={chip.active && chip.accent ? { borderColor: chip.accent + '88', color: chip.accent } : undefined}
+              style={chip.active && chip.accent ? { borderColor: withAlpha(chip.accent, 0.53), color: chip.accent } : undefined}
             >
               {chip.label}
               {typeof chip.count === 'number' && chip.count > 0 && (
@@ -140,53 +139,6 @@ export function TableCell({ children, align, className = '', first, last, onClic
     >
       {children}
     </td>
-  )
-}
-
-// ── JobRow ────────────────────────────────────────────────────────────────────
-// Compact row used inside DataPanels to list jobs that need attention.
-
-export function JobRow({
-  job,
-  onClick,
-  meta,         // optional ReactNode rendered as the right-side detail
-  badges,       // optional array of badge ReactNodes
-  action,       // optional trailing action node (e.g., "Open ›")
-  className = '',
-}) {
-  const label = job?.name || job?.client?.split?.(' ')?.[0] || job?.id || '—'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg',
-        'border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15',
-        'text-left transition-colors',
-        className,
-      )}
-    >
-      <span className="text-[11px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
-        {job?.id || '—'}
-      </span>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-zinc-100 truncate">{label}</p>
-        {meta && (
-          <p className="text-[11px] text-zinc-400 truncate mt-0.5">{meta}</p>
-        )}
-      </div>
-      {badges && badges.length > 0 && (
-        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
-          {badges}
-        </div>
-      )}
-      {action ? action : (
-        <ChevronRightIcon
-          size={16}
-          className="text-zinc-400 shrink-0 transition-transform group-hover:translate-x-0.5"
-        />
-      )}
-    </button>
   )
 }
 

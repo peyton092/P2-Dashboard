@@ -624,6 +624,30 @@ describe('onUserWritten', () => {
       assertNoDashes(warnings()[0])
     })
 
+    // How a staff account whose claims were set by hand is offboarded, as SECURITY.md says: the staff
+    // role goes into its users document first, and deleting that document is what takes the claims
+    // away. Deleting a document that never said staff leaves the account as it is.
+    for (const role of ['owner', 'internal']) {
+      it(`offboards a hand set ${role} account in two steps: its role is written into its document, then the document is deleted`, async () => {
+        stubAuth({ existing: claimsOf(role) })
+        stubFirestore()
+
+        await run('x', client(['QBS-001']), null)
+        assert.deepEqual([claimed, revoked], [[], []], 'a deletion over a document that never said staff keeps the claims')
+        assert.match(warnings()[0], /users\/x is gone/)
+
+        await run('x', null, { role, tenantId: 'p2-core' })
+        assert.deepEqual(claimed, [{ uid: 'x', claims: claimsOf(role) }], 'writing the staff role in sets the claims it already has')
+        assert.deepEqual(revoked, [], 'and signs nobody out')
+
+        fetched.length = 0
+        await run('x', { role, tenantId: 'p2-core' }, null)
+        assert.deepEqual(claimed.at(-1), { uid: 'x', claims: null }, 'deleting that document clears the claims')
+        assert.deepEqual(revoked, ['x'], 'and revokes the refresh tokens')
+        assert.deepEqual(fetched, [], 'without reading the account, since a deletion over a staff document is an owner\'s')
+      })
+    }
+
     it('lowers the claims when an owner changes a document that said internal to client, without reading the account', async () => {
       stubAuth({ existing: claimsOf('internal') })
       stubFirestore()

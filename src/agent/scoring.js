@@ -1,13 +1,9 @@
-const TODAY = new Date()
+import { daysSince } from '../lib/dates'
 
-function daysSince(date) {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
+// Every function here that depends on the date takes the time as its last argument
+// and reads the clock only when it is not given one, at the call and never when the
+// file loads. A screen that has the time from useNow passes it, so its numbers move
+// on with the day.
 
 function hasFailedInspection(job) {
   const insp = job.insp || {}
@@ -42,7 +38,7 @@ function isBillingReady(job) {
 
 // ── Priority score 0–100 ──────────────────────────────────────────────────────
 
-export function scoreJob(job, extras = []) {
+export function scoreJob(job, extras = [], now = new Date()) {
   if (['complete', 'completed'].includes(job.status)) return 0
 
   let score = 0
@@ -57,7 +53,7 @@ export function scoreJob(job, extras = []) {
   if (job.status === 'needs-action') score += 40
 
   // Stale job (no update)
-  const stale = daysSince(job.lastStatusChange || job.start)
+  const stale = daysSince(job.lastStatusChange || job.start, now)
   if (stale !== null) {
     if (stale >= 7)  score += 35
     else if (stale >= 3) score += 20
@@ -80,10 +76,10 @@ export function scoreJob(job, extras = []) {
 
 // ── Classify job for War Room risk board ─────────────────────────────────────
 
-export function classifyRisk(job) {
+export function classifyRisk(job, now = new Date()) {
   if (['complete', 'completed'].includes(job.status)) return null
 
-  const stale = daysSince(job.lastStatusChange || job.start)
+  const stale = daysSince(job.lastStatusChange || job.start, now)
   const failed = hasFailedInspection(job)
   const hvacBlocked = isHvacStartupBlocked(job)
 

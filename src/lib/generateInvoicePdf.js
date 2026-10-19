@@ -3,14 +3,21 @@
 // initial app bundle.
 
 import { contractValue } from './money'
-import { BILLING_STATUS_LABEL } from './billing'
+import { BILLING_STATUS, statusLabel } from './status'
+import { BRAND, SEMANTIC, hexToRgb } from '@/lib/tokens'
 
-const ORANGE     = [244, 121, 32]
+const ORANGE     = hexToRgb(BRAND)
 const BLACK      = [20, 20, 20]
 const GRAY       = [120, 120, 120]
 const LIGHT_GRAY = [230, 230, 230]
 const WHITE      = [255, 255, 255]
-const GREEN      = [34, 197, 94]
+const GREEN      = hexToRgb(SEMANTIC.success)
+
+// The billing statuses an invoice prints as themselves. Any other status prints
+// as not invoiced: a job with no billing status, one the app does not know and
+// one on hold. A hold is internal, and a client downloads this invoice from the
+// portal, so a hold never reaches the page.
+const PRINTED_BILLING = ['not-invoiced', 'invoiced', 'partial-pay', 'paid']
 
 function money(n) {
   return `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -220,18 +227,21 @@ export async function generateInvoicePdf(job) {
   }
 
   // ── Status badge (from job.billingStatus) ────────────────────────────────────
-  const statusLabel = (BILLING_STATUS_LABEL[job.billingStatus] || BILLING_STATUS_LABEL['not-invoiced']).toUpperCase()
+  // Only the statuses in PRINTED_BILLING print as themselves; a hold prints as not
+  // invoiced because a hold is internal.
+  const billing = PRINTED_BILLING.includes(job.billingStatus) ? job.billingStatus : 'not-invoiced'
+  const badgeLabel = statusLabel(BILLING_STATUS, billing).toUpperCase()
   const statusColor = job.billingStatus === 'paid' ? GREEN
     : job.billingStatus === 'invoiced' ? ORANGE
     : GRAY
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
   doc.setCharSpace(1)
-  const badgeW = Math.max(76, doc.getTextWidth(statusLabel) + 20)
+  const badgeW = Math.max(76, doc.getTextWidth(badgeLabel) + 20)
   doc.setFillColor(...statusColor)
   doc.roundedRect(W - M - badgeW, 84, badgeW, 18, 4, 4, 'F')
   doc.setTextColor(...WHITE)
-  doc.text(statusLabel, W - M - badgeW / 2, 96, { align: 'center' })
+  doc.text(badgeLabel, W - M - badgeW / 2, 96, { align: 'center' })
   doc.setCharSpace(0)
 
   // ── Footer ────────────────────────────────────────────────────────────────────

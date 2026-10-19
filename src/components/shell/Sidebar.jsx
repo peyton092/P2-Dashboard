@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { cn } from '@/lib/utils'
 import {
   ChevronLeftIcon, ChevronRightIcon, LogOutIcon, UsersIcon, SearchIcon,
@@ -6,10 +7,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import Brand, { BrandMark } from '@/components/brand/Brand'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
-const O = '#F47920'
-
-// Sidebar — desktop only.
+// Sidebar: desktop only. The page that is open is marked aria-current="page" as well
+// as in the brand color, and each page keeps its name as a title, which a pointer shows
+// while the sidebar is collapsed to its icons. The skip link of AppShell comes before
+// it, so a keyboard can go past it to the page in one step.
 //
 // Props:
 //   sections: [{ heading?: string, items: [{ id, label, Icon, count? }] }]
@@ -36,6 +39,7 @@ export default function Sidebar({
   onLogout,
   onCreateUser,
 }) {
+  const workspaceLabel = useId()
   return (
     <aside
       className={cn(
@@ -66,7 +70,9 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Global search trigger — opens the command palette (also ⌘K). */}
+      {/* Global search trigger, which opens the command palette (also Cmd or Ctrl and K).
+          Its words name it while they show, and a label names it when it is only an
+          icon. The shortcut is announced, and the key cap is a picture of it. */}
       <div className="px-2 pt-3">
         <button
           type="button"
@@ -76,13 +82,14 @@ export default function Sidebar({
             collapsed ? 'justify-center py-2' : 'px-2.5 py-2',
           )}
           title="Search (⌘K)"
-          aria-label="Search"
+          aria-label={collapsed ? 'Search' : undefined}
+          aria-keyshortcuts="Control+K Meta+K"
         >
-          <SearchIcon size={16} className="shrink-0" />
+          <SearchIcon size={16} className="shrink-0" aria-hidden="true" />
           {!collapsed && (
             <>
               <span className="flex-1 text-left text-sm">Search…</span>
-              <kbd className="text-[10px] font-semibold border border-white/10 rounded px-1.5 py-0.5">⌘K</kbd>
+              <kbd aria-hidden="true" className="text-[10px] font-semibold border border-white/10 rounded px-1.5 py-0.5">⌘K</kbd>
             </>
           )}
         </button>
@@ -102,6 +109,7 @@ export default function Sidebar({
                   <button
                     type="button"
                     onClick={() => onSelect?.(item.id)}
+                    aria-current={active ? 'page' : undefined}
                     className={cn(
                       'group relative w-full flex items-center gap-3 rounded-lg px-2.5 py-2',
                       'text-sm font-medium text-left transition-colors',
@@ -115,14 +123,14 @@ export default function Sidebar({
                       <span
                         aria-hidden="true"
                         className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r"
-                        style={{ backgroundColor: O }}
+                        style={{ backgroundColor: BRAND }}
                       />
                     )}
                     <item.Icon
                       size={18}
                       className="shrink-0"
                       strokeWidth={active ? 2.25 : 1.85}
-                      style={active ? { color: O } : undefined}
+                      style={active ? { color: BRAND } : undefined}
                     />
                     {!collapsed && (
                       <>
@@ -132,10 +140,9 @@ export default function Sidebar({
                             className={cn(
                               'text-[10px] font-bold px-1.5 py-0.5 rounded-md',
                               active
-                                ? 'text-white'
+                                ? 'bg-brand text-brand-foreground'
                                 : 'text-zinc-300 bg-white/[0.08]',
                             )}
-                            style={active ? { backgroundColor: O, color: '#fff' } : undefined}
                           >
                             {item.count}
                           </span>
@@ -146,7 +153,7 @@ export default function Sidebar({
                       <span
                         aria-hidden="true"
                         className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
-                        style={{ backgroundColor: O }}
+                        style={{ backgroundColor: BRAND }}
                       />
                     )}
                   </button>
@@ -161,11 +168,11 @@ export default function Sidebar({
       <div className="border-t border-white/10 shrink-0">
         {!collapsed && tenants && tenants.length > 1 && onTenantChange && (
           <div className="px-3 pt-3">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">
+            <p id={workspaceLabel} className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">
               Workspace
             </p>
             <Select value={tenantId} onValueChange={onTenantChange}>
-              <SelectTrigger className="w-full h-8 text-xs bg-white/[0.04] border-white/10">
+              <SelectTrigger aria-labelledby={workspaceLabel} className="w-full h-8 text-xs bg-white/[0.04] border-white/10">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -182,7 +189,7 @@ export default function Sidebar({
             <div className="flex items-center gap-2.5 mb-2">
               <div
                 className="shrink-0 flex items-center justify-center rounded-full text-[11px] font-bold"
-                style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}
+                style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
               >
                 {(userLabel || 'P2').slice(0, 2).toUpperCase()}
               </div>
@@ -198,7 +205,7 @@ export default function Sidebar({
           ) : (
             <div
               className="flex items-center justify-center rounded-full text-[11px] font-bold"
-              style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}
+              style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
               title={userLabel || 'P2'}
             >
               {(userLabel || 'P2').slice(0, 2).toUpperCase()}

@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 // Container for a section of related data with optional header strip.
 // Pass `tone="elevated"` for the prominent flagship sections, `tone="flat"` for
@@ -45,16 +44,18 @@ export default function DataPanel({
             {Icon && (
               <div
                 className="shrink-0 flex items-center justify-center rounded-lg"
-                style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}
+                style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
               >
                 <Icon size={18} strokeWidth={2} />
               </div>
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold tracking-tight text-white truncate">
+                {/* A level two heading, under the page's PageHeader, so a screen's
+                    headings go down one level at a time. */}
+                <h2 className="font-sans text-sm font-bold tracking-tight text-white truncate">
                   {title}
-                </h3>
+                </h2>
                 {badge}
               </div>
               {description && (

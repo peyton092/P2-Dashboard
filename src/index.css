@@ -2,25 +2,27 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/700.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
+    --color-brand: var(--brand);
+    --color-brand-foreground: var(--brand-foreground);
+    --color-success: var(--success);
+    --color-warning: var(--warning);
+    --color-critical: var(--critical);
+    --color-info: var(--info);
+    --color-cyan: var(--cyan);
+    --color-neutral: var(--neutral);
+    --color-mute: var(--mute);
+    --color-surface-1: var(--surface-1);
+    --color-surface-2: var(--surface-2);
+    --color-surface-3: var(--surface-3);
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
@@ -48,6 +50,14 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Display and mono families. Static, so Tailwind writes --font-display and
+   --font-mono onto :root for plain CSS to use as well as giving us the
+   font-display and font-mono utilities. */
+@theme static {
+    --font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+}
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
@@ -67,54 +77,71 @@
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
     --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+
+    /* Brand and status colors are the same in both themes. src/lib/tokens.js
+       exports the same values, and a test keeps the two in step. The brand
+       foreground is near black because white on this orange is under 3 to 1. */
+    --brand: #F47920;
+    --brand-foreground: oklch(0.145 0.004 60);
+    --success: #22c55e;
+    --warning: #eab308;
+    --critical: #ef4444;
+    --info: #3b82f6;
+    --cyan: #06b6d4;
+    --neutral: #9ca3af;
+    --mute: #6b7280;
+
+    /* Surfaces, from the page up. Light values so the tokens always resolve;
+       the app itself runs on the dark ones below. */
+    --surface-1: oklch(0.985 0 0);
+    --surface-2: oklch(0.97 0 0);
+    --surface-3: oklch(0.922 0 0);
+
+    /* Motion. */
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --dur-fast: 120ms;
+    --dur-base: 160ms;
+
+    /* Stacking, lowest first. Everything that floats above the page takes its
+       z-index from this scale, as z-(--z-popup) and so on, and not from a number
+       of its own, so that a layer which opens from inside another can be placed
+       above it. nav is the mobile bar, dialog the scrim and the panel of a dialog,
+       popup a list that opens from a control and can open from inside a dialog,
+       palette the command palette, and toast a message about what just happened. */
+    --z-nav: 50;
+    --z-dialog: 60;
+    --z-popup: 70;
+    --z-palette: 90;
+    --z-toast: 100;
 }
 
+/* The dark theme. index.html puts this class on the document root, so it also
+   reaches anything drawn in a portal on body (select lists, dialogs, toasts).
+   Surfaces are warm graphite: chroma 0.004 at hue 60. */
 .dark {
-    --background: oklch(0.145 0 0);
+    color-scheme: dark;
+    --background: oklch(0.145 0.004 60);
+    --surface-1: oklch(0.165 0.004 60);
+    --surface-2: oklch(0.205 0.004 60);
+    --surface-3: oklch(0.269 0.004 60);
     --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
+    --card: var(--surface-2);
     --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
+    --popover: var(--surface-2);
     --popover-foreground: oklch(0.985 0 0);
     --primary: oklch(0.922 0 0);
     --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
+    --secondary: var(--surface-3);
     --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
+    --muted: var(--surface-3);
     --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
+    --accent: var(--surface-3);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
 }
 
 @layer base {
@@ -142,31 +169,38 @@
   /* Flex/grid gap fallback for Safari <14 */
   .flex { display: -webkit-box; display: -webkit-flex; display: flex; }
   .grid { display: -webkit-grid; display: grid; }
-  /* Focus-visible — keyboard navigation ring */
-  :focus-visible {
-    outline: 2px solid #F47920;
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
   /* Remove focus ring for mouse/touch interactions */
   :focus:not(:focus-visible) {
     outline: none;
   }
+  /* Visible keyboard focus. This is the only focus ring rule in the app: the
+     brand orange, 2px, with a 2px offset. It is focus-visible only, so mouse and
+     touch focus show no ring. It sits in the base layer, so it is the default
+     and a utility on a control can change it: focus-visible:-outline-offset-2
+     draws the ring inside a cell or a tab that its strip would clip, and a
+     control's own rounded corner shapes it. No control draws a ring of its own
+     beside it, and only an element that is not a control turns it off
+     (src/__tests__/tokens.test.js checks both). */
+  :where(button, a, input, textarea, select, [role="switch"], [tabindex]):focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
   /* Heading hierarchy */
-  h1 { @apply text-2xl font-black; }
-  h2 { @apply text-xl font-bold; }
+  h1 { @apply font-display text-[32px] font-bold tracking-tight; }
+  h2 { @apply font-display text-[24px] font-semibold; }
   h3 { @apply text-base font-semibold; }
 }
 
-/* Premium dark scrollbars — applied inside any element that has the `.dark`
-   class (which is set on AppShell). Uses only existing oklch palette tones —
-   the dark sidebar background and a subtle white-alpha thumb. */
+/* Dark scrollbars for everything under the document root, which carries the
+   `.dark` class. The track is the surface 1 tone and the thumb is a faint
+   white alpha. */
 .dark *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 .dark *::-webkit-scrollbar-track {
-  background: oklch(0.165 0 0);
+  background: var(--surface-1);
 }
 .dark *::-webkit-scrollbar-thumb {
   background: oklch(1 0 0 / 8%);
@@ -177,7 +211,7 @@
 }
 .dark * {
   scrollbar-width: thin;
-  scrollbar-color: oklch(1 0 0 / 8%) oklch(0.165 0 0);
+  scrollbar-color: oklch(1 0 0 / 8%) var(--surface-1);
 }
 /* The sidebar nav scroll area gets an even quieter thumb so the brand panel
    stays calm — `p2-scrollarea` is on the <nav> in `Sidebar.jsx`. */
@@ -185,16 +219,7 @@
   background: oklch(1 0 0 / 6%);
 }
 .dark .p2-scrollarea {
-  scrollbar-color: oklch(1 0 0 / 6%) oklch(0.165 0 0);
-}
-
-/* ── Accessibility: visible keyboard focus ─────────────────────────────────
-   Keyboard users get a clear brand-orange focus ring; mouse clicks don't
-   (focus-visible only). Applies app-wide to interactive elements. */
-:where(button, a, input, textarea, select, [role="switch"], [tabindex]):focus-visible {
-  outline: 2px solid #F47920;
-  outline-offset: 2px;
-  border-radius: 6px;
+  scrollbar-color: oklch(1 0 0 / 6%) var(--surface-1);
 }
 
 /* ── Subtle page transition ────────────────────────────────────────────────

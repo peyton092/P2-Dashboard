@@ -244,6 +244,71 @@ describe('onNotificationCreated: who is sent to', () => {
     assert.deepEqual(reads, [['users/owner1']])
   })
 
+  // The ids Firestore refuses to read, whatever the SDK lets through: a read that names one fails,
+  // and with it the whole event, so one bad token would stop everyone's push.
+  const REFUSED = [
+    ['a single period', '.'],
+    ['two periods', '..'],
+    ['a name between double underscores', '__name__'],
+    ['another name between double underscores', '__a__'],
+    ['four underscores, which is double underscores around nothing', '____'],
+    ['double underscores around a name with an underscore in it', '__a_b__'],
+    ['1501 bytes of single byte characters', 'x'.repeat(1501)],
+    ['1502 bytes of two byte characters', 'é'.repeat(751)],
+    ['1503 bytes of three byte characters', '€'.repeat(501)],
+    ['1504 bytes of four byte characters', '😀'.repeat(376)],
+    ['a slash at the end', 'owner/'],
+    ['a slash alone', '/'],
+  ]
+
+  // The ids that look close to a refused one and are fine, so the guard stops no one it should not.
+  const FINE = [
+    ['three periods', '...'],
+    ['a period and a letter', '.a'],
+    ['a letter and a period', 'a.'],
+    ['a single underscore', '_'],
+    ['two underscores', '__'],
+    ['three underscores', '___'],
+    ['double underscores at the start only', '__name'],
+    ['double underscores at the end only', 'name__'],
+    ['single underscores around a name', '_name_'],
+    ['1500 bytes of single byte characters', 'x'.repeat(1500)],
+    ['1500 bytes of two byte characters', 'é'.repeat(750)],
+    ['1500 bytes of three byte characters', '€'.repeat(500)],
+    ['1500 bytes of four byte characters', '😀'.repeat(375)],
+  ]
+
+  for (const [why, uid] of REFUSED) {
+    it(`never asks Firestore for a uid that is ${why}, and still sends to everyone else`, async () => {
+      const tokens = { 'tok-bad': { uid }, 'tok-owner': { uid: 'owner1' } }
+      given({ tokens, users: { ...USERS, [uid]: { role: 'owner' } } })
+      await notify({ type: 'info', msg: 'Staff note' })
+      assert.deepEqual(reads, [['users/owner1']])
+      assert.deepEqual(sentTokens(), ['tok-owner'])
+    })
+  }
+
+  for (const [why, uid] of FINE) {
+    it(`asks for the users document of a uid that is ${why}`, async () => {
+      given({ tokens: { 'tok-fine': { uid } }, users: { [uid]: { role: 'internal' } } })
+      await notify({ type: 'info', msg: 'Staff note' })
+      assert.deepEqual(reads, [[`users/${uid}`]])
+      assert.deepEqual(sentTokens(), ['tok-fine'])
+    })
+  }
+
+  it('leaves out every refused uid at once, and reads the rest ten at a time as before', async () => {
+    const people = Array.from({ length: 12 }, (_, i) => `s${String(i + 1).padStart(2, '0')}`)
+    const users = Object.fromEntries(people.map((uid) => [uid, { role: 'internal' }]))
+    const good = Object.fromEntries(people.map((uid) => [`tok-${uid}`, { uid }]))
+    const bad = Object.fromEntries(REFUSED.map(([, uid], i) => [`tok-bad${i}`, { uid }]))
+    given({ tokens: { ...bad, ...good }, users })
+    await notify({ type: 'info', msg: 'Staff note' })
+    assert.deepEqual(reads.map((paths) => paths.length), [10, 2])
+    assert.deepEqual(reads.flat(), people.map((uid) => `users/${uid}`))
+    assert.equal(sentTokens().length, people.length)
+  })
+
   it('reads users documents only, never the whole users collection', async () => {
     given({ tokens: TOKENS, users: USERS })
     await notify({ type: 'info', msg: 'Staff note' })

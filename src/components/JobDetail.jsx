@@ -3,47 +3,37 @@ import { useData } from '../use-data'
 import { useJobFiles } from '../hooks/useFirestore'
 import { safeHttpUrl } from '../lib/safeUrl'
 import { extraState } from '../lib/extraStatus'
+import { toDate } from '../lib/dates'
 import { generateInvoicePdf, invoicePdfErrorToast } from '../lib/generateInvoicePdf'
-import { DataPanel, MetricTile, Pill, ProgressBar, EmptyState } from './shared'
-import { BILLING_STATUS_LABEL } from '../lib/billing'
+import { DataPanel, StatBand, Pill, ProgressBar, EmptyState } from './shared'
+import { PHASE_LABEL } from '../lib/inspections'
+import {
+  JOB_STATUS, INSPECTION_STATUS, BILLING_STATUS, CO_STATUS,
+  isJobComplete, normalizeCoStatus, statusLabel, statusTone, statusColor, toneHex, toneText,
+} from '../lib/status'
 import { useToast } from '@/components/ui/use-toast'
 import { classifyRisk, hasFailedInspection } from '../agent/scoring'
 import {
   ChevronLeftIcon, MapPinIcon, UserRoundCogIcon, HardHatIcon,
   DollarSignIcon, FilePenLineIcon, BoxesIcon, BadgeCheckIcon,
   ClipboardSignatureIcon, FileTextIcon, ImageIcon, DownloadIcon,
-  NotebookPenIcon, ActivityIcon, ReceiptIcon, CalendarIcon,
+  NotebookPenIcon, ReceiptIcon, CalendarIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 const jobLabel = (j) => j.name || j.client || j.id
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 
-const ISTATUS = {
-  passed:                 { c: '#22c55e', l: 'Passed' },
-  failed:                 { c: '#ef4444', l: 'Failed' },
-  scheduled:              { c: '#3b82f6', l: 'Scheduled' },
-  pending:                { c: '#eab308', l: 'Pending' },
-  'pending-verification': { c: '#eab308', l: 'Pending' },
-  blocked:                { c: '#ef4444', l: 'Blocked' },
-  'not-started':          { c: '#6b7280', l: 'Not started' },
-  'n/a':                  { c: '#6b7280', l: 'N/A' },
-}
-
-const PHASE_LABEL = { roughIn: 'Rough-In', trim: 'Trim', final: 'Final' }
 const DATE_KEYS = new Set(['roughInDate', 'trimDate', 'finalDate', 'finalFailDate', 'roughInFailDate'])
 
 function fmtDate(d) {
   if (!d) return ''
   try {
-    const dt = d?.toDate ? d.toDate() : new Date(d)
-    if (isNaN(dt.getTime())) return ''
+    const dt = toDate(d)
+    if (!dt) return ''
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   } catch { return '' }
 }
-
-const CO_TONE = { approved: 'success', rejected: 'critical', pending: 'warning' }
 
 function TradeInspections({ trade, data }) {
   const phases = Object.keys(data || {}).filter(k => !DATE_KEYS.has(k))
@@ -53,16 +43,16 @@ function TradeInspections({ trade, data }) {
       <p className="text-xs font-bold uppercase tracking-wide text-zinc-300 mb-2 capitalize">{trade}</p>
       <div className="space-y-1.5">
         {phases.map(phase => {
-          const status = data[phase]
-          const meta = ISTATUS[status] || ISTATUS['not-started']
+          const status = data[phase] || 'not-started'
+          const color = statusColor(INSPECTION_STATUS, status)
           const dateKey = `${phase}Date`
           const date = data[dateKey]
           return (
             <div key={phase} className="flex items-center justify-between gap-2 text-xs">
               <span className="text-zinc-400">{PHASE_LABEL[phase] || phase}</span>
               <span className="flex items-center gap-2">
-                {date && <span className="text-[10px] text-zinc-500">{fmtDate(date)}</span>}
-                <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: meta.c, backgroundColor: meta.c + '22' }}>{meta.l}</span>
+                {date && <span className="text-[10px] text-zinc-400">{fmtDate(date)}</span>}
+                <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: toneText(statusTone(INSPECTION_STATUS, status)), backgroundColor: withAlpha(color, 0.13) }}>{statusLabel(INSPECTION_STATUS, status)}</span>
               </span>
             </div>
           )
@@ -88,7 +78,7 @@ export default function JobDetail({ jobId, onBack }) {
   if (!job) {
     return (
       <div className="space-y-4">
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white">
           <ChevronLeftIcon size={15} /> Back
         </button>
         <EmptyState Icon={HardHatIcon} title="Job not found" description="This job may have been removed or isn't loaded yet." />
@@ -98,10 +88,10 @@ export default function JobDetail({ jobId, onBack }) {
 
   const risk = classifyRisk(job)
   const failed = hasFailedInspection(job)
-  const complete = ['complete', 'completed'].includes(job.status)
-  const railColor = failed || risk?.level === 'critical' ? '#ef4444'
-    : risk?.level === 'warning' ? '#eab308'
-    : complete ? '#22c55e' : O
+  const complete = isJobComplete(job)
+  const railColor = failed || risk?.level === 'critical' ? toneHex('critical')
+    : risk?.level === 'warning' ? toneHex('warning')
+    : complete ? toneHex('success') : BRAND
 
   const pendingCO = jobExtras.filter(e => e.status === 'pending')
   const approvedCO = jobExtras.filter(e => extraState(e) === 'approved')
@@ -115,7 +105,7 @@ export default function JobDetail({ jobId, onBack }) {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white mb-3">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-300 hover:text-white mb-3">
           <ChevronLeftIcon size={15} /> Back to jobs
         </button>
         <div className="rounded-2xl border border-white/10 bg-white/[0.025] overflow-hidden" style={{ borderLeftWidth: 3, borderLeftColor: railColor }}>
@@ -127,7 +117,7 @@ export default function JobDetail({ jobId, onBack }) {
                   <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-white/[0.06] text-zinc-300">{job.id}</span>
                   {complete
                     ? <Pill tone="success" size="xs">Complete</Pill>
-                    : <Pill tone={risk?.level === 'critical' || failed ? 'critical' : risk?.level === 'warning' ? 'warning' : 'success'} size="xs">{job.status || 'active'}</Pill>}
+                    : <Pill tone={risk?.level === 'critical' || failed ? 'critical' : risk?.level === 'warning' ? 'warning' : 'success'} size="xs">{statusLabel(JOB_STATUS, job.status || 'active')}</Pill>}
                 </div>
                 {job.address && (
                   <p className="text-sm text-zinc-400 flex items-center gap-1.5 mt-1.5">
@@ -137,7 +127,7 @@ export default function JobDetail({ jobId, onBack }) {
                 <p className="text-sm text-zinc-400 mt-1">{job.client}{job.type ? ` · ${job.type}` : ''}</p>
               </div>
               {hasInvoice && (
-                <button onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ backgroundColor: O }}>
+                <button type="button" onClick={async () => { try { await generateInvoicePdf(job) } catch (e) { toast(invoicePdfErrorToast(e)) } }} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg text-brand-foreground" style={{ backgroundColor: BRAND }}>
                   <DownloadIcon size={13} /> Invoice PDF
                 </button>
               )}
@@ -154,7 +144,7 @@ export default function JobDetail({ jobId, onBack }) {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4 text-xs">
               <DetailField Icon={UserRoundCogIcon} label="Project Manager" value={job.pm || 'TBD'} sub={job.lead ? `Lead: ${job.lead}` : null} />
               <DetailField Icon={CalendarIcon} label="Target" value={fmtDate(job.target) || 'TBD'} sub={job.start ? `Started ${fmtDate(job.start)}` : null} />
-              <DetailField Icon={ReceiptIcon} label="Billing" value={BILLING_STATUS_LABEL[job.billingStatus] || 'Not invoiced'} sub={job.invoiceNum ? `Invoice ${job.invoiceNum}` : null} />
+              <DetailField Icon={ReceiptIcon} label="Billing" value={statusLabel(BILLING_STATUS, job.billingStatus || 'not-invoiced')} sub={job.invoiceNum ? `Invoice ${job.invoiceNum}` : null} />
               <DetailField Icon={ClipboardSignatureIcon} label="Permit" value={job.permitNumber || '—'} sub={job.county ? `${job.county} County` : null} />
             </div>
           </div>
@@ -162,12 +152,30 @@ export default function JobDetail({ jobId, onBack }) {
       </div>
 
       {/* KPI row */}
-      <section className="grid gap-2 sm:gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-        <MetricTile label="Progress" value={`${job.progress ?? 0}%`} Icon={ActivityIcon} />
-        <MetricTile label="Open Change Orders" value={pendingCO.length} Icon={FilePenLineIcon} emphasis={pendingCO.length > 0 ? 'warning' : 'success'} sub={pendingCO.length > 0 ? fmt$(pendingCO.reduce((s, e) => s + (e.amount || 0), 0)) : 'None pending'} />
-        <MetricTile label="Materials" value={jobMaterials.length} Icon={BoxesIcon} sub={`${jobMaterials.filter(m => m.status === 'delivered').length} delivered`} />
-        <MetricTile label="Inspections" value={failed ? 'Failed' : complete ? 'Complete' : 'In progress'} Icon={BadgeCheckIcon} emphasis={failed ? 'critical' : complete ? 'success' : 'mute'} />
-      </section>
+      <StatBand
+        stats={[
+          {
+            label: 'Progress',
+            value: `${job.progress ?? 0}%`,
+          },
+          {
+            label: 'Open Change Orders',
+            value: pendingCO.length,
+            sub: pendingCO.length > 0 ? fmt$(pendingCO.reduce((s, e) => s + (e.amount || 0), 0)) : 'None pending',
+            tone: pendingCO.length > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Materials',
+            value: jobMaterials.length,
+            sub: `${jobMaterials.filter(m => m.status === 'delivered').length} delivered`,
+          },
+          {
+            label: 'Inspections',
+            value: failed ? 'Failed' : complete ? 'Complete' : 'In progress',
+            tone: failed ? 'critical' : complete ? 'success' : 'mute',
+          },
+        ]}
+      />
 
       {/* Inspections */}
       <DataPanel title="Inspections" description="Status by trade and phase." Icon={BadgeCheckIcon}>
@@ -190,12 +198,12 @@ export default function JobDetail({ jobId, onBack }) {
               <li key={co._docId || co.id} className="px-4 py-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-bold" style={{ color: O }}>{co.id || 'CO'}</span>
-                    <Pill tone={CO_TONE[extraState(co)] || 'neutral'} size="xs">{co.status || 'pending'}</Pill>
+                    <span className="text-xs font-bold" style={{ color: BRAND }}>{co.id || 'CO'}</span>
+                    <Pill tone={statusTone(CO_STATUS, normalizeCoStatus(co.status))} size="xs">{statusLabel(CO_STATUS, normalizeCoStatus(co.status))}</Pill>
                   </div>
                   <p className="text-sm text-zinc-200 truncate mt-0.5">{co.desc || 'No description'}</p>
                 </div>
-                <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: O }}>{fmt$(co.amount)}</span>
+                <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: BRAND }}>{fmt$(co.amount)}</span>
               </li>
             ))}
           </ul>
@@ -266,7 +274,7 @@ export default function JobDetail({ jobId, onBack }) {
               <li key={r._docId} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-zinc-200">{r.crewMember || r.author || 'Crew'}</span>
-                  <span className="text-[11px] text-zinc-500">{r.date || fmtDate(r.createdAt)}</span>
+                  <span className="text-[11px] text-zinc-400">{r.date || fmtDate(r.createdAt)}</span>
                 </div>
                 {r.notes && <p className="text-xs text-zinc-400 mt-1 line-clamp-3">{r.notes}</p>}
               </li>
@@ -285,7 +293,7 @@ function DetailField({ Icon, label, value, sub }) {
         {Icon && <Icon size={11} />} {label}
       </p>
       <p className="font-semibold text-zinc-100 truncate mt-0.5">{value}</p>
-      {sub && <p className="text-[10px] text-zinc-500 truncate">{sub}</p>}
+      {sub && <p className="text-[10px] text-zinc-400 truncate">{sub}</p>}
     </div>
   )
 }

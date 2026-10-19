@@ -83,7 +83,7 @@ async function applyAction(req, claims, action) {
     if (!snap.exists) throw new HttpsError('not-found', EXTRA_GONE)
     const extra = snap.data()
 
-    const { scoped, stamp } = await scopeOf(tx, extra)
+    const { scoped, stamp } = await scopeOf(tx, extra, action)
     if (!canActOnExtra(claims, scoped)) throw new HttpsError('permission-denied', NOT_YOURS)
 
     const patch = extraTransition(extra, action, actor, note)
@@ -121,8 +121,16 @@ async function applyAction(req, claims, action) {
 // own id, like QBS-003) says who may act on it. Its scope is then written onto
 // the change order along with the change, so it is stamped from then on. An
 // already stamped change order is used as it is and nothing is added to it.
-async function scopeOf(tx, extra) {
-  const stamped = typeof extra.tenantId === 'string' && extra.tenantId !== '' && Array.isArray(extra.clientUids)
+//
+// The exception is a draft that is being sent. A draft is not meant to carry a scope
+// (the stamping triggers delete one), so a scope it does carry is not trusted: whatever
+// it holds, the scope comes from the job, as it does for a change order that was never
+// stamped, and the update that sends the draft writes it over the carried one. A draft
+// that is approved or sent back for revision is refused whatever scope it carries.
+async function scopeOf(tx, extra, action) {
+  const draftBeingSent = action === 'send' && extraState(extra) === 'draft'
+  const stamped = !draftBeingSent
+    && typeof extra.tenantId === 'string' && extra.tenantId !== '' && Array.isArray(extra.clientUids)
   if (stamped) return { scoped: extra, stamp: {} }
 
   if (typeof extra.job !== 'string' || extra.job === '') throw new HttpsError('not-found', JOB_GONE)

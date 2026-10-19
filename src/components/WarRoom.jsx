@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
+import { daysBetween, daysSince, toDate } from '../lib/dates'
 import {
   scoreJob,
   classifyRisk,
-  daysSince,
   hasFailedInspection,
   isBillingReady,
   isHvacStartupBlocked,
@@ -11,9 +12,10 @@ import {
 import { ZONES, getZoneId } from '../agent/zones'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
+  StatusBadge,
   EmptyState,
   LoadingState,
   FilterBar,
@@ -23,13 +25,12 @@ import {
   TableCell,
 } from './shared'
 import {
-  ActivityIcon, AlertCircleIcon,
   // Phase 3 QA — preferred lucide names
-  RadarIcon, CrosshairIcon, TriangleAlertIcon, BadgeCheckIcon,
+  RadarIcon, CrosshairIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
-const TODAY = new Date()
+import { BRAND, SEMANTIC } from '@/lib/tokens'
+import { INSPECTION_STATUS, TRADE, statusLabel } from '../lib/status'
+import { PHASE_LABEL } from '../lib/inspections'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -44,30 +45,23 @@ function cleanPhase(phase, status) {
 function fmtDateShort(dateVal) {
   if (!dateVal) return null
   try {
-    const d = dateVal?.toDate ? dateVal.toDate() : new Date(dateVal)
-    if (isNaN(d.getTime())) return null
+    const d = toDate(dateVal)
+    if (!d) return null
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   } catch { return null }
 }
 
-function fmtDaysAgo(dateVal) {
-  const d = daysSince(dateVal)
+function fmtDaysAgo(dateVal, now) {
+  const d = daysSince(dateVal, now)
   if (d === null) return '—'
   if (d === 0) return 'today'
   if (d === 1) return '1d ago'
   return `${d}d ago`
 }
 
-function daysUntil(dateStr) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return null
-  return Math.ceil((d.getTime() - TODAY.getTime()) / 86400000)
-}
-
 // Decide the next concrete action for a job. Falls back gracefully when no
 // explicit `nextAction` field has been set.
-function nextActionFor(job) {
+function nextActionFor(job, now) {
   if (job.nextAction?.trim()) return job.nextAction.trim()
 
   if (hasFailedInspection(job))    return 'Schedule rework — contact PM + crew'
@@ -92,15 +86,23 @@ function nextActionFor(job) {
 
   if (isBillingReady(job)) return 'Submit invoice — milestone earned'
 
-  const stale = daysSince(job.lastStatusChange || job.start)
+  const stale = daysSince(job.lastStatusChange || job.start, now)
   if (stale !== null && stale >= 5) return 'Get field status from PM'
   if (stale !== null && stale >= 2) return 'Daily status check-in'
 
   return 'Continue scheduled work'
 }
 
-// Compact per-trade inspection summary (E/P/H + rough+final dot).
+// Compact per-trade inspection summary: the trade's letter (E, P, H) and a short mark.
+// F is a failure, F+ a passed final, R+ a passed rough in, S a scheduled inspection, and
+// a pending one is marked Pending, so none of them rests on the color of its pill. Each
+// pill also holds what it means in words, such as Electrical rough in pending, for a
+// screen reader and for the tooltip.
 const TRADE_LETTER = { electrical: 'E', plumbing: 'P', hvac: 'H' }
+const PENDING = ['pending', 'pending-verification']
+const inWords = (trade, phase, status) =>
+  `${statusLabel(TRADE, trade)} ${PHASE_LABEL[phase].toLowerCase()} ${statusLabel(INSPECTION_STATUS, status).toLowerCase()}`
+
 function buildInspectionPills(job) {
   const insp = job.insp || {}
   const out = []
@@ -110,28 +112,27 @@ function buildInspectionPills(job) {
     const r = t.roughIn, f = t.final
     if ((!r || r === 'n/a') && (!f || f === 'n/a')) continue
 
-    // No unicode symbols — color carries pass/fail; the ASCII suffix carries
-    // which phase (R = Rough, F = Final). `+` after the letter means passed.
-    let tone = 'mute', dot = null
-    if (f === 'failed' || r === 'failed' || t.trim === 'failed') {
-      tone = 'critical'; dot = 'F'
+    // The first phase, in the order final, rough in, trim, whose status is one of these.
+    const phaseWith = (...statuses) => ['final', 'roughIn', 'trim'].find(p => statuses.includes(t[p]))
+
+    let tone = 'mute', dot = null, words
+    if (phaseWith('failed')) {
+      tone = 'critical'; dot = 'F'; words = inWords(trade, phaseWith('failed'), 'failed')
     } else if (f === 'passed') {
-      tone = 'success'; dot = 'F+'
+      tone = 'success'; dot = 'F+'; words = inWords(trade, 'final', 'passed')
     } else if (r === 'passed') {
-      tone = 'success'; dot = 'R+'
-    } else if (
-      f === 'scheduled' || r === 'scheduled' || t.trim === 'scheduled'
-    ) {
-      tone = 'warning'; dot = 'S'
-    } else if (
-      r === 'pending' || r === 'pending-verification' ||
-      f === 'pending' || f === 'pending-verification'
-    ) {
-      // Pending shows in muted color with no secondary mark — the gray pill
-      // tells you the trade is in progress without adding visual noise.
-      tone = 'mute'; dot = null
+      tone = 'success'; dot = 'R+'; words = inWords(trade, 'roughIn', 'passed')
+    } else if (phaseWith('scheduled')) {
+      tone = 'warning'; dot = 'S'; words = inWords(trade, phaseWith('scheduled'), 'scheduled')
+    } else if (PENDING.includes(r) || PENDING.includes(f)) {
+      // A rough in that waits comes before a final that waits.
+      const phase = PENDING.includes(r) ? 'roughIn' : 'final'
+      dot = statusLabel(INSPECTION_STATUS, 'pending'); words = inWords(trade, phase, t[phase])
+    } else {
+      const phase = r && r !== 'n/a' ? 'roughIn' : 'final'
+      words = inWords(trade, phase, t[phase])
     }
-    out.push({ trade, letter: TRADE_LETTER[trade], tone, dot })
+    out.push({ trade, letter: TRADE_LETTER[trade], tone, dot, words })
   }
   return out
 }
@@ -163,6 +164,7 @@ const SORTS = [
 
 export default function WarRoom() {
   const { jobs = [], extras = [], loading } = useData()
+  const now = useNow()
   const [search, setSearch]       = useState('')
   const [filter, setFilter]       = useState('all')
   const [zoneFilter, setZoneFilter] = useState('all')
@@ -172,9 +174,9 @@ export default function WarRoom() {
   const completedJobs = useMemo(() => jobs.filter(isComplete), [jobs])
 
   const enriched = useMemo(() => jobs.map(j => {
-    const risk = classifyRisk(j)
-    const score = scoreJob(j, extras)
-    const stale = daysSince(j.lastStatusChange || j.start)
+    const risk = classifyRisk(j, now)
+    const score = scoreJob(j, extras, now)
+    const stale = daysSince(j.lastStatusChange || j.start, now)
     return {
       job: j,
       risk,
@@ -189,7 +191,7 @@ export default function WarRoom() {
         ),
       ),
     }
-  }), [jobs, extras])
+  }), [jobs, extras, now])
 
   // KPI counts
   const kpis = useMemo(() => {
@@ -249,8 +251,8 @@ export default function WarRoom() {
       sorted.sort((a, b) => (b.stale ?? -1) - (a.stale ?? -1))
     } else if (sortBy === 'target') {
       sorted.sort((a, b) => {
-        const ta = a.job.target ? new Date(a.job.target).getTime() : Infinity
-        const tb = b.job.target ? new Date(b.job.target).getTime() : Infinity
+        const ta = toDate(a.job.target)?.getTime() ?? Infinity
+        const tb = toDate(b.job.target)?.getTime() ?? Infinity
         return ta - tb
       })
     } else if (sortBy === 'name') {
@@ -318,50 +320,41 @@ export default function WarRoom() {
         subtitle="Live across active projects. Surface blockers, ready jobs, and risk by zone."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
-            <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
+            <span>{now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
             <span>{kpis.active} active · {completedJobs.length} completed</span>
           </>
         }
       />
 
       {/* KPI strip */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      <StatBand
         aria-label="Field status"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}
-      >
-        <MetricTile
-          label="Active Jobs"
-          value={kpis.active}
-          Icon={ActivityIcon}
-          sub={`${completedJobs.length} completed`}
-        />
-        <MetricTile
-          label="Blocked"
-          value={kpis.blocked}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.blocked > 0 ? 'critical' : 'success'}
-          sub={kpis.blocked > 0 ? 'Failed inspection or stuck' : 'Nothing blocked'}
-        />
-        <MetricTile
-          label="Inspection Ready"
-          value={kpis.inspReady}
-          Icon={BadgeCheckIcon}
-          emphasis={kpis.inspReady > 0 ? 'default' : 'mute'}
-          sub="Scheduled or pending verify"
-        />
-        <MetricTile
-          label="High Risk"
-          value={kpis.highRisk}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.highRisk > 0 ? 'critical' : 'success'}
-          sub={kpis.highRisk > 0 ? 'Critical-level flags' : 'No critical flags'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Active Jobs',
+            value: kpis.active,
+            sub: `${completedJobs.length} completed`,
+          },
+          {
+            label: 'Blocked',
+            value: kpis.blocked,
+            sub: kpis.blocked > 0 ? 'Failed inspection or stuck' : 'Nothing blocked',
+            tone: kpis.blocked > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Inspection Ready',
+            value: kpis.inspReady,
+            sub: 'Scheduled or pending verify',
+            tone: kpis.inspReady > 0 ? undefined : 'mute',
+          },
+          {
+            label: 'High Risk',
+            value: kpis.highRisk,
+            sub: kpis.highRisk > 0 ? 'Critical-level flags' : 'No critical flags',
+            tone: kpis.highRisk > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Top Priority */}
       {topPriority.length > 0 && (
@@ -381,6 +374,7 @@ export default function WarRoom() {
                 job={job}
                 risk={risk}
                 score={score}
+                now={now}
               />
             ))}
           </div>
@@ -396,9 +390,10 @@ export default function WarRoom() {
         trailing={
           <>
             <select
+              aria-label="Filter by zone"
               value={zoneFilter}
               onChange={e => setZoneFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
             >
               <option value="all">All Zones</option>
               {Object.values(ZONES).map(z => (
@@ -406,9 +401,10 @@ export default function WarRoom() {
               ))}
             </select>
             <select
+              aria-label="Sort by"
               value={sortBy}
               onChange={e => setSortBy(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
             >
               {SORTS.map(s => <option key={s.id} value={s.id}>Sort · {s.label}</option>)}
             </select>
@@ -476,7 +472,7 @@ export default function WarRoom() {
                 />
                 <tbody>
                   {filtered.map(({ job, risk, stale }) => (
-                    <DispatchRow key={job._docId || job.id} job={job} risk={risk} stale={stale} />
+                    <DispatchRow key={job._docId || job.id} job={job} risk={risk} stale={stale} now={now} />
                   ))}
                 </tbody>
               </ResponsiveTable>
@@ -486,7 +482,7 @@ export default function WarRoom() {
             <ul className="md:hidden p-3 space-y-2">
               {filtered.map(({ job, risk, score, stale }) => (
                 <li key={job._docId || job.id}>
-                  <DispatchCard job={job} risk={risk} score={score} stale={stale} />
+                  <DispatchCard job={job} risk={risk} score={score} stale={stale} now={now} />
                 </li>
               ))}
             </ul>
@@ -499,22 +495,8 @@ export default function WarRoom() {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function StatusPill({ status, size = 'xs' }) {
-  const tone =
-    status === 'on-track'     ? 'success'  :
-    status === 'at-risk'      ? 'warning'  :
-    status === 'needs-action' ? 'brand'    :
-    status === 'blocked'      ? 'critical' :
-    status === 'hold'         ? 'critical' :
-    status === 'complete' || status === 'completed' ? 'success' :
-    status === 'active'       ? 'brand'    :
-    'mute'
-  const label = (status || 'pending').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-  return <Pill tone={tone} size={size}>{label}</Pill>
-}
-
 function RiskPill({ risk, size = 'xs' }) {
-  if (!risk) return <span className="text-zinc-500 text-xs">—</span>
+  if (!risk) return <span className="text-zinc-400 text-xs">None</span>
   const tone =
     risk.level === 'critical' ? 'critical' :
     risk.level === 'warning'  ? 'warning'  :
@@ -529,14 +511,17 @@ function RiskPill({ risk, size = 'xs' }) {
 function InspectionPills({ job }) {
   const pills = buildInspectionPills(job)
   if (pills.length === 0) {
-    return <span className="text-zinc-500 text-xs">—</span>
+    return <span className="text-zinc-400 text-xs">None</span>
   }
   return (
     <div className="flex items-center gap-1">
       {pills.map(p => (
-        <Pill key={p.trade} tone={p.tone} size="xs">
-          <span className="">{p.letter}</span>
-          {p.dot && <span className="ml-0.5">{p.dot}</span>}
+        <Pill key={p.trade} tone={p.tone} size="xs" title={p.words}>
+          <span aria-hidden="true">
+            {p.letter}
+            {p.dot && <span className="ml-0.5">{p.dot}</span>}
+          </span>
+          <span className="sr-only">{p.words}</span>
         </Pill>
       ))}
     </div>
@@ -556,27 +541,27 @@ function ZoneTag({ job, className = '' }) {
   )
 }
 
-function TargetMeta({ job }) {
-  const tDays = daysUntil(job.target)
+function TargetMeta({ job, now }) {
+  const tDays = daysBetween(now, job.target)
   if (tDays === null) return null
-  if (tDays < 0) return <span className="text-[10px] font-semibold" style={{ color: '#ef4444' }}>{Math.abs(tDays)}d overdue</span>
-  if (tDays <= 7) return <span className="text-[10px] font-semibold" style={{ color: '#eab308' }}>Due in {tDays}d</span>
+  if (tDays < 0) return <span className="text-[10px] font-semibold" style={{ color: SEMANTIC.critical }}>{Math.abs(tDays)}d overdue</span>
+  if (tDays <= 7) return <span className="text-[10px] font-semibold" style={{ color: SEMANTIC.warning }}>Due in {tDays}d</span>
   return <span className="text-[10px] text-zinc-400">Due {fmtDateShort(job.target)}</span>
 }
 
 // ── Top Priority card ───────────────────────────────────────────────────────
 
-function PriorityJobCard({ job, risk, score }) {
+function PriorityJobCard({ job, risk, score, now }) {
   const phase = cleanPhase(job.phase, job.status)
-  const next = nextActionFor(job)
+  const next = nextActionFor(job, now)
   return (
     <article
       className="rounded-xl border border-white/10 bg-white/[0.025] overflow-hidden flex flex-col"
       style={{
         borderLeftWidth: 3,
         borderLeftColor:
-          risk?.level === 'critical' ? '#ef4444' :
-          risk?.level === 'warning'  ? '#eab308' :
+          risk?.level === 'critical' ? SEMANTIC.critical :
+          risk?.level === 'warning'  ? SEMANTIC.warning :
           'rgba(255,255,255,0.10)',
       }}
     >
@@ -617,7 +602,7 @@ function PriorityJobCard({ job, risk, score }) {
         </div>
         <div className="flex items-center justify-between gap-2">
           <span className="text-zinc-400">Last update</span>
-          <span className="text-zinc-100">{fmtDaysAgo(job.lastStatusChange || job.start)}</span>
+          <span className="text-zinc-100">{fmtDaysAgo(job.lastStatusChange || job.start, now)}</span>
         </div>
       </div>
 
@@ -629,16 +614,16 @@ function PriorityJobCard({ job, risk, score }) {
           className="text-xs font-semibold leading-snug"
           style={{
             color:
-              risk?.level === 'critical' ? '#ef4444' :
-              risk?.level === 'warning'  ? '#eab308' :
-              O,
+              risk?.level === 'critical' ? SEMANTIC.critical :
+              risk?.level === 'warning'  ? SEMANTIC.warning :
+              BRAND,
           }}
         >
           {next}
         </p>
         <div className="flex items-center justify-between mt-2">
           <ZoneTag job={job} />
-          <TargetMeta job={job} />
+          <TargetMeta job={job} now={now} />
         </div>
       </footer>
     </article>
@@ -647,11 +632,11 @@ function PriorityJobCard({ job, risk, score }) {
 
 // ── Desktop dispatch row ─────────────────────────────────────────────────────
 
-function DispatchRow({ job, risk, stale }) {
+function DispatchRow({ job, risk, stale, now }) {
   const phase = cleanPhase(job.phase, job.status)
-  const next  = nextActionFor(job)
+  const next  = nextActionFor(job, now)
   const isStaleHigh = stale !== null && stale >= 7
-  const tDays = daysUntil(job.target)
+  const tDays = daysBetween(now, job.target)
 
   return (
     <TableRow
@@ -684,7 +669,7 @@ function DispatchRow({ job, risk, stale }) {
       </TableCell>
       <TableCell>
         <p className="text-zinc-100 truncate">{phase}</p>
-        <div className="mt-1"><StatusPill status={job.status} /></div>
+        <div className="mt-1"><StatusBadge status={job.status || 'pending'} size="xs" /></div>
       </TableCell>
       <TableCell><RiskPill risk={risk} /></TableCell>
       <TableCell><InspectionPills job={job} /></TableCell>
@@ -698,16 +683,16 @@ function DispatchRow({ job, risk, stale }) {
       </TableCell>
       <TableCell last className="leading-tight">
         <span className={isStaleHigh ? 'text-red-400 font-semibold text-xs' : 'text-zinc-100 text-xs'}>
-          {fmtDaysAgo(job.lastStatusChange || job.start)}
+          {fmtDaysAgo(job.lastStatusChange || job.start, now)}
         </span>
         {tDays !== null && (
           <div className="mt-0.5">
             {tDays < 0 ? (
-              <span className="text-[11px] font-semibold" style={{ color: '#ef4444' }}>
+              <span className="text-[11px] font-semibold" style={{ color: SEMANTIC.critical }}>
                 {Math.abs(tDays)}d overdue
               </span>
             ) : tDays <= 7 ? (
-              <span className="text-[11px] font-semibold" style={{ color: '#eab308' }}>
+              <span className="text-[11px] font-semibold" style={{ color: SEMANTIC.warning }}>
                 Due in {tDays}d
               </span>
             ) : (
@@ -724,13 +709,13 @@ function DispatchRow({ job, risk, stale }) {
 
 // ── Mobile dispatch card ─────────────────────────────────────────────────────
 
-function DispatchCard({ job, risk, score, stale }) {
+function DispatchCard({ job, risk, score, stale, now }) {
   const phase = cleanPhase(job.phase, job.status)
-  const next  = nextActionFor(job)
-  const tDays = daysUntil(job.target)
+  const next  = nextActionFor(job, now)
+  const tDays = daysBetween(now, job.target)
   const accent =
-    risk?.level === 'critical' ? '#ef4444' :
-    risk?.level === 'warning'  ? '#eab308' :
+    risk?.level === 'critical' ? SEMANTIC.critical :
+    risk?.level === 'warning'  ? SEMANTIC.warning :
     null
 
   return (
@@ -769,7 +754,7 @@ function DispatchCard({ job, risk, score, stale }) {
         <div>
           <p className="text-zinc-400 uppercase tracking-wide text-[10px] mb-0.5">Phase</p>
           <p className="font-semibold text-zinc-100 truncate">{phase}</p>
-          <div className="mt-1"><StatusPill status={job.status} /></div>
+          <div className="mt-1"><StatusBadge status={job.status || 'pending'} size="xs" /></div>
         </div>
         <div>
           <p className="text-zinc-400 uppercase tracking-wide text-[10px] mb-0.5">Inspection</p>
@@ -778,7 +763,7 @@ function DispatchCard({ job, risk, score, stale }) {
         <div>
           <p className="text-zinc-400 uppercase tracking-wide text-[10px] mb-0.5">Updated</p>
           <p className={stale !== null && stale >= 7 ? 'font-semibold text-red-400' : 'font-semibold text-zinc-100'}>
-            {fmtDaysAgo(job.lastStatusChange || job.start)}
+            {fmtDaysAgo(job.lastStatusChange || job.start, now)}
           </p>
         </div>
       </div>
@@ -787,7 +772,7 @@ function DispatchCard({ job, risk, score, stale }) {
         <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-0.5">Next action</p>
         <p
           className="text-sm font-semibold leading-snug"
-          style={{ color: accent || O }}
+          style={{ color: accent || BRAND }}
         >
           {next}
         </p>
@@ -798,11 +783,11 @@ function DispatchCard({ job, risk, score, stale }) {
           <ZoneTag job={job} />
           {tDays !== null && (
             tDays < 0 ? (
-              <span className="text-[11px] font-semibold" style={{ color: '#ef4444' }}>
+              <span className="text-[11px] font-semibold" style={{ color: SEMANTIC.critical }}>
                 {Math.abs(tDays)}d overdue
               </span>
             ) : tDays <= 7 ? (
-              <span className="text-[11px] font-semibold" style={{ color: '#eab308' }}>
+              <span className="text-[11px] font-semibold" style={{ color: SEMANTIC.warning }}>
                 Due in {tDays}d
               </span>
             ) : (

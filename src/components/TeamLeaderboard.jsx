@@ -1,11 +1,16 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useId, useState, useEffect, useMemo } from 'react'
 import { doc, onSnapshot, setDoc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useDailyReports } from '../hooks/useFirestore'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
+import { useMutation } from '../hooks/useMutation'
+import { logError } from '../lib/errorLogger'
+import { monthKey } from '../lib/dates'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { IconButton } from '@/components/ui/icon-button'
 import {
   TrophyIcon, StarIcon, UserPlusIcon, ZapIcon, XIcon,
   ClipboardListIcon, ShieldCheckIcon, CameraIcon, TrendingUpIcon,
@@ -14,8 +19,9 @@ import {
   AwardIcon, MedalIcon, BadgeCheckIcon, UsersRoundIcon,
   CheckCircleIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
+import { toneText } from '../lib/status'
+import { ConnectionChip } from './shared'
 
 const CREW = ['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor']
 
@@ -39,11 +45,6 @@ function RankBadge({ idx, size = 16 }) {
   if (!Icon) return null
   return <Icon size={size} strokeWidth={2.25} className="inline" />
 }
-
-const CURRENT_MONTH = (() => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-})()
 
 function getMonthBounds(monthStr) {
   const [y, m] = monthStr.split('-').map(Number)
@@ -82,13 +83,27 @@ function useCrewScores() {
     const unsubs = CREW.map(name => {
       const id = name.toLowerCase()
       const ref = doc(db, 'crew_scores', id)
+      // A crew score is created once for the life of this listener. A write the rules refuse is
+      // rolled back in the local cache, so the listener hears the document missing again, and
+      // would write it again, be refused, hear it and write, once for every round trip to the
+      // server, with a line in the error log each time.
+      let seeded = false
       return onSnapshot(ref, async snap => {
         if (!snap.exists()) {
-          await setDoc(ref, {
-            name, id, role: ROLES[name],
-            googleReviews: 0, referrals: 0, bonusPoints: 0, bonusNote: '',
-            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-          })
+          if (!seeded) {
+            seeded = true
+            // Nobody pressed anything, so a refusal is for the error log and not a toast, and
+            // the board opens without waiting for it.
+            try {
+              await setDoc(ref, {
+                name, id, role: ROLES[name],
+                googleReviews: 0, referrals: 0, bonusPoints: 0, bonusNote: '',
+                createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+              })
+            } catch (err) {
+              logError(err, 'crew score seed')
+            }
+          }
         } else {
           setScores(prev => ({ ...prev, [name]: snap.data() }))
         }
@@ -134,7 +149,7 @@ function useReviewUrl() {
 function Chip({ color, icon: Icon, children }) {
   return (
     <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
-      style={{ backgroundColor: color + '18', color }}>
+      style={{ backgroundColor: withAlpha(color, 0.09), color }}>
       {Icon && <Icon size={9} />} {children}
     </span>
   )
@@ -143,9 +158,9 @@ function Chip({ color, icon: Icon, children }) {
 function Stat({ label, value, sub, color }) {
   return (
     <div>
-      <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">{label}</p>
+      <p className="text-[10px] text-zinc-400 uppercase tracking-wider mb-0.5">{label}</p>
       <p className="text-lg font-semibold" style={{ color }}>{value}</p>
-      {sub && <p className="text-[10px] text-zinc-600">{sub}</p>}
+      {sub && <p className="text-[10px] text-zinc-400">{sub}</p>}
     </div>
   )
 }
@@ -165,7 +180,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
     <div className="mx-4 mb-3 p-3 rounded-lg border text-xs text-zinc-400"
       style={{ borderColor: '#ffffff15', backgroundColor: '#ffffff08' }}>
       No Google Review URL set. Configure it in the link settings above.
-      <button onClick={onClose} className="ml-3 underline text-zinc-500">Close</button>
+      <button type="button" onClick={onClose} className="ml-3 underline text-zinc-400">Close</button>
     </div>
   )
 
@@ -176,13 +191,13 @@ function ReviewLinkPanel({ name, url, onClose }) {
         <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
           <StarIcon size={12} /> Google Review Link — {name}
         </span>
-        <button onClick={onClose} className="p-0.5 hover:bg-white/10 rounded">
-          <XIcon size={12} color="#6b7280" />
-        </button>
+        <IconButton label="Close the review link" onClick={onClose} className="text-zinc-400">
+          <XIcon size={12} />
+        </IconButton>
       </div>
       <div className="flex items-center gap-2 bg-white/5 rounded p-2">
         <span className="text-xs text-zinc-400 truncate flex-1">{url}</span>
-        <button onClick={copyLink}
+        <button type="button" onClick={copyLink}
           className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors"
           style={{ backgroundColor: copied ? '#22c55e22' : '#ffffff11', color: copied ? '#22c55e' : '#9ca3af' }}>
           {copied ? <CheckIcon size={11} /> : <LinkIcon size={11} />}
@@ -192,7 +207,7 @@ function ReviewLinkPanel({ name, url, onClose }) {
       <div className="bg-white/5 rounded p-2">
         <p className="text-[11px] text-zinc-400 mb-1.5">Pre-written text message:</p>
         <p className="text-[11px] text-zinc-300 leading-relaxed">{msg}</p>
-        <button onClick={copyMsg}
+        <button type="button" onClick={copyMsg}
           className="mt-2 text-[11px] px-2 py-1 rounded flex items-center gap-1"
           style={{ backgroundColor: '#eab30822', color: '#eab308' }}>
           <LinkIcon size={10} /> Copy full message
@@ -207,19 +222,26 @@ function ReviewLinkPanel({ name, url, onClose }) {
 function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral, onLogBonus }) {
   const [expanded, setExpanded] = useState(false)
   const [showReviewLink, setShowReviewLink] = useState(false)
+  const breakdownId = useId()
   const { name, auto, man, totalPts } = entry
   const isLeader = idx === 0 && totalPts > 0
   const bonusPts = (man.googleReviews || 0) * PTS.review + (man.referrals || 0) * PTS.referral + (man.bonusPoints || 0)
 
   const open = isAdding?.name === name
+  const addingReferral = open && isAdding?.type === 'referral'
+  const addingBonus = open && isAdding?.type === 'bonus'
 
+  // A click anywhere on the row opens the score breakdown, for a pointer; the button at the
+  // end of the row opens it from the keyboard and says whether it is open. Under 640 pixels
+  // the three action buttons, 44 pixels each, go to a line of their own.
   return (
     <div className="border-b border-white/5 last:border-0">
       {/* Main row */}
-      <div className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer"
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer"
         onClick={() => setExpanded(e => !e)}>
+        {/* A rank past the medals is a small number, so it is in the neutral gray, not the mute. */}
         <span className="w-7 inline-flex items-center justify-center font-black text-sm shrink-0"
-          style={{ color: idx < 3 && totalPts > 0 ? O : '#6b7280' }}>
+          style={{ color: idx < 3 && totalPts > 0 ? BRAND : toneText('mute') }}>
           {idx < 3 && totalPts > 0
             ? <RankBadge idx={idx} size={16} />
             : `#${idx + 1}`}
@@ -227,9 +249,9 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
 
         <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0 border-2"
           style={{
-            backgroundColor: isLeader ? O + '33' : '#ffffff11',
-            color: isLeader ? O : '#9ca3af',
-            borderColor: isLeader ? O + '66' : '#ffffff11',
+            backgroundColor: isLeader ? withAlpha(BRAND, 0.2) : '#ffffff11',
+            color: isLeader ? BRAND : '#9ca3af',
+            borderColor: isLeader ? withAlpha(BRAND, 0.4) : '#ffffff11',
           }}>
           {name[0]}
         </div>
@@ -237,8 +259,8 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm text-white">{name}</p>
           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-            <span className="text-xs text-zinc-500">{ROLES[name]}</span>
-            {auto.reportCount > 0 && <Chip color={O} icon={ClipboardListIcon}>{auto.reportCount} rpts</Chip>}
+            <span className="text-xs text-zinc-400">{ROLES[name]}</span>
+            {auto.reportCount > 0 && <Chip color={BRAND} icon={ClipboardListIcon}>{auto.reportCount} rpts</Chip>}
             {auto.inspReadyCount > 0 && <Chip color="#22c55e" icon={ShieldCheckIcon}>{auto.inspReadyCount} insp</Chip>}
           </div>
         </div>
@@ -246,39 +268,38 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
         <div className="hidden sm:flex items-center gap-1.5 shrink-0">
           {(man.googleReviews || 0) > 0 && <Chip color="#eab308" icon={StarIcon}>{man.googleReviews}</Chip>}
           {(man.referrals || 0) > 0 && <Chip color="#22c55e" icon={UserPlusIcon}>{man.referrals}</Chip>}
-          {(man.bonusPoints || 0) > 0 && <Chip color={O} icon={ZapIcon}>+{man.bonusPoints}</Chip>}
+          {(man.bonusPoints || 0) > 0 && <Chip color={BRAND} icon={ZapIcon}>+{man.bonusPoints}</Chip>}
         </div>
 
         <div className="text-right shrink-0 mr-1" onClick={e => e.stopPropagation()}>
-          <p className="font-semibold text-base" style={{ color: isLeader ? O : '#e5e7eb' }}>{totalPts}</p>
-          <p className="text-[10px] text-zinc-500">pts</p>
+          <p className="font-semibold text-base" style={{ color: isLeader ? BRAND : '#e5e7eb' }}>{totalPts}</p>
+          <p className="text-[10px] text-zinc-400">pts</p>
         </div>
 
-        {/* Action buttons — stop propagation so they don't toggle expand */}
-        <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
-          <button title="Google Review link"
-            className="p-1.5 rounded-lg transition-colors"
-            style={{ backgroundColor: showReviewLink ? '#eab30822' : 'transparent', color: showReviewLink ? '#eab308' : '#6b7280' }}
+        {/* The action buttons stop the click, so they do not open the breakdown too. */}
+        <div className="flex items-center gap-0.5 shrink-0 max-sm:order-last max-sm:basis-full max-sm:justify-end" onClick={e => e.stopPropagation()}>
+          <IconButton label={`Open the Google review link for ${name}`} aria-expanded={showReviewLink}
+            className="text-zinc-400"
             onClick={() => { setShowReviewLink(v => !v); onSetAdding(null) }}>
             <StarIcon size={12} />
-          </button>
-          <button title="+Referral"
-            className="p-1.5 rounded-lg transition-colors"
-            style={{ backgroundColor: open && isAdding?.type === 'referral' ? '#22c55e22' : 'transparent', color: open && isAdding?.type === 'referral' ? '#22c55e' : '#6b7280' }}
-            onClick={() => onSetAdding(open && isAdding?.type === 'referral' ? null : { name, type: 'referral' })}>
+          </IconButton>
+          <IconButton label={`Log a referral for ${name}`} aria-expanded={addingReferral}
+            className="text-zinc-400"
+            onClick={() => onSetAdding(addingReferral ? null : { name, type: 'referral' })}>
             <UserPlusIcon size={12} />
-          </button>
-          <button title="+Bonus"
-            className="p-1.5 rounded-lg transition-colors"
-            style={{ backgroundColor: open && isAdding?.type === 'bonus' ? O + '22' : 'transparent', color: open && isAdding?.type === 'bonus' ? O : '#6b7280' }}
-            onClick={() => onSetAdding(open && isAdding?.type === 'bonus' ? null : { name, type: 'bonus', value: '', note: '' })}>
+          </IconButton>
+          <IconButton label={`Award bonus points to ${name}`} aria-expanded={addingBonus}
+            className="text-zinc-400"
+            onClick={() => onSetAdding(addingBonus ? null : { name, type: 'bonus', value: '', note: '' })}>
             <ZapIcon size={12} />
-          </button>
+          </IconButton>
         </div>
 
-        <div className="shrink-0 text-zinc-600" onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}>
+        <IconButton label={`Show the score breakdown for ${name}`} aria-expanded={expanded} aria-controls={breakdownId}
+          className="text-zinc-400"
+          onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}>
           {expanded ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} />}
-        </div>
+        </IconButton>
       </div>
 
       {/* Google review link panel */}
@@ -287,54 +308,54 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
       )}
 
       {/* Referral confirm */}
-      {open && isAdding?.type === 'referral' && (
+      {addingReferral && (
         <div className="mx-4 mb-3 p-3 rounded-lg border flex items-center gap-3 flex-wrap"
           style={{ backgroundColor: '#22c55e11', borderColor: '#22c55e30' }}>
           <UserPlusIcon size={13} color="#22c55e" />
           <span className="text-sm text-white flex-1">Log +1 Referral for {name} <span className="text-zinc-400">(+{PTS.referral} pts)</span></span>
-          <Button size="sm" className="h-7 text-xs" style={{ backgroundColor: '#22c55e', color: '#fff' }}
+          <Button variant="brand" size="sm" className="h-7 text-xs"
             onClick={() => onLogReferral(name)}>Confirm</Button>
-          <button onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
-            <XIcon size={13} color="#6b7280" />
-          </button>
+          <IconButton label="Cancel adding a referral" onClick={() => onSetAdding(null)} className="text-zinc-400">
+            <XIcon size={13} />
+          </IconButton>
         </div>
       )}
 
       {/* Bonus panel */}
-      {open && isAdding?.type === 'bonus' && (
+      {addingBonus && (
         <div className="mx-4 mb-3 p-3 rounded-lg border flex flex-wrap items-center gap-2"
-          style={{ backgroundColor: O + '11', borderColor: O + '33' }}>
-          <ZapIcon size={13} color={O} />
-          <Input type="number" min="1" placeholder="pts"
+          style={{ backgroundColor: withAlpha(BRAND, 0.07), borderColor: withAlpha(BRAND, 0.2) }}>
+          <ZapIcon size={13} color={BRAND} />
+          <Input type="number" min="1" placeholder="pts" aria-label={`Bonus points for ${name}`}
             className="w-20 h-7 text-xs bg-white/10 border-white/20"
             value={isAdding.value}
             onChange={e => onSetAdding(a => ({ ...a, value: e.target.value }))} />
-          <Input placeholder="Reason (optional)"
+          <Input placeholder="Reason (optional)" aria-label="Reason for the bonus"
             className="flex-1 min-w-32 h-7 text-xs bg-white/10 border-white/20"
             value={isAdding.note}
             onChange={e => onSetAdding(a => ({ ...a, note: e.target.value }))} />
-          <Button size="sm" className="h-7 text-xs" style={{ backgroundColor: O, color: '#fff' }}
+          <Button variant="brand" size="sm" className="h-7 text-xs"
             onClick={() => onLogBonus(name, isAdding.value, isAdding.note)}>
             Award Bonus
           </Button>
-          <button onClick={() => onSetAdding(null)} className="p-1 hover:bg-white/10 rounded">
-            <XIcon size={13} color="#6b7280" />
-          </button>
+          <IconButton label="Cancel adding a bonus" onClick={() => onSetAdding(null)} className="text-zinc-400">
+            <XIcon size={13} />
+          </IconButton>
         </div>
       )}
 
       {/* Expanded score breakdown */}
       {expanded && (
-        <div className="px-[4.5rem] pb-4 pt-1">
+        <div id={breakdownId} className="px-[4.5rem] pb-4 pt-1">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 rounded-xl border"
             style={{ backgroundColor: '#ffffff05', borderColor: '#ffffff0d' }}>
-            <Stat label="Auto pts" value={auto.pts} sub="from reports" color={O} />
+            <Stat label="Auto pts" value={auto.pts} sub="from reports" color={BRAND} />
             <Stat label="Manual pts" value={bonusPts} sub="reviews + refs + bonus" color="#9ca3af" />
             <Stat label="Reports" value={auto.reportCount} sub={`${auto.taskCount} tasks logged`} color="#9ca3af" />
-            <Stat label="Total" value={totalPts} sub="this month" color={isLeader ? O : '#e5e7eb'} />
+            <Stat label="Total" value={totalPts} sub="this month" color={isLeader ? BRAND : '#e5e7eb'} />
           </div>
 
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-zinc-500">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-zinc-400">
             <span className="inline-flex items-center gap-1"><ClipboardListIcon size={11} /> {auto.reportCount} reports submitted (+{auto.reportCount * PTS.report})</span>
             <span className="inline-flex items-center gap-1"><CheckCircleIcon size={11} /> {auto.taskCount} tasks completed (+{auto.taskCount * PTS.task})</span>
             {auto.inspReadyCount > 0 && <span className="inline-flex items-center gap-1 text-green-600"><BadgeCheckIcon size={11} /> {auto.inspReadyCount} inspection-ready flags (+{auto.inspReadyCount * PTS.inspReady})</span>}
@@ -342,7 +363,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
             {auto.noBlockerCount > 0 && <span className="inline-flex items-center gap-1"><ZapIcon size={11} /> {auto.noBlockerCount} no-blocker days (+{auto.noBlockerCount * PTS.noBlocker})</span>}
             {(man.googleReviews || 0) > 0 && <span className="inline-flex items-center gap-1 text-yellow-500"><StarIcon size={11} /> {man.googleReviews} Google reviews (+{man.googleReviews * PTS.review})</span>}
             {(man.referrals || 0) > 0 && <span className="inline-flex items-center gap-1 text-green-500"><UsersRoundIcon size={11} /> {man.referrals} referrals (+{man.referrals * PTS.referral})</span>}
-            {(man.bonusPoints || 0) > 0 && <span className="inline-flex items-center gap-1" style={{ color: O }}><TargetIcon size={11} /> Bonus: +{man.bonusPoints}{man.bonusNote ? ` (${man.bonusNote})` : ''}</span>}
+            {(man.bonusPoints || 0) > 0 && <span className="inline-flex items-center gap-1" style={{ color: BRAND }}><TargetIcon size={11} /> Bonus: +{man.bonusPoints}{man.bonusNote ? ` (${man.bonusNote})` : ''}</span>}
           </div>
         </div>
       )}
@@ -356,21 +377,21 @@ function PodiumCard({ name, pts, rank }) {
   const isFirst = rank === 0
   return (
     <div className="flex flex-col items-center gap-1.5 text-center">
-      <span className="inline-flex items-center justify-center" style={{ color: isFirst ? O : '#9ca3af' }}>
+      <span className="inline-flex items-center justify-center" style={{ color: isFirst ? BRAND : '#9ca3af' }}>
         <RankBadge idx={rank} size={22} />
       </span>
       <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-semibold border-2"
         style={{
-          backgroundColor: isFirst ? O + '33' : '#ffffff11',
-          color: isFirst ? O : '#9ca3af',
-          borderColor: isFirst ? O + '88' : '#ffffff22',
+          backgroundColor: isFirst ? withAlpha(BRAND, 0.2) : '#ffffff11',
+          color: isFirst ? BRAND : '#9ca3af',
+          borderColor: isFirst ? withAlpha(BRAND, 0.53) : '#ffffff22',
         }}>
         {name[0]}
       </div>
       <p className="text-xs font-bold text-white">{name}</p>
-      <p className="text-[10px] text-zinc-500">{ROLES[name]}</p>
-      <p className="font-semibold text-base mt-0.5" style={{ color: isFirst ? O : '#9ca3af' }}>{pts}</p>
-      <p className="text-[10px] text-zinc-500">pts</p>
+      <p className="text-[10px] text-zinc-400">{ROLES[name]}</p>
+      <p className="font-semibold text-base mt-0.5" style={{ color: isFirst ? BRAND : '#9ca3af' }}>{pts}</p>
+      <p className="text-[10px] text-zinc-400">pts</p>
     </div>
   )
 }
@@ -379,6 +400,7 @@ function PodiumCard({ name, pts, rank }) {
 
 export default function TeamLeaderboard() {
   const { scope } = useData()
+  const now = useNow()
   const { dailyReports, loading: reportsLoading } = useDailyReports(scope)
   const { scores, loading: scoresLoading } = useCrewScores()
   const { url: reviewUrl, saveUrl } = useReviewUrl()
@@ -386,13 +408,18 @@ export default function TeamLeaderboard() {
   const [showUrlEdit, setShowUrlEdit] = useState(false)
   // null until the user edits; falls back to the saved URL.
   const [urlEdit, setUrlEdit] = useState(null)
-  const [savingUrl, setSavingUrl] = useState(false)
+  const { run: runScore } = useMutation()
+  const { run: runUrl, busy: savingUrl } = useMutation()
 
   const urlDraft = urlEdit ?? reviewUrl
+  const urlInputId = useId()
 
   const loading = reportsLoading || scoresLoading
 
-  const { start: monthStart, end: monthEnd } = getMonthBounds(CURRENT_MONTH)
+  // The month on the board moves on at midnight on the last day of the month. Its
+  // bounds are made once a month, so the ranking is not worked out again on every render.
+  const month = monthKey(now)
+  const { start: monthStart, end: monthEnd } = useMemo(() => getMonthBounds(month), [month])
 
   const ranked = useMemo(() => {
     return CREW.map(name => {
@@ -413,47 +440,66 @@ export default function TeamLeaderboard() {
   const totalReviews   = ranked.reduce((s, r) => s + (r.man.googleReviews || 0), 0)
   const totalReferrals = ranked.reduce((s, r) => s + (r.man.referrals || 0), 0)
   const totalReports   = ranked.reduce((s, r) => s + r.auto.reportCount, 0)
-  const monthLabel = new Date(CURRENT_MONTH + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
+  // Each panel closes only when its write went through, so a refusal leaves it open with
+  // what was typed, under the error toast.
   async function logReferral(name) {
     const man = scores[name] || {}
-    await patchScore(name, { referrals: (man.referrals || 0) + 1 })
-    setAdding(null)
+    const { ok } = await runScore(() => patchScore(name, { referrals: (man.referrals || 0) + 1 }), {
+      success: `Referral logged for ${name}.`,
+      error: `Could not log the referral for ${name}. Try again.`,
+      queue: true,
+    })
+    if (ok) setAdding(null)
   }
 
   async function logBonus(name, pts, note) {
-    if (!Number(pts)) return
+    const points = Number(pts)
+    if (!points) return
     const man = scores[name] || {}
-    await patchScore(name, {
-      bonusPoints: (man.bonusPoints || 0) + Number(pts),
+    const { ok } = await runScore(() => patchScore(name, {
+      bonusPoints: (man.bonusPoints || 0) + points,
       ...(note ? { bonusNote: note } : {}),
+    }), {
+      success: points > 0
+        ? `${points} bonus point${points === 1 ? '' : 's'} awarded to ${name}.`
+        : `${-points} bonus point${points === -1 ? '' : 's'} taken from ${name}.`,
+      error: `Could not award the bonus to ${name}. Try again.`,
+      queue: true,
     })
-    setAdding(null)
+    if (ok) setAdding(null)
   }
 
   async function handleSaveUrl() {
-    setSavingUrl(true)
-    await saveUrl(urlDraft.trim())
-    setUrlEdit(null)
-    setSavingUrl(false)
-    setShowUrlEdit(false)
+    // This run is not given queue: true. saveUrl sets the link on the cards once its write has
+    // been answered, and nothing else updates what they show, so a run that stopped waiting
+    // would close the panel while every card went on showing and copying the old link.
+    const { ok } = await runUrl(() => saveUrl(urlDraft.trim()), {
+      success: 'Review link saved.',
+      error: 'Could not save the review link. Try again.',
+    })
+    if (ok) {
+      setUrlEdit(null)
+      setShowUrlEdit(false)
+    }
   }
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 rounded-full border-2 animate-spin"
-        style={{ borderColor: O + '33', borderTopColor: O }} />
+        style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
     </div>
   )
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: O + '22' }}>
-            <TrophyIcon size={20} color={O} />
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: withAlpha(BRAND, 0.13) }}>
+            <TrophyIcon size={20} color={BRAND} />
           </div>
           <div>
             <h2 className="text-xl font-semibold text-white">Team Leaderboard</h2>
@@ -461,22 +507,12 @@ export default function TeamLeaderboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            title="Configure Google Review URL"
-            onClick={() => setShowUrlEdit(v => !v)}
-            className="p-2 rounded-lg transition-colors"
-            style={{ backgroundColor: showUrlEdit ? O + '22' : '#ffffff11', color: showUrlEdit ? O : '#6b7280' }}>
+          <IconButton label="Set the Google review link" aria-expanded={showUrlEdit}
+            className="bg-white/[0.07] text-zinc-400"
+            onClick={() => setShowUrlEdit(v => !v)}>
             <SettingsIcon size={14} />
-          </button>
-          <span className="inline-flex items-center gap-1.5">
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-            />
-            <span className="tracking-wider text-[10px] uppercase font-semibold" style={{ color: '#22c55e' }}>
-              Live
-            </span>
-          </span>
+          </IconButton>
+          <ConnectionChip />
         </div>
       </div>
 
@@ -484,25 +520,26 @@ export default function TeamLeaderboard() {
       {showUrlEdit && (
         <Card className="border-white/10">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-bold text-zinc-400 mb-2 flex items-center gap-1.5">
+            <label htmlFor={urlInputId} className="text-xs font-bold text-zinc-400 mb-2 flex items-center gap-1.5">
               <StarIcon size={11} color="#eab308" /> Google Business Review URL
-            </p>
+            </label>
             <div className="flex gap-2">
               <Input
+                id={urlInputId}
                 placeholder="https://g.page/r/YOUR_PLACE_ID/review"
                 className="flex-1 h-8 text-xs bg-white/10 border-white/20"
                 value={urlDraft}
                 onChange={e => setUrlEdit(e.target.value)}
               />
-              <Button size="sm" className="h-8 text-xs" style={{ backgroundColor: O, color: '#fff' }}
+              <Button variant="brand" size="sm" className="h-8 text-xs"
                 disabled={savingUrl} onClick={handleSaveUrl}>
                 {savingUrl ? 'Saving…' : 'Save'}
               </Button>
-              <button onClick={() => setShowUrlEdit(false)} className="p-1.5 hover:bg-white/10 rounded">
-                <XIcon size={13} color="#6b7280" />
-              </button>
+              <IconButton label="Close the review link settings" onClick={() => setShowUrlEdit(false)} className="text-zinc-400">
+                <XIcon size={13} />
+              </IconButton>
             </div>
-            <p className="text-[11px] text-zinc-600 mt-1.5">
+            <p className="text-[11px] text-zinc-400 mt-1.5">
               Find your review link in Google Business Profile → Share review form.
             </p>
           </CardContent>
@@ -512,7 +549,7 @@ export default function TeamLeaderboard() {
       {/* Summary stats */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Daily Reports', value: totalReports,   pts: null,                          icon: ClipboardListIcon, color: O          },
+          { label: 'Daily Reports', value: totalReports,   pts: null,                          icon: ClipboardListIcon, color: BRAND      },
           { label: 'Google Reviews', value: totalReviews,  pts: totalReviews * PTS.review,      icon: StarIcon,          color: '#eab308'  },
           { label: 'Referrals',      value: totalReferrals, pts: totalReferrals * PTS.referral, icon: UserPlusIcon,      color: '#22c55e'  },
         ].map(s => (
@@ -523,7 +560,7 @@ export default function TeamLeaderboard() {
                 <span className="text-xs text-zinc-400">{s.label}</span>
               </div>
               <p className="text-2xl font-semibold" style={{ color: s.color }}>{s.value}</p>
-              {s.pts != null && <p className="text-xs text-zinc-500 mt-0.5">{s.pts.toLocaleString()} pts earned</p>}
+              {s.pts != null && <p className="text-xs text-zinc-400 mt-0.5">{s.pts.toLocaleString()} pts earned</p>}
             </CardContent>
           </Card>
         ))}
@@ -570,7 +607,7 @@ export default function TeamLeaderboard() {
       <Card className="border-white/10 bg-white/5">
         <CardContent className="pt-3 pb-4">
           <div className="flex items-center gap-2 mb-3">
-            <TrendingUpIcon size={13} color={O} />
+            <TrendingUpIcon size={13} color={BRAND} />
             <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Point System</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -586,14 +623,14 @@ export default function TeamLeaderboard() {
             ].map(({ icon: Icon, label, pts, auto }) => (
               <div key={label} className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
-                  <Icon size={11} color={auto ? O : '#6b7280'} />
+                  <Icon size={11} color={auto ? BRAND : '#6b7280'} />
                   {label}
                   {auto && (
                     <span className="text-[9px] px-1 py-0.5 rounded font-bold"
-                      style={{ backgroundColor: O + '22', color: O }}>auto</span>
+                      style={{ backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}>auto</span>
                   )}
                 </div>
-                <span className="text-xs font-bold" style={{ color: O }}>{pts}</span>
+                <span className="text-xs font-bold" style={{ color: BRAND }}>{pts}</span>
               </div>
             ))}
           </div>

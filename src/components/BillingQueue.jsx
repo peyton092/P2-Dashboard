@@ -1,12 +1,17 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
 import { updateJob } from '../hooks/useFirestore'
+import { useMutation } from '../hooks/useMutation'
+import { useSavedField } from '../hooks/useSavedField'
+import { useConfirm } from '../hooks/useConfirm'
 import { exportToCsv } from '../lib/exportCsv'
+import { daysSince, monthKey, toDate } from '../lib/dates'
 import { contractValue, fmtMoney, sumContracts, sumInvoices, missingNote } from '../lib/money'
 import { ZONES, getZoneId } from '../agent/zones'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   BillingBadge,
@@ -20,14 +25,11 @@ import {
   LoadingState,
 } from './shared'
 import {
-  DollarSignIcon, CheckCircleIcon, ClockIcon,
-  FileCheckIcon, FilePenLineIcon,
+  DollarSignIcon, FileCheckIcon,
   ReceiptIcon, BanIcon, DownloadIcon, CheckIcon, XIcon,
-  TimerIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
-const TODAY = new Date()
+import { BRAND, SEMANTIC } from '@/lib/tokens'
+import { BILLING_STATUS, statusLabel, statusTone, toneHex, toneText } from '../lib/status'
 
 // ── Billing readiness — preserved from main ───────────────────────────────────
 
@@ -61,24 +63,17 @@ function fmtCompact(n) {
 const jobLabel = (j) => j.name || j.client?.split?.(' ')?.[0] || j.id
 const jobBuilder = (j) => j.client || j.qbsPM || '—'
 
-// `invoiceDate` is stored as MM/DD/YYYY in seed and ISO from Firestore writes.
+// `invoiceDate` is stored as MM/DD/YYYY in seed and ISO from Firestore writes. A day
+// without a time is local midnight of that day, so an invoice dated the 1st is in its own
+// month and ages from the start of the day it is dated. A string with a time on it is the
+// moment it names.
 function parseInvoiceDate(dateStr) {
-  if (!dateStr) return null
-  const m = String(dateStr).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  const ms = m ? Date.parse(`${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`)
-               : Date.parse(dateStr)
-  return isNaN(ms) ? null : new Date(ms)
-}
-
-function daysSinceDate(date) {
-  const d = date instanceof Date ? date : (date?.toDate ? date.toDate() : new Date(date))
-  if (!d || isNaN(d.getTime())) return null
-  return Math.floor((TODAY.getTime() - d.getTime()) / 86400000)
+  return toDate(dateStr)
 }
 
 function invoiceMonthKey(dateStr) {
   const d = parseInvoiceDate(dateStr)
-  return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : null
+  return d ? monthKey(d) : null
 }
 
 function hasPermit(job) {
@@ -128,6 +123,7 @@ const SORTS = [
 
 export default function BillingQueue() {
   const { jobs = [], extras = [], loading } = useData()
+  const now = useNow()
   const [search, setSearch]     = useState('')
   const [filter, setFilter]     = useState('all')
   const [pmFilter, setPmFilter] = useState('all')
@@ -150,8 +146,8 @@ export default function BillingQueue() {
     const hasDocs       = hasPermit(j)
     const hasPendingCO  = (pendingCOByJob.get(j.id) || 0) > 0
     const invDate       = parseInvoiceDate(j.invoiceDate)
-    const agingDays     = invDate ? daysSinceDate(invDate) : null
-    const readySince    = j.lastStatusChange ? daysSinceDate(j.lastStatusChange) : null
+    const agingDays     = invDate ? daysSince(invDate, now) : null
+    const readySince    = j.lastStatusChange ? daysSince(j.lastStatusChange, now) : null
     const billable      = isReady ? contractValue(j) : null
     return {
       job: j,
@@ -165,16 +161,16 @@ export default function BillingQueue() {
       invDate,
       milestone: getMilestone(j),
     }
-  }), [jobs, pendingCOByJob])
+  }), [jobs, pendingCOByJob, now])
 
   // KPI tiles — all real numbers
+  const thisMonthKey = monthKey(now)
   const kpis = useMemo(() => {
     const ready = enriched.filter(e => e.isReady && e.hasDocs && e.job.billingStatus !== 'hold')
     const missingDocs = enriched.filter(e => e.isReady && !e.hasDocs)
     const pendingApproval = enriched.filter(e =>
       e.job.billingStatus === 'hold' || (e.isReady && e.hasPendingCO)
     )
-    const thisMonthKey = `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, '0')}`
     const invoicedThisMonth = enriched.filter(e => invoiceMonthKey(e.job.invoiceDate) === thisMonthKey)
     const aging = enriched.filter(e =>
       e.job.billingStatus === 'invoiced' && e.agingDays !== null && e.agingDays >= 30,
@@ -192,7 +188,7 @@ export default function BillingQueue() {
       invoicedThisMonth: { count: invoicedThisMonth.length, ...sumOf(invoicedThisMonth, sumInvoices, 'invoice') },
       aging:             { count: aging.length,             ...sumOf(aging, sumInvoices, 'invoice') },
     }
-  }, [enriched])
+  }, [enriched, thisMonthKey])
 
   // Filter + chip counts
   const matchesFilter = (e, f) => {
@@ -271,10 +267,6 @@ export default function BillingQueue() {
         subtitle="What is ready to invoice, what is stuck, and what needs to happen in the next 48 hours."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{kpis.ready.count} ready · {fmtCompact(kpis.ready.amount)} billable</span>
             {kpis.aging.count > 0 && (
               <span className="text-amber-300">{kpis.aging.count} aging 30+ days</span>
@@ -303,51 +295,45 @@ export default function BillingQueue() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Billing pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Ready to Invoice"
-          value={fmtCompact(kpis.ready.amount)}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.ready.count > 0 ? 'success' : 'mute'}
-          sub={`${kpis.ready.count} job${kpis.ready.count === 1 ? '' : 's'}`}
-          note={kpis.ready.note}
-        />
-        <MetricTile
-          label="Missing Documentation"
-          value={kpis.missingDocs.count}
-          Icon={FilePenLineIcon}
-          emphasis={kpis.missingDocs.count > 0 ? 'warning' : 'success'}
-          sub={kpis.missingDocs.count > 0 ? fmtCompact(kpis.missingDocs.amount) + ' on hold' : 'All packages clean'}
-          note={kpis.missingDocs.note}
-        />
-        <MetricTile
-          label="Pending Approval"
-          value={kpis.pendingApproval.count}
-          Icon={ClockIcon}
-          emphasis={kpis.pendingApproval.count > 0 ? 'warning' : 'mute'}
-          sub={kpis.pendingApproval.count > 0 ? 'Hold or CO in flight' : 'No approvals waiting'}
-        />
-        <MetricTile
-          label="Invoiced This Month"
-          value={fmtCompact(kpis.invoicedThisMonth.amount)}
-          Icon={ReceiptIcon}
-          sub={`${kpis.invoicedThisMonth.count} invoice${kpis.invoicedThisMonth.count === 1 ? '' : 's'}`}
-          note={kpis.invoicedThisMonth.note}
-        />
-        <MetricTile
-          label="Aging 30+"
-          value={kpis.aging.count}
-          Icon={TimerIcon}
-          emphasis={kpis.aging.count > 0 ? 'critical' : 'success'}
-          sub={kpis.aging.count > 0 ? fmtCompact(kpis.aging.amount) + ' outstanding' : 'No overdue invoices'}
-          note={kpis.aging.note}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Ready to Invoice',
+            value: fmtCompact(kpis.ready.amount),
+            sub: `${kpis.ready.count} job${kpis.ready.count === 1 ? '' : 's'}`,
+            note: kpis.ready.note,
+            tone: kpis.ready.count > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Missing Documentation',
+            value: kpis.missingDocs.count,
+            sub: kpis.missingDocs.count > 0 ? fmtCompact(kpis.missingDocs.amount) + ' on hold' : 'All packages clean',
+            note: kpis.missingDocs.note,
+            tone: kpis.missingDocs.count > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Pending Approval',
+            value: kpis.pendingApproval.count,
+            sub: kpis.pendingApproval.count > 0 ? 'Hold or CO in flight' : 'No approvals waiting',
+            tone: kpis.pendingApproval.count > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Invoiced This Month',
+            value: fmtCompact(kpis.invoicedThisMonth.amount),
+            sub: `${kpis.invoicedThisMonth.count} invoice${kpis.invoicedThisMonth.count === 1 ? '' : 's'}`,
+            note: kpis.invoicedThisMonth.note,
+          },
+          {
+            label: 'Aging 30+',
+            value: kpis.aging.count,
+            sub: kpis.aging.count > 0 ? fmtCompact(kpis.aging.amount) + ' outstanding' : 'No overdue invoices',
+            note: kpis.aging.note,
+            tone: kpis.aging.count > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar
@@ -358,17 +344,19 @@ export default function BillingQueue() {
         trailing={
           <>
             <select
+              aria-label="Filter by PM"
               value={pmFilter}
               onChange={e => setPmFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[200px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[200px]"
             >
               <option value="all">All PMs</option>
               {uniquePMs.map(pm => <option key={pm} value={pm}>{pm}</option>)}
             </select>
             <select
+              aria-label="Sort by"
               value={sortBy}
               onChange={e => setSortBy(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
             >
               {SORTS.map(s => <option key={s.id} value={s.id}>Sort · {s.label}</option>)}
             </select>
@@ -441,7 +429,7 @@ export default function BillingQueue() {
         <a
           href="mailto:billing@p2electrical.com"
           className="font-semibold transition-colors"
-          style={{ color: O }}
+          style={{ color: BRAND }}
         >
           billing@p2electrical.com
         </a>
@@ -521,7 +509,7 @@ function DocStatusPill({ hasDocs, milestone }) {
 
 function ApprovalStatusPill({ row }) {
   const { job, hasPendingCO, pendingCOCount, isReady } = row
-  if (job.billingStatus === 'hold')   return <Pill tone="critical" size="xs">On hold</Pill>
+  if (job.billingStatus === 'hold')   return <Pill tone={statusTone(BILLING_STATUS, 'hold')} size="xs">{statusLabel(BILLING_STATUS, 'hold')}</Pill>
   if (job.status === 'blocked')       return <Pill tone="critical" size="xs">Job blocked</Pill>
   if (hasPendingCO)                   return <Pill tone="warning" size="xs">{pendingCOCount} CO pending</Pill>
   if (isReady)                        return <Pill tone="success" size="xs">Inspection passed</Pill>
@@ -532,40 +520,55 @@ function ApprovalStatusPill({ row }) {
 
 // ── Action buttons (preserve all existing Firestore writes) ─────────────────
 
-function BillingActions({ job }) {
-  const [marking, setMarking] = useState(false)
-  const [holding, setHolding] = useState(false)
+export function BillingActions({ job }) {
+  const { run: runInvoice, busy: marking } = useMutation()
+  const { run: runHold, busy: holding } = useMutation()
+  const { ask, dialog } = useConfirm()
   const isInvoiced = job.billingStatus === 'invoiced' || job.billingStatus === 'paid'
   const isHold     = job.billingStatus === 'hold'
 
-  async function handleMarkInvoiced() {
+  // Marking a job invoiced tells the client it was invoiced, so it is asked about first.
+  // The question stays open under the Working button while the write is out, and a refusal
+  // leaves it open under the error toast. Task 11 replaces it with the invoice dialog.
+  function handleMarkInvoiced() {
     if (!job._docId) return
-    setMarking(true)
-    try { await updateJob(job._docId, { billingStatus: 'invoiced' }) }
-    finally { setMarking(false) }
+    ask({
+      title: 'Submit this invoice?',
+      body: `${job.id} is marked invoiced, and the client sees the invoice as submitted.`,
+      confirmLabel: 'Submit invoice',
+      onConfirm: () => runInvoice(() => updateJob(job._docId, { billingStatus: 'invoiced' }), {
+        success: `${job.id} marked invoiced.`,
+        error: 'Could not submit the invoice. Try again.',
+        queue: true,
+      }),
+    })
   }
-  async function handleHold() {
+  function handleHold() {
     if (!job._docId) return
-    setHolding(true)
-    try { await updateJob(job._docId, { billingStatus: 'hold' }) }
-    finally { setHolding(false) }
+    runHold(() => updateJob(job._docId, { billingStatus: 'hold' }), {
+      success: `${job.id} put on billing hold.`,
+      error: 'Could not place the hold. Try again.',
+      queue: true,
+    })
   }
-  async function handleRelease() {
+  function handleRelease() {
     if (!job._docId) return
-    setHolding(true)
-    try { await updateJob(job._docId, { billingStatus: 'not-invoiced' }) }
-    finally { setHolding(false) }
+    runHold(() => updateJob(job._docId, { billingStatus: 'not-invoiced' }), {
+      success: `Hold released on ${job.id}.`,
+      error: 'Could not release the hold. Try again.',
+      queue: true,
+    })
   }
 
+  let actions
   if (isInvoiced) {
-    return (
+    actions = (
       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
         <CheckIcon size={12} /> Invoiced
       </span>
     )
-  }
-  if (isHold) {
-    return (
+  } else if (isHold) {
+    actions = (
       <button
         type="button"
         onClick={handleRelease}
@@ -575,53 +578,64 @@ function BillingActions({ job }) {
         <BanIcon size={11} /> {holding ? '…' : 'Release hold'}
       </button>
     )
+  } else {
+    actions = (
+      <div className="flex items-center gap-1.5 justify-end">
+        <button
+          type="button"
+          onClick={handleMarkInvoiced}
+          disabled={marking}
+          className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-brand-foreground disabled:opacity-50 transition-colors"
+          style={{ backgroundColor: BRAND }}
+          title="Submit invoice: marks the job invoiced"
+        >
+          <ReceiptIcon size={11} /> {marking ? '…' : 'Submit invoice'}
+        </button>
+        <button
+          type="button"
+          onClick={handleHold}
+          disabled={holding}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:border-white/25 disabled:opacity-40 transition-colors"
+          title="Place billing hold"
+        >
+          <XIcon size={11} /> {holding ? '…' : 'Hold'}
+        </button>
+      </div>
+    )
   }
 
-  return (
-    <div className="flex items-center gap-1.5 justify-end">
-      <button
-        type="button"
-        onClick={handleMarkInvoiced}
-        disabled={marking}
-        className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md text-white disabled:opacity-50 transition-colors"
-        style={{ backgroundColor: O }}
-        title="Submit invoice — marks job invoiced"
-      >
-        <ReceiptIcon size={11} /> {marking ? '…' : 'Submit invoice'}
-      </button>
-      <button
-        type="button"
-        onClick={handleHold}
-        disabled={holding}
-        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:border-white/25 disabled:opacity-40 transition-colors"
-        title="Place billing hold"
-      >
-        <XIcon size={11} /> {holding ? '…' : 'Hold'}
-      </button>
-    </div>
-  )
+  // The question is part of every state, so that it is still on the screen when the job
+  // turns invoiced under it while the write is being confirmed.
+  return <>{actions}{dialog}</>
 }
 
-function InvoiceNumberInput({ job }) {
-  const [val, setVal]       = useState(job.invoiceNum || '')
-  const [saving, setSaving] = useState(false)
-  async function handleBlur() {
-    if (!job._docId) return
-    if (val === (job.invoiceNum || '')) return
-    setSaving(true)
-    try { await updateJob(job._docId, { invoiceNum: val }) }
-    finally { setSaving(false) }
-  }
+// The box shows the stored number while nothing is typed in it, so one that another person
+// saved shows up and leaving the box without typing never writes an old copy over a newer
+// one. What is typed stays in the box until it is saved, through the apply of the write to
+// Firestore's cache and the rollback of one the rules refuse, so it can be tried again (see
+// useSavedField). A box belongs to one job.
+export function InvoiceNumberInput({ job }) {
+  return <InvoiceNumberField key={job._docId} job={job} />
+}
+
+function InvoiceNumberField({ job }) {
+  const field = useSavedField({
+    stored: job.invoiceNum || '',
+    enabled: !!job._docId,
+    write: value => updateJob(job._docId, { invoiceNum: value }),
+    success: 'Invoice number saved.',
+    error: 'Could not save the invoice number. Try again.',
+  })
   return (
     <div className="flex items-center gap-1.5">
       <input
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onBlur={handleBlur}
+        value={field.value}
+        onChange={field.onChange}
+        onBlur={field.onBlur}
         placeholder="Inv #"
-        className="bg-white/[0.04] border border-white/10 rounded-md text-xs text-zinc-100 px-2 py-1 w-20 placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+        className="bg-white/[0.04] border border-white/10 rounded-md text-xs text-zinc-100 px-2 py-1 w-20 placeholder:text-zinc-400 focus:border-white/30"
       />
-      {saving && <span className="text-[10px] text-zinc-400">saving…</span>}
+      {field.saving && <span className="text-[10px] text-zinc-400">saving…</span>}
     </div>
   )
 }
@@ -633,13 +647,7 @@ function BillingRow({ row }) {
   const zoneId   = getZoneId(job)
   const zone     = ZONES[zoneId] || ZONES['zone-7']
   const next     = nextActionFor(job, { isReady, hasDocs, hasPendingCO, agingDays })
-  const nextColor =
-    next.tone === 'critical' ? '#ef4444' :
-    next.tone === 'warning'  ? '#eab308' :
-    next.tone === 'success'  ? '#22c55e' :
-    next.tone === 'info'     ? '#3b82f6' :
-    next.tone === 'brand'    ? O :
-    '#9ca3af'
+  const nextColor = toneText(next.tone)
 
   return (
     <TableRow
@@ -662,7 +670,7 @@ function BillingRow({ row }) {
         </div>
       </TableCell>
       <TableCell className="text-zinc-200 truncate">{jobBuilder(job)}</TableCell>
-      <TableCell align="right" className="font-bold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
+      <TableCell align="right" className="font-bold tabular-nums" style={{ color: billable > 0 ? BRAND : SEMANTIC.neutral }}>
         {billable > 0 ? fmtMoney(billable) : '—'}
       </TableCell>
       <TableCell><BillingBadge status={job.billingStatus} /></TableCell>
@@ -695,7 +703,7 @@ function AgingPill({ row }) {
   const { job, agingDays, readySince, isReady } = row
   // Invoiced — show how long since invoiceDate
   if (job.billingStatus === 'invoiced' || job.billingStatus === 'partial-pay') {
-    if (agingDays == null) return <span className="text-zinc-500 text-xs">—</span>
+    if (agingDays == null) return <span className="text-zinc-400 text-xs">No date</span>
     const tone = agingDays >= 60 ? 'critical' : agingDays >= 30 ? 'warning' : 'info'
     return <Pill tone={tone} size="xs">{agingDays}d</Pill>
   }
@@ -707,7 +715,7 @@ function AgingPill({ row }) {
     const tone = readySince >= 7 ? 'critical' : readySince >= 3 ? 'warning' : 'info'
     return <Pill tone={tone} size="xs">{readySince}d ready</Pill>
   }
-  return <span className="text-zinc-500 text-xs">—</span>
+  return <span className="text-zinc-400 text-xs">None</span>
 }
 
 // ── Mobile card ──────────────────────────────────────────────────────────────
@@ -715,12 +723,8 @@ function AgingPill({ row }) {
 function BillingCard({ row }) {
   const { job, isReady, hasDocs, hasPendingCO, agingDays, billable, milestone } = row
   const next = nextActionFor(job, { isReady, hasDocs, hasPendingCO, agingDays })
-  const accent =
-    next.tone === 'critical' ? '#ef4444' :
-    next.tone === 'warning'  ? '#eab308' :
-    next.tone === 'brand'    ? O :
-    next.tone === 'success'  ? '#22c55e' :
-    null
+  // Only the tones that ask for attention or mark a win get a bar.
+  const accent = ['critical', 'warning', 'brand', 'success'].includes(next.tone) ? toneHex(next.tone) : null
 
   return (
     <article
@@ -738,7 +742,7 @@ function BillingCard({ row }) {
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? O : '#9ca3af' }}>
+          <p className="text-lg font-semibold tabular-nums" style={{ color: billable > 0 ? BRAND : SEMANTIC.neutral }}>
             {billable > 0 ? fmtMoney(billable) : '—'}
           </p>
           <p className="text-[10px] text-zinc-400">{milestone}</p>
@@ -754,7 +758,7 @@ function BillingCard({ row }) {
 
       <div className="mt-2 pt-3 border-t border-white/5">
         <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-0.5">Next action</p>
-        <p className="text-sm font-semibold leading-snug" style={{ color: accent || '#9ca3af' }}>
+        <p className="text-sm font-semibold leading-snug" style={{ color: accent || SEMANTIC.neutral }}>
           {next.text}
         </p>
         <div className="flex items-center justify-between gap-2 mt-3">

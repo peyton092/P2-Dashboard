@@ -2,10 +2,12 @@ import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
 import { generateAlerts, ALERT_TYPE_LABEL } from '../agent/alerts'
 import { updateAgentAlert, addAgentAlert } from '../hooks/useFirestore'
+import { useMutation } from '../hooks/useMutation'
+import { useConfirm } from '../hooks/useConfirm'
 import { ZONES } from '../agent/zones'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   EmptyState,
@@ -18,27 +20,10 @@ import {
   CheckCircleIcon, CheckIcon, XIcon,
   ClockIcon, BellOffIcon, RefreshCwIcon,
   TimerIcon, ReceiptIcon, BadgeCheckIcon,
-  MapPinIcon, UserRoundCogIcon, ActivityIcon,
+  MapPinIcon, UserRoundCogIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
-
-// Severity → Phase 1 palette tone + sort weight (lowest = surfaced first)
-const SEVERITY = {
-  critical: { tone: 'critical', label: 'Critical', sort: 0 },
-  warning:  { tone: 'warning',  label: 'Warning',  sort: 1 },
-  info:     { tone: 'info',     label: 'Info',     sort: 2 },
-}
-
-// Tone → fg color for the recommendation/next-action microcopy line.
-const TONE_COLOR = {
-  critical: '#ef4444',
-  warning:  '#eab308',
-  brand:    O,
-  success:  '#22c55e',
-  info:     '#3b82f6',
-  mute:     '#9ca3af',
-}
+import { SEVERITY, statusLabel, statusOrder, statusTone, toneText } from '../lib/status'
+import { SEMANTIC, TONE_FOREGROUND } from '@/lib/tokens'
 
 // ── Categorisation ───────────────────────────────────────────────────────────
 //
@@ -152,7 +137,9 @@ export default function AlertsPage() {
   const { jobs = [], extras = [], agentAlerts = [], loading } = useData()
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [rescanning, setRescanning] = useState(false)
+  const { run } = useMutation()
+  const { run: runScan, busy: rescanning } = useMutation()
+  const { ask, dialog } = useConfirm()
 
   // Merge Firestore alerts + client-generated alerts. Firestore is
   // authoritative for lifecycle; client-only alerts are added with
@@ -201,8 +188,8 @@ export default function AlertsPage() {
             || (a.jobId       || '').toLowerCase().includes(q)
       })
       .sort((a, b) => {
-        const sa = SEVERITY[a.severity]?.sort ?? 9
-        const sb = SEVERITY[b.severity]?.sort ?? 9
+        const sa = statusOrder(SEVERITY, a.severity)
+        const sb = statusOrder(SEVERITY, b.severity)
         if (sa !== sb) return sa - sb
         return ageDays(b) - ageDays(a)
       })
@@ -232,7 +219,7 @@ export default function AlertsPage() {
 
   const hasActiveFilters = filter !== 'all' || search.trim() !== ''
 
-  // ── Lifecycle mutations (preserved verbatim from prior implementation) ────
+  // ── Lifecycle mutations ────────────────────────────────────────────────────
   async function applyAction(alert, newStatus, extra = {}) {
     const patch = { status: newStatus, ...extra }
     if (alert._docId) {
@@ -241,24 +228,51 @@ export default function AlertsPage() {
       await addAgentAlert({ ...alert, ...patch })
     }
   }
+  // Resolving and dismissing each take the alert out of the queue, so they are asked about
+  // first. Firestore applies the write on the screen at once, so the question closes when
+  // it is answered (instant), and a refusal is told by the toast alone.
   function handleResolve(alert) {
-    applyAction(alert, 'resolved', { resolvedAt: new Date().toISOString() })
+    ask({
+      title: 'Resolve this alert?',
+      body: 'The alert is marked resolved and moves to the Resolved filter.',
+      confirmLabel: 'Resolve',
+      instant: true,
+      onConfirm: () => run(() => applyAction(alert, 'resolved', { resolvedAt: new Date().toISOString() }), {
+        success: 'Alert resolved.',
+        error: 'Could not resolve the alert. Try again.',
+        queue: true,
+      }),
+    })
   }
   function handleSnooze(alert) {
-    applyAction(alert, 'snoozed', { snoozeUntil: new Date(Date.now() + 86400000).toISOString() })
+    run(() => applyAction(alert, 'snoozed', { snoozeUntil: new Date(Date.now() + 86400000).toISOString() }), {
+      success: 'Alert snoozed for 24 hours.',
+      error: 'Could not snooze the alert. Try again.',
+      queue: true,
+    })
   }
   function handleDismiss(alert) {
-    applyAction(alert, 'dismissed')
+    ask({
+      title: 'Dismiss this alert?',
+      body: 'The alert leaves the queue. It returns if a scan finds the problem again.',
+      confirmLabel: 'Dismiss',
+      tone: 'critical',
+      instant: true,
+      onConfirm: () => run(() => applyAction(alert, 'dismissed'), {
+        success: 'Alert dismissed.',
+        error: 'Could not dismiss the alert. Try again.',
+        queue: true,
+      }),
+    })
   }
 
-  async function handleRescan() {
-    setRescanning(true)
-    try {
-      const fresh = generateAlerts(jobs, extras)
-      await Promise.all(fresh.map(a => addAgentAlert({ ...a, status: a.status || 'open' })))
-    } finally {
-      setRescanning(false)
-    }
+  function handleRescan() {
+    const fresh = generateAlerts(jobs, extras)
+    return runScan(() => Promise.all(fresh.map(a => addAgentAlert({ ...a, status: a.status || 'open' }))), {
+      success: `Scan finished. ${fresh.length} alert${fresh.length === 1 ? '' : 's'} refreshed.`,
+      error: 'Could not scan the jobs. Try again.',
+      queue: true,
+    })
   }
 
   // ── Loading branch ─────────────────────────────────────────────────────────
@@ -283,13 +297,6 @@ export default function AlertsPage() {
         subtitle="What needs attention now, what is aging, and who owns it."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{kpis.total} open · {kpis.critical} critical</span>
             {kpis.aging > 0 && (
               <span className="text-amber-300">{kpis.aging} aging 3+ days</span>
@@ -309,48 +316,42 @@ export default function AlertsPage() {
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Alert pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Critical Alerts"
-          value={kpis.critical}
-          Icon={AlertCircleIcon}
-          emphasis={kpis.critical > 0 ? 'critical' : 'success'}
-          sub={kpis.critical > 0 ? 'Resolve today' : 'No critical alerts'}
-        />
-        <MetricTile
-          label="Needs Action"
-          value={kpis.needsAction}
-          Icon={AlertTriangleIcon}
-          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
-          sub={kpis.needsAction > 0 ? 'Critical + warning' : 'Nothing pending'}
-        />
-        <MetricTile
-          label="Aging Alerts"
-          value={kpis.aging}
-          Icon={TimerIcon}
-          emphasis={kpis.aging > 0 ? 'critical' : 'success'}
-          sub={kpis.aging > 0 ? '3+ days open' : 'No stale alerts'}
-        />
-        <MetricTile
-          label="Resolved Today"
-          value={kpis.resolvedToday}
-          Icon={CheckCircleIcon}
-          emphasis={kpis.resolvedToday > 0 ? 'success' : 'mute'}
-          sub={kpis.resolvedToday > 0 ? 'Closed in last 24h' : 'None resolved yet'}
-        />
-        <MetricTile
-          label="Total Open"
-          value={kpis.total}
-          Icon={ActivityIcon}
-          emphasis={kpis.total > 0 ? 'default' : 'success'}
-          sub={`${merged.length} ever`}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Critical Alerts',
+            value: kpis.critical,
+            sub: kpis.critical > 0 ? 'Resolve today' : 'No critical alerts',
+            tone: kpis.critical > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Needs Action',
+            value: kpis.needsAction,
+            sub: kpis.needsAction > 0 ? 'Critical + warning' : 'Nothing pending',
+            tone: kpis.needsAction > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'Aging Alerts',
+            value: kpis.aging,
+            sub: kpis.aging > 0 ? '3+ days open' : 'No stale alerts',
+            tone: kpis.aging > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Resolved Today',
+            value: kpis.resolvedToday,
+            sub: kpis.resolvedToday > 0 ? 'Closed in last 24h' : 'None resolved yet',
+            tone: kpis.resolvedToday > 0 ? 'success' : 'mute',
+          },
+          {
+            label: 'Total Open',
+            value: kpis.total,
+            sub: `${merged.length} ever`,
+            tone: kpis.total > 0 ? undefined : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar
@@ -412,6 +413,7 @@ export default function AlertsPage() {
           )}
         </div>
       )}
+      {dialog}
     </div>
   )
 }
@@ -478,14 +480,15 @@ function AlertGroup({ title, tone, alerts, onResolve, onSnooze, onDismiss }) {
 }
 
 function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
-  const sev      = SEVERITY[alert.severity] || SEVERITY.info
+  // An alert with a severity the app does not know is shown as info.
+  const severity = Object.hasOwn(SEVERITY, alert.severity) ? alert.severity : 'info'
   const cat      = categoryFor(alert)
   const CatIcon  = CATEGORY_ICON[cat] || AlertTriangleIcon
   const zoneName = alert.zoneId ? (ZONES[alert.zoneId]?.name || alert.zoneId) : null
   const isResolved = alert.status === 'resolved'
   const isSnoozed  = alert.status === 'snoozed'
   const age       = ageDays(alert)
-  const sevColor  = TONE_COLOR[sev.tone]
+  const sevColor  = toneText(statusTone(SEVERITY, severity))
 
   const statusInfo = isResolved
     ? { tone: 'success',  label: 'Resolved' }
@@ -505,7 +508,7 @@ function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
     >
       {/* Metadata row */}
       <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-        <Pill tone={sev.tone} size="xs">{sev.label}</Pill>
+        <Pill tone={statusTone(SEVERITY, severity)} size="xs">{statusLabel(SEVERITY, severity)}</Pill>
         <Pill tone="neutral" size="xs" Icon={CatIcon}>
           {CATEGORY_LABEL[cat] || ALERT_TYPE_LABEL[alert.type] || 'Alert'}
         </Pill>
@@ -521,7 +524,7 @@ function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
             {zoneName}
           </span>
         )}
-        <span className="text-[10px] text-zinc-500">·</span>
+        <span className="text-[10px] text-zinc-400">·</span>
         <span className={`text-[10px] ${age >= 3 ? 'text-amber-300 font-semibold' : 'text-zinc-400'}`}>
           {ageLabel(age)}
         </span>
@@ -578,8 +581,8 @@ function AlertCard({ alert, onResolve, onSnooze, onDismiss }) {
           <button
             type="button"
             onClick={() => onResolve(alert)}
-            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md text-white transition-colors"
-            style={{ backgroundColor: '#22c55e' }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md transition-colors"
+            style={{ backgroundColor: SEMANTIC.success, color: TONE_FOREGROUND.success }}
           >
             <CheckIcon size={12} /> Resolve alert
           </button>

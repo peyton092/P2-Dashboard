@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils'
 import { AlertTriangleIcon, CheckCircleIcon, InboxIcon, RefreshCwIcon } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 export function EmptyState({
   Icon = InboxIcon,
@@ -11,7 +10,7 @@ export function EmptyState({
   tone = 'neutral',
   className = '',
 }) {
-  const accent = tone === 'success' ? '#22c55e' : O
+  const accent = tone === 'success' ? '#22c55e' : BRAND
   return (
     <div
       className={cn(
@@ -25,7 +24,7 @@ export function EmptyState({
         style={{
           width: 44,
           height: 44,
-          backgroundColor: accent + '22',
+          backgroundColor: withAlpha(accent, 0.13),
           color: accent,
         }}
       >
@@ -57,7 +56,7 @@ export function LoadingState({ label = 'Loading…', className = '' }) {
     <div className={cn('flex items-center justify-center gap-3 py-10', className)}>
       <span
         className="w-5 h-5 rounded-full border-2 animate-spin"
-        style={{ borderColor: O + '33', borderTopColor: O }}
+        style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }}
       />
       <p className="text-sm text-zinc-300">{label}</p>
     </div>
@@ -89,6 +88,7 @@ export function ErrorState({
       <p className="text-xs text-zinc-400 mt-1 max-w-sm">{description}</p>
       {onRetry && (
         <button
+          type="button"
           onClick={onRetry}
           className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-200 px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 hover:text-white transition-colors"
         >

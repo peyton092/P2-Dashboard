@@ -1,14 +1,17 @@
 import { useState, useMemo } from 'react'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
+import { daysBetween, daysSince, toDate } from '../lib/dates'
 import {
-  scoreJob, classifyRisk, daysSince,
+  scoreJob, classifyRisk,
   hasFailedInspection, isBillingReady, isHvacStartupBlocked,
 } from '../agent/scoring'
 import { ZONES, PM_TO_ZONE } from '../agent/zones'
 import { updateJob } from '../hooks/useFirestore'
+import { useSavedField } from '../hooks/useSavedField'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   EmptyState,
@@ -17,14 +20,12 @@ import {
   FilterBar,
 } from './shared'
 import {
-  UserRoundCogIcon, TriangleAlertIcon, ActivityIcon,
-  FilePenLineIcon, ReceiptIcon, BadgeCheckIcon,
+  UserRoundCogIcon, FilePenLineIcon, BadgeCheckIcon,
   ChevronDownIcon, MapPinIcon, AlertCircleIcon, BanIcon,
   CheckCircleIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
-const TODAY = new Date()
+import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
+import { toneText } from '../lib/status'
 
 // Roster — preserved from prior implementation. These are the six QBS PMs;
 // any additional PM names that appear in active job data are merged in too,
@@ -59,7 +60,7 @@ function jobBillingBlocker(job, pendingCOCount) {
   return null
 }
 
-function jobNextAction(job) {
+function jobNextAction(job, now) {
   if (job.nextAction?.trim()) return job.nextAction.trim()
   if (hasFailedInspection(job))    return 'Coordinate rework'
   if (isHvacStartupBlocked(job))   return 'Push electrical service release'
@@ -68,7 +69,7 @@ function jobNextAction(job) {
   if (hasUpcomingInspection(job))  return 'Confirm upcoming inspection'
   if (isBillingReady(job) && !hasPermit(job)) return 'Add permit number'
   if (isBillingReady(job))         return 'Submit invoice — milestone earned'
-  const stale = daysSince(job.lastStatusChange || job.start)
+  const stale = daysSince(job.lastStatusChange || job.start, now)
   if (stale !== null && stale >= 7) return 'Field update needed'
   if (stale !== null && stale >= 3) return 'Daily status check-in'
   return 'Continue scheduled work'
@@ -77,17 +78,10 @@ function jobNextAction(job) {
 function fmtDateShort(date) {
   if (!date) return null
   try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
+    const d = toDate(date)
+    if (!d) return null
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   } catch { return null }
-}
-
-function daysUntil(dateStr) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return null
-  return Math.ceil((d.getTime() - TODAY.getTime()) / 86400000)
 }
 
 // ── PM workload summary ──────────────────────────────────────────────────────
@@ -96,7 +90,7 @@ function daysUntil(dateStr) {
 // manager-readable workload snapshot. Thresholds here are operational rules
 // of thumb — they don't change the underlying risk model in agent/scoring.js.
 
-function summarizePM(pm, allJobs, allExtras) {
+function summarizePM(pm, allJobs, allExtras, now) {
   const jobs = allJobs.filter(j => j.pm === pm && !isComplete(j))
 
   // Map of jobId → count of in-flight change orders blocking that job.
@@ -117,7 +111,7 @@ function summarizePM(pm, allJobs, allExtras) {
   let openCOs = 0
 
   jobs.forEach(j => {
-    const r = classifyRisk(j)
+    const r = classifyRisk(j, now)
     if (r?.level === 'critical') critical += 1
     else if (r?.level === 'warning') warning += 1
 
@@ -128,7 +122,7 @@ function summarizePM(pm, allJobs, allExtras) {
     if (hasUpcomingInspection(j))  upcomingInsp += 1
     if (jobBillingBlocker(j, pendingCOByJob.get(j.id) || 0)) billingBlockers += 1
 
-    const stale = daysSince(j.lastStatusChange || j.start)
+    const stale = daysSince(j.lastStatusChange || j.start, now)
     if (stale !== null && stale >= 7) stale7 += 1
 
     openCOs += pendingCOByJob.get(j.id) || 0
@@ -214,20 +208,11 @@ function pmMatchesFilter(s, filter) {
   return true
 }
 
-// Pressure-tone → fg color (used for the action microcopy line).
-const TONE_COLOR = {
-  critical: '#ef4444',
-  warning:  '#eab308',
-  brand:    O,
-  success:  '#22c55e',
-  info:     '#3b82f6',
-  mute:     '#9ca3af',
-}
-
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function PMDashboard() {
   const { jobs = [], extras = [], loading } = useData()
+  const now = useNow()
   const [filter, setFilter]     = useState('all')
   const [search, setSearch]     = useState('')
   const [expanded, setExpanded] = useState({})
@@ -243,8 +228,8 @@ export default function PMDashboard() {
   }, [jobs])
 
   const summaries = useMemo(
-    () => allPMs.map(pm => summarizePM(pm, jobs, extras)),
-    [allPMs, jobs, extras],
+    () => allPMs.map(pm => summarizePM(pm, jobs, extras, now)),
+    [allPMs, jobs, extras, now],
   )
 
   // Aggregate KPI counts across the entire roster.
@@ -321,60 +306,47 @@ export default function PMDashboard() {
         subtitle="Who is overloaded, who owns risk, and what each PM should do next."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }}
-              />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
             <span>{kpis.activePMs} of {allPMs.length} PMs with active work</span>
             <span>{kpis.totalActive} active assignments</span>
           </>
         }
       />
 
-      {/* KPI strip — 5 tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="PM accountability"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}
-      >
-        <MetricTile
-          label="Active PMs"
-          value={kpis.activePMs}
-          Icon={UserRoundCogIcon}
-          sub={`${allPMs.length} on roster`}
-        />
-        <MetricTile
-          label="Jobs Needing Action"
-          value={kpis.needsAction}
-          Icon={TriangleAlertIcon}
-          emphasis={kpis.needsAction > 0 ? 'warning' : 'success'}
-          sub={kpis.needsAction > 0 ? 'Failed inspection or blocked' : 'No PM issues today'}
-        />
-        <MetricTile
-          label="At-Risk Jobs"
-          value={kpis.atRisk}
-          Icon={ActivityIcon}
-          emphasis={kpis.atRisk > 0 ? 'critical' : 'success'}
-          sub={kpis.atRisk > 0 ? 'Stalled or warning level' : 'No at-risk jobs'}
-        />
-        <MetricTile
-          label="Open Change Orders"
-          value={kpis.openCOs}
-          Icon={FilePenLineIcon}
-          emphasis={kpis.openCOs > 0 ? 'warning' : 'mute'}
-          sub={kpis.openCOs > 0 ? 'Pending or sent to builder' : 'No COs in flight'}
-        />
-        <MetricTile
-          label="Billing Blockers"
-          value={kpis.billingBlockers}
-          Icon={ReceiptIcon}
-          emphasis={kpis.billingBlockers > 0 ? 'critical' : 'success'}
-          sub={kpis.billingBlockers > 0 ? 'Hold, missing docs, or CO' : 'Clean billing pipe'}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Active PMs',
+            value: kpis.activePMs,
+            sub: `${allPMs.length} on roster`,
+          },
+          {
+            label: 'Jobs Needing Action',
+            value: kpis.needsAction,
+            sub: kpis.needsAction > 0 ? 'Failed inspection or blocked' : 'No PM issues today',
+            tone: kpis.needsAction > 0 ? 'warning' : 'success',
+          },
+          {
+            label: 'At-Risk Jobs',
+            value: kpis.atRisk,
+            sub: kpis.atRisk > 0 ? 'Stalled or warning level' : 'No at-risk jobs',
+            tone: kpis.atRisk > 0 ? 'critical' : 'success',
+          },
+          {
+            label: 'Open Change Orders',
+            value: kpis.openCOs,
+            sub: kpis.openCOs > 0 ? 'Pending or sent to builder' : 'No COs in flight',
+            tone: kpis.openCOs > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Billing Blockers',
+            value: kpis.billingBlockers,
+            sub: kpis.billingBlockers > 0 ? 'Hold, missing docs, or CO' : 'Clean billing pipe',
+            tone: kpis.billingBlockers > 0 ? 'critical' : 'success',
+          },
+        ]}
+      />
 
       {/* Filters */}
       <FilterBar
@@ -416,6 +388,7 @@ export default function PMDashboard() {
                   s={s}
                   expanded={!!expanded[s.pm]}
                   onToggle={() => toggleExpand(s.pm)}
+                  now={now}
                 />
               </li>
             ))}
@@ -481,37 +454,40 @@ function PMEmptyState({ filter, hasSearch }) {
   return <EmptyState title="No PM activity" description="PMs with active work will appear here." />
 }
 
-function PMRow({ s, expanded, onToggle }) {
+function PMRow({ s, expanded, onToggle, now }) {
   const zone = ZONES[PM_TO_ZONE[s.pm]] || ZONES['zone-7']
   const initials = s.pm.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-  const accent = zone.color || O
-  const nextColor = TONE_COLOR[s.pressure.tone] || TONE_COLOR.mute
+  const accent = zone.color || BRAND
+  const nextColor = toneText(s.pressure.tone)
 
+  // A button holds phrasing content only, so its lines are spans that display as blocks.
+  // The ring is drawn inside the row, which the panel would clip.
   return (
     <div>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="w-full flex items-start gap-3 px-4 py-3.5 text-left hover:bg-white/[0.025] transition-colors"
+        className="w-full flex items-start gap-3 px-4 py-3.5 text-left hover:bg-white/[0.025] transition-colors focus-visible:-outline-offset-2"
       >
-        {/* Avatar */}
-        <div
+        {/* Avatar, a picture of the name beside it */}
+        <span
+          aria-hidden="true"
           className="shrink-0 mt-0.5 flex items-center justify-center rounded-full text-[11px] font-bold"
           style={{
             width: 36,
             height: 36,
-            backgroundColor: accent + '22',
+            backgroundColor: withAlpha(accent, 0.13),
             color: accent,
           }}
         >
           {initials}
-        </div>
+        </span>
 
         {/* Identity + workload */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-semibold text-white truncate">{s.pm}</p>
+        <span className="block flex-1 min-w-0">
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="block text-sm font-semibold text-white truncate">{s.pm}</span>
             {zone?.pm && (
               <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400">
                 <MapPinIcon size={10} />
@@ -519,46 +495,47 @@ function PMRow({ s, expanded, onToggle }) {
               </span>
             )}
             <Pill tone={s.pressure.tone} size="xs">{s.pressure.label}</Pill>
-          </div>
+          </span>
 
-          {/* Per-PM stat strip — wraps cleanly on mobile */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px]">
+          {/* Per PM stat strip, which wraps cleanly on a phone */}
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px]">
             <PMStat label="active"      value={s.activeCount}                          tone="brand" />
             <PMStat label="at risk"     value={s.atRisk}                               tone={s.atRisk > 0 ? 'warning' : 'mute'} />
             <PMStat label="blocked"     value={s.blocked}                              tone={s.blocked > 0 ? 'critical' : 'mute'} />
             <PMStat label="open COs"    value={s.openCOs}                              tone={s.openCOs > 0 ? 'warning' : 'mute'} />
             <PMStat label="billing"     value={s.billingBlockers}                      tone={s.billingBlockers > 0 ? 'critical' : 'mute'} />
             <PMStat label="inspections" value={s.upcomingInsp + s.failedInsp}          tone={s.failedInsp > 0 ? 'critical' : s.upcomingInsp > 0 ? 'info' : 'mute'} />
-          </div>
+          </span>
 
-          {/* PM-level next action */}
-          <div className="flex items-start gap-1.5 mt-2.5 min-w-0">
+          {/* The next action of the PM */}
+          <span className="flex items-start gap-1.5 mt-2.5 min-w-0">
             <span className="text-[10px] uppercase tracking-wide text-zinc-400 shrink-0 mt-px">Next</span>
-            <p
-              className="text-[12px] font-semibold leading-snug min-w-0 truncate"
+            <span
+              className="block text-[12px] font-semibold leading-snug min-w-0 truncate"
               style={{ color: nextColor }}
               title={s.nextAction}
             >
               {s.nextAction}
-            </p>
-          </div>
-        </div>
+            </span>
+          </span>
+        </span>
 
-        {/* Expand chevron */}
+        {/* Expand chevron, a picture of what aria-expanded says */}
         <ChevronDownIcon
           size={16}
+          aria-hidden="true"
           className="shrink-0 text-zinc-400 mt-1.5 transition-transform"
           style={{ transform: expanded ? 'rotate(180deg)' : 'none' }}
         />
       </button>
 
-      {expanded && <PMDetail s={s} />}
+      {expanded && <PMDetail s={s} now={now} />}
     </div>
   )
 }
 
 function PMStat({ label, value, tone }) {
-  const color = TONE_COLOR[tone] || TONE_COLOR.mute
+  const color = toneText(tone)
   return (
     <span className="inline-flex items-baseline gap-1">
       <span className="font-bold tabular-nums" style={{ color }}>{value}</span>
@@ -567,7 +544,7 @@ function PMStat({ label, value, tone }) {
   )
 }
 
-function PMDetail({ s }) {
+function PMDetail({ s, now }) {
   if (s.activeCount === 0) {
     return (
       <div className="px-4 pb-4">
@@ -582,8 +559,8 @@ function PMDetail({ s }) {
   const ranked = [...s.jobs]
     .map(j => ({
       job: j,
-      score: scoreJob(j),
-      risk: classifyRisk(j),
+      score: scoreJob(j, [], now),
+      risk: classifyRisk(j, now),
       pendingCOs: s.pendingCOByJob.get(j.id) || 0,
     }))
     .sort((a, b) => b.score - a.score)
@@ -598,6 +575,7 @@ function PMDetail({ s }) {
             risk={item.risk}
             score={item.score}
             pendingCOs={item.pendingCOs}
+            now={now}
           />
         ))}
       </div>
@@ -605,12 +583,12 @@ function PMDetail({ s }) {
   )
 }
 
-function PMJobRow({ job, risk, score, pendingCOs }) {
+function PMJobRow({ job, risk, score, pendingCOs, now }) {
   const phaseLabel = (job.phase || job.status || '—')
     .replace(/-/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase())
-  const stale = daysSince(job.lastStatusChange || job.start)
-  const tDays = daysUntil(job.target)
+  const stale = daysSince(job.lastStatusChange || job.start, now)
+  const tDays = daysBetween(now, job.target)
   const billing = jobBillingBlocker(job, pendingCOs)
 
   const insp = job.insp || {}
@@ -622,7 +600,7 @@ function PMJobRow({ job, risk, score, pendingCOs }) {
   )
 
   const cleanQuiet = !failedTrade && !upcomingTrade && !pendingCOs && !billing
-  const recommended = jobNextAction(job)
+  const recommended = jobNextAction(job, now)
 
   return (
     <div className="px-3 py-2.5 sm:px-4 sm:py-3">
@@ -665,9 +643,9 @@ function PMJobRow({ job, risk, score, pendingCOs }) {
         )}
         {tDays !== null && (
           tDays < 0 ? (
-            <span className="font-semibold" style={{ color: '#ef4444' }}>{Math.abs(tDays)}d overdue</span>
+            <span className="font-semibold" style={{ color: SEMANTIC.critical }}>{Math.abs(tDays)}d overdue</span>
           ) : tDays <= 7 ? (
-            <span className="font-semibold" style={{ color: '#eab308' }}>Due in {tDays}d</span>
+            <span className="font-semibold" style={{ color: SEMANTIC.warning }}>Due in {tDays}d</span>
           ) : (
             <span>Due {fmtDateShort(job.target)}</span>
           )
@@ -715,32 +693,38 @@ function PMJobRow({ job, risk, score, pendingCOs }) {
   )
 }
 
-// ── Inline next-action input — Firestore write preserved from prior version ──
+// ── Inline next-action input, saved when the person leaves the box ───────────
 
-function NextActionInput({ job, placeholder }) {
-  const [val, setVal] = useState(job.nextAction || '')
-  const [saving, setSaving] = useState(false)
+// The box shows the stored next action while nothing is typed in it, so one that another
+// person saved shows up and leaving the box without typing never writes an old copy over a
+// newer one. What is typed stays in the box until it is saved, through the apply of the write
+// to Firestore's cache and the rollback of one the rules refuse, so it can be tried again
+// (see useSavedField). A box belongs to one job.
+export function NextActionInput({ job, placeholder }) {
+  return <NextActionField key={job._docId} job={job} placeholder={placeholder} />
+}
 
-  async function handleBlur() {
-    if (!job._docId) return
-    const trimmed = val.trim()
-    if (trimmed === (job.nextAction || '').trim()) return
-    setSaving(true)
-    try { await updateJob(job._docId, { nextAction: trimmed }) }
-    finally { setSaving(false) }
-  }
+function NextActionField({ job, placeholder }) {
+  const field = useSavedField({
+    stored: job.nextAction || '',
+    enabled: !!job._docId,
+    normalize: text => text.trim(),
+    write: value => updateJob(job._docId, { nextAction: value }),
+    success: 'Next action saved.',
+    error: 'Could not save the next action. Try again.',
+  })
 
   return (
     <div className="flex-1 min-w-0 flex items-center gap-2">
       <input
         type="text"
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onBlur={handleBlur}
+        value={field.value}
+        onChange={field.onChange}
+        onBlur={field.onBlur}
         placeholder={placeholder || 'Next action…'}
-        className="flex-1 min-w-0 bg-white/[0.04] border border-white/10 rounded-md text-[12px] font-semibold text-zinc-100 px-2.5 py-1.5 placeholder:text-zinc-500 placeholder:font-medium focus:outline-none focus:border-white/30 transition-colors"
+        className="flex-1 min-w-0 bg-white/[0.04] border border-white/10 rounded-md text-[12px] font-semibold text-zinc-100 px-2.5 py-1.5 placeholder:text-zinc-400 placeholder:font-medium focus:border-white/30 transition-colors"
       />
-      {saving && <span className="text-[10px] text-zinc-400 shrink-0">saving…</span>}
+      {field.saving && <span className="text-[10px] text-zinc-400 shrink-0">saving…</span>}
     </div>
   )
 }

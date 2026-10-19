@@ -2,18 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { onSnapshot, doc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useData } from '../use-data'
+import { useNow } from '../hooks/useNow'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
   PageHeader,
-  MetricTile,
+  StatBand,
   DataPanel,
   Pill,
   AllClearState,
   EmptyState,
 } from './shared'
 import {
-  AlertCircleIcon, CheckCircleIcon,
-  DollarSignIcon, ClockIcon,
+  AlertCircleIcon, CheckCircleIcon, DollarSignIcon,
   ArrowRightIcon,
   // Phase 3 QA — preferred lucide names
   RadarIcon, UserRoundCogIcon, TriangleAlertIcon,
@@ -21,22 +21,12 @@ import {
   FilePenLineIcon, FolderOpenIcon, BarChart3Icon,
 } from 'lucide-react'
 import { classifyRisk } from '../agent/scoring'
+import { daysSince, fmtLongDate, monthKey, toDate } from '../lib/dates'
 import { sumContracts, sumInvoices, missingNote } from '../lib/money'
-
-const O = '#F47920'
-
-const TODAY = new Date()
+import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
+import { INSPECTION_STATUS, statusColor, statusLabel, toneText } from '../lib/status'
 
 const isComplete = (j) => ['complete', 'completed'].includes(j.status)
-
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
 
 const jobLabel = (j) => j.name || j.client?.split(' ')[0] || j.id
 
@@ -94,6 +84,7 @@ function useQuickBooksStatus() {
 
 export default function CommandCenter() {
   const { jobs = [], extras = [] } = useData()
+  const now = useNow()
   const qb = useQuickBooksStatus()
 
   // ── Derived data ────────────────────────────────────────────────────────────
@@ -101,6 +92,7 @@ export default function CommandCenter() {
   const activeJobs = useMemo(() => jobs.filter(j => !isComplete(j)), [jobs])
 
   // KPI: financial pipeline
+  const thisMonth = monthKey(now)
   const kpis = useMemo(() => {
     const totalRevenue = sumContracts(jobs)
 
@@ -116,7 +108,6 @@ export default function CommandCenter() {
       .filter(e => e.status === 'Approved' || e.status === 'approved')
       .reduce((s, e) => s + Number(e.total ?? e.amount ?? 0), 0)
 
-    const thisMonth = TODAY.toISOString().slice(0, 7)
     const invoicedThisMonthJobs = jobs
       .filter(j => invoiceMonth(j.invoiceDate) === thisMonth)
     const invoicedThisMonthAmt = sumInvoices(invoicedThisMonthJobs)
@@ -130,13 +121,13 @@ export default function CommandCenter() {
       invoicedThisMonthAmt,
       invoicedThisMonthCount,
     }
-  }, [jobs, extras])
+  }, [jobs, extras, thisMonth])
 
   // Needs Action — 4 categories like the mockup
   const needsAction = useMemo(() => {
     const atRisk = activeJobs.filter(j => {
       if (j.status === 'at-risk' || j.status === 'blocked' || j.status === 'needs-action') return true
-      const stale = daysSince(j.lastStatusChange || j.start)
+      const stale = daysSince(j.lastStatusChange || j.start, now)
       return stale !== null && stale >= 7
     })
 
@@ -163,14 +154,14 @@ export default function CommandCenter() {
       { key: 'missing-docs',    label: 'Missing Documentation',   count: missingDocs.length,        target: 'permits' },
       { key: 'builder-approval', label: 'Builder Approval Required', count: builderApproval.length, target: 'extras' },
     ]
-  }, [activeJobs, extras])
+  }, [activeJobs, extras, now])
 
   // Jobs At Risk — top 5 ranked
   const jobsAtRisk = useMemo(() => {
     return activeJobs
       .map(j => {
-        const risk = classifyRisk(j)
-        const stale = daysSince(j.lastStatusChange || j.start)
+        const risk = classifyRisk(j, now)
+        const stale = daysSince(j.lastStatusChange || j.start, now)
         let reason = null, severity = null
         if (risk?.level === 'critical') { severity = 'High';   reason = risk.reason || 'Critical' }
         else if (j.status === 'blocked')      { severity = 'High';   reason = 'Blocked' }
@@ -187,7 +178,7 @@ export default function CommandCenter() {
         return (order[a.severity] ?? 3) - (order[b.severity] ?? 3)
       })
       .slice(0, 5)
-  }, [activeJobs])
+  }, [activeJobs, now])
 
   // PM Workload — count active jobs per PM, weighted by issues
   const pmWorkload = useMemo(() => {
@@ -202,7 +193,7 @@ export default function CommandCenter() {
       if (j.status === 'needs-action' || j.status === 'blocked' || j.status === 'at-risk') {
         row.issues += 1
       }
-      const stale = daysSince(j.lastStatusChange || j.start)
+      const stale = daysSince(j.lastStatusChange || j.start, now)
       if (stale !== null && stale >= 7) row.issues += 1
     })
     const list = Array.from(map.values())
@@ -210,7 +201,7 @@ export default function CommandCenter() {
       .slice(0, 6)
     const max = list.length > 0 ? Math.max(...list.map(r => r.jobs)) : 1
     return list.map(r => ({ ...r, fill: Math.max(8, Math.round((r.jobs / max) * 100)) }))
-  }, [activeJobs])
+  }, [activeJobs, now])
 
   // Inspection Summary — counts across all trades, every active job
   const inspSummary = useMemo(() => {
@@ -226,7 +217,7 @@ export default function CommandCenter() {
             // Treat scheduled-but-old as overdue — we approximate "old" as
             // "the job has been stalled 5+ days", since inspection scheduling
             // dates are not stored on every record.
-            const stale = daysSince(j.lastStatusChange || j.start)
+            const stale = daysSince(j.lastStatusChange || j.start, now)
             if (stale !== null && stale >= 5) overdue += 1
             else                              pending += 1
           }
@@ -235,7 +226,7 @@ export default function CommandCenter() {
     })
     const total = passed + pending + failed + overdue
     return { passed, pending, failed, overdue, total }
-  }, [activeJobs])
+  }, [activeJobs, now])
 
   // Billing Opportunities — three slices
   const billingOpps = useMemo(() => {
@@ -251,15 +242,13 @@ export default function CommandCenter() {
     const readyAmt = sumContracts(ready)
 
     // Recently Invoiced: invoiceDate in last 30 days, not yet paid
-    const cutoff = new Date(TODAY); cutoff.setDate(cutoff.getDate() - 30)
+    const cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 30)
     const cutoffMs = cutoff.getTime()
     const recentlyInvoiced = jobs.filter(j => {
       if (!j.invoiceDate) return false
       if (j.billingStatus === 'paid') return false
-      const m = String(j.invoiceDate).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-      const ms = m ? Date.parse(`${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`)
-                   : Date.parse(j.invoiceDate)
-      return !isNaN(ms) && ms >= cutoffMs
+      const invoiced = toDate(j.invoiceDate)
+      return invoiced !== null && invoiced.getTime() >= cutoffMs
     })
     const recentlyInvoicedAmt = sumInvoices(recentlyInvoiced)
 
@@ -276,7 +265,7 @@ export default function CommandCenter() {
       recentlyInvoiced: { count: recentlyInvoiced.length, amount: recentlyInvoicedAmt.total, note: missingNote(recentlyInvoicedAmt.missing, 'invoice') },
       approvedPending:  { count: approvedPending.length,  amount: approvedPendingAmt, note: '' },
     }
-  }, [jobs, extras])
+  }, [jobs, extras, now])
 
   const navigate = (id) => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id } }))
 
@@ -290,60 +279,50 @@ export default function CommandCenter() {
         subtitle="Live across the active portfolio. Money, risk, inspections, approvals."
         meta={
           <>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
-              <span className="tracking-wider text-[10px] uppercase" style={{ color: '#22c55e' }}>Live</span>
-            </span>
-            <span>{TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
+            <span>{fmtLongDate(now)}</span>
             <span>{activeJobs.length} active jobs</span>
             <span>Middle Tennessee</span>
           </>
         }
       />
 
-      {/* KPI strip — 5 financial tiles */}
-      <section
-        className="grid gap-2 sm:gap-3"
+      {/* KPI strip */}
+      <StatBand
         aria-label="Financial pipeline"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}
-      >
-        <MetricTile
-          label="Total Revenue"
-          value={fmtCompact(kpis.totalRevenue.total)}
-          Icon={DollarSignIcon}
-          sub={`${jobs.length - kpis.totalRevenue.missing} contracts`}
-          note={missingNote(kpis.totalRevenue.missing, 'contract')}
-        />
-        <MetricTile
-          label="Open Commitments"
-          value={fmtCompact(kpis.openCommitments.total)}
-          Icon={ClockIcon}
-          sub={`${activeJobs.length} active`}
-          note={missingNote(kpis.openCommitments.missing, 'contract')}
-        />
-        <MetricTile
-          label="Approved Extras"
-          value={fmtCompact(kpis.approvedCO)}
-          Icon={CheckCircleIcon}
-          emphasis="success"
-          sub="Approved change orders"
-        />
-        <MetricTile
-          label="Change Order Potential"
-          value={fmtCompact(kpis.pendingCO)}
-          Icon={FilePenLineIcon}
-          emphasis={kpis.pendingCO > 0 ? 'warning' : 'mute'}
-          sub="Awaiting builder approval"
-        />
-        <MetricTile
-          label="Invoiced This Month"
-          value={fmtCompact(kpis.invoicedThisMonthAmt.total)}
-          Icon={BarChart3Icon}
-          emphasis={kpis.invoicedThisMonthCount > 0 ? 'default' : 'mute'}
-          sub={`${kpis.invoicedThisMonthCount} invoice${kpis.invoicedThisMonthCount === 1 ? '' : 's'}`}
-          note={missingNote(kpis.invoicedThisMonthAmt.missing, 'invoice')}
-        />
-      </section>
+        stats={[
+          {
+            label: 'Total Revenue',
+            value: fmtCompact(kpis.totalRevenue.total),
+            sub: `${jobs.length - kpis.totalRevenue.missing} contracts`,
+            note: missingNote(kpis.totalRevenue.missing, 'contract'),
+          },
+          {
+            label: 'Open Commitments',
+            value: fmtCompact(kpis.openCommitments.total),
+            sub: `${activeJobs.length} active`,
+            note: missingNote(kpis.openCommitments.missing, 'contract'),
+          },
+          {
+            label: 'Approved Extras',
+            value: fmtCompact(kpis.approvedCO),
+            sub: 'Approved change orders',
+            tone: 'success',
+          },
+          {
+            label: 'Change Order Potential',
+            value: fmtCompact(kpis.pendingCO),
+            sub: 'Awaiting builder approval',
+            tone: kpis.pendingCO > 0 ? 'warning' : 'mute',
+          },
+          {
+            label: 'Invoiced This Month',
+            value: fmtCompact(kpis.invoicedThisMonthAmt.total),
+            sub: `${kpis.invoicedThisMonthCount} invoice${kpis.invoicedThisMonthCount === 1 ? '' : 's'}`,
+            note: missingNote(kpis.invoicedThisMonthAmt.missing, 'invoice'),
+            tone: kpis.invoicedThisMonthCount > 0 ? undefined : 'mute',
+          },
+        ]}
+      />
 
       {/* Row 1 — Needs Action / Jobs At Risk / PM Workload */}
       <div className="grid gap-4 md:gap-5 lg:grid-cols-3">
@@ -364,7 +343,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('alerts')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               View All Alerts <ArrowRightIcon size={13} />
             </button>
@@ -381,7 +360,7 @@ export default function CommandCenter() {
                   <span className="flex items-center gap-2.5 min-w-0">
                     <span
                       className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
-                      style={{ backgroundColor: O + '22', color: O }}
+                      style={{ backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
                     >
                       <NeedsActionIcon kind={n.key} />
                     </span>
@@ -390,7 +369,7 @@ export default function CommandCenter() {
                   <span className="flex items-center gap-2 shrink-0">
                     <span
                       className="text-lg font-semibold tabular-nums leading-none"
-                      style={{ color: n.count > 0 ? O : '#9ca3af' }}
+                      style={{ color: n.count > 0 ? BRAND : SEMANTIC.neutral }}
                     >
                       {n.count}
                     </span>
@@ -416,7 +395,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('war-room')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               View All Jobs At Risk <ArrowRightIcon size={13} />
             </button>
@@ -433,10 +412,11 @@ export default function CommandCenter() {
                     onClick={() => navigate('war-room')}
                     className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15 transition-colors text-left"
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-zinc-100 truncate">{jobLabel(job)}</p>
-                      <p className="text-[11px] text-zinc-400 truncate">{reason}</p>
-                    </div>
+                    {/* A button holds phrasing content only, so its lines are spans that display as blocks. */}
+                    <span className="block flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-zinc-100 truncate">{jobLabel(job)}</span>
+                      <span className="block text-[11px] text-zinc-400 truncate">{reason}</span>
+                    </span>
                     <Pill
                       tone={severity === 'High' ? 'critical' : severity === 'Medium' ? 'warning' : 'neutral'}
                       size="xs"
@@ -459,7 +439,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('pm-dashboard')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               View Full Workload <ArrowRightIcon size={13} />
             </button>
@@ -475,7 +455,7 @@ export default function CommandCenter() {
                     <div className="min-w-0 flex items-center gap-2">
                       <div
                         className="shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold"
-                        style={{ width: 26, height: 26, backgroundColor: O + '22', color: O }}
+                        style={{ width: 26, height: 26, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
                       >
                         {p.pm.split(' ').map(s => s[0]).join('').slice(0, 2)}
                       </div>
@@ -491,7 +471,7 @@ export default function CommandCenter() {
                       className="h-full rounded-full transition-all duration-500"
                       style={{
                         width: `${p.fill}%`,
-                        backgroundColor: p.issues > 0 ? '#eab308' : O,
+                        backgroundColor: p.issues > 0 ? SEMANTIC.warning : BRAND,
                       }}
                     />
                   </div>
@@ -513,7 +493,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('inspections')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               View Inspections <ArrowRightIcon size={13} />
             </button>
@@ -531,7 +511,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('billing-queue')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               Go to Billing Queue <ArrowRightIcon size={13} />
             </button>
@@ -573,7 +553,7 @@ export default function CommandCenter() {
               type="button"
               onClick={() => navigate('settings')}
               className="inline-flex items-center gap-1 text-[11px] font-semibold transition-colors"
-              style={{ color: O }}
+              style={{ color: BRAND }}
             >
               {qb.connected ? 'Sync settings' : 'Connect now'} <ArrowRightIcon size={13} />
             </button>
@@ -618,11 +598,7 @@ function NeedsActionIcon({ kind }) {
 }
 
 function BillingRow({ label, amount, count, subtitle, note, tone = 'neutral' }) {
-  const color =
-    tone === 'success' ? '#22c55e' :
-    tone === 'info'    ? '#3b82f6' :
-    tone === 'brand'   ? O :
-    '#9ca3af'
+  const color = toneText(tone)
   return (
     <li className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-white/5 bg-white/[0.02]">
       <div className="min-w-0">
@@ -630,11 +606,11 @@ function BillingRow({ label, amount, count, subtitle, note, tone = 'neutral' }) 
         <p className="text-[11px] text-zinc-400 truncate">
           {count} item{count === 1 ? '' : 's'}{subtitle ? ` · ${subtitle}` : ''}
         </p>
-        {note && <p className="text-[10px] text-zinc-500 leading-snug">{note}</p>}
+        {note && <p className="text-[10px] text-zinc-400 leading-snug">{note}</p>}
       </div>
       <p
         className="text-base font-semibold tabular-nums shrink-0"
-        style={{ color: count > 0 ? color : '#9ca3af' }}
+        style={{ color: count > 0 ? color : SEMANTIC.neutral }}
       >
         {amount > 0 ? `$${(amount / 1000).toFixed(amount >= 100_000 ? 0 : 1)}K` : '$0'}
       </p>
@@ -652,10 +628,10 @@ function InspectionDonut({ summary }) {
     )
   }
   const data = [
-    { name: 'Passed',  value: summary.passed,  color: '#22c55e' },
-    { name: 'Pending', value: summary.pending, color: '#eab308' },
-    { name: 'Failed',  value: summary.failed,  color: '#ef4444' },
-    { name: 'Overdue', value: summary.overdue, color: O },
+    { name: statusLabel(INSPECTION_STATUS, 'passed'),  value: summary.passed,  color: statusColor(INSPECTION_STATUS, 'passed') },
+    { name: statusLabel(INSPECTION_STATUS, 'pending'), value: summary.pending, color: statusColor(INSPECTION_STATUS, 'pending') },
+    { name: statusLabel(INSPECTION_STATUS, 'failed'),  value: summary.failed,  color: statusColor(INSPECTION_STATUS, 'failed') },
+    { name: 'Overdue', value: summary.overdue, color: BRAND },
   ].filter(d => d.value > 0)
 
   return (
@@ -683,10 +659,10 @@ function InspectionDonut({ summary }) {
         </div>
       </div>
       <ul className="space-y-1.5 text-xs">
-        <DonutLegendRow label="Passed"  value={summary.passed}  total={summary.total} color="#22c55e" />
-        <DonutLegendRow label="Pending" value={summary.pending} total={summary.total} color="#eab308" />
-        <DonutLegendRow label="Failed"  value={summary.failed}  total={summary.total} color="#ef4444" />
-        <DonutLegendRow label="Overdue" value={summary.overdue} total={summary.total} color={O} />
+        <DonutLegendRow label={statusLabel(INSPECTION_STATUS, 'passed')}  value={summary.passed}  total={summary.total} color={statusColor(INSPECTION_STATUS, 'passed')} />
+        <DonutLegendRow label={statusLabel(INSPECTION_STATUS, 'pending')} value={summary.pending} total={summary.total} color={statusColor(INSPECTION_STATUS, 'pending')} />
+        <DonutLegendRow label={statusLabel(INSPECTION_STATUS, 'failed')}  value={summary.failed}  total={summary.total} color={statusColor(INSPECTION_STATUS, 'failed')} />
+        <DonutLegendRow label="Overdue" value={summary.overdue} total={summary.total} color={BRAND} />
       </ul>
     </div>
   )
@@ -716,9 +692,9 @@ function QuickBooksStatusCard({ qb }) {
         <div className="flex items-center gap-3 mb-3">
           <div
             className="shrink-0 flex items-center justify-center rounded-xl"
-            style={{ width: 44, height: 44, backgroundColor: '#22c55e22' }}
+            style={{ width: 44, height: 44, backgroundColor: withAlpha(SEMANTIC.success, 0.13) }}
           >
-            <CheckCircleIcon size={20} color="#22c55e" strokeWidth={2.25} />
+            <CheckCircleIcon size={20} color={SEMANTIC.success} strokeWidth={2.25} />
           </div>
           <div>
             <p className="text-sm font-bold text-white">Connected</p>
@@ -773,26 +749,28 @@ function QuickModule({ id, Icon, label, hint, badge = 0, onSelect }) {
       onClick={() => onSelect?.(id)}
       className="group relative flex items-center gap-3 px-3 py-3 rounded-xl border border-white/10 bg-white/[0.025] hover:border-white/25 hover:bg-white/[0.05] transition-colors text-left"
     >
-      <div
+      {/* A button holds phrasing content only, so its lines are spans that display as blocks. */}
+      <span
+        aria-hidden="true"
         className="shrink-0 flex items-center justify-center rounded-lg"
-        style={{ width: 38, height: 38, backgroundColor: O + '22', color: O }}
+        style={{ width: 38, height: 38, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
       >
         <Icon size={18} strokeWidth={2} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-zinc-100 truncate flex items-center gap-1.5">
+      </span>
+      <span className="block min-w-0 flex-1">
+        <span className="text-sm font-semibold text-zinc-100 truncate flex items-center gap-1.5">
           {label}
           {badge > 0 && (
             <span
-              className="text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white"
-              style={{ backgroundColor: O }}
+              className="text-[10px] font-bold px-1.5 py-0.5 rounded-md text-brand-foreground"
+              style={{ backgroundColor: BRAND }}
             >
               {badge}
             </span>
           )}
-        </p>
-        <p className="text-[11px] text-zinc-400 truncate">{hint}</p>
-      </div>
+        </span>
+        <span className="block text-[11px] text-zinc-400 truncate">{hint}</span>
+      </span>
       <ArrowRightIcon
         size={14}
         className="shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5"

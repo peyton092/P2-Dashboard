@@ -1,21 +1,12 @@
+import { daysBetween, toDate } from './dates'
+import { MATERIAL_STATUS } from './status'
+
 // Materials vocabulary, status normalisation, and pure derivation helpers.
-// No React or Firestore dependency. Moved out of src/App.jsx in Phase 18.
+// No React or Firestore dependency. Moved out of src/App.jsx in Phase 18. The
+// words and colors of a material status are in status.js (MATERIAL_STATUS).
 
-export const MAT_STATUS_OPTIONS = ['Ordered', 'In Transit', 'Delivered', 'At Job Site', 'Used', 'Cancelled']
-
-export const MAT_STATUS_COLOR = {
-  'Ordered':    '#3b82f6',
-  'In Transit': '#eab308',
-  'Delivered':  '#22c55e',
-  'At Job Site':'#22c55e',
-  'Used':       '#6b7280',
-  'Cancelled':  '#6b7280',
-  // legacy
-  'delivered':  '#22c55e',
-  'in-transit': '#eab308',
-  'ordered':    '#3b82f6',
-  'pending':    '#6b7280',
-}
+// The statuses a person can pick, as stored.
+export const MAT_STATUS_OPTIONS = Object.keys(MATERIAL_STATUS)
 
 export const MAT_UNITS = ['ea', 'roll', 'stick', 'box', 'bag', 'pallet', 'ft', 'lf']
 
@@ -23,15 +14,6 @@ export function normalizeMatStatus(s) {
   if (!s) return 'Ordered'
   const map = { 'delivered': 'Delivered', 'in-transit': 'In Transit', 'ordered': 'Ordered', 'pending': 'Ordered' }
   return map[s] || s
-}
-
-export const MAT_STATUS_TONE = {
-  'Ordered':    'info',
-  'In Transit': 'warning',
-  'Delivered':  'success',
-  'At Job Site':'success',
-  'Used':       'mute',
-  'Cancelled':  'mute',
 }
 
 export const MAT_FILTERS = [
@@ -47,13 +29,10 @@ export const matName    = (m) => m.name || m.item || '—'
 export const matJobId   = (m) => m.jobId || m.job || ''
 export const matOrdered = (m) => m.dateOrdered || m.eta || ''
 
-export function matDaysUntilNeeded(m) {
-  if (!m.dateNeeded) return null
-  const d = new Date(m.dateNeeded)
-  if (isNaN(d.getTime())) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.ceil((d.getTime() - today.getTime()) / 86400000)
+// The calendar days from today to the day the material is needed, negative when that day
+// has gone. Null when no day is set or it is not a date.
+export function matDaysUntilNeeded(m, now = new Date()) {
+  return daysBetween(now, m.dateNeeded)
 }
 
 export function matIsOpen(m) {
@@ -111,8 +90,8 @@ export function matMatchesFilter(m, filter) {
 
 export function fmtMatDate(dateStr) {
   if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
+  const d = toDate(dateStr)
+  if (!d) return dateStr
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 

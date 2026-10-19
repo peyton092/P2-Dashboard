@@ -21,6 +21,7 @@ export default class ErrorBoundary extends Component {
           <p className="text-lg font-bold text-red-400">Something went wrong</p>
           <p className="text-sm text-muted-foreground max-w-sm">{this.state.error?.message || 'An unexpected error occurred.'}</p>
           <button
+            type="button"
             className="text-xs underline text-muted-foreground"
             onClick={() => this.setState({ hasError: false, error: null })}>
             Try again

@@ -1,0 +1,392 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react'
+import { ToastContext } from '@/components/ui/use-toast'
+import { logError } from '@/lib/errorLogger'
+import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
+import { axe } from '@/test/axe'
+import { hexToRgb } from '@/lib/tokens'
+import { toneText } from '@/lib/status'
+
+// The leaderboard logs a referral, awards a bonus and saves the Google review link. Each
+// of those tells the person how it ended, and its panel closes only when its write went
+// through. Everything that would reach Firebase is replaced: the six crew documents are
+// there from the start, so the screen does not create them, and the writes are spies.
+const mocks = vi.hoisted(() => ({
+  scores: {},
+  missing: new Set(),
+  // What each crew member's listener can be made to hear again, as { id, hear }.
+  listeners: [],
+  setDoc: vi.fn(),
+  updateDoc: vi.fn(),
+  getDoc: vi.fn(),
+  toast: vi.fn(),
+}))
+
+vi.mock('../../firebase', () => ({ db: {} }))
+vi.mock('firebase/firestore', () => ({
+  doc: (_db, ...segments) => ({ path: segments.join('/') }),
+  onSnapshot: (ref, next) => {
+    const id = ref.path.split('/')[1]
+    const hear = () => next({ exists: () => !mocks.missing.has(id), data: () => mocks.scores[id] })
+    mocks.listeners.push({ id, hear })
+    hear()
+    return () => {}
+  },
+  setDoc: mocks.setDoc,
+  updateDoc: mocks.updateDoc,
+  getDoc: mocks.getDoc,
+  serverTimestamp: () => 'SERVER_TIME',
+}))
+vi.mock('../../hooks/useFirestore', () => ({ useDailyReports: () => ({ dailyReports: [], loading: false }) }))
+vi.mock('../../use-data', () => ({ useData: () => ({ scope: { role: 'owner' } }) }))
+// The chip in the header asks this hook for the connection. What it says is not what this
+// file is about, and the real one would start Firestore.
+vi.mock('../../hooks/useConnectionState', () => ({ useConnectionState: () => 'online' }))
+
+import TeamLeaderboard from '../TeamLeaderboard'
+
+// What Firestore throws when the rules refuse a write.
+const refused = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
+
+const crew = (name, over) => ({ name, id: name.toLowerCase(), googleReviews: 0, referrals: 0, bonusPoints: 0, bonusNote: '', ...over })
+
+beforeEach(() => {
+  for (const mock of [mocks.setDoc, mocks.updateDoc, mocks.getDoc, mocks.toast]) mock.mockReset()
+  vi.mocked(logError).mockClear()
+  mocks.missing = new Set()
+  mocks.listeners = []
+  mocks.scores = Object.fromEntries(['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor'].map((name) => [name.toLowerCase(), crew(name)]))
+  // Austin is ahead, so his card is the first.
+  mocks.scores.austin = crew('Austin', { referrals: 2, bonusPoints: 10, bonusNote: 'Safety lead' })
+  mocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ url: 'https://g.page/r/old/review' }) })
+})
+
+afterEach(cleanup)
+
+const open = async () => {
+  await act(async () => { render(<ToastContext.Provider value={mocks.toast}><TeamLeaderboard /></ToastContext.Provider>) })
+}
+const toastCalls = () => mocks.toast.mock.calls.map(([opts]) => opts)
+const press = (el) => act(async () => { fireEvent.click(el) })
+
+// Opening the board creates the crew score of a person who has none. Nobody pressed anything,
+// so a refusal is not a toast: it goes to the error log, and the board opens without waiting
+// for it. It used to be a rejection nobody handled, which left the board on its spinner.
+describe('a crew score that is not there yet', () => {
+  it('creates it with nothing counted, and says nothing', async () => {
+    mocks.missing = new Set(['trevor'])
+    await open()
+
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1)
+    const [ref, data] = mocks.setDoc.mock.calls[0]
+    expect(ref.path).toBe('crew_scores/trevor')
+    expect(data).toMatchObject({ name: 'Trevor', id: 'trevor', role: expect.any(String), googleReviews: 0, referrals: 0, bonusPoints: 0, bonusNote: '' })
+    expect(toastCalls()).toEqual([])
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('puts a refusal in the error log, shows no toast, and still opens the board', async () => {
+    mocks.missing = new Set(['trevor'])
+    const failure = refused()
+    mocks.setDoc.mockRejectedValue(failure)
+    await open()
+
+    expect(logError).toHaveBeenCalledTimes(1)
+    expect(logError).toHaveBeenCalledWith(failure, 'crew score seed')
+    expect(toastCalls()).toEqual([])
+    expect(screen.getByRole('button', { name: 'Log a referral for Austin' })).toBeTruthy()
+  })
+})
+
+// A write is applied to the local cache at once and rolled back when the rules refuse it, so
+// the listener hears that the document is missing again. Writing it again for that would be
+// refused, rolled back, heard and written again, once for every round trip to the server, and
+// every refusal puts a line in the error log.
+describe('a crew score that the listener hears missing again', () => {
+  const hearAgain = (id) => act(async () => { mocks.listeners.filter((l) => l.id === id).forEach((l) => l.hear()) })
+
+  it('is written once when the rules refuse it, and the refusal is logged once', async () => {
+    mocks.missing = new Set(['trevor'])
+    const failure = refused()
+    mocks.setDoc.mockRejectedValue(failure)
+    await open()
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1)
+
+    await hearAgain('trevor')
+    await hearAgain('trevor')
+
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1)
+    expect(logError).toHaveBeenCalledTimes(1)
+    expect(logError).toHaveBeenCalledWith(failure, 'crew score seed')
+    expect(toastCalls()).toEqual([])
+    expect(screen.getByRole('button', { name: 'Log a referral for Austin' })).toBeTruthy()
+  })
+
+  it('is written once for each crew member that is missing', async () => {
+    mocks.missing = new Set(['trevor', 'ty'])
+    mocks.setDoc.mockRejectedValue(refused())
+    await open()
+
+    await act(async () => { mocks.listeners.forEach((l) => l.hear()) })
+
+    expect(mocks.setDoc.mock.calls.map(([ref]) => ref.path).sort()).toEqual(['crew_scores/trevor', 'crew_scores/ty'])
+    expect(logError).toHaveBeenCalledTimes(2)
+  })
+
+  it('is written once when the first write went through', async () => {
+    mocks.missing = new Set(['trevor'])
+    await open()
+
+    await hearAgain('trevor')
+
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('is tried again by a board that is opened afresh', async () => {
+    mocks.missing = new Set(['trevor'])
+    mocks.setDoc.mockRejectedValue(refused())
+    await open()
+    cleanup()
+
+    await open()
+
+    expect(mocks.setDoc).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('logging a referral', () => {
+  const start = async () => {
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Log a referral for Austin' }))
+  }
+
+  it('writes one more referral for the person, says so, and closes the panel', async () => {
+    await start()
+    await press(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(mocks.updateDoc).toHaveBeenCalledTimes(1)
+    const [ref, patch] = mocks.updateDoc.mock.calls[0]
+    expect(ref.path).toBe('crew_scores/austin')
+    expect(patch).toEqual({ referrals: 3, updatedAt: 'SERVER_TIME' })
+    expect(toastCalls()).toEqual([{ tone: 'success', title: 'Referral logged for Austin.' }])
+    expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull()
+  })
+
+  it('keeps the panel open, and says why, when the write is refused', async () => {
+    mocks.updateDoc.mockRejectedValue(refused())
+    await start()
+    await press(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(toastCalls()).toEqual([{
+      tone: 'error',
+      title: 'Could not log the referral for Austin. Try again.',
+      description: 'You do not have permission to do that.',
+    }])
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy()
+  })
+})
+
+describe('awarding a bonus', () => {
+  const start = async (points = '25', reason = 'Stayed late') => {
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Award bonus points to Austin' }))
+    fireEvent.change(screen.getByPlaceholderText('pts'), { target: { value: points } })
+    fireEvent.change(screen.getByPlaceholderText('Reason (optional)'), { target: { value: reason } })
+  }
+
+  it('adds the points and the reason, says how many, and closes the panel', async () => {
+    await start()
+    await press(screen.getByRole('button', { name: 'Award Bonus' }))
+
+    const [ref, patch] = mocks.updateDoc.mock.calls[0]
+    expect(ref.path).toBe('crew_scores/austin')
+    expect(patch).toEqual({ bonusPoints: 35, bonusNote: 'Stayed late', updatedAt: 'SERVER_TIME' })
+    expect(toastCalls()).toEqual([{ tone: 'success', title: '25 bonus points awarded to Austin.' }])
+    expect(screen.queryByRole('button', { name: 'Award Bonus' })).toBeNull()
+  })
+
+  it('says one point in the singular', async () => {
+    await start('1', '')
+    await press(screen.getByRole('button', { name: 'Award Bonus' }))
+    expect(toastCalls()).toEqual([{ tone: 'success', title: '1 bonus point awarded to Austin.' }])
+    expect('bonusNote' in mocks.updateDoc.mock.calls[0][1]).toBe(false)
+  })
+
+  it('says points taken away when the number is negative, with no minus sign in the words', async () => {
+    await start('-10', 'Wrong job')
+    await press(screen.getByRole('button', { name: 'Award Bonus' }))
+
+    expect(mocks.updateDoc.mock.calls[0][1]).toMatchObject({ bonusPoints: 0 })
+    expect(toastCalls()).toEqual([{ tone: 'success', title: '10 bonus points taken from Austin.' }])
+  })
+
+  it('does nothing with no points', async () => {
+    await start('', 'Nothing')
+    await press(screen.getByRole('button', { name: 'Award Bonus' }))
+
+    expect(mocks.updateDoc).not.toHaveBeenCalled()
+    expect(mocks.toast).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Award Bonus' })).toBeTruthy()
+  })
+
+  it('keeps the panel and what was typed, and says why, when the write is refused', async () => {
+    mocks.updateDoc.mockRejectedValue(refused())
+    await start()
+    await press(screen.getByRole('button', { name: 'Award Bonus' }))
+
+    expect(toastCalls()).toEqual([{
+      tone: 'error',
+      title: 'Could not award the bonus to Austin. Try again.',
+      description: 'You do not have permission to do that.',
+    }])
+    expect(screen.getByPlaceholderText('pts').value).toBe('25')
+    expect(screen.getByPlaceholderText('Reason (optional)').value).toBe('Stayed late')
+  })
+})
+
+describe('saving the Google review link', () => {
+  const link = () => screen.getByPlaceholderText('https://g.page/r/YOUR_PLACE_ID/review')
+  const start = async () => {
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Set the Google review link' }))
+    fireEvent.change(link(), { target: { value: '  https://g.page/r/new/review  ' } })
+  }
+  const save = () => screen.getByRole('button', { name: /^(Save|Saving…)$/ })
+
+  it('saves the trimmed link, says so, and closes the panel', async () => {
+    await start()
+    await press(save())
+
+    const [ref, data, options] = mocks.setDoc.mock.calls[0]
+    expect(ref.path).toBe('app_settings/google_review')
+    expect(data).toEqual({ url: 'https://g.page/r/new/review', updatedAt: 'SERVER_TIME' })
+    expect(options).toEqual({ merge: true })
+    expect(toastCalls()).toEqual([{ tone: 'success', title: 'Review link saved.' }])
+    expect(screen.queryByPlaceholderText('https://g.page/r/YOUR_PLACE_ID/review')).toBeNull()
+  })
+
+  it('reads Saving and takes no second press while the write is out', async () => {
+    let finish
+    mocks.setDoc.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    await start()
+    await press(save())
+
+    expect(save().textContent).toBe('Saving…')
+    expect(save().disabled).toBe(true)
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1)
+    await act(async () => { finish() })
+  })
+
+  // The link on the crew cards is set by saveUrl once its write has been answered, and nothing
+  // else updates it, so this save is not given queue: true. Offline, the panel would close on
+  // "saved on this device" while every card went on showing and copying the old link.
+  it('stays on Saving past the wait while the device is offline, keeps the panel open, and sets the link when the write is answered', async () => {
+    let finish
+    mocks.setDoc.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    await start()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await press(save())
+      await act(async () => { vi.advanceTimersByTime(OFFLINE_WAIT_MS * 4) })
+
+      expect(save().textContent).toBe('Saving…')
+      expect(link().value).toBe('  https://g.page/r/new/review  ')
+      expect(toastCalls()).toEqual([])
+      fireEvent.click(screen.getByRole('button', { name: 'Open the Google review link for Austin' }))
+      expect(screen.getByText('https://g.page/r/old/review')).toBeTruthy()
+
+      await act(async () => { finish() })
+
+      expect(toastCalls()).toEqual([{ tone: 'success', title: 'Review link saved.' }])
+      expect(screen.queryByPlaceholderText('https://g.page/r/YOUR_PLACE_ID/review')).toBeNull()
+      expect(screen.getByText('https://g.page/r/new/review')).toBeTruthy()
+      expect(screen.queryByText('https://g.page/r/old/review')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      onLine.mockRestore()
+    }
+  })
+
+  it('keeps the panel and what was typed, and says why, when the write is refused', async () => {
+    mocks.setDoc.mockRejectedValue(refused())
+    await start()
+    await press(save())
+
+    expect(toastCalls()).toEqual([{
+      tone: 'error',
+      title: 'Could not save the review link. Try again.',
+      description: 'You do not have permission to do that.',
+    }])
+    expect(link().value).toBe('  https://g.page/r/new/review  ')
+    expect(save().disabled).toBe(false)
+  })
+})
+
+// Every button on the board that is only an icon says what it does, the ones that open a
+// panel say whether it is open, and each crew card opens its score breakdown from a button.
+describe('read by a screen reader', () => {
+  it('names the buttons of a crew card, and says which panel is open', async () => {
+    await open()
+    const referral = screen.getByRole('button', { name: 'Log a referral for Austin', expanded: false })
+    const bonus = screen.getByRole('button', { name: 'Award bonus points to Austin', expanded: false })
+    const link = screen.getByRole('button', { name: 'Open the Google review link for Austin', expanded: false })
+
+    fireEvent.click(referral)
+    expect(referral.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel adding a referral' }))
+    expect(referral.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(bonus)
+    expect(bonus.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel adding a bonus' }))
+    expect(bonus.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(link)
+    expect(link.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Close the review link' }))
+    expect(link.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('opens the score breakdown of a card from a button that says whether it is open', async () => {
+    await open()
+    const toggle = screen.getByRole('button', { name: 'Show the score breakdown for Austin', expanded: false })
+    const controls = toggle.getAttribute('aria-controls')
+
+    fireEvent.click(toggle)
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(within(document.getElementById(controls)).getByText('Auto pts')).toBeTruthy()
+  })
+
+  it('names the button that sets the review link, and the one that closes its panel', async () => {
+    await open()
+    const settings = screen.getByRole('button', { name: 'Set the Google review link', expanded: false })
+    fireEvent.click(settings)
+    expect(settings.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('textbox', { name: 'Google Business Review URL' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close the review link settings' }))
+    expect(settings.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  // A rank past the medals is a small bold number, so it is in the neutral gray, which reads
+  // at 4.5 to 1 on the page and on a card, and not the mute gray, which does not.
+  it('sets the rank of a row without a medal in the neutral gray', async () => {
+    await open()
+    for (const rank of ['#2', '#4', '#6']) {
+      expect(screen.getByText(rank).style.color, rank).toBe(`rgb(${hexToRgb(toneText('mute')).join(', ')})`)
+    }
+  })
+
+  it('has no accessibility violations, with a card open and its bonus panel out', async () => {
+    const { container } = render(<ToastContext.Provider value={mocks.toast}><TeamLeaderboard /></ToastContext.Provider>)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Show the score breakdown for Austin' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Award bonus points to Austin' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Set the Google review link' }))
+
+    expect(await axe(container)).toHaveNoViolations()
+  })
+})

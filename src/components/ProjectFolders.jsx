@@ -6,6 +6,7 @@ import { safeHttpUrl } from '../lib/safeUrl'
 import { validateUpload, sanitizeFileName, ALLOWED_UPLOAD_TYPES } from '../lib/uploads'
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -13,19 +14,8 @@ import {
 import {
   FolderIcon, FileTextIcon, ClipboardIcon, DownloadIcon, UploadCloudIcon, ImageIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
-
-function SectionHeader({ title, sub }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  )
-}
+import { BRAND, withAlpha } from '@/lib/tokens'
+import { PageHeader } from './shared'
 
 export default function ProjectFolders() {
   const { jobs } = useData()
@@ -91,13 +81,12 @@ export default function ProjectFolders() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Project Folders" sub="Per-job file management — plans, photos, PDFs, notes" />
+      <PageHeader title="Project Folders" subtitle="File management for each job: plans, photos, PDFs and notes" />
 
       <Card className="border-white/10">
         <CardContent className="p-4 space-y-3">
           <div className="flex flex-wrap items-end gap-4">
-            <div className="flex-1 min-w-48">
-              <label className="text-xs text-muted-foreground mb-1 block">Select Job</label>
+            <Field label="Job" className="flex-1 min-w-48">
               <Select value={selectedJobId} onValueChange={setSelectedJobId}>
                 <SelectTrigger className="bg-white/5 border-white/20">
                   <SelectValue placeholder="Choose a job…" />
@@ -108,23 +97,22 @@ export default function ProjectFolders() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
             {selectedJob && (
               <>
-                <div className="min-w-32">
-                  <label className="text-xs text-muted-foreground mb-1 block">File Type</label>
+                <Field label="File type" className="min-w-32">
                   <Select value={fileType} onValueChange={setFileType}>
                     <SelectTrigger className="bg-white/5 border-white/20"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {FILE_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                </div>
+                </Field>
                 <div>
                   <input ref={fileInputRef} type="file" accept={ALLOWED_UPLOAD_TYPES.join(',')} className="hidden" onChange={handleFileSelect} />
                   <Button
-                    style={{ backgroundColor: O }}
-                    className="text-white gap-2"
+                    variant="brand"
+                    className="gap-2"
                     disabled={uploading}
                     onClick={() => fileInputRef.current?.click()}>
                     <UploadCloudIcon size={14} />
@@ -142,7 +130,7 @@ export default function ProjectFolders() {
               <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all"
-                  style={{ width: `${uploadProgress}%`, backgroundColor: O }}
+                  style={{ width: `${uploadProgress}%`, backgroundColor: BRAND }}
                 />
               </div>
             </div>
@@ -155,8 +143,8 @@ export default function ProjectFolders() {
         <Card className="border-white/10">
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
-              <FolderIcon size={16} style={{ color: O }} />
-              <span className="" style={{ color: O }}>{selectedJob.id}</span>
+              <FolderIcon size={16} style={{ color: BRAND }} />
+              <span className="" style={{ color: BRAND }}>{selectedJob.id}</span>
               <span className="text-muted-foreground font-normal">— {selectedJob.client || selectedJob.address}</span>
               <span className="ml-auto text-xs text-muted-foreground">
                 {files.length} file{files.length !== 1 ? 's' : ''}
@@ -181,7 +169,7 @@ export default function ProjectFolders() {
                     <div
                       key={f._docId}
                       className="flex items-center gap-3 p-3 rounded-lg border border-white/10 hover:bg-white/5 transition-colors">
-                      <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: tc + '22' }}>
+                      <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: withAlpha(tc, 0.13) }}>
                         <TIcon size={14} style={{ color: tc }} />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -189,7 +177,7 @@ export default function ProjectFolders() {
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <span
                             className="text-xs px-1.5 py-0.5 rounded-full"
-                            style={{ backgroundColor: tc + '22', color: tc }}>
+                            style={{ backgroundColor: withAlpha(tc, 0.13), color: tc }}>
                             {f.type}
                           </span>
                           <span className="text-xs text-muted-foreground">by {f.uploadedByName || f.uploadedBy}</span>

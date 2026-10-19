@@ -10,18 +10,20 @@ import { enablePushNotifications } from '../lib/push'
 import { withTimeout } from '../lib/withTimeout'
 import { callableMessage } from '../lib/callableError'
 import { useData } from '../use-data'
+import { useMutation } from '../hooks/useMutation'
+import { useConfirm } from '../hooks/useConfirm'
 import { useToast } from '@/components/ui/use-toast'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Field } from '@/components/ui/field'
 import {
   SettingsIcon, ShieldIcon, ServerIcon,
   BellIcon, MailIcon, BrainCircuitIcon, CameraIcon, MapPinIcon,
   ClipboardListIcon, DollarSignIcon, ZapIcon, Building2Icon,
   LogOutIcon, CheckCircleIcon, LinkIcon,
 } from 'lucide-react'
-
-const O = '#F47920'
+import { BRAND, withAlpha } from '@/lib/tokens'
 
 const TOGGLE_DEFS = [
   { key: 'smsNotifications',      label: 'SMS Notifications',       desc: 'Send text alerts for critical events',             Icon: BellIcon,          def: false },
@@ -39,30 +41,55 @@ const TOGGLE_DEFS = [
 const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 // What the access scopes backfill did, as the sentence the toast shows. A count the
-// result leaves out is shown as zero. Documents left alone are only mentioned when
-// there were some.
+// result leaves out is shown as zero. Documents left alone, and drafts that stay staff
+// only until they are sent, are only mentioned when there were some.
 function backfillSummary(result) {
   const n = key => (Number.isFinite(result?.[key]) ? result[key] : 0)
   const skipped = n('skipped')
+  const drafts = n('drafts')
   const left = skipped === 1
     ? '1 document has no matching job and was left alone.'
     : `${skipped} documents have no matching job and were left alone.`
+  const staffOnly = drafts === 1
+    ? '1 draft stays staff only until it is sent.'
+    : `${drafts} drafts stay staff only until they are sent.`
   return [
     `Stamped ${count(n('jobs'), 'job')}, ${count(n('extras'), 'change order')}, ${count(n('submits'), 'submission')} and ${count(n('notifications'), 'notification')}.`,
     `Claims set for ${count(n('users'), 'user')}.`,
     skipped > 0 ? left : '',
+    drafts > 0 ? staffOnly : '',
   ].filter(Boolean).join(' ')
 }
 
-function Toggle({ enabled, onChange }) {
+// What a person is told when the password cannot be changed, by the code the sign in
+// service gives. A code that is not here gets no reason, because its own text is for
+// developers.
+const PASSWORD_MESSAGES = {
+  'auth/wrong-password':        'Current password is incorrect.',
+  'auth/invalid-credential':    'Current password is incorrect.',
+  'auth/too-many-requests':     'Too many attempts. Try again later.',
+  'auth/weak-password':         'New password must be at least 6 characters.',
+  'auth/network-request-failed': 'No connection. Check it and try again.',
+}
+
+// The box a code is about, so its words sit under that box and mark it invalid. The words
+// for any other code concern neither box, and are read out under them both.
+const PASSWORD_FIELDS = {
+  'auth/wrong-password':     'current',
+  'auth/invalid-credential': 'current',
+  'auth/weak-password':      'new',
+}
+
+function Toggle({ label, enabled, onChange }) {
   return (
     <button
       type="button"
       role="switch"
+      aria-label={label}
       aria-checked={enabled}
       onClick={() => onChange(!enabled)}
-      className="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 focus:outline-none"
-      style={{ backgroundColor: enabled ? O : '#374151' }}
+      className="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0"
+      style={{ backgroundColor: enabled ? BRAND : '#374151' }}
     >
       <span
         className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
@@ -77,17 +104,23 @@ export default function SettingsPage({ onLogout, role }) {
   const user = auth.currentUser
   const toast = useToast()
 
+  const { ask, dialog } = useConfirm()
+  const { run: runToggle } = useMutation()
+  const { run: runPassword, busy: saving } = useMutation()
+  const { run: runQbDisconnect, busy: qbDisconnecting } = useMutation()
+  const { run: runCcDisconnect, busy: ccDisconnecting } = useMutation()
+
   const [pwMode, setPwMode]   = useState(false)
   const [curPw, setCurPw]     = useState('')
   const [newPw, setNewPw]     = useState('')
-  const [saving, setSaving]   = useState(false)
-  const [pwMsg, setPwMsg]     = useState(null)
+  // What went wrong with the last try, in words, and the box it is about, if it is about
+  // one. The toast says it too.
+  const [pwError, setPwError] = useState(null)
 
   const [qbConnected, setQbConnected] = useState(false)
   const [qbConnectedAt, setQbConnectedAt] = useState(null)
   const [qbCompanyId, setQbCompanyId] = useState(null)
   const [qbConnecting, setQbConnecting] = useState(false)
-  const [qbDisconnecting, setQbDisconnecting] = useState(false)
   const [qbError, setQbError] = useState('')
   const [qbInfo, setQbInfo] = useState('')
 
@@ -95,7 +128,6 @@ export default function SettingsPage({ onLogout, role }) {
   const [ccConnectedAt, setCcConnectedAt] = useState(null)
   const [ccScope, setCcScope] = useState(null)
   const [ccConnecting, setCcConnecting] = useState(false)
-  const [ccDisconnecting, setCcDisconnecting] = useState(false)
   const [ccError, setCcError] = useState('')
   const [ccInfo, setCcInfo] = useState('')
   const [ccSyncing, setCcSyncing] = useState(false)
@@ -161,21 +193,24 @@ export default function SettingsPage({ onLogout, role }) {
     }
   }
 
-  const handleDisconnectQB = async () => {
+  // Disconnecting stops something that was running, so it is asked about first. The
+  // function is the server's, and the question stays open while it runs.
+  const handleDisconnectQB = () => {
     if (!qbConnected) return
-    if (!window.confirm('Disconnect QuickBooks? Auto-sync of invoices will stop until you reconnect.')) return
-    setQbDisconnecting(true)
-    setQbError('')
-    setQbInfo('')
-    try {
-      await httpsCallable(functions, 'qbDisconnect')()
-      setQbInfo('QuickBooks disconnected.')
-    } catch (e) {
-      console.error('QB disconnect error:', e)
-      setQbError('Could not disconnect. The connection is unchanged. Try again.')
-    } finally {
-      setQbDisconnecting(false)
-    }
+    ask({
+      title: 'Disconnect QuickBooks?',
+      body: 'Automatic sync of invoices stops until you reconnect.',
+      confirmLabel: 'Disconnect',
+      tone: 'critical',
+      onConfirm: () => {
+        setQbError('')
+        setQbInfo('')
+        return runQbDisconnect(() => httpsCallable(functions, 'qbDisconnect')(), {
+          success: 'QuickBooks disconnected.',
+          error: 'Could not disconnect QuickBooks. The connection is unchanged. Try again.',
+        })
+      },
+    })
   }
 
   const handleConnectCC = async () => {
@@ -206,21 +241,22 @@ export default function SettingsPage({ onLogout, role }) {
     }
   }
 
-  const handleDisconnectCC = async () => {
+  const handleDisconnectCC = () => {
     if (!ccConnected) return
-    if (!window.confirm('Disconnect CompanyCam? Photo sync will stop until you reconnect.')) return
-    setCcDisconnecting(true)
-    setCcError('')
-    setCcInfo('')
-    try {
-      await httpsCallable(functions, 'ccDisconnect')()
-      setCcInfo('CompanyCam disconnected.')
-    } catch (e) {
-      console.error('CompanyCam disconnect error:', e)
-      setCcError('Could not disconnect. The connection is unchanged. Try again.')
-    } finally {
-      setCcDisconnecting(false)
-    }
+    ask({
+      title: 'Disconnect CompanyCam?',
+      body: 'Photo sync stops until you reconnect.',
+      confirmLabel: 'Disconnect',
+      tone: 'critical',
+      onConfirm: () => {
+        setCcError('')
+        setCcInfo('')
+        return runCcDisconnect(() => httpsCallable(functions, 'ccDisconnect')(), {
+          success: 'CompanyCam disconnected.',
+          error: 'Could not disconnect CompanyCam. The connection is unchanged. Try again.',
+        })
+      },
+    })
   }
 
   const handleSyncCC = async () => {
@@ -275,36 +311,45 @@ export default function SettingsPage({ onLogout, role }) {
   const getVal = (key, def) =>
     settings && key in settings ? settings[key] : def
 
-  const handleToggle = async (key, value) => {
-    await setDoc(doc(db, 'config', 'settings'), { [key]: value }, { merge: true })
-  }
+  const handleToggle = (key, label, value) => runToggle(
+    () => setDoc(doc(db, 'config', 'settings'), { [key]: value }, { merge: true }),
+    {
+      success: `${label} turned ${value ? 'on' : 'off'}.`,
+      error: `Could not change ${label}. Try again.`,
+      queue: true,
+    },
+  )
 
   const handleChangePw = async () => {
     if (!user || !curPw || !newPw) return
-    setSaving(true)
-    setPwMsg(null)
-    try {
-      const cred = EmailAuthProvider.credential(user.email, curPw)
-      await reauthenticateWithCredential(user, cred)
-      await updatePassword(user, newPw)
-      setPwMsg({ ok: true, text: 'Password updated successfully.' })
-      setCurPw(''); setNewPw(''); setPwMode(false)
-    } catch (e) {
-      const map = {
-        'auth/wrong-password':     'Current password is incorrect.',
-        'auth/invalid-credential': 'Current password is incorrect.',
-        'auth/too-many-requests':  'Too many attempts — try again later.',
-        'auth/weak-password':      'New password must be at least 6 characters.',
+    setPwError(null)
+    let field
+    const { ok, error } = await runPassword(async () => {
+      try {
+        const cred = EmailAuthProvider.credential(user.email, curPw)
+        await reauthenticateWithCredential(user, cred)
+        await updatePassword(user, newPw)
+      } catch (e) {
+        // The sign in service's own text is for developers. A code it has words for gets
+        // them, and any other code gets the plain sentence the toast already has.
+        field = PASSWORD_FIELDS[e.code]
+        throw new Error(PASSWORD_MESSAGES[e.code] ?? '')
       }
-      setPwMsg({ ok: false, text: map[e.code] || e.message })
+    }, {
+      success: 'Password updated.',
+      error: 'Could not update the password. Try again.',
+    })
+    if (ok) {
+      setCurPw(''); setNewPw(''); setPwMode(false)
+    } else {
+      setPwError({ field, message: error })
     }
-    setSaving(false)
   }
 
   return (
     <div className="space-y-8 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-semibold" style={{ color: O }}>Settings</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: BRAND }}>Settings</h1>
         <p className="text-sm text-muted-foreground mt-1">Feature configuration, account, and system info</p>
       </div>
 
@@ -312,22 +357,22 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <SettingsIcon size={15} style={{ color: O }} /> Feature Toggles
+            <SettingsIcon size={15} style={{ color: BRAND }} /> Feature Toggles
           </CardTitle>
         </CardHeader>
         <CardContent className="divide-y divide-white/5 px-6">
           {TOGGLE_DEFS.map(({ key, label, desc, Icon, def }) => (
             <div key={key} className="flex items-center justify-between py-3.5 gap-4">
               <div className="flex items-start gap-3 min-w-0">
-                <div className="mt-0.5 p-1.5 rounded-lg shrink-0" style={{ backgroundColor: O + '1a' }}>
-                  <Icon size={13} style={{ color: O }} />
+                <div className="mt-0.5 p-1.5 rounded-lg shrink-0" style={{ backgroundColor: withAlpha(BRAND, 0.1) }}>
+                  <Icon size={13} style={{ color: BRAND }} />
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium leading-none mb-1">{label}</p>
                   <p className="text-xs text-muted-foreground">{desc}</p>
                 </div>
               </div>
-              <Toggle enabled={getVal(key, def)} onChange={v => handleToggle(key, v)} />
+              <Toggle label={label} enabled={getVal(key, def)} onChange={v => handleToggle(key, label, v)} />
             </div>
           ))}
         </CardContent>
@@ -337,7 +382,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <LinkIcon size={15} style={{ color: O }} /> QuickBooks Integration
+            <LinkIcon size={15} style={{ color: BRAND }} /> QuickBooks Integration
           </CardTitle>
         </CardHeader>
         <CardContent className="px-6 pb-5 space-y-3">
@@ -358,9 +403,9 @@ export default function SettingsPage({ onLogout, role }) {
           )}
           <div className="flex flex-wrap gap-2">
             <Button
+              variant="brand"
               size="sm"
-              className="text-xs h-8 text-white"
-              style={{ backgroundColor: O }}
+              className="text-xs h-8"
               onClick={handleConnectQB}
               disabled={qbConnecting || qbDisconnecting}
             >
@@ -387,7 +432,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <CameraIcon size={15} style={{ color: O }} /> CompanyCam Integration
+            <CameraIcon size={15} style={{ color: BRAND }} /> CompanyCam Integration
           </CardTitle>
         </CardHeader>
         <CardContent className="px-6 pb-5 space-y-3">
@@ -413,9 +458,9 @@ export default function SettingsPage({ onLogout, role }) {
           )}
           <div className="flex flex-wrap gap-2">
             <Button
+              variant="brand"
               size="sm"
-              className="text-xs h-8 text-white"
-              style={{ backgroundColor: O }}
+              className="text-xs h-8"
               onClick={handleConnectCC}
               disabled={ccConnecting || ccDisconnecting}
             >
@@ -463,7 +508,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <BellIcon size={15} style={{ color: O }} /> Push Notifications
+            <BellIcon size={15} style={{ color: BRAND }} /> Push Notifications
           </CardTitle>
         </CardHeader>
         <CardContent className="px-6 pb-5 space-y-3">
@@ -471,9 +516,9 @@ export default function SettingsPage({ onLogout, role }) {
             Get alerts on this device for inspection results, change-order approvals, and billing updates.
           </p>
           <Button
+            variant="brand"
             size="sm"
-            className="text-xs h-8 text-white"
-            style={{ backgroundColor: O }}
+            className="text-xs h-8"
             onClick={handleEnablePush}
             disabled={pushBusy}
           >
@@ -487,14 +532,14 @@ export default function SettingsPage({ onLogout, role }) {
         <Card className="border-white/10 bg-white/5">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <ShieldIcon size={15} style={{ color: O }} /> Access Scopes
+              <ShieldIcon size={15} style={{ color: BRAND }} /> Access Scopes
             </CardTitle>
           </CardHeader>
           <CardContent className="px-6 pb-5 space-y-3">
             <Button
+              variant="brand"
               size="sm"
-              className="text-xs h-8 text-white"
-              style={{ backgroundColor: O }}
+              className="text-xs h-8"
               onClick={handleBackfill}
               disabled={backfilling}
             >
@@ -511,7 +556,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <ShieldIcon size={15} style={{ color: O }} /> Account
+            <ShieldIcon size={15} style={{ color: BRAND }} /> Account
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 px-6 pb-5">
@@ -525,36 +570,42 @@ export default function SettingsPage({ onLogout, role }) {
               variant="outline"
               size="sm"
               className="border-white/20 text-xs h-8"
-              onClick={() => { setPwMode(true); setPwMsg(null) }}
+              onClick={() => { setPwMode(true); setPwError(null) }}
             >
               Change Password
             </Button>
           ) : (
             <div className="space-y-2">
-              <Input
-                type="password"
-                placeholder="Current password"
-                className="h-8 text-sm bg-white/5 border-white/20"
-                value={curPw}
-                onChange={e => setCurPw(e.target.value)}
-              />
-              <Input
-                type="password"
-                placeholder="New password (min 6 characters)"
-                className="h-8 text-sm bg-white/5 border-white/20"
-                value={newPw}
-                onChange={e => setNewPw(e.target.value)}
-              />
-              {pwMsg && (
-                <p className="text-xs" style={{ color: pwMsg.ok ? '#22c55e' : '#ef4444' }}>
-                  {pwMsg.text}
-                </p>
-              )}
+              <Field label="Current password" error={pwError?.field === 'current' ? pwError.message : undefined}>
+                <Input
+                  type="password"
+                  autoComplete="current-password"
+                  className="h-8 text-sm bg-white/5 border-white/20"
+                  value={curPw}
+                  onChange={e => setCurPw(e.target.value)}
+                />
+              </Field>
+              <Field
+                label="New password"
+                hint="At least 6 characters."
+                error={pwError?.field === 'new' ? pwError.message : undefined}
+              >
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  className="h-8 text-sm bg-white/5 border-white/20"
+                  value={newPw}
+                  onChange={e => setNewPw(e.target.value)}
+                />
+              </Field>
+              {/* The toast says the reason too; this is where it stays to be seen. Words about
+                  one box sit under that box, and words about neither are an alert here. */}
+              {pwError && !pwError.field && <p role="alert" className="text-xs text-critical">{pwError.message}</p>}
               <div className="flex gap-2">
                 <Button
+                  variant="brand"
                   size="sm"
-                  className="text-xs h-7 text-white"
-                  style={{ backgroundColor: O }}
+                  className="text-xs h-7"
                   onClick={handleChangePw}
                   disabled={saving || !curPw || !newPw}
                 >
@@ -564,7 +615,7 @@ export default function SettingsPage({ onLogout, role }) {
                   variant="ghost"
                   size="sm"
                   className="text-xs h-7"
-                  onClick={() => { setPwMode(false); setPwMsg(null); setCurPw(''); setNewPw('') }}
+                  onClick={() => { setPwMode(false); setPwError(null); setCurPw(''); setNewPw('') }}
                 >
                   Cancel
                 </Button>
@@ -574,6 +625,7 @@ export default function SettingsPage({ onLogout, role }) {
 
           <div className="pt-2 border-t border-white/10">
             <button
+              type="button"
               className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors"
               onClick={onLogout}
             >
@@ -587,7 +639,7 @@ export default function SettingsPage({ onLogout, role }) {
       <Card className="border-white/10 bg-white/5">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <ServerIcon size={15} style={{ color: O }} /> System
+            <ServerIcon size={15} style={{ color: BRAND }} /> System
           </CardTitle>
         </CardHeader>
         <CardContent className="px-6 pb-5">
@@ -609,6 +661,7 @@ export default function SettingsPage({ onLogout, role }) {
           </div>
         </CardContent>
       </Card>
+      {dialog}
     </div>
   )
 }

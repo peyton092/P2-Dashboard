@@ -5,8 +5,9 @@ import {
   useSubmitReplies, addSubmitReply, updateNotification,
 } from '../hooks/useFirestore'
 import { extraState } from '../lib/extraStatus'
-import { callableMessage } from '../lib/callableError'
-import { useToast } from '@/components/ui/use-toast'
+import { daysSince, toDate } from '../lib/dates'
+import { useNow } from '../hooks/useNow'
+import { useMutation } from '../hooks/useMutation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -30,41 +31,35 @@ import {
   EmptyState,
   AllClearState,
 } from './shared'
-
-const O = '#F47920'
+import { BRAND, withAlpha, SEMANTIC, TONE_FOREGROUND } from '@/lib/tokens'
+import {
+  CO_STATUS, INSPECTION_STATUS, PHASE,
+  normalizeCoStatus, statusColor, statusLabel, statusTone, toneHex, toneText,
+} from '../lib/status'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 const jobName = (j) => j.name || (j.client || '').split(' ')[0] || j.id
 
-const TODAY = new Date()
-const daysSince = (date) => {
-  if (!date) return null
-  try {
-    const d = date?.toDate ? date.toDate() : new Date(date)
-    if (isNaN(d.getTime())) return null
-    return Math.floor((TODAY - d) / 86400000)
-  } catch { return null }
-}
-
 const fmtDate = (d) => {
   if (!d) return ''
   try {
-    const dt = d?.toDate ? d.toDate() : new Date(d)
-    if (isNaN(dt.getTime())) return ''
+    const dt = toDate(d)
+    if (!dt) return ''
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   } catch { return '' }
 }
 
 // ── Inspection phase aggregation ─────────────────────────────────────────────
 
-const PHASE_STATUS = {
-  passed:    { color: '#22c55e', label: 'Passed',     bg: '#22c55e22', Icon: CheckCircleIcon },
-  failed:    { color: '#ef4444', label: 'Failed',     bg: '#ef444422', Icon: XIcon },
-  pending:   { color: '#eab308', label: 'Pending',    bg: '#eab30822', Icon: ClockIcon },
-  scheduled: { color: '#3b82f6', label: 'Scheduled',  bg: '#3b82f622', Icon: ClockIcon },
-  'not-started': { color: '#6b7280', label: 'Not Started', bg: '#6b728022', Icon: ClockIcon },
+// The icon of each phase result. Its words and color are in status.js.
+const PHASE_ICON = {
+  passed:        CheckCircleIcon,
+  failed:        XIcon,
+  pending:       ClockIcon,
+  scheduled:     ClockIcon,
+  'not-started': ClockIcon,
 }
 
 // Aggregate per-trade roughIn / final into a single phase status.
@@ -103,9 +98,9 @@ function getServiceReleaseStatus(job) {
 
 function getJobInspectionTimeline(job) {
   return [
-    { key: 'roughIn',        label: 'Rough-In',        ...aggregatePhaseStatus(job.insp, 'roughIn') },
-    { key: 'serviceRelease', label: 'Service Release', ...getServiceReleaseStatus(job) },
-    { key: 'final',          label: 'Final',           ...aggregatePhaseStatus(job.insp, 'final') },
+    { key: 'roughIn',        label: statusLabel(PHASE, 'rough-in'),        ...aggregatePhaseStatus(job.insp, 'roughIn') },
+    { key: 'serviceRelease', label: statusLabel(PHASE, 'service-release'), ...getServiceReleaseStatus(job) },
+    { key: 'final',          label: statusLabel(PHASE, 'final'),           ...aggregatePhaseStatus(job.insp, 'final') },
   ]
 }
 
@@ -116,28 +111,28 @@ function InspectionTimeline({ job }) {
   return (
     <div className="flex items-stretch gap-1 sm:gap-2">
       {phases.map((p, i) => {
-        const meta = PHASE_STATUS[p.status]
-        const Icon = meta.Icon
+        const color = statusColor(INSPECTION_STATUS, p.status)
+        const Icon = PHASE_ICON[p.status]
         return (
           <div key={p.key} className="flex items-stretch flex-1 min-w-0">
             <div
               className="flex flex-col items-center text-center gap-1 px-2 py-2 rounded-lg flex-1 border min-w-0"
               style={{
-                backgroundColor: meta.bg,
-                borderColor: meta.color + '55',
+                backgroundColor: withAlpha(color, 0.13),
+                borderColor: withAlpha(color, 0.33),
               }}
             >
               <div
                 className="w-7 h-7 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: meta.color + '33' }}
+                style={{ backgroundColor: withAlpha(color, 0.2) }}
               >
-                <Icon size={14} style={{ color: meta.color }} />
+                <Icon size={14} style={{ color }} />
               </div>
-              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color: meta.color }}>
+              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color: toneText(statusTone(INSPECTION_STATUS, p.status)) }}>
                 {p.label}
               </p>
               <p className="text-[9px] sm:text-[10px] text-muted-foreground leading-tight">
-                {p.status === 'passed' && p.date ? fmtDate(p.date) : meta.label}
+                {p.status === 'passed' && p.date ? fmtDate(p.date) : statusLabel(INSPECTION_STATUS, p.status)}
               </p>
             </div>
             {i < phases.length - 1 && (
@@ -152,6 +147,37 @@ function InspectionTimeline({ job }) {
 
 // ── Per-trade inspection pills ───────────────────────────────────────────────
 
+// One mark of the per trade pills, for one phase of one trade. A result that is in
+// gets its letter in a circle of the status color: P passed, F failed, S
+// scheduled, B blocked. A result not in yet (pending, pending verification, not
+// started) gets a dot in a circle. A phase that does not apply is plain text, n/a,
+// with no circle. What a mark means is in its letter or its words, never in its
+// color alone, and a letter or a dot is a picture named by the words of its status,
+// which a pointer shows as a title. The letters are 8 pixels, so they are in the
+// text color of the tone (toneText): a result not in yet is in the neutral gray,
+// never the dimmer mute.
+const INSPECTION_LETTER = { passed: 'P', failed: 'F', scheduled: 'S', blocked: 'B' }
+
+function InspectionMark({ status }) {
+  const color = statusColor(INSPECTION_STATUS, status)
+  const text = toneText(statusTone(INSPECTION_STATUS, status))
+  if (status === 'n/a') {
+    return (
+      <span className="min-w-3.5 h-3.5 text-[8px] flex items-center justify-center font-black" style={{ color: text }}>
+        n/a
+      </span>
+    )
+  }
+  const words = statusLabel(INSPECTION_STATUS, status)
+  return (
+    <span role="img" aria-label={words} title={words}
+      className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
+      style={{ backgroundColor: withAlpha(color, 0.2), color: text }}>
+      {INSPECTION_LETTER[status] ?? '·'}
+    </span>
+  )
+}
+
 function TradeInspectionPills({ insp }) {
   if (!insp) return null
   const rows = ['electrical', 'plumbing', 'hvac'].map(trade => {
@@ -164,30 +190,16 @@ function TradeInspectionPills({ insp }) {
 
   if (rows.length === 0) return null
 
-  const meta = (s) => {
-    if (s === 'passed') return { c: '#22c55e', l: 'P' }
-    if (s === 'failed') return { c: '#ef4444', l: 'F' }
-    if (s === 'pending-verification' || s === 'pending') return { c: '#eab308', l: '·' }
-    if (s === 'scheduled') return { c: '#3b82f6', l: 'S' }
-    return { c: '#6b7280', l: '—' }
-  }
-
   return (
     <div className="grid grid-cols-3 gap-1.5 text-[10px]">
       {rows.map(r => (
         <div key={r.trade} className="rounded-lg bg-white/5 border border-white/10 p-1.5">
           <p className="font-bold capitalize text-[10px] mb-1 text-muted-foreground">{r.trade}</p>
           <div className="flex items-center gap-1">
-            <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
-              style={{ backgroundColor: meta(r.roughIn).c + '33', color: meta(r.roughIn).c }}>
-              {meta(r.roughIn).l}
-            </span>
+            <InspectionMark status={r.roughIn} />
             <span className="text-muted-foreground">R</span>
             <span className="text-muted-foreground/40 mx-0.5">·</span>
-            <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
-              style={{ backgroundColor: meta(r.final).c + '33', color: meta(r.final).c }}>
-              {meta(r.final).l}
-            </span>
+            <InspectionMark status={r.final} />
             <span className="text-muted-foreground">F</span>
           </div>
         </div>
@@ -202,11 +214,11 @@ function TradeInspectionPills({ insp }) {
 // trustworthy phrase that a GC or developer would expect to read.
 function builderStatus(job) {
   const isComplete = ['complete', 'completed'].includes(job.status)
-  if (isComplete)                  return { tone: 'success',  text: 'Complete',         color: '#22c55e' }
-  if (job.status === 'blocked')    return { tone: 'critical', text: 'Needs attention',  color: '#ef4444' }
-  if (job.status === 'at-risk')    return { tone: 'warning',  text: 'Watch list',       color: '#eab308' }
-  if (job.status === 'needs-action') return { tone: 'warning', text: 'Action needed',   color: '#eab308' }
-  return                           { tone: 'success', text: 'Project on track', color: O }
+  if (isComplete)                  return { tone: 'success',  text: 'Complete',         color: SEMANTIC.success }
+  if (job.status === 'blocked')    return { tone: 'critical', text: 'Needs attention',  color: SEMANTIC.critical }
+  if (job.status === 'at-risk')    return { tone: 'warning',  text: 'Watch list',       color: SEMANTIC.warning }
+  if (job.status === 'needs-action') return { tone: 'warning', text: 'Action needed',   color: SEMANTIC.warning }
+  return                           { tone: 'success', text: 'Project on track', color: BRAND }
 }
 
 // Read the inspection timeline and produce a "next milestone" sentence —
@@ -226,7 +238,7 @@ function nextMilestoneFor(job) {
   return 'In progress'
 }
 
-function JobCard({ job, extras }) {
+function JobCard({ job, extras, now }) {
   const [expanded, setExpanded] = useState(false)
   const jobExtras = extras.filter(e => e.job === job.id)
   const approvedTotal = jobExtras.filter(e => extraState(e) === 'approved').reduce((s, e) => s + (e.amount || 0), 0)
@@ -234,7 +246,7 @@ function JobCard({ job, extras }) {
   const pendingCount  = jobExtras.filter(e => extraState(e) === 'pending').length
 
   const phaseLabel = (job.phase || 'unknown').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-  const daysInPhase = daysSince(job.lastStatusChange)
+  const daysInPhase = daysSince(job.lastStatusChange, now)
   const milestone = nextMilestoneFor(job)
   const status = builderStatus(job)
   const hasInvoice = Boolean(job.invoiceNum && job.invoiceDate)
@@ -249,7 +261,7 @@ function JobCard({ job, extras }) {
         {pendingCount > 0 && (
           <div
             className="inline-flex items-center gap-1.5 mb-2.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md"
-            style={{ backgroundColor: '#eab30822', color: '#eab308', border: '1px solid #eab30844' }}
+            style={{ backgroundColor: withAlpha(SEMANTIC.warning, 0.13), color: SEMANTIC.warning, border: `1px solid ${withAlpha(SEMANTIC.warning, 0.27)}` }}
           >
             <TriangleAlertIcon size={11} strokeWidth={2.25} />
             Awaiting your approval · {pendingCount}
@@ -315,7 +327,7 @@ function JobCard({ job, extras }) {
         <section className="px-4 sm:px-5 py-3 border-b border-white/5 flex items-center gap-3">
           <div
             className="shrink-0 flex items-center justify-center rounded-lg"
-            style={{ width: 32, height: 32, backgroundColor: '#3b82f622', color: '#3b82f6' }}
+            style={{ width: 32, height: 32, backgroundColor: withAlpha(SEMANTIC.info, 0.13), color: SEMANTIC.info }}
           >
             <ReceiptIcon size={16} />
           </div>
@@ -344,7 +356,7 @@ function JobCard({ job, extras }) {
         <div className="flex items-center gap-3 text-left min-w-0">
           <div
             className="shrink-0 flex items-center justify-center rounded-lg"
-            style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}
+            style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
           >
             <FilePenLineIcon size={16} />
           </div>
@@ -362,14 +374,14 @@ function JobCard({ job, extras }) {
         <div className="flex items-center gap-3">
           {pendingCount > 0 && (
             <div className="text-right hidden sm:block">
-              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: '#eab308' }}>Pending</p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: '#eab308' }}>{fmt$(pendingTotal)}</p>
+              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: SEMANTIC.warning }}>Pending</p>
+              <p className="text-sm font-bold tabular-nums" style={{ color: SEMANTIC.warning }}>{fmt$(pendingTotal)}</p>
             </div>
           )}
           {approvedTotal > 0 && (
             <div className="text-right hidden sm:block">
-              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: '#22c55e' }}>Approved</p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: '#22c55e' }}>{fmt$(approvedTotal)}</p>
+              <p className="text-[10px] uppercase font-bold tracking-wide" style={{ color: SEMANTIC.success }}>Approved</p>
+              <p className="text-sm font-bold tabular-nums" style={{ color: SEMANTIC.success }}>{fmt$(approvedTotal)}</p>
             </div>
           )}
           <ChevronRightIcon
@@ -400,9 +412,9 @@ function JobCard({ job, extras }) {
 // ── Extra Row (with approve/reject) ──────────────────────────────────────────
 
 function ExtraRow({ co, compact = false }) {
+  const { run, busy } = useMutation()
   const [showReject, setShowReject] = useState(false)
   const [rejectNotes, setRejectNotes] = useState('')
-  const [busy, setBusy] = useState(false)
   const [errMsg, setErrMsg] = useState('')
 
   const state = extraState(co)
@@ -413,64 +425,55 @@ function ExtraRow({ co, compact = false }) {
 
   // The approval, the notification and the history entry are all written by the
   // Cloud Function, which also checks that this person may act on the change order.
+  // A refusal is told in a toast and, since the buttons stay where they were, on the row.
   const handleApprove = async () => {
     if (!co._docId) {
       setErrMsg('This change order is missing an ID. Refresh and try again.')
       return
     }
-    setBusy(true)
     setErrMsg('')
-    try {
-      await approveExtra(co._docId, total)
-    } catch (err) {
-      console.error('[QBS] Approve failed:', err)
-      setErrMsg(callableMessage(err, 'Could not save approval. Check your connection and try again.'))
-    } finally {
-      setBusy(false)
-    }
+    const { ok, error } = await run(() => approveExtra(co._docId, total), {
+      success: `${co.id || 'The change order'} approved for ${fmt$(total)}.`,
+      error: 'Could not save approval. Check your connection and try again.',
+    })
+    if (!ok) setErrMsg(error)
   }
 
   const handleReject = async () => {
     if (!co._docId || !rejectNotes.trim()) return
-    setBusy(true)
     setErrMsg('')
-    try {
-      await rejectExtra(co._docId, rejectNotes.trim(), total)
+    const { ok, error } = await run(() => rejectExtra(co._docId, rejectNotes.trim(), total), {
+      success: `Revision requested. P2 has been notified about ${co.id || 'this change order'}.`,
+      error: 'Could not save rejection. Check your connection and try again.',
+    })
+    if (ok) {
       setShowReject(false)
       setRejectNotes('')
-    } catch (err) {
-      console.error('[QBS] Reject failed:', err)
-      setErrMsg(callableMessage(err, 'Could not save rejection. Check your connection and try again.'))
-    } finally {
-      setBusy(false)
+    } else {
+      setErrMsg(error)
     }
   }
 
-  // Builder-facing label for the CO state.
-  const stateLabel =
-    state === 'approved' ? 'Approved' :
-    state === 'rejected' ? 'Needs revision' :
-    'Awaiting your approval'
-  const stateTone =
-    state === 'approved' ? 'success' :
-    state === 'rejected' ? 'critical' :
-    'warning'
+  // The pill says where the change order stands, in the words every screen uses.
+  // What the builder is asked to do is said above it and on the buttons below.
+  // One waiting for the builder reads as a warning here, because the decision is
+  // theirs; every other screen shows it in the tone of the vocabulary.
+  const coStatus = normalizeCoStatus(co.status)
+  const stateLabel = statusLabel(CO_STATUS, coStatus)
+  const stateTone = state === 'pending' ? 'warning' : statusTone(CO_STATUS, coStatus)
 
   return (
     <div
       className="rounded-xl border bg-white/[0.025] overflow-hidden"
       style={{
-        borderColor: state === 'pending'  ? '#eab30844'
-                    : state === 'rejected' ? '#ef444444'
-                    : state === 'approved' ? '#22c55e44'
-                    : 'rgba(255,255,255,0.10)',
+        borderColor: state === 'draft' ? 'rgba(255,255,255,0.10)' : withAlpha(toneHex(stateTone), 0.27),
       }}
     >
       <div className={compact ? 'p-3' : 'p-4'}>
         {isPending && (
           <p
             className="text-[10px] font-bold uppercase tracking-wider mb-2"
-            style={{ color: '#eab308' }}
+            style={{ color: SEMANTIC.warning }}
           >
             Awaiting your approval
           </p>
@@ -478,7 +481,7 @@ function ExtraRow({ co, compact = false }) {
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="text-xs font-bold" style={{ color: O }}>{co.id || co.coNumber || '—'}</span>
+              <span className="text-xs font-bold" style={{ color: BRAND }}>{co.id || co.coNumber || '—'}</span>
               <Pill tone={stateTone} size="xs">{stateLabel}</Pill>
               {!compact && <span className="text-[10px] text-zinc-400">{co.job}</span>}
             </div>
@@ -495,9 +498,9 @@ function ExtraRow({ co, compact = false }) {
             )}
             {co.rejectNotes && state === 'rejected' && (
               <div className="mt-2.5 rounded-lg border border-red-500/30 px-3 py-2"
-                style={{ backgroundColor: '#ef44440a' }}
+                style={{ backgroundColor: withAlpha(SEMANTIC.critical, 0.04) }}
               >
-                <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: '#ef4444' }}>
+                <p className="text-[10px] uppercase tracking-wide font-bold mb-0.5" style={{ color: SEMANTIC.critical }}>
                   Reason for revision
                 </p>
                 <p className="text-[11px] text-zinc-200 italic">“{co.rejectNotes}”</p>
@@ -505,7 +508,7 @@ function ExtraRow({ co, compact = false }) {
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="font-semibold text-base tabular-nums" style={{ color: O }}>{fmt$(total)}</p>
+            <p className="font-semibold text-base tabular-nums" style={{ color: BRAND }}>{fmt$(total)}</p>
             <p className="text-[10px] text-zinc-400">{co.date || fmtDate(co.createdAt)}</p>
           </div>
         </div>
@@ -517,8 +520,8 @@ function ExtraRow({ co, compact = false }) {
             </p>
             <div className="flex gap-2">
               <Button
-                className="flex-1 h-10 text-xs gap-1.5 text-white font-bold"
-                style={{ backgroundColor: '#22c55e' }}
+                className="flex-1 h-10 text-xs gap-1.5 font-bold"
+                style={{ backgroundColor: SEMANTIC.success, color: TONE_FOREGROUND.success }}
                 disabled={busy}
                 onClick={handleApprove}
               >
@@ -545,7 +548,7 @@ function ExtraRow({ co, compact = false }) {
               Tell P2 what needs to change
             </p>
             <Textarea
-              className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-500"
+              className="bg-white/[0.04] border-white/20 text-xs text-zinc-100 min-h-20 placeholder:text-zinc-400"
               placeholder="What should be revised? (required)"
               maxLength={1000}
               value={rejectNotes}
@@ -553,8 +556,8 @@ function ExtraRow({ co, compact = false }) {
             />
             <div className="flex gap-2">
               <Button
-                className="flex-1 h-10 text-xs text-white font-bold"
-                style={{ backgroundColor: '#ef4444' }}
+                className="flex-1 h-10 text-xs font-bold"
+                style={{ backgroundColor: SEMANTIC.critical, color: TONE_FOREGROUND.critical }}
                 disabled={busy || !rejectNotes.trim()}
                 onClick={handleReject}
               >
@@ -576,7 +579,7 @@ function ExtraRow({ co, compact = false }) {
         )}
 
         {!isPending && state === 'approved' && (
-          <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: '#22c55e' }}>
+          <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: SEMANTIC.success }}>
             <CheckCircleIcon size={12} /> Approved · ready to bill
           </div>
         )}
@@ -589,13 +592,13 @@ function ExtraRow({ co, compact = false }) {
 
 function QBSSubmit({ qbsPM, jobs }) {
   const { submits, scope } = useData()
-  const toast = useToast()
+  const { run: runSend, busy: submitting } = useMutation()
+  const { run: runReply, busy: replying } = useMutation()
+  const { run: runStatus } = useMutation()
   const [view, setView] = useState('inbox')
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({ subject: '', category: 'RFI', priority: 'Medium', body: '', jobId: '' })
-  const [submitting, setSubmitting] = useState(false)
   const [replyText, setReplyText] = useState('')
-  const [replying, setReplying] = useState(false)
 
   const selected = submits.find(s => s._docId === selectedId) || null
   const { replies } = useSubmitReplies(selected?._docId)
@@ -606,56 +609,63 @@ function QBSSubmit({ qbsPM, jobs }) {
 
   const CATEGORIES = ['RFI', 'Issue', 'Question', 'Change Request', 'Approval', 'Other']
   const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
-  const priorityColor = { Low: '#22c55e', Medium: '#eab308', High: O, Critical: '#ef4444' }
-  const statusColor = { Open: '#ef4444', 'In Progress': O, Resolved: '#22c55e' }
+  const priorityColor = { Low: SEMANTIC.success, Medium: SEMANTIC.warning, High: BRAND, Critical: SEMANTIC.critical }
+  const ticketColor = { Open: SEMANTIC.critical, 'In Progress': BRAND, Resolved: SEMANTIC.success }
 
   const handleNew = async () => {
     if (!form.subject.trim() || !form.body.trim()) return
-    setSubmitting(true)
-    try {
-      await addSubmit({
-        subject: form.subject.trim(),
-        category: form.category,
-        priority: form.priority,
-        body: form.body.trim(),
-        portal: 'Builder',
-        qbsPM: qbsPM || null,
-        jobId: form.jobId || null,
-        status: 'Open',
-        // A builder may create a submission that carries their own tenant and
-        // lists no client. It keeps that tenant: the stamping trigger gives it its
-        // job's clients only when the job is in the same tenant.
-        tenantId: scope.tenantId,
-        clientUids: [],
-      })
+    const { ok } = await runSend(() => addSubmit({
+      subject: form.subject.trim(),
+      category: form.category,
+      priority: form.priority,
+      body: form.body.trim(),
+      portal: 'Builder',
+      qbsPM: qbsPM || null,
+      jobId: form.jobId || null,
+      status: 'Open',
+      // A builder may create a submission that carries their own tenant and
+      // lists no client. It keeps that tenant: the stamping trigger gives it its
+      // job's clients only when the job is in the same tenant.
+      tenantId: scope.tenantId,
+      clientUids: [],
+    }), {
+      success: 'Message sent to P2.',
+      error: 'Could not send your message. Try again.',
+      queue: true,
+    })
+    // A refused message leaves the form ready to send again.
+    if (ok) {
       setForm({ subject: '', category: 'RFI', priority: 'Medium', body: '', jobId: '' })
       setView('inbox')
-    } catch (err) {
-      console.error('[QBS] Message failed:', err)
-      toast({ tone: 'error', title: callableMessage(err, 'Could not send your message. Try again.') })
-    } finally {
-      setSubmitting(false)
     }
   }
 
+  // A reply is two writes: the reply, and then moving an open message to In Progress. The
+  // box is cleared once the reply is in, and the second write says so on its own if it fails.
   const handleReply = async () => {
     if (!replyText.trim() || !selected?._docId) return
-    setReplying(true)
-    await addSubmitReply(selected._docId, {
+    const { ok } = await runReply(() => addSubmitReply(selected._docId, {
       body: replyText.trim(),
       author: qbsPM || 'QBS Coordinator',
       authorRole: 'builder',
+    }), {
+      success: 'Reply sent.',
+      error: 'Could not send your reply. Try again.',
+      queue: true,
     })
-    if (selected.status === 'Open') {
-      await updateSubmit(selected._docId, { status: 'In Progress' })
-    }
+    if (!ok) return
     setReplyText('')
-    setReplying(false)
+    if (selected.status === 'Open') {
+      await runReply(() => updateSubmit(selected._docId, { status: 'In Progress' }), {
+        error: 'The reply was sent, but the message did not move to In Progress.',
+        queue: true,
+      })
+    }
   }
 
   if (view === 'thread' && selected) {
-    const sc = statusColor[selected.status || 'Open']
-    const pc = priorityColor[selected.priority] || '#6b7280'
+    const sc = ticketColor[selected.status || 'Open']
+    const pc = priorityColor[selected.priority] || SEMANTIC.mute
     return (
       <div className="space-y-4">
         <div className="flex items-start gap-3">
@@ -677,13 +687,13 @@ function QBSSubmit({ qbsPM, jobs }) {
           <CardContent className="p-3">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
-                style={{ backgroundColor: O + '33', color: O }}>QB</div>
+                style={{ backgroundColor: withAlpha(BRAND, 0.2), color: BRAND }}>QB</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-semibold">{selected.qbsPM || 'QBS'}</span>
                   <span className="text-[10px] text-muted-foreground">{fmtDate(selected.createdAt)}</span>
                   <span className="text-[9px] px-1.5 py-0.5 rounded-full ml-auto"
-                    style={{ backgroundColor: pc + '22', color: pc }}>{selected.priority}</span>
+                    style={{ backgroundColor: withAlpha(pc, 0.13), color: pc }}>{selected.priority}</span>
                 </div>
                 <p className="text-xs whitespace-pre-wrap">{selected.body}</p>
               </div>
@@ -697,8 +707,8 @@ function QBSSubmit({ qbsPM, jobs }) {
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                   style={{
-                    backgroundColor: r.authorRole === 'internal' ? '#3b82f622' : '#22c55e22',
-                    color: r.authorRole === 'internal' ? '#3b82f6' : '#22c55e',
+                    backgroundColor: r.authorRole === 'internal' ? withAlpha(SEMANTIC.info, 0.13) : withAlpha(SEMANTIC.success, 0.13),
+                    color: r.authorRole === 'internal' ? SEMANTIC.info : SEMANTIC.success,
                   }}>
                   {(r.author || 'P2').slice(0, 2).toUpperCase()}
                 </div>
@@ -723,8 +733,8 @@ function QBSSubmit({ qbsPM, jobs }) {
               onChange={e => setReplyText(e.target.value)}
             />
             <Button
-              className="w-full h-9 text-white text-xs gap-1.5"
-              style={{ backgroundColor: O }}
+              variant="brand"
+              className="w-full h-9 text-xs gap-1.5"
               disabled={replying || !replyText.trim()}
               onClick={handleReply}
             >
@@ -737,11 +747,16 @@ function QBSSubmit({ qbsPM, jobs }) {
           <span className="text-[10px] text-muted-foreground">Status:</span>
           <Select
             value={selected.status || 'Open'}
-            onValueChange={v => selected._docId && updateSubmit(selected._docId, { status: v })}
+            onValueChange={v => selected._docId && runStatus(() => updateSubmit(selected._docId, { status: v }), {
+              success: `Status set to ${v.toLowerCase()}.`,
+              error: 'Could not change the status. Try again.',
+              queue: true,
+            })}
           >
             <SelectTrigger
+              aria-label="Status"
               className="h-7 py-0 px-3 text-[10px] font-bold border rounded-full w-auto gap-1"
-              style={{ backgroundColor: sc + '22', color: sc, borderColor: sc + '55' }}
+              style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}
             >
               <SelectValue />
             </SelectTrigger>
@@ -765,13 +780,13 @@ function QBSSubmit({ qbsPM, jobs }) {
             <ChevronLeftIcon size={13} /> Back
           </Button>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
               Contact P2
             </p>
             <h2 className="text-lg font-semibold tracking-tight text-white mt-0.5">New message</h2>
           </div>
         </div>
-        <Card className="border-white/10" style={{ borderColor: O + '33' }}>
+        <Card className="border-white/10" style={{ borderColor: withAlpha(BRAND, 0.2) }}>
           <CardContent className="p-4 space-y-3">
             <div>
               <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Subject *</label>
@@ -784,7 +799,7 @@ function QBSSubmit({ qbsPM, jobs }) {
             <div>
               <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Job (optional)</label>
               <Select value={form.jobId} onValueChange={v => setForm(f => ({ ...f, jobId: v }))}>
-                <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs">
+                <SelectTrigger aria-label="Job (optional)" className="bg-white/5 border-white/20 h-9 text-xs">
                   <SelectValue placeholder="No specific job" />
                 </SelectTrigger>
                 <SelectContent>
@@ -799,7 +814,7 @@ function QBSSubmit({ qbsPM, jobs }) {
               <div>
                 <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Category</label>
                 <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label="Category" className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
@@ -808,7 +823,7 @@ function QBSSubmit({ qbsPM, jobs }) {
               <div>
                 <label className="text-[10px] text-muted-foreground mb-1 block uppercase tracking-wider">Priority</label>
                 <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label="Priority" className="bg-white/5 border-white/20 h-9 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                   </SelectContent>
@@ -823,8 +838,7 @@ function QBSSubmit({ qbsPM, jobs }) {
                 onChange={e => setForm(f => ({ ...f, body: e.target.value }))}
               />
             </div>
-            <Button className="w-full h-9 text-white text-xs"
-              style={{ backgroundColor: O }}
+            <Button variant="brand" className="w-full h-9 text-xs"
               disabled={submitting || !form.subject.trim() || !form.body.trim()}
               onClick={handleNew}>
               {submitting ? 'Submitting…' : 'Send to P2'}
@@ -841,7 +855,7 @@ function QBSSubmit({ qbsPM, jobs }) {
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
             Contact P2
           </p>
           <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Messages & RFIs</h2>
@@ -850,8 +864,8 @@ function QBSSubmit({ qbsPM, jobs }) {
           </p>
         </div>
         <Button
-          className="h-9 text-white text-xs gap-1.5 font-bold shrink-0"
-          style={{ backgroundColor: O }}
+          variant="brand"
+          className="h-9 text-xs gap-1.5 font-bold shrink-0"
           onClick={() => setView('new')}
         >
           <PlusIcon size={13} /> New message
@@ -865,8 +879,8 @@ function QBSSubmit({ qbsPM, jobs }) {
           description="Send your P2 contact an RFI, question, or change request and the thread appears here."
           action={
             <Button
-              className="text-white text-xs h-9 font-bold gap-1.5"
-              style={{ backgroundColor: O }}
+              variant="brand"
+              className="text-xs h-9 font-bold gap-1.5"
               onClick={() => setView('new')}
             >
               <PlusIcon size={13} /> Create first message
@@ -876,16 +890,17 @@ function QBSSubmit({ qbsPM, jobs }) {
       ) : (
         <div className="space-y-2">
           {myPortalSubmits.map(s => {
-            const pc = priorityColor[s.priority] || '#6b7280'
-            const sc = statusColor[s.status || 'Open']
+            const pc = priorityColor[s.priority] || SEMANTIC.mute
+            const sc = ticketColor[s.status || 'Open']
             return (
               <button
+                type="button"
                 key={s._docId}
                 className="w-full text-left flex items-start gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.025] hover:bg-white/[0.05] hover:border-white/25 transition-colors"
                 onClick={() => { setSelectedId(s._docId); setView('thread') }}
               >
                 <div className="shrink-0 flex items-center justify-center rounded-lg"
-                  style={{ width: 32, height: 32, backgroundColor: O + '22', color: O }}
+                  style={{ width: 32, height: 32, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
                 >
                   <MessageSquareIcon size={14} />
                 </div>
@@ -894,7 +909,7 @@ function QBSSubmit({ qbsPM, jobs }) {
                     <span className="text-sm font-semibold text-zinc-100 truncate">{s.subject}</span>
                     <span
                       className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold"
-                      style={{ backgroundColor: pc + '22', color: pc, border: `1px solid ${pc}44` }}
+                      style={{ backgroundColor: withAlpha(pc, 0.13), color: pc, border: `1px solid ${withAlpha(pc, 0.27)}` }}
                     >
                       {s.priority}
                     </span>
@@ -905,7 +920,7 @@ function QBSSubmit({ qbsPM, jobs }) {
                 </div>
                 <span
                   className="text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0"
-                  style={{ backgroundColor: sc + '22', color: sc, border: `1px solid ${sc}44` }}
+                  style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, border: `1px solid ${withAlpha(sc, 0.27)}` }}
                 >
                   {s.status || 'Open'}
                 </span>
@@ -921,14 +936,15 @@ function QBSSubmit({ qbsPM, jobs }) {
 // ── Notifications view ───────────────────────────────────────────────────────
 
 function QBSNotifications({ notifs }) {
+  const { run } = useMutation()
   const typeIcon  = { error: AlertCircleIcon, warn: TriangleAlertIcon, info: InfoIcon, success: CheckCircleIcon }
-  const typeColor = { error: '#ef4444', warn: '#eab308', info: '#3b82f6', success: '#22c55e' }
+  const typeColor = { error: SEMANTIC.critical, warn: SEMANTIC.warning, info: SEMANTIC.info, success: SEMANTIC.success }
   const unreadCount = notifs.filter(n => !n.read).length
 
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
           Project updates
         </p>
         <h2 className="text-xl font-semibold tracking-tight text-white mt-1">All updates</h2>
@@ -946,20 +962,24 @@ function QBSNotifications({ notifs }) {
         <div className="space-y-2">
           {notifs.map((n, i) => {
             const Icon = typeIcon[n.type] || InfoIcon
-            const color = typeColor[n.type] || '#9ca3af'
+            const color = typeColor[n.type] || SEMANTIC.neutral
             return (
               <button
+                type="button"
                 key={n._docId || n.id || i}
                 className={`w-full text-left flex items-start gap-3 p-3 rounded-xl border transition-colors ${
                   n.read
                     ? 'border-white/5 bg-transparent'
                     : 'border-white/15 bg-white/[0.04]'
                 }`}
-                onClick={() => n._docId && !n.read && updateNotification(n._docId, { read: true })}
+                onClick={() => n._docId && !n.read && run(() => updateNotification(n._docId, { read: true }), {
+                  error: 'Could not mark the update read. Try again.',
+                  queue: true,
+                })}
               >
                 <div
                   className="shrink-0 flex items-center justify-center rounded-lg"
-                  style={{ width: 30, height: 30, backgroundColor: color + '22', color }}
+                  style={{ width: 30, height: 30, backgroundColor: withAlpha(color, 0.13), color }}
                 >
                   <Icon size={14} strokeWidth={2} />
                 </div>
@@ -971,7 +991,7 @@ function QBSNotifications({ notifs }) {
                     {n.time || fmtDate(n.createdAt)}
                   </p>
                 </div>
-                {!n.read && <div className="w-2 h-2 rounded-full mt-2 shrink-0" style={{ backgroundColor: O }} />}
+                {!n.read && <div className="w-2 h-2 rounded-full mt-2 shrink-0" style={{ backgroundColor: BRAND }} />}
               </button>
             )
           })}
@@ -985,6 +1005,7 @@ function QBSNotifications({ notifs }) {
 
 export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', onLogout }) {
   const { jobs, extras, notifs, loading } = useData()
+  const now = useNow()
 
   // Read URL param for initial qbsPM (?qbsPM=Taylor%20Hensley)
   const urlPM = useMemo(() => {
@@ -1055,9 +1076,9 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
 
   if (loading && jobs.length === 0) {
     return (
-      <div className="dark min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full border-2 animate-spin" style={{ borderColor: O + '33', borderTopColor: O }} />
+          <div className="w-9 h-9 rounded-full border-2 animate-spin" style={{ borderColor: withAlpha(BRAND, 0.2), borderTopColor: BRAND }} />
           <p className="text-sm text-muted-foreground">Loading your projects…</p>
         </div>
       </div>
@@ -1065,14 +1086,14 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
   }
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Sticky header — brand + tenant + PM selector */}
       <header className="sticky top-0 z-20 border-b border-white/10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="px-4 sm:px-8 pt-4 pb-3 flex items-center gap-3 sm:gap-4">
           <Brand size={32} tone="light" className="shrink-0" />
           <div className="hidden sm:block w-px h-7 bg-white/10" />
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
               Builder Portal
             </p>
             <p className="font-bold text-base text-white leading-tight truncate mt-0.5">{tenantName}</p>
@@ -1093,7 +1114,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
         {/* PM selector + stat tiles */}
         <div className="px-4 sm:px-8 pb-4 grid gap-3 sm:grid-cols-[260px_1fr]">
           <Select value={selectedPM} onValueChange={setSelectedPM}>
-            <SelectTrigger className="bg-white/[0.04] border-white/10 text-zinc-100 h-9 text-xs">
+            <SelectTrigger aria-label="Show project manager" className="bg-white/[0.04] border-white/10 text-zinc-100 h-9 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1106,10 +1127,10 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
             className="grid gap-2"
             style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}
           >
-            <PortalStat label="Active"           value={activeJobs.length}      Icon={ActivityIcon}     accent={O} />
-            <PortalStat label="Pending approval" value={pendingExtras.length}   Icon={FilePenLineIcon}  accent="#eab308" sub={fmt$(pendingValue)} />
-            <PortalStat label="Inspection issue" value={failedInsp.length}      Icon={TriangleAlertIcon} accent={failedInsp.length > 0 ? '#ef4444' : '#9ca3af'} />
-            <PortalStat label="Completed"        value={completedJobs.length}   Icon={BadgeCheckIcon}    accent="#22c55e" />
+            <PortalStat label="Active"           value={activeJobs.length}      Icon={ActivityIcon}     accent={BRAND} />
+            <PortalStat label="Pending approval" value={pendingExtras.length}   Icon={FilePenLineIcon}  accent={SEMANTIC.warning} sub={fmt$(pendingValue)} />
+            <PortalStat label="Inspection issue" value={failedInsp.length}      Icon={TriangleAlertIcon} accent={failedInsp.length > 0 ? SEMANTIC.critical : SEMANTIC.neutral} />
+            <PortalStat label="Completed"        value={completedJobs.length}   Icon={BadgeCheckIcon}    accent={SEMANTIC.success} />
           </div>
         </div>
       </header>
@@ -1125,8 +1146,8 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
               onClick={() => setActiveTab(t.id)}
               className="flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 transition-colors shrink-0"
               style={{
-                borderColor: active ? O : 'transparent',
-                color: active ? O : '#9ca3af',
+                borderColor: active ? BRAND : 'transparent',
+                color: active ? BRAND : SEMANTIC.neutral,
               }}
             >
               <t.Icon size={14} strokeWidth={active ? 2.25 : 2} />
@@ -1134,7 +1155,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
               {t.count > 0 && (
                 <span
                   className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                  style={{ backgroundColor: O + '22', color: O }}
+                  style={{ backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
                 >
                   {t.count}
                 </span>
@@ -1222,7 +1243,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                           type="button"
                           onClick={() => setActiveTab('extras')}
                           className="w-full text-center text-[11px] font-semibold py-2 transition-colors"
-                          style={{ color: O }}
+                          style={{ color: BRAND }}
                         >
                           View all {pendingExtras.length} pending approvals →
                         </button>
@@ -1235,13 +1256,13 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                 {activeJobs.length > 0 && (
                   <section className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <h2 className="text-[11px] font-bold uppercase tracking-wider" style={{ color: O }}>
+                      <h2 className="text-[11px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
                         Active projects
                       </h2>
                       <Pill tone="brand" size="xs">{activeJobs.length}</Pill>
                     </div>
                     {activeJobs.map(j => (
-                      <JobCard key={j._docId || j.id} job={j} extras={myExtras} />
+                      <JobCard key={j._docId || j.id} job={j} extras={myExtras} now={now} />
                     ))}
                   </section>
                 )}
@@ -1256,7 +1277,7 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                       <Pill tone="success" size="xs">{completedJobs.length}</Pill>
                     </div>
                     {completedJobs.map(j => (
-                      <JobCard key={j._docId || j.id} job={j} extras={myExtras} />
+                      <JobCard key={j._docId || j.id} job={j} extras={myExtras} now={now} />
                     ))}
                   </section>
                 )}
@@ -1292,14 +1313,14 @@ export default function QBSBuilderPortal({ tenantName = 'QBS', userName = '', on
                 type="button"
                 onClick={() => setActiveTab(t.id)}
                 className="flex flex-col items-center justify-center gap-0.5 py-2.5 relative transition-colors"
-                style={{ color: active ? O : '#9ca3af' }}
+                style={{ color: active ? BRAND : SEMANTIC.neutral }}
               >
                 <t.Icon size={20} strokeWidth={active ? 2.25 : 2} />
                 <span className="text-[10px] font-semibold leading-none">{t.label}</span>
                 {t.count > 0 && (
                   <span
-                    className="absolute top-1 right-[26%] text-[9px] text-white font-black rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: O, minWidth: 14, height: 14, padding: '0 3px' }}
+                    className="absolute top-1 right-[26%] text-[9px] text-brand-foreground font-black rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: BRAND, minWidth: 14, height: 14, padding: '0 3px' }}
                   >
                     {t.count > 99 ? '99+' : t.count}
                   </span>
@@ -1336,10 +1357,10 @@ function PortalStat({ label, value, sub, Icon, accent }) {
 
 function OverviewMetric({ label, value, sub, Icon, emphasis = 'default', valueClass = '' }) {
   const accent =
-    emphasis === 'warning'  ? '#eab308' :
-    emphasis === 'critical' ? '#ef4444' :
-    emphasis === 'success'  ? '#22c55e' :
-    O
+    emphasis === 'warning'  ? SEMANTIC.warning :
+    emphasis === 'critical' ? SEMANTIC.critical :
+    emphasis === 'success'  ? SEMANTIC.success :
+    BRAND
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.025] p-3">
       <div className="flex items-start justify-between gap-2">
@@ -1349,7 +1370,7 @@ function OverviewMetric({ label, value, sub, Icon, emphasis = 'default', valueCl
         {Icon && (
           <div
             className="shrink-0 flex items-center justify-center rounded-lg"
-            style={{ width: 28, height: 28, backgroundColor: accent + '22', color: accent }}
+            style={{ width: 28, height: 28, backgroundColor: withAlpha(accent, 0.13), color: accent }}
           >
             <Icon size={14} strokeWidth={2} />
           </div>
@@ -1392,10 +1413,10 @@ function ExtrasTab({ extras, jobs }) {
   }
 
   const FILTERS = [
-    { id: 'pending', label: 'Pending', color: '#eab308', count: extras.filter(e => extraState(e) === 'pending').length },
-    { id: 'approved', label: 'Approved', color: '#22c55e', count: extras.filter(e => extraState(e) === 'approved').length },
-    { id: 'rejected', label: 'Rejected', color: '#ef4444', count: extras.filter(e => extraState(e) === 'rejected').length },
-    { id: 'all', label: 'All', color: O, count: extras.length },
+    { id: 'pending', label: 'Pending', color: toneHex('warning'), count: extras.filter(e => extraState(e) === 'pending').length },
+    { id: 'approved', label: 'Approved', color: statusColor(CO_STATUS, 'Approved'), count: extras.filter(e => extraState(e) === 'approved').length },
+    { id: 'rejected', label: 'Rejected', color: statusColor(CO_STATUS, 'Rejected'), count: extras.filter(e => extraState(e) === 'rejected').length },
+    { id: 'all', label: 'All', color: BRAND, count: extras.length },
   ]
 
   const jobLookup = (jobId) => jobs.find(j => j.id === jobId)
@@ -1403,7 +1424,7 @@ function ExtrasTab({ extras, jobs }) {
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: O }}>
+        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: BRAND }}>
           Change Orders
         </p>
         <h2 className="text-xl font-semibold tracking-tight text-white mt-1">Approve & track extras</h2>
@@ -1423,8 +1444,8 @@ function ExtrasTab({ extras, jobs }) {
               onClick={() => setFilter(f.id)}
               className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
               style={{
-                borderColor: active ? f.color + '88' : 'rgba(255,255,255,0.10)',
-                backgroundColor: active ? f.color + '22' : 'transparent',
+                borderColor: active ? withAlpha(f.color, 0.53) : 'rgba(255,255,255,0.10)',
+                backgroundColor: active ? withAlpha(f.color, 0.13) : 'transparent',
                 color: active ? f.color : '#d4d4d8',
               }}
             >

@@ -2,30 +2,15 @@ import {
   DatabaseIcon, ServerIcon, ShieldIcon, CloudIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { StatCard } from './shared'
+import { PageHeader, StatBand } from './shared'
+import { BRAND } from '@/lib/tokens'
 
-// Extracted from src/App.jsx in Phase 20. The local SectionHeader is inlined on
-// purpose: it differs from the modern shared/headers SectionHeader and only legacy
-// tabs use it.
+// Extracted from src/App.jsx in Phase 20.
 //
 // The collections, functions and rules below describe firestore.rules,
 // storage.rules and functions/index.js as deployed. __tests__/Architecture.test.jsx
 // reads index.js and fails when the list here and the exports there disagree, so a
 // function added there has to be listed here too. Copy has no dashes.
-
-const O = '#F47920'
-
-function SectionHeader({ title, sub, action }) {
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
-      </div>
-      {action}
-    </div>
-  )
-}
 
 export default function Architecture() {
   // Roles are exactly these four, and staff means owner or internal.
@@ -33,11 +18,13 @@ export default function Architecture() {
 
   // Chips list the fields a document carries. For config, qb_config and cc_config
   // they are the documents themselves, app_settings lists the fields of its
-  // google_review document, and permits and urgent_items show the author stamp only.
+  // google_review document, permits shows the author stamp only (createdBy,
+  // createdByEmail and createdAt), and urgent_items shows resolved, createdBy and
+  // createdAt.
   const collections = [
     { name: 'jobs', desc: 'Job records. Staff write. A builder reads the jobs of their tenant and a client the jobs that list them.', fields: ['id', 'tenantId', 'clientUids', 'address', 'client', 'status', 'pm', 'billingStatus', 'permits', 'insp'] },
     { name: 'jobs/{jobId}/files', desc: 'Photo and document records, read with their job. Staff write, and a client listed on the job may add their own upload.', fields: ['name', 'url', 'type', 'source', 'uploadedBy', 'createdBy', 'createdAt'] },
-    { name: 'extras', desc: 'Change orders. Staff write drafts, which are never stamped (the backfill deletes an older stamp), and sending, approving and rejecting go through callables. Read by staff, and once sent by the builders of the tenant and the clients of the job.', fields: ['coNumber', 'job', 'date', 'status', 'total', 'tenantId', 'clientUids', 'approvedBy', 'rejectedBy', 'rejectNotes'] },
+    { name: 'extras', desc: 'Change orders. Staff write drafts, which are never stamped (a scope one carries is deleted), and sending, approving and rejecting go through callables. Read by staff, and once sent by the builders of the tenant and the clients of the job.', fields: ['coNumber', 'job', 'date', 'status', 'total', 'tenantId', 'clientUids', 'approvedBy', 'rejectedBy', 'rejectNotes'] },
     { name: 'notifications', desc: 'Alerts written by the Cloud Functions and by staff. Anyone who may read one may mark it read.', fields: ['type', 'msg', 'jobId', 'tenantId', 'clientUids', 'read', 'createdBy', 'createdAt'] },
     { name: 'submits', desc: 'Questions, RFIs and issues. Each is created as the person signed in, and anyone who may read one may move its status.', fields: ['subject', 'category', 'priority', 'body', 'jobId', 'status', 'tenantId', 'clientUids', 'createdBy'] },
     { name: 'submits/{submitId}/replies', desc: 'The thread under a submission. Each reply is written as the person signed in, under their own role.', fields: ['body', 'author', 'authorRole', 'createdBy', 'createdAt'] },
@@ -87,7 +74,7 @@ export default function Architecture() {
     { name: 'onNotificationCreated', kind: 'Trigger', module: 'push.js', when: 'Firestore create on notifications/{id}', desc: 'Sends a push to the devices of the people the notification is in scope for, and prunes dead tokens.' },
     { name: 'onUserWritten', kind: 'Trigger', module: 'users.js', when: 'Firestore write on users/{uid}', desc: 'Copies a users document into the Auth claims, links a client to the jobs they list, and revokes refresh tokens when a role changes.' },
     { name: 'onJobWritten', kind: 'Trigger', module: 'scope-sync.js', when: 'Firestore write on jobs/{id}', desc: 'When the tenant or clients of a job change, stamps the new scope onto its change orders, submissions and notifications. A draft change order is left as it is.' },
-    { name: 'onExtraWritten', kind: 'Trigger', module: 'scope-sync.js', when: 'Firestore write on extras/{id}', desc: 'Gives a change order the scope of its job when it lacks it. A draft is left as it is until it is sent.' },
+    { name: 'onExtraWritten', kind: 'Trigger', module: 'scope-sync.js', when: 'Firestore write on extras/{id}', desc: 'Gives a change order the scope of its job when it lacks it. A draft is not stamped until it is sent, and a scope it carries is deleted.' },
     { name: 'onSubmitWritten', kind: 'Trigger', module: 'scope-sync.js', when: 'Firestore write on submits/{id}', desc: 'Gives a submission the scope of its job when it lacks it. A submission a builder created keeps its own tenant when its job is in another, and lists no clients.' },
     { name: 'ccSyncPhotosScheduled', kind: 'Scheduled', module: 'companycam-sync.js', when: 'Every 6 hours', desc: 'Runs the CompanyCam photo sync when CompanyCam is connected.' },
   ]
@@ -100,7 +87,7 @@ export default function Architecture() {
     { title: 'Reads', text: 'Staff read every collection. A builder reads the documents of their tenant, and a client the documents whose clientUids list them. The portals query with exactly that filter, so Firestore can prove each query stays in scope.' },
     { title: 'Portal writes', text: 'Builders and clients may mark a notification read, create a submission with their own scope, move its status and reply as themselves. A client listed on a job may also record their own upload. They also register their own push token, accept the Terms for themselves and report their own errors. Everything else is staff only, or goes through a callable.' },
     { title: 'Staff only', text: 'qb_config, cc_config, config, agent_alerts, crew_scores, app_settings, materials, subs, permits, daily_reports, urgent_items, history and supplier_invoices.' },
-    { title: 'Storage', text: 'Client uploads sit under jobs/{jobDocId}/client-uploads/: a JPEG, PNG, HEIC, WebP or PDF under 25 MB, written by staff or by a client the job lists, and read by any signed in user. Every other path is staff only.' },
+    { title: 'Storage', text: 'Client uploads sit under jobs/{jobDocId}/client-uploads/: a JPEG, PNG, HEIC, WebP or PDF under 25 MB, written by staff or by a client the job lists, and listable by any signed in account that knows the job id. Every other path is staff only.' },
   ]
 
   const underParent = collections.filter(c => c.name.includes('/')).length
@@ -109,26 +96,28 @@ export default function Architecture() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Architecture" sub="Firestore blueprint · Cloud Functions · Security rules" />
+      <PageHeader title="Architecture" subtitle="Firestore blueprint · Cloud Functions · Security rules" live={false} />
 
-      <div className="grid lg:grid-cols-3 gap-4 mb-6">
-        <StatCard label="Collections"    value={topLevel}            sub={`plus ${underParent} subcollections`} Icon={DatabaseIcon} />
-        <StatCard label="Cloud Functions" value={functions.length}   sub={kinds.map(k => `${countOf(k.kind)} ${k.label.toLowerCase()}`).join(', ')} Icon={ServerIcon} />
-        <StatCard label="Auth Roles"      value={roles.length}       sub={roles.join(', ')} Icon={ShieldIcon} />
-      </div>
+      <StatBand
+        stats={[
+          { label: 'Collections', value: topLevel, sub: `plus ${underParent} subcollections` },
+          { label: 'Cloud Functions', value: functions.length, sub: kinds.map(k => `${countOf(k.kind)} ${k.label.toLowerCase()}`).join(', ') },
+          { label: 'Auth Roles', value: roles.length, sub: roles.join(', ') },
+        ]}
+      />
 
       <div className="grid lg:grid-cols-2 gap-6">
         <Card className="border-white/10">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <DatabaseIcon size={16} style={{ color: O }} /> Firestore Collections
+              <DatabaseIcon size={16} style={{ color: BRAND }} /> Firestore Collections
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {collections.map(c => (
               <div key={c.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-bold" style={{ color: O }}>{c.name}</span>
+                  <span className="text-sm font-bold" style={{ color: BRAND }}>{c.name}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mb-2">{c.desc}</p>
                 <div className="flex flex-wrap gap-1">
@@ -145,7 +134,7 @@ export default function Architecture() {
           <Card className="border-white/10">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <ServerIcon size={16} style={{ color: O }} /> Cloud Functions
+                <ServerIcon size={16} style={{ color: BRAND }} /> Cloud Functions
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -154,7 +143,7 @@ export default function Architecture() {
                   <p className="text-xs text-muted-foreground uppercase tracking-widest">{k.label}</p>
                   {functions.filter(f => f.kind === k.kind).map(f => (
                     <div key={f.name} className="p-3 rounded-lg bg-white/5 border border-white/5">
-                      <span className="text-sm font-bold" style={{ color: O }}>{f.name}</span>
+                      <span className="text-sm font-bold" style={{ color: BRAND }}>{f.name}</span>
                       <p className="text-xs text-muted-foreground mt-1">{f.desc}</p>
                       <div className="flex items-center gap-1.5 mt-1.5">
                         <CloudIcon size={10} className="text-muted-foreground" />
@@ -172,13 +161,13 @@ export default function Architecture() {
       <Card className="border-white/10">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <ShieldIcon size={16} style={{ color: O }} /> Firestore and Storage Rules
+            <ShieldIcon size={16} style={{ color: BRAND }} /> Firestore and Storage Rules
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {rules.map(r => (
             <div key={r.title} className="p-3 rounded-lg bg-white/5 border border-white/5">
-              <span className="text-sm font-bold" style={{ color: O }}>{r.title}</span>
+              <span className="text-sm font-bold" style={{ color: BRAND }}>{r.title}</span>
               <p className="text-xs text-muted-foreground mt-1">{r.text}</p>
             </div>
           ))}
