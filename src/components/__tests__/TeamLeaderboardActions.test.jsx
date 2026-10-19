@@ -10,6 +10,8 @@ import { logError } from '@/lib/errorLogger'
 const mocks = vi.hoisted(() => ({
   scores: {},
   missing: new Set(),
+  // What each crew member's listener can be made to hear again, as { id, hear }.
+  listeners: [],
   setDoc: vi.fn(),
   updateDoc: vi.fn(),
   getDoc: vi.fn(),
@@ -21,7 +23,9 @@ vi.mock('firebase/firestore', () => ({
   doc: (_db, ...segments) => ({ path: segments.join('/') }),
   onSnapshot: (ref, next) => {
     const id = ref.path.split('/')[1]
-    next({ exists: () => !mocks.missing.has(id), data: () => mocks.scores[id] })
+    const hear = () => next({ exists: () => !mocks.missing.has(id), data: () => mocks.scores[id] })
+    mocks.listeners.push({ id, hear })
+    hear()
     return () => {}
   },
   setDoc: mocks.setDoc,
@@ -46,6 +50,7 @@ beforeEach(() => {
   for (const mock of [mocks.setDoc, mocks.updateDoc, mocks.getDoc, mocks.toast]) mock.mockReset()
   vi.mocked(logError).mockClear()
   mocks.missing = new Set()
+  mocks.listeners = []
   mocks.scores = Object.fromEntries(['Austin', 'Tony', 'Marvin', 'Trent', 'Ty', 'Trevor'].map((name) => [name.toLowerCase(), crew(name)]))
   // Austin is ahead, so his card is the first.
   mocks.scores.austin = crew('Austin', { referrals: 2, bonusPoints: 10, bonusNote: 'Safety lead' })
@@ -86,6 +91,63 @@ describe('a crew score that is not there yet', () => {
     expect(logError).toHaveBeenCalledWith(failure, 'crew score seed')
     expect(toastCalls()).toEqual([])
     expect(screen.getAllByTitle('+Referral').length).toBeGreaterThan(0)
+  })
+})
+
+// A write is applied to the local cache at once and rolled back when the rules refuse it, so
+// the listener hears that the document is missing again. Writing it again for that would be
+// refused, rolled back, heard and written again, once for every round trip to the server, and
+// every refusal puts a line in the error log.
+describe('a crew score that the listener hears missing again', () => {
+  const hearAgain = (id) => act(async () => { mocks.listeners.filter((l) => l.id === id).forEach((l) => l.hear()) })
+
+  it('is written once when the rules refuse it, and the refusal is logged once', async () => {
+    mocks.missing = new Set(['trevor'])
+    const failure = refused()
+    mocks.setDoc.mockRejectedValue(failure)
+    await open()
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1)
+
+    await hearAgain('trevor')
+    await hearAgain('trevor')
+
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1)
+    expect(logError).toHaveBeenCalledTimes(1)
+    expect(logError).toHaveBeenCalledWith(failure, 'crew score seed')
+    expect(toastCalls()).toEqual([])
+    expect(screen.getAllByTitle('+Referral').length).toBeGreaterThan(0)
+  })
+
+  it('is written once for each crew member that is missing', async () => {
+    mocks.missing = new Set(['trevor', 'ty'])
+    mocks.setDoc.mockRejectedValue(refused())
+    await open()
+
+    await act(async () => { mocks.listeners.forEach((l) => l.hear()) })
+
+    expect(mocks.setDoc.mock.calls.map(([ref]) => ref.path).sort()).toEqual(['crew_scores/trevor', 'crew_scores/ty'])
+    expect(logError).toHaveBeenCalledTimes(2)
+  })
+
+  it('is written once when the first write went through', async () => {
+    mocks.missing = new Set(['trevor'])
+    await open()
+
+    await hearAgain('trevor')
+
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('is tried again by a board that is opened afresh', async () => {
+    mocks.missing = new Set(['trevor'])
+    mocks.setDoc.mockRejectedValue(refused())
+    await open()
+    cleanup()
+
+    await open()
+
+    expect(mocks.setDoc).toHaveBeenCalledTimes(2)
   })
 })
 

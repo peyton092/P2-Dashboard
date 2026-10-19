@@ -81,18 +81,26 @@ function useCrewScores() {
     const unsubs = CREW.map(name => {
       const id = name.toLowerCase()
       const ref = doc(db, 'crew_scores', id)
+      // A crew score is created once for the life of this listener. A write the rules refuse is
+      // rolled back in the local cache, so the listener hears the document missing again, and
+      // would write it again, be refused, hear it and write, once for every round trip to the
+      // server, with a line in the error log each time.
+      let seeded = false
       return onSnapshot(ref, async snap => {
         if (!snap.exists()) {
-          // Nobody pressed anything, so a refusal is for the error log and not a toast, and the
-          // board opens without waiting for it.
-          try {
-            await setDoc(ref, {
-              name, id, role: ROLES[name],
-              googleReviews: 0, referrals: 0, bonusPoints: 0, bonusNote: '',
-              createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-            })
-          } catch (err) {
-            logError(err, 'crew score seed')
+          if (!seeded) {
+            seeded = true
+            // Nobody pressed anything, so a refusal is for the error log and not a toast, and
+            // the board opens without waiting for it.
+            try {
+              await setDoc(ref, {
+                name, id, role: ROLES[name],
+                googleReviews: 0, referrals: 0, bonusPoints: 0, bonusNote: '',
+                createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+              })
+            } catch (err) {
+              logError(err, 'crew score seed')
+            }
           }
         } else {
           setScores(prev => ({ ...prev, [name]: snap.data() }))
