@@ -309,6 +309,30 @@ describe('the invoice number', () => {
     expect(screen.queryByText('saving…')).toBeNull()
   })
 
+  // Firestore rolls the cache back as soon as the rules refuse the write, and the rejection
+  // follows. In between, the box has been given the old number again, and must still say that
+  // the write is out, and still show what was typed.
+  it('still says saving, and still shows what was typed, after the rollback while the write is out', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = render(view({ ...JOB, invoiceNum: 'INV-100' }))
+    fireEvent.change(field(), { target: { value: 'INV-1001' } })
+    await act(async () => { fireEvent.blur(field()) })
+    rerender(view({ ...JOB, invoiceNum: 'INV-1001' }))
+
+    rerender(view({ ...JOB, invoiceNum: 'INV-100' }))
+
+    expect(screen.getByText('saving…')).toBeTruthy()
+    expect(field().value).toBe('INV-1001')
+    expect(toastCalls()).toEqual([])
+
+    await act(async () => { write.reject(refused()) })
+
+    expect(toastCalls()).toEqual([REFUSED_TOAST])
+    expect(field().value).toBe('INV-1001')
+    expect(screen.queryByText('saving…')).toBeNull()
+  })
+
   it('keeps what was typed when the refusal arrives before the rollback', async () => {
     const write = deferred()
     mocks.updateJob.mockReturnValue(write.promise)

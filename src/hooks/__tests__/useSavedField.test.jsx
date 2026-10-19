@@ -180,6 +180,30 @@ describe('a write that is out', () => {
     })
   })
 
+  // Firestore rolls the cache back as soon as the rules refuse the write, and the rejection
+  // follows. In between, the box has been given the old stored value again, and must still say
+  // saving, and still show what was typed.
+  it('keeps saying saving, and keeps what was typed, after the rollback while the write is still out', async () => {
+    const work = deferred()
+    const { result, write, type, leave, stored } = setup()
+    write.mockReturnValue(work.promise)
+    type('two')
+    await leave()
+    stored('two')
+
+    stored('one')
+
+    expect(result.current.saving).toBe(true)
+    expect(result.current.value).toBe('two')
+    expect(toast).not.toHaveBeenCalled()
+
+    await act(async () => { work.reject(refused()) })
+
+    expect(result.current.saving).toBe(false)
+    expect(result.current.value).toBe('two')
+    expect(toast).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps what was typed when the refusal arrives before the rollback', async () => {
     const work = deferred()
     const { result, write, type, leave, stored } = setup()

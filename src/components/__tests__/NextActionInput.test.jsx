@@ -122,6 +122,30 @@ describe('NextActionInput', () => {
     expect(screen.queryByText('saving…')).toBeNull()
   })
 
+  // Firestore rolls the cache back as soon as the rules refuse the write, and the rejection
+  // follows. In between, the box has been given the old next action again, and must still say
+  // that the write is out, and still show what was typed.
+  it('still says saving, and still shows what was typed, after the rollback while the write is out', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = render(view(JOB))
+    fireEvent.change(field(), { target: { value: 'Schedule the final' } })
+    await act(async () => { fireEvent.blur(field()) })
+    rerender(view({ ...JOB, nextAction: 'Schedule the final' }))
+
+    rerender(view(JOB))
+
+    expect(screen.getByText('saving…')).toBeTruthy()
+    expect(field().value).toBe('Schedule the final')
+    expect(toastCalls()).toEqual([])
+
+    await act(async () => { write.reject(refused()) })
+
+    expect(toastCalls()).toEqual([REFUSED_TOAST])
+    expect(field().value).toBe('Schedule the final')
+    expect(screen.queryByText('saving…')).toBeNull()
+  })
+
   it('keeps what was typed when the refusal arrives before the rollback', async () => {
     const write = deferred()
     mocks.updateJob.mockReturnValue(write.promise)

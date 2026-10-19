@@ -75,7 +75,7 @@ function ToastItem({ t, newest, onDismiss }) {
           type="button"
           variant="outline"
           size="sm"
-          aria-keyshortcuts={SHORTCUT}
+          aria-keyshortcuts={newest ? SHORTCUT : undefined}
           className="shrink-0 -my-1 max-md:min-h-11 focus-visible:ring-2 focus-visible:ring-brand"
           onClick={() => {
             onDismiss(t.id)
@@ -122,7 +122,9 @@ function ToastItem({ t, newest, onDismiss }) {
 // Keyboard. The region is last in the page, so a person using the keyboard would have to tab
 // through all of it to reach the Undo on a toast that goes in eight seconds. F8 moves focus
 // to the first button of the newest toast, and the toast holds still while focus is in it.
-// It does nothing while a modal dialog is open, because a dialog keeps focus inside itself.
+// That button, and no other, names the key (aria-keyshortcuts), because on an older toast the
+// name would promise a key that goes somewhere else. F8 does nothing while a modal dialog is
+// open, because a dialog keeps focus inside itself.
 // When a toast that holds focus goes, focus returns to the control it came from, or failing
 // that to the newest toast left, so that the person does not lose their place.
 export function ToastProvider({ children }) {

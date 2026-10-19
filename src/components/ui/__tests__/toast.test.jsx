@@ -470,12 +470,21 @@ describe('the F8 shortcut', () => {
   // it comes back: false when it did, true when it left the key to the browser.
   const pressF8 = (init = {}) => fireEvent.keyDown(document, { key: 'F8', ...init })
 
+  // The buttons that name the key, in the order of the page, each as its name and the number
+  // of the toast it is on (the first toast is 0).
+  const named = () => toastEls().flatMap((el, index) => (
+    [...el.querySelectorAll('button')]
+      .filter((button) => button.hasAttribute('aria-keyshortcuts'))
+      .map((button) => `${button.getAttribute('aria-label') || button.textContent} on toast ${index}`)
+  ))
+
   it('names the key on the action button of a toast, and not on the region', () => {
     const { show } = setup()
     show(withUndo())
     expect(region().hasAttribute('aria-keyshortcuts')).toBe(false)
     expect(region().getAttribute('aria-label')).toBe('Notifications')
     expect(screen.getByRole('button', { name: 'Undo' }).getAttribute('aria-keyshortcuts')).toBe('F8')
+    expect(named()).toEqual(['Undo on toast 0'])
   })
 
   it('names the key on the dismiss button that the key reaches, which is that of the newest toast when it has no action', () => {
@@ -485,12 +494,56 @@ describe('the F8 shortcut', () => {
     const [older, newest] = screen.getAllByRole('button', { name: 'Dismiss notification' })
     expect(older.hasAttribute('aria-keyshortcuts')).toBe(false)
     expect(newest.getAttribute('aria-keyshortcuts')).toBe('F8')
+    expect(named()).toEqual(['Dismiss notification on toast 1'])
   })
 
   it('does not name the key on the dismiss button of a toast whose action the key reaches', () => {
     const { show } = setup()
     show(withUndo())
     expect(screen.getByRole('button', { name: 'Dismiss notification' }).hasAttribute('aria-keyshortcuts')).toBe(false)
+  })
+
+  it('names the key on the action of the newest toast only, and not on the action of an older one', () => {
+    const { show } = setup()
+    show(withUndo({ title: 'Older.' }))
+    show(withUndo({ title: 'Newest.' }))
+    const [older, newest] = screen.getAllByRole('button', { name: 'Undo' })
+    expect(older.hasAttribute('aria-keyshortcuts')).toBe(false)
+    expect(newest.getAttribute('aria-keyshortcuts')).toBe('F8')
+    expect(named()).toEqual(['Undo on toast 1'])
+  })
+
+  it('names the key on the dismiss button of a newest toast with no action, and on no action of an older toast', () => {
+    const { show } = setup()
+    show(withUndo({ title: 'Older.' }))
+    show({ title: 'Newest.' })
+    expect(named()).toEqual(['Dismiss notification on toast 1'])
+  })
+
+  it('moves the name to the toast that is newest as toasts come and go', () => {
+    const { show } = setup()
+    show(withUndo({ title: 'First.', duration: 0 }))
+    expect(named()).toEqual(['Undo on toast 0'])
+    show(withUndo({ title: 'Second.', duration: 0 }))
+    expect(named()).toEqual(['Undo on toast 1'])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss notification' })[1])
+    expect(onScreen('Second.')).toBeNull()
+    expect(named()).toEqual(['Undo on toast 0'])
+  })
+
+  it('names the key on exactly the one button that the key reaches', () => {
+    const { show } = setup()
+    show(withUndo({ title: 'First.' }))
+    show({ title: 'Second.' })
+    show(withUndo({ title: 'Third.' }))
+    show({ title: 'Fourth.', tone: 'error' })
+    act(() => { screen.getByRole('button', { name: 'Page control' }).focus() })
+
+    pressF8()
+
+    expect(document.activeElement.getAttribute('aria-keyshortcuts')).toBe('F8')
+    expect(named()).toEqual(['Dismiss notification on toast 3'])
+    expect(toastEl(3).contains(document.activeElement)).toBe(true)
   })
 
   it('moves focus to the action of the newest toast', () => {

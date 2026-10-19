@@ -142,6 +142,27 @@ describe('the loose ends', () => {
     expect(box().value).toBe('Cover plates, labels')
   })
 
+  // The loose ends box shows no saving word of its own, so what has to hold between the
+  // rollback and the rejection is the text in it, and that no one is told anything yet.
+  it('still shows what was typed after the rollback while the write is out, and says nothing until it is refused', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = open()
+    fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+    await act(async () => { fireEvent.blur(box()) })
+    rerender(view(withEnds('Cover plates, labels')))
+
+    rerender(view(JOB))
+
+    expect(box().value).toBe('Cover plates, labels')
+    expect(mocks.toast).not.toHaveBeenCalled()
+
+    await act(async () => { write.reject(refused()) })
+
+    expect(mocks.toast.mock.calls.map(([opts]) => opts)).toEqual([REFUSED_TOAST])
+    expect(box().value).toBe('Cover plates, labels')
+  })
+
   it('keeps what was typed when the refusal arrives before the rollback', async () => {
     const write = deferred()
     mocks.updateJob.mockReturnValue(write.promise)
