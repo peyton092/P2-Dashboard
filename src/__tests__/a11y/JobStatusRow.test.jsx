@@ -63,11 +63,8 @@ function Row() {
 
 const header = (expanded) => screen.getByRole('button', { name: /QBS-003/, expanded })
 
-// A test marked it.fails is one this screen does not pass yet. The change that makes it pass
-// takes the mark off, in the same commit.
-
 describe('a Job Status row', () => {
-  it.fails('opens and closes from a row header button that says whether it is open and what it opens', () => {
+  it('opens and closes from a row header button that says whether it is open and what it opens', () => {
     render(<Row />)
 
     const button = header(false)
@@ -86,7 +83,7 @@ describe('a Job Status row', () => {
     expect(header(false)).toBe(button)
   })
 
-  it.fails('keeps the status list and the phase list out of the row header button', () => {
+  it('keeps the status list and the phase list out of the row header button', () => {
     render(<Row />)
 
     const button = header(false)
@@ -105,7 +102,7 @@ describe('a Job Status row', () => {
     expect(header(true)).toBe(button)
   })
 
-  it.fails('has no accessibility violations, closed and open', async () => {
+  it('has no accessibility violations, closed and open', async () => {
     const { container } = render(<Row />)
     expect(await axe(container)).toHaveNoViolations()
 

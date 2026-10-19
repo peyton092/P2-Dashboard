@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react'
 import { ToastProvider } from '@/components/ui/toast'
+import { axe } from '@/test/axe'
 
 // Clearing a notification is not asked about first, because it can be taken back: the
 // toast that says it was dismissed carries an Undo button, and Undo writes the
@@ -45,9 +46,12 @@ beforeEach(() => {
 afterEach(cleanup)
 
 const open = () => render(<ToastProvider><Notifications /></ToastProvider>)
-const card = (msg, unread) => screen.getByRole('button', { name: `${unread ? 'Unread notification' : 'Notification'}: ${msg}` })
-// The clear button in the card of a notification.
-const clear = (msg, unread) => within(card(msg, unread)).getByRole('button', { name: 'Clear notification' })
+// An unread notification is a button, named by its message, that marks it read. A read one
+// has nothing left to do but be cleared, so its message is text.
+const card = (msg) => screen.getByRole('button', { name: `Unread notification: ${msg}` })
+// The row of a notification, and the clear button in it, beside the message and not in it.
+const row = (msg) => screen.getByText(msg).closest('li')
+const clear = (msg) => within(row(msg)).getByRole('button', { name: 'Clear notification' })
 const press = (el) => act(async () => { fireEvent.click(el) })
 // The toasts are in their own region. The page header has a status of its own, the
 // connection chip, which is not one of them.
@@ -58,7 +62,7 @@ const toastText = () => region().textContent
 describe('clearing a notification', () => {
   it('writes dismissed and read, and says so with an Undo button', async () => {
     open()
-    await press(clear(UNREAD.msg, true))
+    await press(clear(UNREAD.msg))
 
     expect(mocks.updateNotification).toHaveBeenCalledTimes(1)
     expect(mocks.updateNotification).toHaveBeenCalledWith('n1', { dismissed: true, read: true })
@@ -68,13 +72,13 @@ describe('clearing a notification', () => {
 
   it('does not ask first: it is undoable instead of confirmed', async () => {
     open()
-    await press(clear(UNREAD.msg, true))
+    await press(clear(UNREAD.msg))
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('writes dismissed false when Undo is pressed, and says Undone', async () => {
     open()
-    await press(clear(UNREAD.msg, true))
+    await press(clear(UNREAD.msg))
 
     await press(screen.getByRole('button', { name: 'Undo' }))
 
@@ -86,7 +90,7 @@ describe('clearing a notification', () => {
 
   it('puts a notification that was unread back as unread, and one that was read back as read', async () => {
     open()
-    await press(clear(READ.msg, false))
+    await press(clear(READ.msg))
     await press(screen.getByRole('button', { name: 'Undo' }))
 
     expect(mocks.updateNotification).toHaveBeenLastCalledWith('n2', { dismissed: false, read: true })
@@ -95,7 +99,7 @@ describe('clearing a notification', () => {
   it('names the failure, with the reason, and offers no Undo, when the write fails', async () => {
     mocks.updateNotification.mockRejectedValue(sdkError('permission-denied', 'Staff access required.'))
     open()
-    await press(clear(UNREAD.msg, true))
+    await press(clear(UNREAD.msg))
 
     const alert = screen.getByRole('alert')
     expect(alert.textContent).toContain('Could not dismiss the notification. Try again.')
@@ -105,7 +109,7 @@ describe('clearing a notification', () => {
 
   it('names the failure when Undo fails, and does not say Undone', async () => {
     open()
-    await press(clear(UNREAD.msg, true))
+    await press(clear(UNREAD.msg))
     mocks.updateNotification.mockRejectedValue(sdkError('unavailable', 'The service is currently unavailable.'))
 
     await press(screen.getByRole('button', { name: 'Undo' }))
@@ -119,7 +123,7 @@ describe('clearing a notification', () => {
   it('writes nothing for a notification that has no document', async () => {
     mocks.data = { notifs: [{ msg: 'No document yet', type: 'info', read: false }] }
     open()
-    await press(clear('No document yet', true))
+    await press(clear('No document yet'))
     expect(mocks.updateNotification).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
   })
@@ -128,23 +132,53 @@ describe('clearing a notification', () => {
 describe('marking read', () => {
   it('writes read for one notification when it is opened, and shows nothing else, since the dot goes', async () => {
     open()
-    await press(card(UNREAD.msg, true))
+    await press(card(UNREAD.msg))
 
     expect(mocks.updateNotification).toHaveBeenCalledTimes(1)
     expect(mocks.updateNotification).toHaveBeenCalledWith('n1', { read: true })
     expect(toasts()).toHaveLength(0)
   })
 
-  it('writes nothing for one that is read already', async () => {
+  it('offers nothing to press for one that is read already, but its Clear', async () => {
     open()
-    await press(card(READ.msg, false))
+    expect(screen.queryByRole('button', { name: new RegExp(READ.msg) })).toBeNull()
+    expect(within(row(READ.msg)).getAllByRole('button').map((button) => button.textContent || button.getAttribute('aria-label'))).toEqual(['Clear notification'])
     expect(mocks.updateNotification).not.toHaveBeenCalled()
+  })
+
+  // Marking read takes the button away, so focus goes to the Clear button of the same row,
+  // which stays, and the person keeps their place in the list.
+  it('hands focus to the Clear button of the same row once the message is marked read', async () => {
+    const { rerender } = open()
+    act(() => { card(UNREAD.msg).focus() })
+    await press(card(UNREAD.msg))
+    mocks.data = { notifs: [{ ...UNREAD, read: true }, READ] }
+    rerender(<ToastProvider><Notifications /></ToastProvider>)
+
+    expect(document.activeElement).toBe(clear(UNREAD.msg))
+  })
+
+  it('describes each Clear button by the message it clears', () => {
+    open()
+    for (const msg of [UNREAD.msg, READ.msg]) {
+      const button = clear(msg)
+      expect(document.getElementById(button.getAttribute('aria-describedby')).textContent).toContain(msg)
+    }
+  })
+
+  it('puts no control inside another, and has no accessibility violations', async () => {
+    open()
+    const list = row(UNREAD.msg).closest('ul')
+    for (const button of within(list).getAllByRole('button')) {
+      expect(button.querySelector('button, a, [role="button"]'), button.textContent).toBeNull()
+    }
+    expect(await axe(list)).toHaveNoViolations()
   })
 
   it('says it could not mark the notification read, with the reason, when the write fails', async () => {
     mocks.updateNotification.mockRejectedValue(sdkError('permission-denied', 'Staff access required.'))
     open()
-    await press(card(UNREAD.msg, true))
+    await press(card(UNREAD.msg))
 
     const alert = screen.getByRole('alert')
     expect(alert.textContent).toContain('Could not mark the notification read. Try again.')

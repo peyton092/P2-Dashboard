@@ -460,16 +460,19 @@ function PMRow({ s, expanded, onToggle, now }) {
   const accent = zone.color || BRAND
   const nextColor = toneText(s.pressure.tone)
 
+  // A button holds phrasing content only, so its lines are spans that display as blocks.
+  // The ring is drawn inside the row, which the panel would clip.
   return (
     <div>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="w-full flex items-start gap-3 px-4 py-3.5 text-left hover:bg-white/[0.025] transition-colors"
+        className="w-full flex items-start gap-3 px-4 py-3.5 text-left hover:bg-white/[0.025] transition-colors focus-visible:-outline-offset-2"
       >
-        {/* Avatar */}
-        <div
+        {/* Avatar, a picture of the name beside it */}
+        <span
+          aria-hidden="true"
           className="shrink-0 mt-0.5 flex items-center justify-center rounded-full text-[11px] font-bold"
           style={{
             width: 36,
@@ -479,12 +482,12 @@ function PMRow({ s, expanded, onToggle, now }) {
           }}
         >
           {initials}
-        </div>
+        </span>
 
         {/* Identity + workload */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-semibold text-white truncate">{s.pm}</p>
+        <span className="block flex-1 min-w-0">
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="block text-sm font-semibold text-white truncate">{s.pm}</span>
             {zone?.pm && (
               <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400">
                 <MapPinIcon size={10} />
@@ -492,34 +495,35 @@ function PMRow({ s, expanded, onToggle, now }) {
               </span>
             )}
             <Pill tone={s.pressure.tone} size="xs">{s.pressure.label}</Pill>
-          </div>
+          </span>
 
-          {/* Per-PM stat strip — wraps cleanly on mobile */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px]">
+          {/* Per PM stat strip, which wraps cleanly on a phone */}
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px]">
             <PMStat label="active"      value={s.activeCount}                          tone="brand" />
             <PMStat label="at risk"     value={s.atRisk}                               tone={s.atRisk > 0 ? 'warning' : 'mute'} />
             <PMStat label="blocked"     value={s.blocked}                              tone={s.blocked > 0 ? 'critical' : 'mute'} />
             <PMStat label="open COs"    value={s.openCOs}                              tone={s.openCOs > 0 ? 'warning' : 'mute'} />
             <PMStat label="billing"     value={s.billingBlockers}                      tone={s.billingBlockers > 0 ? 'critical' : 'mute'} />
             <PMStat label="inspections" value={s.upcomingInsp + s.failedInsp}          tone={s.failedInsp > 0 ? 'critical' : s.upcomingInsp > 0 ? 'info' : 'mute'} />
-          </div>
+          </span>
 
-          {/* PM-level next action */}
-          <div className="flex items-start gap-1.5 mt-2.5 min-w-0">
+          {/* The next action of the PM */}
+          <span className="flex items-start gap-1.5 mt-2.5 min-w-0">
             <span className="text-[10px] uppercase tracking-wide text-zinc-400 shrink-0 mt-px">Next</span>
-            <p
-              className="text-[12px] font-semibold leading-snug min-w-0 truncate"
+            <span
+              className="block text-[12px] font-semibold leading-snug min-w-0 truncate"
               style={{ color: nextColor }}
               title={s.nextAction}
             >
               {s.nextAction}
-            </p>
-          </div>
-        </div>
+            </span>
+          </span>
+        </span>
 
-        {/* Expand chevron */}
+        {/* Expand chevron, a picture of what aria-expanded says */}
         <ChevronDownIcon
           size={16}
+          aria-hidden="true"
           className="shrink-0 text-zinc-400 mt-1.5 transition-transform"
           style={{ transform: expanded ? 'rotate(180deg)' : 'none' }}
         />

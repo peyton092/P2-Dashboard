@@ -412,10 +412,11 @@ export default function CommandCenter() {
                     onClick={() => navigate('war-room')}
                     className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15 transition-colors text-left"
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-zinc-100 truncate">{jobLabel(job)}</p>
-                      <p className="text-[11px] text-zinc-400 truncate">{reason}</p>
-                    </div>
+                    {/* A button holds phrasing content only, so its lines are spans that display as blocks. */}
+                    <span className="block flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-zinc-100 truncate">{jobLabel(job)}</span>
+                      <span className="block text-[11px] text-zinc-400 truncate">{reason}</span>
+                    </span>
                     <Pill
                       tone={severity === 'High' ? 'critical' : severity === 'Medium' ? 'warning' : 'neutral'}
                       size="xs"
@@ -748,26 +749,28 @@ function QuickModule({ id, Icon, label, hint, badge = 0, onSelect }) {
       onClick={() => onSelect?.(id)}
       className="group relative flex items-center gap-3 px-3 py-3 rounded-xl border border-white/10 bg-white/[0.025] hover:border-white/25 hover:bg-white/[0.05] transition-colors text-left"
     >
-      <div
+      {/* A button holds phrasing content only, so its lines are spans that display as blocks. */}
+      <span
+        aria-hidden="true"
         className="shrink-0 flex items-center justify-center rounded-lg"
         style={{ width: 38, height: 38, backgroundColor: withAlpha(BRAND, 0.13), color: BRAND }}
       >
         <Icon size={18} strokeWidth={2} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-zinc-100 truncate flex items-center gap-1.5">
+      </span>
+      <span className="block min-w-0 flex-1">
+        <span className="text-sm font-semibold text-zinc-100 truncate flex items-center gap-1.5">
           {label}
           {badge > 0 && (
             <span
-              className="text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white"
+              className="text-[10px] font-bold px-1.5 py-0.5 rounded-md text-brand-foreground"
               style={{ backgroundColor: BRAND }}
             >
               {badge}
             </span>
           )}
-        </p>
-        <p className="text-[11px] text-zinc-400 truncate">{hint}</p>
-      </div>
+        </span>
+        <span className="block text-[11px] text-zinc-400 truncate">{hint}</span>
+      </span>
       <ArrowRightIcon
         size={14}
         className="shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5"

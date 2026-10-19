@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react'
+﻿import { useState, useEffect, useMemo, useId, useRef, lazy, Suspense } from 'react'
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
   sendPasswordResetEmail,
@@ -1359,6 +1359,10 @@ function JobStatusEmptyState({ filter, hasOtherFilters }) {
   return <EmptyState Icon={HardHatIcon} title="No jobs yet" description="Create the first job to populate the portfolio." />
 }
 
+// What a click on a clickable row leaves alone, because it is a control of its own: a button,
+// a link, a box, or a list and its options, which open in a portal.
+const ROW_CONTROLS = 'button, a, input, select, textarea, [role="combobox"], [role="listbox"], [role="option"]'
+
 export function JobStatusRow({
   job, complete, risk, stale, failed, billRdy, zone,
   expanded, onToggle,
@@ -1377,38 +1381,38 @@ export function JobStatusRow({
                     : BRAND)
   const progress    = Math.max(0, Math.min(100, Number(job.progress) || 0))
   const progressMuted = complete || (risk?.level === 'critical')
-  const handleKey = (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button') && !e.target.closest('select') && !e.target.closest('[role="combobox"]')) {
-      e.preventDefault()
-      onToggle()
-    }
-  }
+  const detailId = useId()
 
+  // The row header, the id and the name, is the button that opens the row: it says whether
+  // the row is open and names the detail it opens. The status and phase lists sit beside it
+  // and not in it, because a control cannot be inside a button. A click anywhere else on the
+  // row opens it too, for a pointer.
   return (
     <div>
       <div
-        role="button"
-        tabIndex={0}
-        onClick={(e) => {
-          if (e.target.closest('button') || e.target.closest('[role="combobox"]') || e.target.closest('select')) return
-          onToggle()
-        }}
-        onKeyDown={handleKey}
-        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:bg-white/[0.04] focus-visible:-outline-offset-2"
+        onClick={(e) => { if (!e.target.closest(ROW_CONTROLS)) onToggle() }}
+        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025]"
         style={{ borderLeft: `3px solid ${railColor}` }}
-        aria-expanded={expanded}
       >
         <div className="flex items-start gap-3 sm:gap-4">
           {/* Body */}
           <div className="flex-1 min-w-0">
-            {/* Header row — id pill, name, status select, phase select */}
+            {/* Header row: the button with the id and the name, then the status and phase lists */}
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
-                {job.id}
-              </span>
-              <span className="text-base font-bold text-white truncate min-w-0">
-                {jobName(job)}
-              </span>
+              <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={expanded}
+                aria-controls={detailId}
+                className="inline-flex items-center gap-2 min-w-0 rounded-md text-left"
+              >
+                <span className="text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-md bg-white/[0.06] text-zinc-300 shrink-0">
+                  {job.id}
+                </span>
+                <span className="text-base font-bold text-white truncate min-w-0">
+                  {jobName(job)}
+                </span>
+              </button>
               <InlineStatusSelect job={job} />
               <InlinePhaseSelect job={job} />
             </div>
@@ -1490,16 +1494,19 @@ export function JobStatusRow({
             </p>
           </div>
 
-          {/* Expand chevron */}
+          {/* Expand chevron, a picture of what the header button says */}
           <ChevronRightIcon
             size={16}
+            aria-hidden="true"
             className="hidden md:block shrink-0 text-zinc-400 mt-1 transition-transform"
             style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}
           />
         </div>
       </div>
 
-      {expanded && <JobStatusDetail job={job} />}
+      <div id={detailId}>
+        {expanded && <JobStatusDetail job={job} />}
+      </div>
     </div>
   )
 }
@@ -2308,7 +2315,7 @@ function SubsEmptyState({ filter, hasOtherFilters }) {
   return <EmptyState Icon={UsersRoundIcon} title="No subs yet" description="Subcontractors will appear here once they're on the roster." />
 }
 
-function SubRow({ item, expanded, onToggle }) {
+export function SubRow({ item, expanded, onToggle }) {
   const { s, verdict, insState, licState, insDays, licDays, lastUpdateDays, subJobs, activeJobCount } = item
   const tColor   = tradeColor(s.trade)
   const initials = (s.name || '—').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -2356,30 +2363,23 @@ function SubRow({ item, expanded, onToggle }) {
                     : lastUpdateDays === 1    ? '1d ago'
                     : `${lastUpdateDays}d ago`
 
-  const handleKey = (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button') && !e.target.closest('[role="combobox"]') && !e.target.closest('select') && !e.target.closest('textarea')) {
-      e.preventDefault()
-      onToggle()
-    }
-  }
+  const detailId = useId()
 
+  // The row header, the sub's name, is the button that opens the row: it says whether the row
+  // is open and names the assignments it opens. The phone link sits beside it and not in it,
+  // because a link cannot be inside a button. A click anywhere else on the row opens it too,
+  // for a pointer.
   return (
     <div>
       <div
-        role="button"
-        tabIndex={0}
-        onClick={(e) => {
-          if (e.target.closest('button') || e.target.closest('[role="combobox"]') || e.target.closest('select') || e.target.closest('textarea')) return
-          onToggle()
-        }}
-        onKeyDown={handleKey}
-        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:bg-white/[0.04] focus-visible:-outline-offset-2"
+        onClick={(e) => { if (!e.target.closest(ROW_CONTROLS)) onToggle() }}
+        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025]"
         style={{ borderLeft: `3px solid ${railColor}` }}
-        aria-expanded={expanded}
       >
         <div className="flex items-start gap-3">
-          {/* Avatar with trade color */}
+          {/* Avatar with trade color, a picture of the name beside it */}
           <div
+            aria-hidden="true"
             className="shrink-0 mt-0.5 flex items-center justify-center rounded-full text-[11px] font-bold"
             style={{ width: 36, height: 36, backgroundColor: withAlpha(tColor, 0.13), color: tColor }}
           >
@@ -2388,9 +2388,17 @@ function SubRow({ item, expanded, onToggle }) {
 
           {/* Body */}
           <div className="flex-1 min-w-0">
-            {/* Header row — name + trade pill + verdict + active job count */}
+            {/* Header row: the button with the name, then the trade, the verdict and the active job count */}
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-sm font-semibold text-white truncate">{s.name || '—'}</span>
+              <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={expanded}
+                aria-controls={detailId}
+                className="min-w-0 truncate rounded-md text-left text-sm font-semibold text-white"
+              >
+                {s.name || 'Unnamed sub'}
+              </button>
               <span
                 className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
                 style={{ color: tColor, backgroundColor: withAlpha(tColor, 0.13), border: `1px solid ${withAlpha(tColor, 0.33)}` }}
@@ -2450,16 +2458,19 @@ function SubRow({ item, expanded, onToggle }) {
             </div>
           </div>
 
-          {/* Expand chevron */}
+          {/* Expand chevron, a picture of what the header button says */}
           <ChevronRightIcon
             size={16}
+            aria-hidden="true"
             className="hidden md:block shrink-0 text-zinc-400 mt-1.5 transition-transform"
             style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}
           />
         </div>
       </div>
 
-      {expanded && <SubAssignments subJobs={subJobs} />}
+      <div id={detailId}>
+        {expanded && <SubAssignments subJobs={subJobs} />}
+      </div>
     </div>
   )
 }
@@ -2530,6 +2541,7 @@ export function SubAssignmentRow({ job: j }) {
             })}
           >
             <SelectTrigger
+              aria-label={`Sub status on ${j.id}`}
               className="h-auto py-0.5 px-2.5 text-[11px] font-bold border rounded-full"
               style={{ backgroundColor: withAlpha(sc, 0.13), color: toneText(statusTone(SUB_STATUS, subStatus)), borderColor: withAlpha(sc, 0.33) }}
             >
@@ -3020,7 +3032,7 @@ function MaterialCard({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <MatStatusBadge status={status} docId={m._docId} onUpdate={onStatusChange} />
+          <MatStatusBadge status={status} docId={m._docId} onUpdate={onStatusChange} label={`Status of ${matName(m)}`} />
           <button
             type="button"
             onClick={onEdit}
@@ -3425,28 +3437,30 @@ function NotificationCard({ n, onRead, onDismiss }) {
   const cat = notifCategory(n)
   const CatIcon = NOTIF_CATEGORY_ICON[cat] || InfoIcon
   const TypeIcon = meta.Icon
+  const msgId = useId()
+  const clearRef = useRef(null)
+  const unread = !n.read
 
-  // Outer is a clickable div (not <button>) so we can nest the <button>
-  // dismiss action without invalid HTML. Keyboard support via role/tabIndex.
-  const handleKey = (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button')) {
-      e.preventDefault()
-      onRead(n)
-    }
+  // An unread notification's message is the button that marks it read, and says it is
+  // unread. Marking it read takes that button away, so focus goes to the Clear button of
+  // the same row, which stays, and the person keeps their place. A read one has nothing
+  // left to do but be cleared, so its message is text. Clear sits beside the message and
+  // not in it, and is described by it. A click anywhere else on an unread row marks it
+  // read too, for a pointer.
+  const markRead = () => {
+    onRead(n)
+    clearRef.current?.focus()
   }
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={(e) => { if (!e.target.closest('button')) onRead(n) }}
-      onKeyDown={handleKey}
-      className={`flex items-start gap-3 px-4 py-3.5 sm:px-5 sm:py-4 cursor-pointer transition-colors hover:bg-white/[0.025] focus:bg-white/[0.04] focus-visible:-outline-offset-2 ${n.read ? 'opacity-60' : ''}`}
-      style={{ borderLeft: `3px solid ${n.read ? 'transparent' : meta.color}` }}
-      aria-label={n.read ? `Notification: ${n.msg}` : `Unread notification: ${n.msg}`}
+      onClick={unread ? (e) => { if (!e.target.closest(ROW_CONTROLS)) onRead(n) } : undefined}
+      className={`flex items-start gap-3 px-4 py-3.5 sm:px-5 sm:py-4 transition-colors hover:bg-white/[0.025] ${unread ? 'cursor-pointer' : 'opacity-60'}`}
+      style={{ borderLeft: `3px solid ${unread ? meta.color : 'transparent'}` }}
     >
-      {/* Type icon tile */}
+      {/* Type icon tile, a picture of the type the pill names */}
       <div
+        aria-hidden="true"
         className="shrink-0 mt-0.5 flex items-center justify-center rounded-lg"
         style={{ width: 32, height: 32, backgroundColor: withAlpha(meta.color, 0.13), color: meta.color }}
       >
@@ -3458,34 +3472,45 @@ function NotificationCard({ n, onRead, onDismiss }) {
         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
           <Pill tone={meta.tone} size="xs">{meta.label}</Pill>
           <Pill tone="neutral" size="xs" Icon={CatIcon}>{NOTIF_CATEGORY_LABEL[cat]}</Pill>
-          <span className="text-[10px] text-zinc-500">·</span>
+          <span className="text-[10px] text-zinc-400" aria-hidden="true">·</span>
           <span className="text-[10px] text-zinc-400">{notifAgeLabel(n)}</span>
         </div>
-        <p className={`text-sm leading-snug ${n.read ? 'text-zinc-300' : 'font-semibold text-white'}`}>
-          {n.msg}
-        </p>
+        {unread ? (
+          <button
+            type="button"
+            id={msgId}
+            onClick={markRead}
+            className="block w-full rounded-md text-left text-sm leading-snug font-semibold text-white"
+          >
+            <span className="sr-only">Unread notification: </span>{n.msg}
+          </button>
+        ) : (
+          <p id={msgId} className="text-sm leading-snug text-zinc-300">{n.msg}</p>
+        )}
         {fmtNotifTime(n) && (
-          <p className="text-[11px] text-zinc-500 mt-0.5">{fmtNotifTime(n)}</p>
+          <p className="text-[11px] text-zinc-400 mt-0.5">{fmtNotifTime(n)}</p>
         )}
       </div>
 
       {/* Right column: unread dot + dismiss */}
       <div className="flex items-start gap-1.5 shrink-0">
-        {!n.read && (
+        {unread && (
           <span
+            aria-hidden="true"
             className="w-2 h-2 rounded-full mt-2"
             style={{ backgroundColor: BRAND }}
-            aria-label="Unread"
           />
         )}
         <button
+          ref={clearRef}
           type="button"
-          onClick={(e) => { e.stopPropagation(); onDismiss(n) }}
-          className="h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors shrink-0"
+          onClick={() => onDismiss(n)}
+          aria-describedby={msgId}
+          className="h-9 w-9 max-md:h-11 max-md:w-11 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors shrink-0"
           title="Clear notification"
           aria-label="Clear notification"
         >
-          <XIcon size={14} />
+          <XIcon size={14} aria-hidden="true" />
         </button>
       </div>
     </div>

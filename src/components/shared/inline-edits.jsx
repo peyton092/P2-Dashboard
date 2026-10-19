@@ -23,7 +23,9 @@ import { withAlpha } from '@/lib/tokens'
 // write went through; the material select hands the pick to the screen, through
 // onUpdate, which writes it and its history entry. The words, tones and menus come
 // from status.js. A select shows the words of the chosen status itself, because the
-// stored value is a key such as on-track. Moved out of src/App.jsx in Phase 19.
+// stored value is a key such as on-track. A list's words are its value and not its name,
+// so each one is named by what it sets, and for which job: Status of QBS-003. Moved out
+// of src/App.jsx in Phase 19.
 
 // The colors of a select shaped as a pill, for a status of a map.
 const pillColors = (map, key) => {
@@ -44,7 +46,7 @@ export function InlineStatusSelect({ job }) {
   return (
     <div onClick={e => e.stopPropagation()}>
       <Select value={job.status} onValueChange={handleChange}>
-        <SelectTrigger className="h-auto py-0.5 px-3 text-xs font-bold border rounded-full w-auto gap-1"
+        <SelectTrigger aria-label={job.id ? `Status of ${job.id}` : 'Job status'} className="h-auto py-0.5 px-3 text-xs font-bold border rounded-full w-auto gap-1"
           style={pillColors(JOB_STATUS, job.status)}>
           <SelectValue>{statusLabel(JOB_STATUS, job.status)}</SelectValue>
         </SelectTrigger>
@@ -87,7 +89,7 @@ export function InlinePhaseSelect({ job }) {
   return (
     <div onClick={e => e.stopPropagation()}>
       <Select value={words} onValueChange={handleChange}>
-        <SelectTrigger className="h-auto py-0.5 px-3 text-xs border rounded-full w-auto gap-1 bg-white/10 border-white/20 text-muted-foreground">
+        <SelectTrigger aria-label={job.id ? `Phase of ${job.id}` : 'Phase'} className="h-auto py-0.5 px-3 text-xs border rounded-full w-auto gap-1 bg-white/10 border-white/20 text-muted-foreground">
           <SelectValue>{words}</SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -114,7 +116,7 @@ export function BillingStatusSelect({ job }) {
   }
   return (
     <Select value={status} onValueChange={handleChange}>
-      <SelectTrigger className="h-auto py-1 px-3 text-xs font-bold border rounded-full min-w-[7.5rem]"
+      <SelectTrigger aria-label={job.id ? `Billing status of ${job.id}` : 'Billing status'} className="h-auto py-1 px-3 text-xs font-bold border rounded-full min-w-[7.5rem]"
         style={pillColors(BILLING_STATUS, status)}>
         <SelectValue>{label}</SelectValue>
       </SelectTrigger>
@@ -127,12 +129,12 @@ export function BillingStatusSelect({ job }) {
   )
 }
 
-export function MatStatusBadge({ status, docId, onUpdate }) {
+export function MatStatusBadge({ status, docId, onUpdate, label = 'Material status' }) {
   const current = normalizeMatStatus(status)
   return (
     <div onClick={e => e.stopPropagation()}>
       <Select value={current} onValueChange={v => onUpdate(docId, v)}>
-        <SelectTrigger className="h-auto py-0.5 px-2 text-xs font-bold border rounded-full min-w-[7rem]"
+        <SelectTrigger aria-label={label} className="h-auto py-0.5 px-2 text-xs font-bold border rounded-full min-w-[7rem]"
           style={pillColors(MATERIAL_STATUS, current)}>
           <SelectValue>{statusLabel(MATERIAL_STATUS, current)}</SelectValue>
         </SelectTrigger>
