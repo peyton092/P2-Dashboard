@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useId, useState, useEffect, useMemo, useRef } from 'react'
 import { useData } from '../use-data'
 import {
   SearchIcon, GaugeIcon, HardHatIcon, UsersRoundIcon, FilePenLineIcon,
@@ -32,13 +32,28 @@ const PAGES = [
 
 const navigate = (id) => window.dispatchEvent(new CustomEvent('p2:navigate', { detail: { id } }))
 
+// A modal dialog other than the palette, such as a Dialog or a ConfirmDialog, is open. It
+// holds focus in itself and hides the page from a screen reader, so the palette does not
+// open over it: a palette there could be neither reached nor read.
+const modalDialogOpen = () => !!document.querySelector('[role="dialog"][aria-modal="true"]:not([data-command-palette])')
+
+// The search a person opens with Ctrl or Cmd and K, or with the Search button of the
+// sidebar. It is a modal dialog: focus stays in its search box, which is a combobox that
+// points at the active option of the results, a listbox. The arrow keys move the active
+// option and scroll it into view, Enter opens it, and Escape closes the palette and gives
+// focus back to whatever had it before. The pointer makes an option active too, but does
+// not scroll the list, which would move the option out from under it.
 export default function CommandPalette() {
   const { jobs = [], subs = [], extras = [], materials = [] } = useData()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const inputRef = useRef(null)
-  const listRef = useRef(null)
+  // Set by the arrow keys, so that only they scroll the list.
+  const scrollToActive = useRef(false)
+  const baseId = useId()
+  const listId = `${baseId}-list`
+  const optionId = (idx) => `${baseId}-option-${idx}`
 
   const reset = () => { setQuery(''); setActive(0) }
   const close = () => { setOpen(false); reset() }
@@ -47,6 +62,7 @@ export default function CommandPalette() {
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        if (modalDialogOpen()) return
         e.preventDefault()
         setOpen(o => {
           if (o) { setQuery(''); setActive(0) }
@@ -65,11 +81,16 @@ export default function CommandPalette() {
     }
   }, [])
 
-  // Focus the input when the palette opens (DOM side-effect only).
+  // Focus goes into the search box when the palette opens, and back to what had it before,
+  // when that is still on the page, when the palette closes.
   useEffect(() => {
     if (!open) return
+    const opener = document.activeElement
     const t = setTimeout(() => inputRef.current?.focus(), 0)
-    return () => clearTimeout(t)
+    return () => {
+      clearTimeout(t)
+      if (opener instanceof HTMLElement && opener !== document.body && opener.isConnected) opener.focus()
+    }
   }, [open])
 
   const results = useMemo(() => {
@@ -108,6 +129,8 @@ export default function CommandPalette() {
   }, [query, jobs, subs, extras, materials])
 
   const flat = useMemo(() => results.flatMap(g => g.items), [results])
+  // The active option, kept inside the list when the results change under it.
+  const current = Math.min(active, Math.max(flat.length - 1, 0))
 
   const select = (item) => {
     if (!item) return
@@ -116,20 +139,31 @@ export default function CommandPalette() {
     close()
   }
 
+  // An arrow key moves the active option, and only then is the list scrolled to it.
+  const move = (to) => {
+    if (to === current) return
+    scrollToActive.current = true
+    setActive(to)
+  }
+
+  // Focus stays in the search box, the one control of the palette, so Tab goes nowhere.
   const onInputKey = (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, flat.length - 1)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)) }
-    else if (e.key === 'Enter') { e.preventDefault(); select(flat[active]) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); move(Math.min(current + 1, flat.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(Math.max(current - 1, 0)) }
+    else if (e.key === 'Enter') { e.preventDefault(); select(flat[current]) }
+    else if (e.key === 'Tab') e.preventDefault()
   }
 
   useEffect(() => {
-    const el = listRef.current?.querySelector(`[data-idx="${active}"]`)
-    el?.scrollIntoView({ block: 'nearest' })
-  }, [active])
+    if (!scrollToActive.current) return
+    scrollToActive.current = false
+    document.getElementById(optionId(current))?.scrollIntoView({ block: 'nearest' })
+  })
 
   if (!open) return null
 
   let runningIndex = -1
+  const listed = flat.length > 0
 
   return (
     <div className="fixed inset-0 z-(--z-palette) flex items-start justify-center p-4 sm:pt-[12vh] bg-black/60 backdrop-blur-sm" onClick={close}>
@@ -137,12 +171,19 @@ export default function CommandPalette() {
         className="w-full max-w-xl rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Search"
+        data-command-palette=""
       >
         <div className="flex items-center gap-2.5 px-4 border-b border-white/10">
           <SearchIcon size={16} className="text-zinc-400 shrink-0" aria-hidden="true" />
           <input
             ref={inputRef}
+            role="combobox"
+            aria-expanded={listed}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={listed ? optionId(current) : undefined}
             value={query}
             onChange={e => { setQuery(e.target.value); setActive(0) }}
             onKeyDown={onInputKey}
@@ -153,43 +194,47 @@ export default function CommandPalette() {
           <kbd className="hidden sm:inline text-[10px] font-semibold text-zinc-400 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>
         </div>
 
-        <div ref={listRef} className="max-h-[60vh] overflow-y-auto py-2">
-          {flat.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-zinc-400">
-              {query ? 'No matches.' : 'Type to search across the workspace.'}
-            </p>
-          ) : (
-            results.map(group => (
-              <div key={group.heading} className="mb-1">
-                <p className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+        {listed ? (
+          <div id={listId} role="listbox" aria-label="Results" className="max-h-[60vh] overflow-y-auto py-2">
+            {results.map((group, groupIdx) => (
+              <div key={group.heading} role="group" aria-labelledby={`${baseId}-group-${groupIdx}`} className="mb-1">
+                <div id={`${baseId}-group-${groupIdx}`} role="presentation" className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   <group.Icon size={11} aria-hidden="true" /> {group.heading}
-                </p>
+                </div>
                 {group.items.map(item => {
                   runningIndex++
                   const idx = runningIndex
-                  const isActive = idx === active
+                  const isActive = idx === current
+                  // An option is not a stop of its own for Tab: the search box points at it,
+                  // and keeps focus when an option is pressed with the pointer.
                   return (
-                    <button
+                    <div
                       key={item.key}
-                      data-idx={idx}
-                      type="button"
-                      onMouseEnter={() => setActive(idx)}
+                      id={optionId(idx)}
+                      role="option"
+                      aria-selected={isActive}
+                      onMouseMove={() => { if (!isActive) setActive(idx) }}
+                      onMouseDown={e => e.preventDefault()}
                       onClick={() => select(item)}
-                      className="w-full text-left flex items-center gap-3 px-4 py-2 transition-colors"
+                      className="w-full text-left flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors"
                       style={{ backgroundColor: isActive ? withAlpha(BRAND, 0.12) : 'transparent' }}
                     >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-white truncate">{item.title}</p>
-                        {item.sub && <p className="text-[11px] text-zinc-400 truncate">{item.sub}</p>}
-                      </div>
-                      {isActive && <CornerDownLeftIcon size={13} className="text-zinc-500 shrink-0" aria-hidden="true" />}
-                    </button>
+                      <span className="block min-w-0 flex-1">
+                        <span className="block text-sm text-white truncate">{item.title}</span>
+                        {item.sub && <span className="block text-[11px] text-zinc-400 truncate">{item.sub}</span>}
+                      </span>
+                      {isActive && <CornerDownLeftIcon size={13} className="text-zinc-400 shrink-0" aria-hidden="true" />}
+                    </div>
                   )
                 })}
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p role="status" className="px-4 py-8 text-center text-sm text-zinc-400">
+            {query ? 'No matches.' : 'Type to search across the workspace.'}
+          </p>
+        )}
 
         <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-t border-white/10 text-[10px] text-zinc-400">
           <span className="flex items-center gap-1"><DollarSignIcon size={11} /> Tip:</span>
