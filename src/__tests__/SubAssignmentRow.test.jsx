@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { hexToRgb } from '@/lib/tokens'
+import { toneText } from '@/lib/status'
 
 // A sub assignment row holds the status of one trade's sub on a job, and the loose ends
 // that sub still owes. The status is saved when it is picked. The loose ends are saved
@@ -65,6 +67,16 @@ describe('the status of the sub', () => {
     fireEvent.mouseMove(item)
     await act(async () => { fireEvent.click(item) })
   }
+
+  // The list is a pill with 11 pixel words, so they are in the text color of the tone: a
+  // sub that is done in the neutral gray and not the dimmer mute, an issue a lighter red.
+  it.each([
+    ['done', 'mute'],
+    ['issue', 'critical'],
+  ])('sets the words of a sub marked %s in the text color of %s', (status, tone) => {
+    open({ ...JOB, subsStatus: { electrical: status } })
+    expect(screen.getByRole('combobox').style.color).toBe(`rgb(${hexToRgb(toneText(tone)).join(', ')})`)
+  })
 
   it('saves the status under the trade, and says what it was set to', async () => {
     open()

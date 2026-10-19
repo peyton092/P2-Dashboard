@@ -9,21 +9,30 @@ import { MAT_STATUS_OPTIONS, normalizeMatStatus } from '../../lib/materials'
 import {
   JOB_STATUS, BILLING_STATUS, MATERIAL_STATUS, PHASE,
   JOB_STATUS_OPTIONS, PHASE_OPTIONS,
-  statusLabel, statusColor,
+  statusLabel, statusColor, statusTone, toneText,
 } from '../../lib/status'
 import { withAlpha } from '@/lib/tokens'
 
 // Inline edit selects, shaped as pills, for the status fields of a job and of a
-// material. Each one shows the words and the tone of the chosen status, offers
-// the statuses of its menu, and writes the status that was picked to the
-// document in Firestore, and tells the person whether the write went through. The
-// words, tones and menus come from status.js. A select shows the words of the
-// chosen status itself, because the stored value is a key such as on-track. Moved
-// out of src/App.jsx in Phase 19.
+// material. Each one shows the words of the chosen status and offers the statuses
+// of its menu. The status, billing and material selects also show its tone: a tint
+// of the tone for the fill and the border, and the tone's text color for the words,
+// which are small (see toneText). The phase select shows the words only, because a
+// phase says where the work is and not how it is going. The job selects write the
+// status that was picked to the job in Firestore and tell the person whether the
+// write went through; the material select hands the pick to the screen, through
+// onUpdate, which writes it and its history entry. The words, tones and menus come
+// from status.js. A select shows the words of the chosen status itself, because the
+// stored value is a key such as on-track. Moved out of src/App.jsx in Phase 19.
+
+// The colors of a select shaped as a pill, for a status of a map.
+const pillColors = (map, key) => {
+  const color = statusColor(map, key)
+  return { backgroundColor: withAlpha(color, 0.13), color: toneText(statusTone(map, key)), borderColor: withAlpha(color, 0.33) }
+}
 
 export function InlineStatusSelect({ job }) {
   const { run } = useMutation()
-  const color = statusColor(JOB_STATUS, job.status)
   const handleChange = (v) => {
     if (!job._docId) return
     run(() => updateJob(job._docId, { status: v }), {
@@ -36,7 +45,7 @@ export function InlineStatusSelect({ job }) {
     <div onClick={e => e.stopPropagation()}>
       <Select value={job.status} onValueChange={handleChange}>
         <SelectTrigger className="h-auto py-0.5 px-3 text-xs font-bold border rounded-full w-auto gap-1"
-          style={{ backgroundColor: withAlpha(color, 0.13), color, borderColor: withAlpha(color, 0.33) }}>
+          style={pillColors(JOB_STATUS, job.status)}>
           <SelectValue>{statusLabel(JOB_STATUS, job.status)}</SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -94,7 +103,6 @@ export function InlinePhaseSelect({ job }) {
 export function BillingStatusSelect({ job }) {
   const { run } = useMutation()
   const status = job.billingStatus || 'not-invoiced'
-  const color  = statusColor(BILLING_STATUS, status)
   const label  = statusLabel(BILLING_STATUS, status)
   const handleChange = (v) => {
     if (!job._docId) return
@@ -107,7 +115,7 @@ export function BillingStatusSelect({ job }) {
   return (
     <Select value={status} onValueChange={handleChange}>
       <SelectTrigger className="h-auto py-1 px-3 text-xs font-bold border rounded-full min-w-[7.5rem]"
-        style={{ backgroundColor: withAlpha(color, 0.13), color, borderColor: withAlpha(color, 0.33) }}>
+        style={pillColors(BILLING_STATUS, status)}>
         <SelectValue>{label}</SelectValue>
       </SelectTrigger>
       <SelectContent>
@@ -121,12 +129,11 @@ export function BillingStatusSelect({ job }) {
 
 export function MatStatusBadge({ status, docId, onUpdate }) {
   const current = normalizeMatStatus(status)
-  const color = statusColor(MATERIAL_STATUS, current)
   return (
     <div onClick={e => e.stopPropagation()}>
       <Select value={current} onValueChange={v => onUpdate(docId, v)}>
         <SelectTrigger className="h-auto py-0.5 px-2 text-xs font-bold border rounded-full min-w-[7rem]"
-          style={{ backgroundColor: withAlpha(color, 0.13), color, borderColor: withAlpha(color, 0.33) }}>
+          style={pillColors(MATERIAL_STATUS, current)}>
           <SelectValue>{statusLabel(MATERIAL_STATUS, current)}</SelectValue>
         </SelectTrigger>
         <SelectContent>

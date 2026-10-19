@@ -27,6 +27,24 @@ export const SEMANTIC = {
 // Every tone by name, for components that take a tone prop.
 export const TONE_HEX = { brand: BRAND, ...SEMANTIC }
 
+// The color small text takes in each tone on the dark surfaces, such as the words of a
+// pill. A tone itself is for dots, rules, fills and large figures. Three of them are too dim
+// for 12 pixel words on a card: critical and info fall under 4.5 to 1 on surface 2, and brand
+// on surface 3, so their words are one step lighter. Mute is under 4.5 to 1 everywhere, so
+// muted words are in the neutral gray. The fill of a pill stays the tone; only the words
+// change. src/components/shared/__tests__/badges.test.jsx works out every tone on the page,
+// surface 2 and surface 3.
+export const TONE_TEXT = {
+  brand:    '#fb923c',
+  success:  SEMANTIC.success,
+  warning:  SEMANTIC.warning,
+  critical: '#f87171',
+  info:     '#60a5fa',
+  cyan:     SEMANTIC.cyan,
+  neutral:  SEMANTIC.neutral,
+  mute:     SEMANTIC.neutral,
+}
+
 // Font family lists. Display is for page titles and numerals, body for text,
 // mono for job ids, permit numbers, invoice numbers, amounts and timestamps.
 export const FONT = {

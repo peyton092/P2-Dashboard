@@ -9,7 +9,7 @@ import { DataPanel, StatBand, Pill, ProgressBar, EmptyState } from './shared'
 import { PHASE_LABEL } from '../lib/inspections'
 import {
   JOB_STATUS, INSPECTION_STATUS, BILLING_STATUS, CO_STATUS,
-  isJobComplete, normalizeCoStatus, statusLabel, statusTone, statusColor, toneHex,
+  isJobComplete, normalizeCoStatus, statusLabel, statusTone, statusColor, toneHex, toneText,
 } from '../lib/status'
 import { useToast } from '@/components/ui/use-toast'
 import { classifyRisk, hasFailedInspection } from '../agent/scoring'
@@ -52,7 +52,7 @@ function TradeInspections({ trade, data }) {
               <span className="text-zinc-400">{PHASE_LABEL[phase] || phase}</span>
               <span className="flex items-center gap-2">
                 {date && <span className="text-[10px] text-zinc-500">{fmtDate(date)}</span>}
-                <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color, backgroundColor: withAlpha(color, 0.13) }}>{statusLabel(INSPECTION_STATUS, status)}</span>
+                <span className="font-bold px-1.5 py-0.5 rounded-md text-[10px]" style={{ color: toneText(statusTone(INSPECTION_STATUS, status)), backgroundColor: withAlpha(color, 0.13) }}>{statusLabel(INSPECTION_STATUS, status)}</span>
               </span>
             </div>
           )

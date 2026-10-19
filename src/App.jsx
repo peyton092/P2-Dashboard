@@ -1698,7 +1698,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
               disabled={busy}
               className="text-[11px] font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none disabled:opacity-50"
               style={{
-                color,
+                color: toneText(statusTone(INSPECTION_STATUS, current)),
                 backgroundColor: withAlpha(color, 0.13),
                 border: `1px solid ${withAlpha(color, 0.27)}`,
               }}
@@ -2576,7 +2576,7 @@ export function SubAssignmentRow({ job: j }) {
           >
             <SelectTrigger
               className="h-auto py-0.5 px-2.5 text-[11px] font-bold border rounded-full"
-              style={{ backgroundColor: withAlpha(sc, 0.13), color: sc, borderColor: withAlpha(sc, 0.33) }}
+              style={{ backgroundColor: withAlpha(sc, 0.13), color: toneText(statusTone(SUB_STATUS, subStatus)), borderColor: withAlpha(sc, 0.33) }}
             >
               <SelectValue>{statusLabel(SUB_STATUS, subStatus)}</SelectValue>
             </SelectTrigger>

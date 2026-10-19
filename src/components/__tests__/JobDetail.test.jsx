@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
-import { TONE_HEX, hexToRgb } from '@/lib/tokens'
+import { hexToRgb } from '@/lib/tokens'
+import { toneText } from '@/lib/status'
 
 // The job page reads every status it shows from src/lib/status.js: the job's
 // own, its inspections by trade and phase, its billing and its change orders.
@@ -15,7 +16,8 @@ vi.mock('../../hooks/useFirestore', () => ({ useJobFiles: () => ({ files: [], lo
 
 import JobDetail from '../JobDetail'
 
-const rgb = (tone) => `rgb(${hexToRgb(TONE_HEX[tone]).join(', ')})`
+// The words of a status are small, so they are in the text color of its tone (see toneText).
+const rgb = (tone) => `rgb(${hexToRgb(toneText(tone)).join(', ')})`
 const JOB = {
   id: 'QBS-003', _docId: 'job3', name: 'Lee Residence', client: 'Dana Lee', status: 'on-track', progress: 40,
   insp: {

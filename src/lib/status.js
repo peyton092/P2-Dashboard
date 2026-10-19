@@ -17,7 +17,7 @@
 //
 // A color is never written here. toneHex turns a tone into the hex in tokens.js.
 
-import { TONE_HEX } from '@/lib/tokens'
+import { TONE_HEX, TONE_TEXT } from '@/lib/tokens'
 import { extraState } from '@/lib/extraStatus'
 
 // Freezes a map and each of its entries, so no screen can add to the vocabulary
@@ -156,10 +156,13 @@ export function toneHex(tone) {
   return Object.hasOwn(TONE_HEX, tone) ? TONE_HEX[tone] : TONE_HEX.neutral
 }
 
-// The hex to set small text in. The mute gray is meant for dots, rules and fills,
-// and is too dim to read at 12 px on the dark surface, so text in a muted tone
-// uses the neutral gray.
-export const toneText = (tone) => toneHex(tone === 'mute' ? 'neutral' : tone)
+// The hex to set small text in, from TONE_TEXT in tokens.js. A tone's own color is
+// meant for dots, rules, fills and large figures. Where it is too dim to read at 12 px
+// on a card the text color is lighter (critical, info and brand), and text in a muted
+// tone uses the neutral gray. A tone the palette does not have reads as neutral.
+export function toneText(tone) {
+  return Object.hasOwn(TONE_TEXT, tone) ? TONE_TEXT[tone] : TONE_TEXT.neutral
+}
 
 export const statusColor = (map, key) => toneHex(statusTone(map, key))
 

@@ -2,14 +2,16 @@ import { cn } from '@/lib/utils'
 import { withAlpha } from '@/lib/tokens'
 import {
   JOB_STATUS, INSPECTION_STATUS, PERMIT_STATUS, BILLING_STATUS,
-  statusLabel, statusTone, toneHex,
+  statusLabel, statusTone, toneHex, toneText,
 } from '@/lib/status'
 
-// How each tone paints a pill: the tone's color for the text, a tint of it for
-// the fill and a stronger tint for the border. Neutral and mute sit on white at a
-// low alpha so they read as quiet. The colors are the palette in tokens.js.
+// How each tone paints a pill: a tint of the tone's color for the fill and a stronger
+// tint for the border, and the tone's text color for the words. The words are 9 to 11
+// pixels, so they take the text color, which is lighter than the tone where the tone is
+// too dim for small text on a card (see TONE_TEXT in tokens.js). Neutral and mute sit on
+// white at a low alpha so they read as quiet, and muted words are in the neutral gray.
 const tint = (tone) => ({
-  fg: toneHex(tone),
+  fg: toneText(tone),
   bg: withAlpha(toneHex(tone), 0.13),
   bd: withAlpha(toneHex(tone), 0.33),
 })
@@ -20,8 +22,8 @@ const TONE = {
   critical: tint('critical'),
   info:     tint('info'),
   cyan:     tint('cyan'),
-  neutral:  { fg: toneHex('neutral'), bg: 'rgba(255,255,255,0.06)', bd: 'rgba(255,255,255,0.12)' },
-  mute:     { fg: toneHex('mute'),    bg: 'rgba(255,255,255,0.04)', bd: 'rgba(255,255,255,0.08)' },
+  neutral:  { fg: toneText('neutral'), bg: 'rgba(255,255,255,0.06)', bd: 'rgba(255,255,255,0.12)' },
+  mute:     { fg: toneText('mute'),    bg: 'rgba(255,255,255,0.04)', bd: 'rgba(255,255,255,0.08)' },
 }
 
 const SIZE = {

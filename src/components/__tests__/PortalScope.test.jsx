@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
 import { TONE_HEX, hexToRgb } from '@/lib/tokens'
+import { toneText } from '@/lib/status'
 
 // The portals receive only what their queries and the rules allow. With no
 // project they say so in a labelled empty state, and a submission they create
@@ -194,6 +195,8 @@ describe('a submission created in the builder portal', () => {
 // its color alone.
 describe('the inspection marks on a job card in the builder portal', () => {
   const rgb = (tone) => `rgb(${hexToRgb(TONE_HEX[tone]).join(', ')})`
+  // The letters of a mark are 8 pixels, so they are in the text color of the tone.
+  const textRgb = (tone) => `rgb(${hexToRgb(toneText(tone)).join(', ')})`
   const insp = {
     electrical: { roughIn: 'blocked', final: 'n/a' },
     plumbing: { roughIn: 'pending', final: 'passed' },
@@ -206,7 +209,7 @@ describe('the inspection marks on a job card in the builder portal', () => {
 
     const blocked = trade('electrical').getByText('B')
     expect(blocked.className).toContain('rounded-full')
-    expect(blocked.style.color).toBe(rgb('info'))
+    expect(blocked.style.color).toBe(textRgb('info'))
 
     const notApplicable = trade('electrical').getByText('n/a')
     expect(notApplicable.className).not.toContain('rounded-full')
@@ -219,5 +222,21 @@ describe('the inspection marks on a job card in the builder portal', () => {
     // The other trade: a result not in yet is a dot in a circle, a passed one a P.
     const circles = [...screen.getByText('plumbing', { selector: 'p' }).parentElement.querySelectorAll('.rounded-full')]
     expect(circles.map((circle) => circle.textContent)).toEqual(['\u00b7', 'P'])
+  })
+
+  // A letter, or a dot for a result not in yet, says little on its own, so each mark is a
+  // picture named by the words of its status, which a pointer also shows as a title. The dot
+  // and the letters are 8 pixels, so they are in the text color, and a dot not in yet is in
+  // the neutral gray and not the dimmer mute.
+  it('names each mark by the words of its status, and sets a result not in yet in the neutral gray', () => {
+    mocks.data = portalData(BUILDER, { jobs: [{ ...JOB, insp }] })
+    openBuilderPortal()
+
+    const plumbing = within(screen.getByText('plumbing', { selector: 'p' }).parentElement)
+    const marks = plumbing.getAllByRole('img')
+    expect(marks.map((mark) => mark.getAttribute('aria-label'))).toEqual(['Pending', 'Passed'])
+    expect(marks.map((mark) => mark.getAttribute('title'))).toEqual(['Pending', 'Passed'])
+    expect(marks[0].style.color).toBe(textRgb('neutral'))
+    expect(trade('electrical').getByRole('img', { name: 'Blocked' }).textContent).toBe('B')
   })
 })

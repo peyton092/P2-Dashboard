@@ -3,8 +3,8 @@ import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
-import { JOB_STATUS, PHASE, MATERIAL_STATUS, BILLING_STATUS } from '@/lib/status'
-import { TONE_HEX, hexToRgb } from '@/lib/tokens'
+import { JOB_STATUS, PHASE, MATERIAL_STATUS, BILLING_STATUS, toneText } from '@/lib/status'
+import { TONE_HEX, hexToRgb, withAlpha } from '@/lib/tokens'
 
 // Base UI shows its focus guards to VoiceOver as buttons when jsdom's vendor
 // says Apple. Nothing here depends on that, but the select test does the same.
@@ -58,6 +58,18 @@ describe('InlineStatusSelect', () => {
     render(<InlineStatusSelect job={job} />)
     expect(shown()).toBe('On track')
     expect(trigger().style.color).toBe(rgb(TONE_HEX.success))
+  })
+
+  // The select is shaped as a pill and its words are 12 pixels, so they take the text color
+  // of the tone, as a pill's words do, and the fill stays a tint of the tone itself.
+  it.each([
+    ['blocked', 'critical'],
+    ['active', 'info'],
+    ['pending', 'mute'],
+  ])('sets the words of the %s job in the text color of %s, on a tint of the tone', (status, tone) => {
+    render(<InlineStatusSelect job={{ ...job, status }} />)
+    expect(trigger().style.color).toBe(rgb(toneText(tone)))
+    expect(trigger().style.backgroundColor).toBe(withAlpha(TONE_HEX[tone], 0.13))
   })
 
   it('offers every job status, most urgent first', async () => {

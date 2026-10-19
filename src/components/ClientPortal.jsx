@@ -34,7 +34,7 @@ import { DataPanel, Pill, EmptyState, AllClearState } from './shared'
 import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
 import {
   BILLING_STATUS, CO_STATUS, INSPECTION_STATUS, PHASE,
-  normalizeCoStatus, statusColor, statusLabel, statusTone, toneHex,
+  normalizeCoStatus, statusColor, statusLabel, statusTone, toneHex, toneText,
 } from '../lib/status'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ function InspectionTimeline({ job }) {
               <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: withAlpha(color, 0.2) }}>
                 <Icon size={14} style={{ color }} />
               </div>
-              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color }}>{p.label}</p>
+              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color: toneText(statusTone(INSPECTION_STATUS, p.status)) }}>{p.label}</p>
               <p className="text-[9px] sm:text-[10px] text-muted-foreground leading-tight">
                 {p.status === 'passed' && p.date ? fmtDate(p.date) : PHASE_WORDS[p.status]}
               </p>

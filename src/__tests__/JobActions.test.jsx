@@ -5,6 +5,8 @@ import { ToastContext } from '@/components/ui/use-toast'
 import { axe } from '@/test/axe'
 import { openSettled, initialFocusLanded } from '@/test/dialog'
 import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
+import { hexToRgb } from '@/lib/tokens'
+import { toneText } from '@/lib/status'
 
 // Creating a job and recording an inspection result go through Cloud Functions
 // that check the caller is staff. This covers what the screens do around those
@@ -525,6 +527,17 @@ describe('inspection status list', () => {
   const row = () => render(withToast(
     <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" />,
   ))
+
+  // The list is a pill with 11 pixel words, so they are in the text color of the tone: a
+  // pending result in the neutral gray and not the dimmer mute, a failed one a lighter red.
+  it.each([
+    ['pending', 'mute'],
+    ['failed', 'critical'],
+    ['blocked', 'info'],
+  ])('sets the words of a %s result in the text color of %s', (status, tone) => {
+    render(withToast(<PhaseRow label="Rough-In" status={status} docId="job1" field="insp.electrical.roughIn" />))
+    expect(list().style.color).toBe(`rgb(${hexToRgb(toneText(tone)).join(', ')})`)
+  })
 
   it('records passed through passInspection, not as a plain edit of the job', async () => {
     row()

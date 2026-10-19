@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
-import { TONE_HEX, hexToRgb } from '@/lib/tokens'
+import { hexToRgb } from '@/lib/tokens'
+import { toneText } from '@/lib/status'
 import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
 
 // Both portals let the builder or the client approve a change order or ask for a
@@ -477,7 +478,8 @@ describe('QBSBuilderPortal', () => {
 // waits for the viewer's decision is a warning in the portals, because the next
 // step is theirs; a decided one has the tone of the vocabulary.
 describe.each(PORTALS)('$name status pill', (portal) => {
-  const rgb = (tone) => `rgb(${hexToRgb(TONE_HEX[tone]).join(', ')})`
+  // The words of a pill are in the text color of its tone (see toneText).
+  const rgb = (tone) => `rgb(${hexToRgb(toneText(tone)).join(', ')})`
 
   it.each([
     ['Sent to Builder', 'Sent to builder', 'warning'],

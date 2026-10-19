@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import { axe } from '@/test/axe'
 import { hexToRgb } from '@/lib/tokens'
-import { toneHex } from '@/lib/status'
+import { toneHex, toneText } from '@/lib/status'
 import { useConnectionState } from '@/hooks/useConnectionState'
 import { ConnectionChip } from '../ConnectionChip'
 
@@ -11,7 +11,7 @@ import { ConnectionChip } from '../ConnectionChip'
 vi.mock('@/hooks/useConnectionState', () => ({ useConnectionState: vi.fn() }))
 
 // How jsdom writes an inline color: rgb(34, 197, 94) for the success green.
-const rgb = (tone) => `rgb(${hexToRgb(toneHex(tone)).join(', ')})`
+const rgb = (hex) => `rgb(${hexToRgb(hex).join(', ')})`
 
 const STATES = [
   ['online', 'Live', 'success'],
@@ -33,13 +33,16 @@ describe('ConnectionChip', () => {
     expect(screen.getByRole('status').textContent).toBe(word)
   })
 
-  it.each(STATES)('paints %s as %s in one tone, for the text and for the dot', (state, _word, tone) => {
+  // The word is small text, so it is set in the text color of the tone, which is lighter
+  // than the tone where the tone itself is too dim for small text on a card. The dot is a
+  // picture and takes the tone itself.
+  it.each(STATES)('paints %s as %s in one tone, the word in its text color and the dot in the tone', (state, _word, tone) => {
     vi.mocked(useConnectionState).mockReturnValue(state)
     render(<ConnectionChip />)
 
     const status = screen.getByRole('status')
-    expect(status.firstElementChild.style.color).toBe(rgb(tone))
-    expect(status.querySelector('[aria-hidden="true"]').style.backgroundColor).toBe(rgb(tone))
+    expect(status.firstElementChild.style.color).toBe(rgb(toneText(tone)))
+    expect(status.querySelector('[aria-hidden="true"]').style.backgroundColor).toBe(rgb(toneHex(tone)))
   })
 
   it('is a polite live region, so a change is announced without taking over the reader', () => {

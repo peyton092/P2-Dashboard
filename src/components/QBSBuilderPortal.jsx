@@ -34,7 +34,7 @@ import {
 import { BRAND, withAlpha, SEMANTIC } from '@/lib/tokens'
 import {
   CO_STATUS, INSPECTION_STATUS, PHASE,
-  normalizeCoStatus, statusColor, statusLabel, statusTone, toneHex,
+  normalizeCoStatus, statusColor, statusLabel, statusTone, toneHex, toneText,
 } from '../lib/status'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ function InspectionTimeline({ job }) {
               >
                 <Icon size={14} style={{ color }} />
               </div>
-              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color }}>
+              <p className="text-[10px] sm:text-xs font-bold leading-tight truncate w-full" style={{ color: toneText(statusTone(INSPECTION_STATUS, p.status)) }}>
                 {p.label}
               </p>
               <p className="text-[9px] sm:text-[10px] text-muted-foreground leading-tight">
@@ -151,22 +151,28 @@ function InspectionTimeline({ job }) {
 // gets its letter in a circle of the status color: P passed, F failed, S
 // scheduled, B blocked. A result not in yet (pending, pending verification, not
 // started) gets a dot in a circle. A phase that does not apply is plain text, n/a,
-// in the status's own color with no circle. What a mark means is in its letter or
-// its words, never in its color alone.
+// with no circle. What a mark means is in its letter or its words, never in its
+// color alone, and a letter or a dot is a picture named by the words of its status,
+// which a pointer shows as a title. The letters are 8 pixels, so they are in the
+// text color of the tone (toneText): a result not in yet is in the neutral gray,
+// never the dimmer mute.
 const INSPECTION_LETTER = { passed: 'P', failed: 'F', scheduled: 'S', blocked: 'B' }
 
 function InspectionMark({ status }) {
   const color = statusColor(INSPECTION_STATUS, status)
+  const text = toneText(statusTone(INSPECTION_STATUS, status))
   if (status === 'n/a') {
     return (
-      <span className="min-w-3.5 h-3.5 text-[8px] flex items-center justify-center font-black" style={{ color }}>
+      <span className="min-w-3.5 h-3.5 text-[8px] flex items-center justify-center font-black" style={{ color: text }}>
         n/a
       </span>
     )
   }
+  const words = statusLabel(INSPECTION_STATUS, status)
   return (
-    <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
-      style={{ backgroundColor: withAlpha(color, 0.2), color }}>
+    <span role="img" aria-label={words} title={words}
+      className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-black"
+      style={{ backgroundColor: withAlpha(color, 0.2), color: text }}>
       {INSPECTION_LETTER[status] ?? '·'}
     </span>
   )

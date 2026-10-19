@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
-import { TONE_HEX, hexToRgb } from '@/lib/tokens'
+import { hexToRgb } from '@/lib/tokens'
+import { toneText } from '@/lib/status'
 
 // The Change Orders screen shows each change order's status in the words and
 // tone of src/lib/status.js, whatever the casing it was stored with. Everything
@@ -37,7 +38,8 @@ const saved = (over) => ({
   lineItems: [LINE], markupPct: 15, notes: '', amount: 4600, total: 4600, desc: 'CO-2026-001: Backflow preventer', ...over,
 })
 
-const rgb = (tone) => `rgb(${hexToRgb(TONE_HEX[tone]).join(', ')})`
+// The words of a pill are in the text color of its tone (see toneText).
+const rgb = (tone) => `rgb(${hexToRgb(toneText(tone)).join(', ')})`
 const open = () => render(<ToastContext.Provider value={mocks.toast}><ChangeOrders /></ToastContext.Provider>)
 
 beforeEach(() => { mocks.data = { jobs: [JOB], extras: [], loading: false } })

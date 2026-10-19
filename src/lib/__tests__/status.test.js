@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { TONE_HEX } from '@/lib/tokens'
+import { TONE_HEX, TONE_TEXT } from '@/lib/tokens'
 import { extraState } from '@/lib/extraStatus'
 import {
   JOB_STATUS, INSPECTION_STATUS, PERMIT_STATUS, BILLING_STATUS, CO_STATUS, MATERIAL_STATUS,
@@ -200,11 +200,22 @@ describe('toneHex', () => {
 })
 
 describe('toneText', () => {
-  it('is toneHex, except that mute reads as neutral so that small text stays legible', () => {
-    for (const tone of Object.keys(TONE_HEX)) {
-      expect(toneText(tone)).toBe(tone === 'mute' ? TONE_HEX.neutral : TONE_HEX[tone])
-    }
-    expect(toneText('bogus')).toBe(TONE_HEX.neutral)
+  it.each(Object.entries(TONE_TEXT))('reads the text color of %s from tokens.js', (tone, hex) => {
+    expect(toneText(tone)).toBe(hex)
+  })
+
+  it('has a text color for every tone, and reads muted words in the neutral gray', () => {
+    expect(Object.keys(TONE_TEXT).sort()).toEqual(Object.keys(TONE_HEX).sort())
+    expect(toneText('mute')).toBe(TONE_HEX.neutral)
+  })
+
+  it('is the tone itself wherever the tone is light enough, and lighter where it is not', () => {
+    for (const tone of ['success', 'warning', 'cyan', 'neutral']) expect(toneText(tone), tone).toBe(TONE_HEX[tone])
+    for (const tone of ['brand', 'critical', 'info']) expect(toneText(tone), tone).not.toBe(TONE_HEX[tone])
+  })
+
+  it('reads a tone the palette does not have as neutral', () => {
+    for (const tone of ['bogus', undefined, null, '', 'constructor']) expect(toneText(tone)).toBe(TONE_HEX.neutral)
   })
 })
 
