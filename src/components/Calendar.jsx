@@ -20,6 +20,11 @@ const EVENT_META = {
   fail:   { color: statusColor(INSPECTION_STATUS, 'failed'), word: statusLabel(INSPECTION_STATUS, 'failed'), label: 'Inspection failed' },
 }
 
+// The date on a phase is the day its result was recorded, and a phase set back to scheduled,
+// pending or any other status keeps that date. Then the day says nothing about the phase, so
+// an inspection is on the calendar only while its result stands: passed or failed.
+const RESULT_EVENT = { passed: 'pass', failed: 'fail' }
+
 const jobLabel = (j) => j.name || j.client || j.id
 const isoDay = (d) => (d || '').toString().slice(0, 10)
 const openJob = (id) => window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id } }))
@@ -31,8 +36,11 @@ function jobEvents(job) {
   const insp = job.insp || {}
   ;['electrical', 'plumbing', 'hvac'].forEach(t => {
     const tr = insp[t] || {}
-    if (tr.roughInDate) evs.push({ date: isoDay(tr.roughInDate), type: tr.roughIn === 'failed' ? 'fail' : 'pass', jobId: job.id, label: `${job.id} ${t} ${PHASE_LABEL.roughIn.toLowerCase()}` })
-    if (tr.finalDate)   evs.push({ date: isoDay(tr.finalDate),   type: tr.final === 'failed' ? 'fail' : 'pass',   jobId: job.id, label: `${job.id} ${t} ${PHASE_LABEL.final.toLowerCase()}` })
+    ;['roughIn', 'final'].forEach(phase => {
+      const type = RESULT_EVENT[tr[phase]]
+      const date = tr[`${phase}Date`]
+      if (type && date) evs.push({ date: isoDay(date), type, jobId: job.id, label: `${job.id} ${t} ${PHASE_LABEL[phase].toLowerCase()}` })
+    })
   })
   return evs
 }

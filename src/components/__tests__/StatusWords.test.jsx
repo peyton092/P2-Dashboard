@@ -49,6 +49,33 @@ describe('the calendar', () => {
     expect(screen.getByRole('button', { name: 'Target Lee Residence' })).toBeTruthy()
   })
 
+  // The date on a phase is the day its result was recorded, and a phase set back to scheduled
+  // or pending keeps it. That day says nothing about the phase any more, so the calendar shows
+  // it only while the phase still passed or failed, and never calls a scheduled one passed.
+  it('shows an inspection on its day only while its result stands', () => {
+    mocks.data = {
+      jobs: [{
+        id: 'QBS-003',
+        name: 'Lee Residence',
+        status: 'active',
+        insp: {
+          electrical: { roughIn: 'scheduled', roughInDate: '2026-10-06' },
+          plumbing: { roughIn: 'pending', roughInDate: '2026-10-07', final: 'blocked', finalDate: '2026-10-09' },
+          hvac: { roughIn: 'failed', roughInDate: '2026-10-12', final: 'n/a', finalDate: '2026-10-14' },
+        },
+      }],
+      extras: [],
+      loading: false,
+    }
+    render(<Calendar />)
+
+    expect(screen.queryByRole('button', { name: /electrical/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /plumbing/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /hvac final/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Failed QBS-003 hvac rough in' })).toBeTruthy()
+    expect(screen.getByText('1 event this month')).toBeTruthy()
+  })
+
   it('marks today as the current date', () => {
     render(<Calendar />)
     expect([...document.querySelectorAll('[aria-current="date"]')].map((day) => day.textContent)).toEqual(['18'])
