@@ -246,7 +246,7 @@ const yesterdayOf = (now) => toLocalDateStr(new Date(now.getFullYear(), now.getM
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
 
-function LoginScreen() {
+export function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -579,7 +579,7 @@ export function CreateUserModal({ onClose }) {
 
 // ── Terms Gate ────────────────────────────────────────────────────────────────
 
-function TermsGate({ tenantId, tenantName, onAccept }) {
+export function TermsGate({ tenantId, tenantName, onAccept }) {
   const [checked, setChecked] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -1390,7 +1390,7 @@ function JobStatusEmptyState({ filter, hasOtherFilters }) {
   return <EmptyState Icon={HardHatIcon} title="No jobs yet" description="Create the first job to populate the portfolio." />
 }
 
-function JobStatusRow({
+export function JobStatusRow({
   job, complete, risk, stale, failed, billRdy, zone,
   expanded, onToggle,
 }) {
