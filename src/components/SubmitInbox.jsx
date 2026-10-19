@@ -284,41 +284,45 @@ export default function SubmitInbox() {
           {submits.map(s => {
             const pc = priorityColor[s.priority] || '#6b7280'
             const sc = statusColor[s.status || 'Open'] || '#6b7280'
+            // The whole row is the button that opens the thread, so a keyboard reaches it. A
+            // button holds phrasing content only, so its lines are spans, and its name is the
+            // words it shows; the dots between them are not read.
             return (
-              <div
+              <button
+                type="button"
                 key={s._docId}
-                className="flex items-start gap-4 p-4 rounded-xl border border-white/10 hover:bg-white/5 transition-colors cursor-pointer"
+                className="flex w-full items-start gap-4 p-4 rounded-xl border border-white/10 text-left hover:bg-white/5 transition-colors cursor-pointer"
                 onClick={() => { setSelectedSubmitId(s._docId); setView('thread') }}>
-                <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: withAlpha(BRAND, 0.13) }}>
+                <span aria-hidden="true" className="p-2 rounded-lg shrink-0" style={{ backgroundColor: withAlpha(BRAND, 0.13) }}>
                   <MessageSquareIcon size={14} style={{ color: BRAND }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                </span>
+                <span className="block flex-1 min-w-0">
+                  <span className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="font-medium text-sm">{s.subject}</span>
                     <span
                       className="text-xs px-1.5 py-0.5 rounded-full"
                       style={{ backgroundColor: withAlpha(pc, 0.13), color: pc }}>
                       {s.priority}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                  </span>
+                  <span className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                     <span>{s.category}</span>
-                    <span>·</span>
+                    <span aria-hidden="true">·</span>
                     <span>{s.portal}</span>
-                    <span>·</span>
+                    <span aria-hidden="true">·</span>
                     <span>{s.createdAt?.toDate?.()?.toLocaleDateString?.() || ''}</span>
-                  </div>
-                  {s.body && <p className="text-xs text-muted-foreground mt-1 truncate">{s.body}</p>}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
+                  </span>
+                  {s.body && <span className="block text-xs text-muted-foreground mt-1 truncate">{s.body}</span>}
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
                   <span
                     className="text-xs font-bold px-2 py-1 rounded-full"
                     style={{ backgroundColor: withAlpha(sc, 0.13), color: sc }}>
                     {s.status || 'Open'}
                   </span>
-                  <ChevronRightIcon size={14} className="text-muted-foreground" />
-                </div>
-              </div>
+                  <ChevronRightIcon size={14} aria-hidden="true" className="text-muted-foreground" />
+                </span>
+              </button>
             )
           })}
         </div>

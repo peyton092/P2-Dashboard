@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
+import { pressSpace } from '@/test/keyboard'
 
 // The staff inbox creates a submit, replies to one and changes its status. Each of those
 // tells the person how it ended, and a form or a reply box is cleared only when its write
@@ -60,6 +62,42 @@ async function choose(trigger, optionName) {
   await act(async () => { fireEvent.mouseMove(option) })
   await act(async () => { fireEvent.click(option) })
 }
+
+// Each submit in the inbox is a button that opens its thread, so a keyboard reaches it with
+// Tab and opens it with Space or Enter. It holds words only, laid out with spans, and its name
+// is what it says, the subject first and the status last.
+describe('the list of submits', () => {
+  const BLOCKS = 'p, div, ul, ol, li, h1, h2, h3, h4, h5, h6, section, header, footer, table'
+  const row = () => screen.getByRole('button', { name: /^Gate code.*Open$/ })
+
+  it('opens a thread from the keyboard, by the button that names the submit', () => {
+    open()
+    const button = row()
+    expect(button.getAttribute('type')).toBe('button')
+    act(() => { button.focus() })
+    expect(document.activeElement).toBe(button)
+
+    pressSpace(button)
+
+    expect(screen.getByRole('heading', { name: 'Gate code' })).toBeTruthy()
+    expect(screen.getByPlaceholderText('Write a reply…')).toBeTruthy()
+  })
+
+  it('holds nothing but phrasing content in a row, and hides the dots between its words', () => {
+    open()
+    expect([...row().querySelectorAll(BLOCKS)].map((el) => el.tagName)).toEqual([])
+    expect(row().textContent).toContain('What is the gate code?')
+    for (const dot of [...row().querySelectorAll('span')].filter((el) => el.textContent === '·')) {
+      expect(dot.getAttribute('aria-hidden')).toBe('true')
+    }
+  })
+
+  it('has no accessibility violations in the list', async () => {
+    const { container } = open()
+    expect(screen.getAllByRole('button', { name: /Gate code/ })).toHaveLength(1)
+    expect(await axe(container)).toHaveNoViolations()
+  })
+})
 
 describe('creating a submit', () => {
   const start = () => {
