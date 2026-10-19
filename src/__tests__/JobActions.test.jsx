@@ -4,6 +4,7 @@ import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testi
 import { ToastContext } from '@/components/ui/use-toast'
 import { axe } from '@/test/axe'
 import { openSettled, initialFocusLanded } from '@/test/dialog'
+import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
 
 // Creating a job and recording an inspection result go through Cloud Functions
 // that check the caller is staff. This covers what the screens do around those
@@ -141,6 +142,33 @@ describe('New job form', () => {
     expect(mocks.createJob).toHaveBeenCalledTimes(1)
     pending.resolve({ ok: true })
     await waitFor(() => expect(screen.queryByPlaceholderText('QBS-045')).toBeNull())
+  })
+
+  // Creating a job is a call to a Cloud Function, and nothing queues one. The form is not
+  // closed and cleared on "saved on this device" for a job that does not exist yet.
+  it('keeps the form open on Creating past the wait while the device is offline, and says nothing is saved on this device', async () => {
+    const pending = deferred()
+    mocks.createJob.mockReturnValue(pending.promise)
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    open()
+    fill()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      fireEvent.click(create())
+      await act(async () => { vi.advanceTimersByTime(OFFLINE_WAIT_MS * 4) })
+
+      expect(create().textContent).toBe('Creating…')
+      expect(screen.getByPlaceholderText('QBS-045').value).toBe('QBS-045')
+      expect(mocks.toast).not.toHaveBeenCalled()
+
+      await act(async () => { pending.resolve({ ok: true }) })
+
+      expect(mocks.toast.mock.calls).toEqual([[{ tone: 'success', title: 'Job QBS-045 created.' }]])
+      expect(screen.queryByPlaceholderText('QBS-045')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      onLine.mockRestore()
+    }
   })
 
   it('closes the form and clears it once the job is created', async () => {
@@ -293,6 +321,29 @@ describe('inspection result buttons', () => {
     fireEvent.click(pass())
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
     expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Rough-In marked passed.' })
+  })
+
+  it('keeps the buttons off past the wait while the device is offline, and says nothing is saved on this device', async () => {
+    const pending = deferred()
+    mocks.passInspection.mockReturnValue(pending.promise)
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    row()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      fireEvent.click(pass())
+      await act(async () => { vi.advanceTimersByTime(OFFLINE_WAIT_MS * 4) })
+
+      expect(pass().disabled).toBe(true)
+      expect(mocks.toast).not.toHaveBeenCalled()
+
+      await act(async () => { pending.resolve({ ok: true }) })
+
+      expect(mocks.toast.mock.calls).toEqual([[{ tone: 'success', title: 'Rough-In marked passed.' }]])
+      expect(pass().disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+      onLine.mockRestore()
+    }
   })
 
   it('takes one call at a time: the buttons and the list are off while it is out', async () => {

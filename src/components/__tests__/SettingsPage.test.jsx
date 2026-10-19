@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testi
 import { ToastContext } from '@/components/ui/use-toast'
 import { axe } from '@/test/axe'
 import { openSettled, initialFocusLanded } from '@/test/dialog'
+import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
 
 // Only the owner sees the Backfill access scopes button. It calls the backfillScopes
 // Cloud Function, which checks the role again on the server, and reports what the
@@ -433,6 +434,32 @@ describe('changing the password', () => {
     expect(mocks.updatePassword).not.toHaveBeenCalled()
   })
 
+  // The sign in service is a call to a server, and nothing queues one, so "saved on this
+  // device" would be false of it. The form waits for the answer however long it takes.
+  it('reads Saving past the wait while the device is offline, and says nothing is saved on this device', async () => {
+    const pending = deferred()
+    mocks.reauthenticate.mockReturnValue(pending.promise)
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    await start()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await press(update())
+      await act(async () => { vi.advanceTimersByTime(OFFLINE_WAIT_MS * 4) })
+
+      expect(update().textContent).toBe('Saving…')
+      expect(screen.getByPlaceholderText('Current password')).toBeTruthy()
+      expect(mocks.toast).not.toHaveBeenCalled()
+
+      await act(async () => { pending.resolve() })
+
+      expect(toastCalls()).toEqual([{ tone: 'success', title: 'Password updated.' }])
+      expect(screen.queryByPlaceholderText('Current password')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      onLine.mockRestore()
+    }
+  })
+
   it('shows no raw SDK text for a code it has no words for', async () => {
     mocks.updatePassword.mockRejectedValue(authError('auth/requires-recent-login'))
     await start()
@@ -549,6 +576,34 @@ describe.each([
 
     await act(async () => { pending.resolve({ data: {} }) })
     await gone()
+  })
+
+  // Disconnecting is a call to a Cloud Function, and nothing queues one. A question that
+  // closed on "saved on this device" would say the integration was disconnected when it was
+  // not. It stays open reading Working until the function has answered.
+  it('stays open reading Working past the wait while the device is offline, and says nothing is saved on this device', async () => {
+    const pending = deferred()
+    mocks.call.mockReturnValue(pending.promise)
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    openConnected()
+    fireEvent.click(disconnect())
+    const dialog = await ask(`Disconnect ${integration.name}?`)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await press(confirmButton(dialog))
+      await act(async () => { vi.advanceTimersByTime(OFFLINE_WAIT_MS * 4) })
+
+      expect(within(dialog).getByRole('button', { name: 'Working' }).getAttribute('aria-disabled')).toBe('true')
+      expect(screen.getByRole('dialog')).toBeTruthy()
+      expect(mocks.toast).not.toHaveBeenCalled()
+
+      await act(async () => { pending.resolve({ data: {} }) })
+
+      expect(toastCalls()).toEqual([{ tone: 'success', title: integration.success }])
+    } finally {
+      vi.useRealTimers()
+      onLine.mockRestore()
+    }
   })
 
   it('calls nothing when it is cancelled', async () => {
