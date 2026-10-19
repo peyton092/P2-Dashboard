@@ -201,6 +201,12 @@ describe('read by a screen reader', () => {
     expect(screen.getByRole('combobox', { name: 'Status of invoice INV-100' })).toBeTruthy()
   })
 
+  // The rows sit in a card that clips what is outside it, so the ring is drawn inside the row.
+  it('draws the keyboard ring inside the row header', () => {
+    open()
+    expect(screen.getByRole('button', { name: /Graybar/ }).classList.contains('focus-visible:-outline-offset-2')).toBe(true)
+  })
+
   it('says how many flags an invoice has and how many are critical, in words', () => {
     mocks.invoices = [INVOICE, DUPLICATE, NO_JOB]
     open()

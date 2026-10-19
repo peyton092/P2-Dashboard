@@ -4,10 +4,10 @@ import { axe } from '@/test/axe'
 
 // A button holds phrasing content only: words, icons and spans. A paragraph, a div or a
 // heading inside one is invalid HTML, and some screen readers read each block as a line of
-// its own, so the rows of the PM dashboard and the lists of the Command Center lay their
-// lines out with spans that display as blocks. Everything that would reach Firebase is
-// replaced.
-const mocks = vi.hoisted(() => ({ data: { jobs: [], extras: [], loading: false } }))
+// its own, so the rows of the PM dashboard, the lists of the Command Center and the rows of
+// the activity feed lay their lines out with spans that display as blocks. Everything that
+// would reach Firebase is replaced.
+const mocks = vi.hoisted(() => ({ data: { jobs: [], extras: [], loading: false }, history: [] }))
 
 vi.mock('../../firebase', () => ({ auth: {}, storage: {}, db: {}, functions: {} }))
 vi.mock('../../use-data', () => ({ useData: () => mocks.data }))
@@ -15,7 +15,7 @@ vi.mock('firebase/firestore', () => ({
   doc: (_db, ...path) => ({ path: path.join('/') }),
   onSnapshot: () => () => {},
 }))
-vi.mock('../../hooks/useFirestore', () => ({ updateJob: vi.fn() }))
+vi.mock('../../hooks/useFirestore', () => ({ updateJob: vi.fn(), useHistory: () => ({ history: mocks.history }) }))
 // Recharts measures its box, which jsdom does not have, and says so. The donut of the
 // Command Center is drawn by plain boxes here.
 vi.mock('recharts', async () => {
@@ -28,6 +28,7 @@ vi.mock('../../hooks/useConnectionState', () => ({ useConnectionState: () => 'on
 
 import PMDashboard from '../PMDashboard'
 import CommandCenter from '../CommandCenter'
+import Activity from '../Activity'
 
 afterEach(cleanup)
 
@@ -74,5 +75,35 @@ describe('the buttons of the Command Center', () => {
     render(<CommandCenter />)
     expect(screen.getAllByRole('button').length).toBeGreaterThan(5)
     expect(blocksInButtons()).toEqual([])
+  })
+})
+
+describe('the rows of the activity feed', () => {
+  // A change with a job opens it, so its row is a button; a change without one and an event
+  // are rows too, switched off.
+  const feed = () => {
+    mocks.data = {
+      jobs: [JOB],
+      extras: [],
+      loading: false,
+      scope: { role: 'owner' },
+      notifs: [{ _docId: 'n1', msg: 'CO-004 approved', type: 'info', createdAt: '2026-10-18T09:00:00' }],
+    }
+    mocks.history = [
+      { _docId: 'h1', summary: 'QBS-003 moved to blocked', jobId: 'QBS-003', actor: 'Blake Neblett', type: 'job', createdAt: '2026-10-18T10:00:00' },
+      { _docId: 'h2', summary: 'Prices updated', type: 'default', createdAt: '2026-10-18T08:00:00' },
+    ]
+    return render(<Activity />)
+  }
+
+  it('hold nothing but phrasing content', () => {
+    feed()
+    expect(screen.getByRole('button', { name: /QBS-003 moved to blocked/ })).toBeTruthy()
+    expect(blocksInButtons()).toEqual([])
+  })
+
+  it('have no accessibility violations', async () => {
+    const { container } = feed()
+    expect(await axe(container)).toHaveNoViolations()
   })
 })

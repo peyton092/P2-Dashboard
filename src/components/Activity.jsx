@@ -118,23 +118,25 @@ export default function Activity() {
               const clickable = Boolean(item.jobId)
               return (
                 <li key={item.id}>
+                  {/* A button holds phrasing content only, so its lines are spans that
+                      display as blocks. */}
                   <button
                     type="button"
                     disabled={!clickable}
                     onClick={() => clickable && window.dispatchEvent(new CustomEvent('p2:open-job', { detail: { id: item.jobId } }))}
                     className="w-full text-left flex items-start gap-3 px-4 py-3 transition-colors disabled:cursor-default enabled:hover:bg-white/[0.02]"
                   >
-                    <div className="shrink-0 flex items-center justify-center rounded-lg mt-0.5" style={{ width: 30, height: 30, backgroundColor: withAlpha(meta.color, 0.13), color: meta.color }}>
-                      <Icon size={14} aria-hidden="true" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-zinc-100 leading-snug">{item.text}</p>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span aria-hidden="true" className="shrink-0 flex items-center justify-center rounded-lg mt-0.5" style={{ width: 30, height: 30, backgroundColor: withAlpha(meta.color, 0.13), color: meta.color }}>
+                      <Icon size={14} />
+                    </span>
+                    <span className="block min-w-0 flex-1">
+                      <span className="block text-sm text-zinc-100 leading-snug">{item.text}</span>
+                      <span className="flex items-center gap-2 mt-0.5 flex-wrap">
                         {item.actor && <span className="text-[11px] text-zinc-400">{item.actor}</span>}
                         <span className="text-[11px] text-zinc-400">{relTime(item.ts)}</span>
                         {item.jobId && <Pill tone="neutral" size="xs">{item.jobId}</Pill>}
-                      </div>
-                    </div>
+                      </span>
+                    </span>
                   </button>
                 </li>
               )

@@ -23,7 +23,6 @@ export {
   TableHeader,
   TableRow,
   TableCell,
-  JobRow,
   JobCard,
 } from './lists'
 

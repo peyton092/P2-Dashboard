@@ -367,7 +367,8 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
   const flagTone = liveFlags.some(f => f.severity === 'critical') ? 'critical' : liveFlags.length > 0 ? 'warning' : 'success'
 
   // The whole row header is the button that opens the row: it says whether the row is open
-  // and names the detail it opens. It holds words only, laid out with spans.
+  // and names the detail it opens. It holds words only, laid out with spans. Its ring is
+  // drawn inside it, since the card around the rows clips what is outside.
   return (
     <div className="border-b border-white/5 last:border-0">
       <button
@@ -375,7 +376,7 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
         aria-expanded={expanded}
         aria-controls={detailId}
         onClick={() => setExpanded(v => !v)}
-        className="w-full text-left flex items-center gap-3 px-4 py-3 hover:bg-white/5 cursor-pointer transition-colors"
+        className="w-full text-left flex items-center gap-3 px-4 py-3 hover:bg-white/5 cursor-pointer transition-colors focus-visible:-outline-offset-2"
       >
         <span aria-hidden="true" className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: toneHex(flagTone) }} />
 
