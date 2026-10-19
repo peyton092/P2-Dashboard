@@ -760,6 +760,77 @@ describe('focus when a toast that holds it closes', () => {
     expect(document.activeElement).toBe(document.body)
   })
 
+  // A visit can end with focus going nowhere: a click on a blank part of the page takes it
+  // from the toast and gives it to nothing. The control of that visit is not given to the next
+  // visit, which begins from nowhere, however it begins.
+  it('does not give back the control of a visit that ended in a click on the blank page, to a later visit from nowhere', () => {
+    const { show } = setup()
+    show(withUndo({ title: 'First.', duration: 0 }))
+    act(() => { pageControl().focus() })
+    pressF8()
+    expect(document.activeElement).toBe(undo())
+    act(() => { undo().blur() })
+    expect(document.activeElement).toBe(document.body)
+
+    pressF8()
+    expect(document.activeElement).toBe(undo())
+    fireEvent.keyDown(undo(), { key: 'Escape' })
+
+    expect(onScreen('First.')).toBeNull()
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('goes to the newest toast that is left, and not to the control of an earlier visit, when a visit from nowhere ends', () => {
+    const { show } = setup()
+    show(withUndo({ title: 'First.', duration: 0 }))
+    show(withUndo({ title: 'Second.', duration: 0 }))
+    act(() => { pageControl().focus() })
+    pressF8()
+    act(() => { undo(1).blur() })
+
+    pressF8()
+    expect(document.activeElement).toBe(undo(1))
+    fireEvent.keyDown(undo(1), { key: 'Escape' })
+
+    expect(onScreen('Second.')).toBeNull()
+    expect(document.activeElement).toBe(undo(0))
+  })
+
+  // A mouse click on a button focuses it in Chromium before the click arrives, with the page
+  // itself as the place it came from when nothing else had focus.
+  it('does not give back the control of an earlier visit when Undo is clicked from the blank page', () => {
+    const onClick = vi.fn()
+    const { show } = setup()
+    show(withUndo({ title: 'First.', duration: 0 }))
+    act(() => { pageControl().focus() })
+    pressF8()
+    act(() => { undo().blur() })
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }))
+    expect(onScreen('First.')).toBeNull()
+    show(withUndo({ title: 'Second.', action: { label: 'Undo', onClick }, duration: 0 }))
+
+    act(() => { undo().focus() })
+    fireEvent.click(undo())
+
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(onScreen('Second.')).toBeNull()
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('keeps the control of the visit while focus moves between the toasts, which are all one visit', () => {
+    const { show } = setup()
+    show(withUndo({ title: 'First.', duration: 0 }))
+    show(withUndo({ title: 'Second.', duration: 0 }))
+    act(() => { pageControl().focus() })
+    pressF8()
+    act(() => { undo(0).focus() })
+    act(() => { undo(1).focus() })
+
+    fireEvent.keyDown(undo(1), { key: 'Escape' })
+
+    expect(document.activeElement).toBe(pageControl())
+  })
+
   it('forgets the control when focus leaves the toasts for another control, and comes back from nowhere', () => {
     const { show } = setup()
     render(<button type="button">Other control</button>)

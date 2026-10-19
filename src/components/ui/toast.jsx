@@ -181,18 +181,15 @@ export function ToastProvider({ children }) {
     return id
   }, [])
 
-  // Focus coming into the region from outside, by F8 or by Tab, is remembered: the control it
-  // comes from is the relatedTarget of the focus event, and there is none when nothing had
-  // focus. Focus going out to another control is forgotten, so that what is given back is
-  // where the person was this time, and not on an earlier visit. Giving it back moves focus
-  // out of the toast, which forgets it too.
+  // Focus coming into the region from outside, by F8, by Tab or by a click, is remembered. The
+  // control it comes from is the relatedTarget of the focus event, which is null when it comes
+  // from nowhere, as it does after a click on a blank part of the page. Every entry replaces
+  // what was remembered, so that what is given back is where the person was this time, and
+  // never a control from an earlier visit, however that visit ended. Focus moving from one
+  // control of the region to another is not an entry, and keeps it.
   const onRegionFocus = (event) => {
     const from = event.relatedTarget
-    if (from && !event.currentTarget.contains(from)) cameFrom.current = from
-  }
-  const onRegionBlur = (event) => {
-    const to = event.relatedTarget
-    if (to && !event.currentTarget.contains(to)) cameFrom.current = null
+    if (!from || !event.currentTarget.contains(from)) cameFrom.current = from
   }
 
   return (
@@ -204,7 +201,6 @@ export function ToastProvider({ children }) {
         aria-label="Notifications"
         aria-live="off"
         onFocus={onRegionFocus}
-        onBlur={onRegionBlur}
         className="fixed z-(--z-toast) bottom-4 max-md:bottom-20 right-4 left-4 sm:left-auto flex flex-col gap-2 pointer-events-none"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
