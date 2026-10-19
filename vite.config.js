@@ -8,6 +8,7 @@ import { join, normalize } from 'node:path'
 const buildDate = new Date().toISOString().slice(0, 10)
 const appVersion = 'V5.2'
 
+const rootDir = fileURLToPath(new URL('.', import.meta.url))
 const srcDir = fileURLToPath(new URL('./src', import.meta.url))
 const publicDir = fileURLToPath(new URL('./public', import.meta.url))
 
@@ -54,12 +55,51 @@ const DEMO_WORDING = [
 // key, and the project's own identifiers. The build fails when a file it writes has one.
 const NEVER_IN_DEMO = /firebaseio|firebaseapp|googleapis|cloudfunctions\.net|AIzaSy|identitytoolkit|securetoken|666712594799|p2-dashboard/
 
+// The demo build reads no env file (envDir: false below). The .env.local that
+// .env.example asks a developer for holds the Firebase web push key, and every build
+// reads that file, so the demo would carry the key. These are the env files of every
+// mode the app is built in; the build check also looks for their VITE_ values in what
+// the demo build writes, so the key cannot reach the demo by another road either.
+const ENV_FILES = ['.env', '.env.local', '.env.demo', '.env.demo.local', '.env.production', '.env.production.local', '.env.development', '.env.development.local']
+
+// The values the env files give VITE_ keys. Values of 8 characters or fewer, like true
+// or 1, are left out, since they could be anywhere.
+function envFileValues() {
+  const values = new Set()
+  for (const file of ENV_FILES) {
+    let text
+    try {
+      text = readFileSync(join(rootDir, file), 'utf8')
+    } catch {
+      continue
+    }
+    for (const line of text.split(/\r?\n/)) {
+      const found = /^\s*(?:export\s+)?VITE_\w*\s*=\s*(.*?)\s*$/.exec(line)
+      if (!found) continue
+      const quoted = /^(['"`])(.*)\1$/.exec(found[1])
+      const value = quoted ? quoted[2] : found[1].replace(/\s+#.*$/, '')
+      if (value.length > 8) values.add(value)
+    }
+  }
+  return [...values]
+}
+
 function demoBuild() {
   const realFirebase = normalize(join(srcDir, 'firebase.js'))
   const demoFirebase = join(srcDir, 'demo', 'firebase.js')
+  let envValues = []
   return {
     name: 'p2-demo-build',
     enforce: 'pre',
+    // No VITE_ value reaches the demo: not from an env file, which it does not read,
+    // and not from the shell either. One that is set stops the build before it starts.
+    configResolved(config) {
+      const set = Object.keys(config.env).filter((key) => key.startsWith('VITE_'))
+      if (set.length > 0) {
+        throw new Error(`The demo build takes no VITE_ values, and ${set.join(', ')} is set. Unset it for npm run build:demo.`)
+      }
+      envValues = envFileValues()
+    },
     // Any import that resolves to src/firebase.js, by whatever path, gets the demo's.
     async resolveId(source, importer, options) {
       if (!importer || !/firebase(?:\.js)?$/.test(source)) return null
@@ -84,8 +124,10 @@ function demoBuild() {
       handler(_options, bundle) {
         const decoder = new TextDecoder()
         const check = (fileName, source) => {
-          const found = NEVER_IN_DEMO.exec(typeof source === 'string' ? source : decoder.decode(source))
+          const text = typeof source === 'string' ? source : decoder.decode(source)
+          const found = NEVER_IN_DEMO.exec(text)
           if (found) this.error(`The demo build would hold ${found[0]} in ${fileName}.`)
+          if (envValues.some((value) => text.includes(value))) this.error(`The demo build would hold the VITE_ value of an env file in ${fileName}.`)
         }
         for (const [fileName, output] of Object.entries(bundle)) check(fileName, output.type === 'chunk' ? output.code : output.source)
         const publicFiles = readdirSync(publicDir, { withFileTypes: true })
@@ -114,6 +156,6 @@ export default defineConfig(({ mode }) => {
         ? [...FIREBASE_SHIMS, { find: '@', replacement: srcDir }]
         : { '@': srcDir },
     },
-    ...(demo ? { publicDir: false, build: { outDir: 'dist-demo', sourcemap: false } } : {}),
+    ...(demo ? { envDir: false, publicDir: false, build: { outDir: 'dist-demo', sourcemap: false } } : {}),
   }
 })
