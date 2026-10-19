@@ -75,19 +75,27 @@ function demoBuild() {
     transformIndexHtml() {
       return [{ tag: 'meta', attrs: { name: 'robots', content: 'noindex, nofollow' }, injectTo: 'head' }]
     },
-    // The public files, less the service workers, and the files a static host reads.
-    // Then every file of the build is checked for what the demo must never hold.
-    generateBundle(_options, bundle) {
-      for (const entry of readdirSync(publicDir, { withFileTypes: true })) {
-        if (!entry.isFile() || LEFT_OUT.includes(entry.name)) continue
-        this.emitFile({ type: 'asset', fileName: entry.name, source: readFileSync(join(publicDir, entry.name)) })
-      }
-      for (const [fileName, source] of Object.entries(DEMO_FILES)) this.emitFile({ type: 'asset', fileName, source })
-      for (const [fileName, output] of Object.entries(bundle)) {
-        const text = output.type === 'chunk' ? output.code : typeof output.source === 'string' ? output.source : ''
-        const found = NEVER_IN_DEMO.exec(text)
-        if (found) this.error(`The demo build would hold ${found[0]} in ${fileName}.`)
-      }
+    // Every file of the build is checked for what the demo must never hold: the chunks,
+    // the stylesheets and the page (this runs after every other plugin has added its
+    // files, so the page is there), then the public files, less the service workers,
+    // and the files a static host reads, each checked as it is added.
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        const decoder = new TextDecoder()
+        const check = (fileName, source) => {
+          const found = NEVER_IN_DEMO.exec(typeof source === 'string' ? source : decoder.decode(source))
+          if (found) this.error(`The demo build would hold ${found[0]} in ${fileName}.`)
+        }
+        for (const [fileName, output] of Object.entries(bundle)) check(fileName, output.type === 'chunk' ? output.code : output.source)
+        const publicFiles = readdirSync(publicDir, { withFileTypes: true })
+          .filter((entry) => entry.isFile() && !LEFT_OUT.includes(entry.name))
+          .map((entry) => [entry.name, readFileSync(join(publicDir, entry.name))])
+        for (const [fileName, source] of [...publicFiles, ...Object.entries(DEMO_FILES)]) {
+          check(fileName, source)
+          this.emitFile({ type: 'asset', fileName, source })
+        }
+      },
     },
   }
 }
