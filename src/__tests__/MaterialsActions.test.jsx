@@ -150,6 +150,53 @@ describe('editing a material', () => {
     expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Material updated.' })
   })
 
+  // The update and the history entry are two writes. The material is saved when the first is
+  // in, so the form closes then, and a refusal of the second says so in its own words and is not
+  // taken for a material that was not saved, which would have the person save it twice.
+  it('closes the form once the update is in, while the history entry is still being written', async () => {
+    const history = deferred()
+    mocks.addHistory.mockReturnValue(history.promise)
+    open()
+    edit()
+    fireEvent.click(submit())
+
+    await waitFor(() => expect(screen.queryByPlaceholderText(/^e\.g\. 200A Main Panel/)).toBeNull())
+    expect(mocks.addHistory).toHaveBeenCalledTimes(1)
+    expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Material updated.' })
+    await act(async () => { history.resolve() })
+    expect(mocks.toast).toHaveBeenCalledTimes(1)
+  })
+
+  it('says the material was saved, and that its history entry was not, when only that fails', async () => {
+    mocks.addHistory.mockRejectedValue(refused())
+    open()
+    edit()
+    fireEvent.click(submit())
+
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(2))
+    expect(mocks.toast.mock.calls[0][0]).toEqual({ tone: 'success', title: 'Material updated.' })
+    expect(mocks.toast.mock.calls[1][0]).toEqual({
+      tone: 'error',
+      title: 'The material was saved, but its history entry was not.',
+      description: 'You do not have permission to do that.',
+    })
+    expect(screen.queryByPlaceholderText(/^e\.g\. 200A Main Panel/)).toBeNull()
+  })
+
+  it('writes the history entry after the update, and not before it is in', async () => {
+    const update = deferred()
+    mocks.updateMaterial.mockReturnValue(update.promise)
+    open()
+    edit()
+    fireEvent.click(submit())
+    await waitFor(() => expect(mocks.updateMaterial).toHaveBeenCalledTimes(1))
+    expect(mocks.addHistory).not.toHaveBeenCalled()
+
+    await act(async () => { update.resolve() })
+
+    await waitFor(() => expect(mocks.addHistory).toHaveBeenCalledTimes(1))
+  })
+
   it('writes no history entry, and keeps the form open, when the update is refused', async () => {
     mocks.updateMaterial.mockRejectedValue(refused())
     open()

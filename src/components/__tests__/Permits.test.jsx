@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, within, waitFor, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { axe } from '@/test/axe'
 import { TONE_HEX, hexToRgb } from '@/lib/tokens'
 
 // A permit has its own statuses (pending, applied, approved, finaled, denied),
@@ -60,6 +61,28 @@ describe('Permits', () => {
     render(<Permits />)
     await act(async () => { fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'applied' } }) })
     expect(mocks.updatePermit).toHaveBeenCalledWith('job3', 'plumbing', 'applied')
+  })
+
+  // The list shows only the status, so a screen reader needs the job and the trade to know
+  // which permit it is, and a list with no name fails the select name rule of axe.
+  it('names each list by its job and its trade, so that the three on a job are told apart', () => {
+    mocks.data = { jobs: [job(), job({ id: 'QBS-014', _docId: 'job14', address: '9 Oak Ave' })] }
+    render(<Permits />)
+    expect(screen.getAllByRole('combobox').map((list) => list.getAttribute('aria-label'))).toEqual([
+      'Permit status for QBS-003 electrical',
+      'Permit status for QBS-003 plumbing',
+      'Permit status for QBS-003 hvac',
+      'Permit status for QBS-014 electrical',
+      'Permit status for QBS-014 plumbing',
+      'Permit status for QBS-014 hvac',
+    ])
+    expect(screen.getByRole('combobox', { name: 'Permit status for QBS-014 electrical' }).value).toBe('approved')
+  })
+
+  it('has no accessibility violations', async () => {
+    mocks.data = { jobs: [job()] }
+    const { container } = render(<Permits />)
+    expect(await axe(container)).toHaveNoViolations()
   })
 
   it('says which permit was set to which status, in words', async () => {

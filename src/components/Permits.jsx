@@ -29,6 +29,7 @@ function PermitSelect({ job, trade, status, color }) {
     <select
       value={status}
       onChange={handleChange}
+      aria-label={`Permit status for ${job.id} ${trade}`}
       className="text-xs font-bold px-2 py-0.5 rounded-full cursor-pointer appearance-none"
       style={{ color, backgroundColor: withAlpha(color, 0.13), border: `1px solid ${withAlpha(color, 0.27)}` }}
     >

@@ -2745,22 +2745,22 @@ export function Materials() {
       notes:       form.notes.trim(),
       cost:        0,
     }
-    const { ok } = await runSave(async () => {
-      if (editId) {
-        await updateMaterial(editId, data)
-        await addHistory({ materialDocId: editId, materialName: data.name, jobId: data.jobId, type: 'edited' })
-      } else {
-        await addMaterial(data)
-      }
-    }, {
-      success: editId ? 'Material updated.' : 'Material requested.',
+    const editing = editId
+    const { ok } = await runSave(() => (editing ? updateMaterial(editing, data) : addMaterial(data)), {
+      success: editing ? 'Material updated.' : 'Material requested.',
       error: 'Could not save the material. Try again.',
     })
     // A refused save leaves the form open with what was typed, so it can be sent again.
-    if (ok) {
-      setForm(MAT_FORM_INITIAL)
-      setShowForm(false)
-      setEditId(null)
+    if (!ok) return
+    setForm(MAT_FORM_INITIAL)
+    setShowForm(false)
+    setEditId(null)
+    // The material is saved. Its history entry is a second write, and says so on its own if it
+    // fails, so the person is not told the material was not saved and does not save it twice.
+    if (editing) {
+      await runStatus(() => addHistory({ materialDocId: editing, materialName: data.name, jobId: data.jobId, type: 'edited' }), {
+        error: 'The material was saved, but its history entry was not.',
+      })
     }
   }
 

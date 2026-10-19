@@ -5,6 +5,7 @@ import { useDailyReports } from '../hooks/useFirestore'
 import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
 import { useMutation } from '../hooks/useMutation'
+import { logError } from '../lib/errorLogger'
 import { monthKey } from '../lib/dates'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -82,11 +83,17 @@ function useCrewScores() {
       const ref = doc(db, 'crew_scores', id)
       return onSnapshot(ref, async snap => {
         if (!snap.exists()) {
-          await setDoc(ref, {
-            name, id, role: ROLES[name],
-            googleReviews: 0, referrals: 0, bonusPoints: 0, bonusNote: '',
-            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-          })
+          // Nobody pressed anything, so a refusal is for the error log and not a toast, and the
+          // board opens without waiting for it.
+          try {
+            await setDoc(ref, {
+              name, id, role: ROLES[name],
+              googleReviews: 0, referrals: 0, bonusPoints: 0, bonusNote: '',
+              createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+            })
+          } catch (err) {
+            logError(err, 'crew score seed')
+          }
         } else {
           setScores(prev => ({ ...prev, [name]: snap.data() }))
         }
