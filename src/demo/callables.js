@@ -7,8 +7,9 @@ import { serverTimestampValue } from './timestamp'
 // transition, writes the same notification and history line, and refuses what the
 // function refuses, with the same code and the same sentence, because the screens show
 // that sentence (callableMessage). The pure rules are copied from functions/lib so the
-// demo bundle carries no server code; the tests compare the copies of jobs.js,
-// inspections.js and users-validate.js with the originals.
+// demo bundle carries no server code; the tests compare the copies with the originals
+// (callables.test.js for jobs.js, inspections.js and users-validate.js, and
+// changeOrderParity.test.js for scope.js, doc-id.js, extras.js and activity.js).
 //
 //   sendExtraToBuilder, approveExtra, rejectExtra   functions/extras.js and lib/extras.js
 //   passInspection, failInspection                  functions/inspections.js and lib/inspections.js
@@ -118,7 +119,7 @@ export function canActOnExtra(claims, extra) {
   return false
 }
 
-function notificationDoc({ type, msg, jobId, scope, actor }) {
+export function notificationDoc({ type, msg, jobId, scope, actor }) {
   return {
     type,
     msg,
@@ -132,7 +133,7 @@ function notificationDoc({ type, msg, jobId, scope, actor }) {
   }
 }
 
-function historyDoc({ type, action, summary, jobId, extraId, actor }) {
+export function historyDoc({ type, action, summary, jobId, extraId, actor }) {
   return {
     type,
     action,
@@ -154,9 +155,9 @@ export const NOTE_MAX = 1000
 export const NOTE_REQUIRED = 'Say what should be revised.'
 export const TOTAL_CHANGED = 'This change order changed since you opened it. Review it again.'
 
-const EXTRA_GONE = 'That change order no longer exists.'
-const JOB_GONE = 'That job no longer exists.'
-const NOT_YOURS = 'You can only act on change orders for your own projects.'
+export const EXTRA_GONE = 'That change order no longer exists.'
+export const JOB_GONE = 'That job no longer exists.'
+export const NOT_YOURS = 'You can only act on change orders for your own projects.'
 
 export function cleanRevisionNote(note) {
   if (typeof note !== 'string') return null
