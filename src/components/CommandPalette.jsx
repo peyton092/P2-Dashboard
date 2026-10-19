@@ -147,7 +147,7 @@ export default function CommandPalette() {
             onChange={e => { setQuery(e.target.value); setActive(0) }}
             onKeyDown={onInputKey}
             placeholder="Search jobs, subs, change orders, permits, pages…"
-            className="flex-1 bg-transparent py-3.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+            className="flex-1 bg-transparent py-3.5 text-sm text-white placeholder:text-zinc-500 focus-visible:-outline-offset-2"
             aria-label="Search query"
           />
           <kbd className="hidden sm:inline text-[10px] font-semibold text-zinc-500 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>

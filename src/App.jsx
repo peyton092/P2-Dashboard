@@ -401,7 +401,7 @@ const createFailureMessage = (err) => callableMessage(err, CREATE_FAILED)
 const FIELD_CLASS = 'bg-white/5 border-white/20'
 // A native select, styled like Input. The solid background keeps the option
 // list readable in browsers that draw it from the select's own colors.
-const SELECT_CLASS = 'h-8 w-full rounded-lg border border-white/20 bg-zinc-900 px-2.5 text-sm text-zinc-100 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50'
+const SELECT_CLASS = 'h-8 w-full rounded-lg border border-white/20 bg-zinc-900 px-2.5 text-sm text-zinc-100 disabled:opacity-50'
 
 export function CreateUserModal({ onClose }) {
   const formId = useId()
@@ -1313,7 +1313,7 @@ export function JobStatus() {
             <select
               value={pmFilter}
               onChange={e => setPmFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[180px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[180px]"
               aria-label="Filter by PM"
             >
               <option value="all">All PMs</option>
@@ -1322,7 +1322,7 @@ export function JobStatus() {
             <select
               value={zoneFilter}
               onChange={e => setZoneFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[180px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[180px]"
               aria-label="Filter by zone"
             >
               <option value="all">All zones</option>
@@ -1425,7 +1425,7 @@ export function JobStatusRow({
           onToggle()
         }}
         onKeyDown={handleKey}
-        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:outline-none focus:bg-white/[0.04]"
+        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:bg-white/[0.04] focus-visible:-outline-offset-2"
         style={{ borderLeft: `3px solid ${railColor}` }}
         aria-expanded={expanded}
       >
@@ -1950,7 +1950,7 @@ function Inspections() {
             <select
               value={tradeFilter}
               onChange={e => setTradeFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
               aria-label="Filter by trade"
             >
               <option value="all">All trades</option>
@@ -2291,7 +2291,7 @@ function SubsTab() {
             <select
               value={tradeFilter}
               onChange={e => setTradeFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[180px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[180px]"
               aria-label="Filter by trade"
             >
               {TRADE_FILTERS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
@@ -2418,7 +2418,7 @@ function SubRow({ item, expanded, onToggle }) {
           onToggle()
         }}
         onKeyDown={handleKey}
-        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:outline-none focus:bg-white/[0.04]"
+        className="px-4 py-4 sm:px-5 cursor-pointer transition-colors hover:bg-white/[0.025] focus:bg-white/[0.04] focus-visible:-outline-offset-2"
         style={{ borderLeft: `3px solid ${railColor}` }}
         aria-expanded={expanded}
       >
@@ -2868,7 +2868,7 @@ export function Materials() {
             <select
               value={filterJob}
               onChange={e => setFilterJob(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[220px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[220px]"
               aria-label="Filter by job"
             >
               <option value="all">All jobs</option>
@@ -3503,7 +3503,7 @@ function NotificationCard({ n, onRead, onDismiss }) {
       tabIndex={0}
       onClick={(e) => { if (!e.target.closest('button')) onRead(n) }}
       onKeyDown={handleKey}
-      className={`flex items-start gap-3 px-4 py-3.5 sm:px-5 sm:py-4 cursor-pointer transition-colors hover:bg-white/[0.025] focus:outline-none focus:bg-white/[0.04] ${n.read ? 'opacity-60' : ''}`}
+      className={`flex items-start gap-3 px-4 py-3.5 sm:px-5 sm:py-4 cursor-pointer transition-colors hover:bg-white/[0.025] focus:bg-white/[0.04] focus-visible:-outline-offset-2 ${n.read ? 'opacity-60' : ''}`}
       style={{ borderLeft: `3px solid ${n.read ? 'transparent' : meta.color}` }}
       aria-label={n.read ? `Notification: ${n.msg}` : `Unread notification: ${n.msg}`}
     >

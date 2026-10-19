@@ -346,7 +346,7 @@ export default function BillingQueue() {
             <select
               value={pmFilter}
               onChange={e => setPmFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30 max-w-[200px]"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30 max-w-[200px]"
             >
               <option value="all">All PMs</option>
               {uniquePMs.map(pm => <option key={pm} value={pm}>{pm}</option>)}
@@ -354,7 +354,7 @@ export default function BillingQueue() {
             <select
               value={sortBy}
               onChange={e => setSortBy(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
             >
               {SORTS.map(s => <option key={s.id} value={s.id}>Sort · {s.label}</option>)}
             </select>
@@ -631,7 +631,7 @@ function InvoiceNumberField({ job }) {
         onChange={field.onChange}
         onBlur={field.onBlur}
         placeholder="Inv #"
-        className="bg-white/[0.04] border border-white/10 rounded-md text-xs text-zinc-100 px-2 py-1 w-20 placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+        className="bg-white/[0.04] border border-white/10 rounded-md text-xs text-zinc-100 px-2 py-1 w-20 placeholder:text-zinc-500 focus:border-white/30"
       />
       {field.saving && <span className="text-[10px] text-zinc-400">saving…</span>}
     </div>

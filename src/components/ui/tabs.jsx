@@ -49,7 +49,7 @@ function Tab({ count, className, children, ...props }) {
     <TabsPrimitive.Tab
       data-slot="tab"
       className={cn(
-        "-mb-px flex min-h-11 shrink-0 items-center gap-2 border-b-2 border-transparent px-4 text-sm font-semibold whitespace-nowrap text-neutral outline-none transition-colors hover:text-foreground focus-visible:-outline-offset-2! data-[active]:border-brand data-[active]:text-foreground md:min-h-9",
+        "-mb-px flex min-h-11 shrink-0 items-center gap-2 border-b-2 border-transparent px-4 text-sm font-semibold whitespace-nowrap text-neutral transition-colors hover:text-foreground focus-visible:-outline-offset-2 data-[active]:border-brand data-[active]:text-foreground md:min-h-9",
         className
       )}
       {...props}>

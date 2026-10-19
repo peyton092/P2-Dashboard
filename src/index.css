@@ -173,6 +173,19 @@
   :focus:not(:focus-visible) {
     outline: none;
   }
+  /* Visible keyboard focus. This is the only focus ring rule in the app: the
+     brand orange, 2px, with a 2px offset. It is focus-visible only, so mouse and
+     touch focus show no ring. It sits in the base layer, so it is the default
+     and a utility on a control can change it: focus-visible:-outline-offset-2
+     draws the ring inside a cell or a tab that its strip would clip, and a
+     control's own rounded corner shapes it. No control draws a ring of its own
+     beside it, and only an element that is not a control turns it off
+     (src/__tests__/tokens.test.js checks both). */
+  :where(button, a, input, textarea, select, [role="switch"], [tabindex]):focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
   /* Heading hierarchy */
   h1 { @apply font-display text-[32px] font-bold tracking-tight; }
   h2 { @apply font-display text-[24px] font-semibold; }
@@ -207,15 +220,6 @@
 }
 .dark .p2-scrollarea {
   scrollbar-color: oklch(1 0 0 / 6%) var(--surface-1);
-}
-
-/* Visible keyboard focus. This is the only focus ring rule in the app: the
-   brand orange, 2px, with a 2px offset. It is focus-visible only, so mouse and
-   touch focus show no ring. */
-:where(button, a, input, textarea, select, [role="switch"], [tabindex]):focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-  border-radius: 6px;
 }
 
 /* ── Subtle page transition ────────────────────────────────────────────────

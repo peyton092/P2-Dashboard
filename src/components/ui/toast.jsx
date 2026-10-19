@@ -76,7 +76,7 @@ function ToastItem({ t, newest, onDismiss }) {
           variant="outline"
           size="sm"
           aria-keyshortcuts={newest ? SHORTCUT : undefined}
-          className="shrink-0 -my-1 max-md:min-h-11 focus-visible:ring-2 focus-visible:ring-brand"
+          className="shrink-0 -my-1 max-md:min-h-11"
           onClick={() => {
             onDismiss(t.id)
             t.action.onClick()
@@ -90,7 +90,7 @@ function ToastItem({ t, newest, onDismiss }) {
         aria-label="Dismiss notification"
         aria-keyshortcuts={newest && !t.action ? SHORTCUT : undefined}
         onClick={() => onDismiss(t.id)}
-        className="shrink-0 -my-1.5 -mr-1.5 inline-flex size-8 max-md:size-11 items-center justify-center rounded-md text-zinc-400 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-brand"
+        className="shrink-0 -my-1.5 -mr-1.5 inline-flex size-8 max-md:size-11 items-center justify-center rounded-md text-zinc-400 transition-colors hover:text-zinc-100"
       >
         <XIcon size={14} aria-hidden="true" />
       </button>

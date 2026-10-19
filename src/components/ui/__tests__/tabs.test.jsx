@@ -128,9 +128,11 @@ describe('Tabs', () => {
 
   it('draws the focus ring inside a tab, where the scrolling list cannot clip it', () => {
     render(<Sections />)
-    // Important, because the focus rule in index.css is not in a layer and would win.
+    // The focus rule in index.css is in the base layer, so a plain utility moves the ring,
+    // and outline-none would hide it.
     for (const el of screen.getAllByRole('tab')) {
-      expect(el.classList.contains('focus-visible:-outline-offset-2!'), el.textContent).toBe(true)
+      expect(el.classList.contains('focus-visible:-outline-offset-2'), el.textContent).toBe(true)
+      expect(el.classList.contains('outline-none'), el.textContent).toBe(false)
     }
   })
 

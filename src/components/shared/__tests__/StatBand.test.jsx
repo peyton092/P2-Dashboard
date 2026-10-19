@@ -168,8 +168,8 @@ describe('StatBand', () => {
 
   it('draws a clickable stat\'s focus ring inside its cell, where the strip cannot clip it', () => {
     render(<StatBand stats={[{ label: 'Needs action', value: 5, onClick: () => {} }]} />)
-    // Important, because the focus rule in index.css is not in a layer and would win.
-    expect(screen.getByRole('button').classList.contains('focus-visible:-outline-offset-2!')).toBe(true)
+    // The focus rule in index.css is in the base layer, so a plain utility moves the ring.
+    expect(screen.getByRole('button').classList.contains('focus-visible:-outline-offset-2')).toBe(true)
   })
 
   it('puts nothing a button cannot hold inside a button', () => {

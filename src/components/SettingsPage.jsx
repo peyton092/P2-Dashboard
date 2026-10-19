@@ -79,7 +79,7 @@ function Toggle({ label, enabled, onChange }) {
       aria-label={label}
       aria-checked={enabled}
       onClick={() => onChange(!enabled)}
-      className="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 focus:outline-none"
+      className="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0"
       style={{ backgroundColor: enabled ? BRAND : '#374151' }}
     >
       <span

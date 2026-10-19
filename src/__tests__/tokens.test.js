@@ -127,6 +127,69 @@ describe('keyboard focus', () => {
   it('draws that ring in the brand color', () => {
     expect(declarationsIn(rings[0].body).outline).toBe('2px solid var(--brand)')
   })
+
+  // A rule outside every layer beats every Tailwind utility, whatever its specificity, so a
+  // control could not move the ring inside itself without the important modifier, and an
+  // outline-none in a shadcn control did nothing while its own ring-3 drew a second ring. In
+  // the base layer the rule is the default, and a utility on the control can change it.
+  it('sits in the base layer, below the utilities', () => {
+    const text = css.replace(/\/\*[\s\S]*?\*\//g, '')
+    // Each @layer base block, from its opening brace to the brace that closes it.
+    const base = [...text.matchAll(/@layer\s+base\s*\{/g)].map((match) => {
+      let depth = 0
+      for (let i = match.index + match[0].length - 1; i < text.length; i++) {
+        if (text[i] === '{') depth++
+        if (text[i] === '}' && --depth === 0) return text.slice(match.index, i + 1)
+      }
+      return ''
+    })
+    expect(base.some((block) => block.includes(rings[0].selector)), `${rings[0].selector} is inside @layer base`).toBe(true)
+  })
+})
+
+// The utilities a control could use against that one ring, read from the source. In the
+// base layer the ring gives way to a utility, so a control that says outline-none hides it,
+// and one that draws a ring of its own draws a second one.
+describe('the controls and the one ring', () => {
+  const sources = files
+    .filter((file) => /\.(jsx?|css)$/.test(file) && !name(file).split('/').includes('__tests__'))
+    .map((file) => ({ file: name(file), text: readFileSync(file, 'utf8') }))
+  const hits = (pattern) =>
+    sources.flatMap(({ file, text }) =>
+      text.split('\n').flatMap((line, i) => [...line.matchAll(pattern)].map((match) => `${file}:${i + 1} ${match[0]}`)),
+    )
+
+  it('finds the controls it is meant to read', () => {
+    for (const expected of ['components/ui/button-variants.js', 'components/ui/input.jsx', 'components/ui/tabs.jsx']) {
+      expect(sources.map(({ file }) => file), expected).toContain(expected)
+    }
+  })
+
+  it('never needs the important modifier to place the ring', () => {
+    expect(hits(/(?<![\w-])focus(?:-visible)?:[\w/[\]().-]*!(?![=\w])/g)).toEqual([])
+  })
+
+  it('never draws a focus ring of its own beside the outline', () => {
+    expect(hits(/(?<![\w-])focus(?:-visible)?:(?:ring|border-ring)(?:-[\w/[\]().]+)?/g)).toEqual([])
+  })
+
+  // An element that is not itself a control may turn the outline off: the dialog panel, which
+  // takes focus only to hold it while the dialog opens, and an option of a list, which shows
+  // that it is highlighted by its fill.
+  const MAY_HIDE_THE_OUTLINE = {
+    'components/ui/dialog.jsx': ['outline-none'],
+    'components/ui/select.jsx': ['outline-hidden'],
+  }
+
+  it('turns the outline off only on the elements that are not controls', () => {
+    const found = {}
+    for (const hit of hits(/(?<![\w-])(?:[\w-]+:)*outline-(?:none|hidden)(?![\w-])/g)) {
+      const [where, utility] = hit.split(' ')
+      const file = where.slice(0, where.lastIndexOf(':'))
+      ;(found[file] ??= []).push(utility)
+    }
+    expect(found).toEqual(MAY_HIDE_THE_OUTLINE)
+  })
 })
 
 describe('the page', () => {

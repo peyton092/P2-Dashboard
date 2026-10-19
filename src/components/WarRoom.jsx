@@ -383,7 +383,7 @@ export default function WarRoom() {
             <select
               value={zoneFilter}
               onChange={e => setZoneFilter(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
             >
               <option value="all">All Zones</option>
               {Object.values(ZONES).map(z => (
@@ -393,7 +393,7 @@ export default function WarRoom() {
             <select
               value={sortBy}
               onChange={e => setSortBy(e.target.value)}
-              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:outline-none focus:border-white/30"
+              className="bg-white/[0.04] border border-white/10 rounded-lg text-xs px-2.5 py-2 text-zinc-200 focus:border-white/30"
             >
               {SORTS.map(s => <option key={s.id} value={s.id}>Sort · {s.label}</option>)}
             </select>

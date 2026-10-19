@@ -190,12 +190,14 @@ describe('a toast', () => {
     expect(onScreen('Saved.')).toBeNull()
   })
 
-  it('has a dismiss button that is 44 pixels square under 768 pixels and shows a focus ring', () => {
+  // The focus ring is the one brand ring of the stylesheet. A ring of its own would be a
+  // second one, and outline-none would hide the brand ring, which is in the base layer.
+  it('has a dismiss button that is 44 pixels square under 768 pixels and shows the one focus ring', () => {
     const { show } = setup()
     show({ title: 'Saved.' })
     const dismiss = screen.getByRole('button', { name: 'Dismiss notification' })
     expect(dismiss.classList.contains('max-md:size-11')).toBe(true)
-    expect(dismiss.classList.contains('focus-visible:ring-2')).toBe(true)
+    expect([...dismiss.classList].filter((name) => /focus|outline-none/.test(name))).toEqual([])
   })
 })
 
@@ -372,12 +374,12 @@ describe('an action', () => {
     expect(onClick).not.toHaveBeenCalled()
   })
 
-  it('has a target 44 pixels tall under 768 pixels and a visible focus ring', () => {
+  it('has a target 44 pixels tall under 768 pixels and the one focus ring', () => {
     const { show } = setup()
     show(withUndo())
     const undo = screen.getByRole('button', { name: 'Undo' })
     expect(undo.classList.contains('max-md:min-h-11')).toBe(true)
-    expect(undo.classList.contains('focus-visible:ring-2')).toBe(true)
+    expect([...undo.classList].filter((name) => /focus|outline-none/.test(name))).toEqual([])
   })
 
   it('shows no action button for a toast that has none', () => {
