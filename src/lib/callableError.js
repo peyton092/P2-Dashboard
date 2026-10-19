@@ -44,7 +44,7 @@ export function callableMessage(err, fallback) {
   const code = typeof err?.code === 'string' ? err.code : null
   if (code !== null && !code.startsWith('functions/')) return FIRESTORE_SENTENCES[statusName(code)] ?? fallback
   if (typeof err?.message === 'string' && FETCH_FAILURE.test(err.message.trim())) return SERVER_UNREACHABLE
-  if (code === null && isRuntimeException(err)) return fallback
+  if (isRuntimeException(err)) return fallback
   const bareCode = code !== null && statusName(err.message) === statusName(code)
   return err?.message && !bareCode ? err.message : fallback
 }

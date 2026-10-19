@@ -699,6 +699,19 @@ describe('focus when a toast that holds it closes', () => {
     expect(document.activeElement).toBe(pageControl())
   })
 
+  it('goes back to the control it came from when focus moved from one button of the toast to another first', () => {
+    const { show } = setup()
+    show(withUndo())
+    act(() => { pageControl().focus() })
+    pressF8()
+    pressTab()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss notification' }))
+
+    fireEvent.keyDown(document.activeElement, { key: 'Escape' })
+
+    expect(document.activeElement).toBe(pageControl())
+  })
+
   it('goes back to the control it came from the last time, and not to an earlier one', () => {
     const { show } = setup()
     render(<button type="button">Other control</button>)
@@ -727,6 +740,57 @@ describe('focus when a toast that holds it closes', () => {
 
     expect(onScreen('Second.')).toBeNull()
     expect(document.activeElement).toBe(undo(0))
+  })
+
+  // The control that is given back is the one focus came from this time. A control from an
+  // earlier visit is not given back to a person who has since come to a toast from nowhere.
+  it('does not give back the control of an earlier visit when focus comes to a toast from nowhere', () => {
+    const { show } = setup()
+    show(withUndo({ title: 'First.' }))
+    act(() => { pageControl().focus() })
+    pressF8()
+    fireEvent.keyDown(document.activeElement, { key: 'Escape' })
+    expect(document.activeElement).toBe(pageControl())
+    act(() => { pageControl().blur() })
+    show(withUndo({ title: 'Second.' }))
+
+    act(() => { undo().focus() })
+    fireEvent.keyDown(undo(), { key: 'Escape' })
+
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('forgets the control when focus leaves the toasts for another control, and comes back from nowhere', () => {
+    const { show } = setup()
+    render(<button type="button">Other control</button>)
+    show(withUndo())
+    act(() => { pageControl().focus() })
+    pressF8()
+    const other = screen.getByRole('button', { name: 'Other control' })
+    act(() => { other.focus() })
+    act(() => { other.blur() })
+
+    act(() => { undo().focus() })
+    fireEvent.keyDown(undo(), { key: 'Escape' })
+
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('goes to the newest of the toasts that are left, and not the oldest, when the control it came from is gone', () => {
+    const { show } = setup()
+    const elsewhere = render(<button type="button">Elsewhere</button>)
+    show(withUndo({ title: 'First.' }))
+    show(withUndo({ title: 'Second.' }))
+    show(withUndo({ title: 'Third.' }))
+    act(() => { screen.getByRole('button', { name: 'Elsewhere' }).focus() })
+    pressF8()
+    expect(document.activeElement).toBe(undo(2))
+    elsewhere.unmount()
+
+    fireEvent.keyDown(undo(2), { key: 'Escape' })
+
+    expect(onScreen('Third.')).toBeNull()
+    expect(document.activeElement).toBe(undo(1))
   })
 
   it('leaves focus alone when there is nowhere to send it', () => {

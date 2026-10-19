@@ -89,7 +89,7 @@ export function useConfirm() {
         if (mounted.current) setBusy(false)
       }
     }
-    if (mounted.current && latest.current === mine && waiting.current && result?.ok !== false) {
+    if (mounted.current && latest.current === mine && result?.ok !== false) {
       waiting.current = false
       setOpen(false)
     }

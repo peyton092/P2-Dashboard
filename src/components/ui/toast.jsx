@@ -141,8 +141,6 @@ export function ToastProvider({ children }) {
       const button = shown?.[shown.length - 1]?.querySelector('button')
       if (!button) return
       event.preventDefault()
-      const active = document.activeElement
-      if (active && active !== document.body && !region.contains(active)) cameFrom.current = active
       button.focus()
     }
     document.addEventListener('keydown', onKeyDown)
@@ -154,7 +152,6 @@ export function ToastProvider({ children }) {
     const gone = region?.querySelector(`[data-toast="${id}"]`)
     if (gone?.contains(document.activeElement)) {
       const back = cameFrom.current
-      cameFrom.current = null
       if (back?.isConnected && !region.contains(back)) {
         back.focus()
       } else {
@@ -184,8 +181,11 @@ export function ToastProvider({ children }) {
     return id
   }, [])
 
-  // Focus coming into the region from outside, by F8 or by Tab, is remembered, and focus going
-  // out to another control is forgotten, so that what is given back is where the person was.
+  // Focus coming into the region from outside, by F8 or by Tab, is remembered: the control it
+  // comes from is the relatedTarget of the focus event, and there is none when nothing had
+  // focus. Focus going out to another control is forgotten, so that what is given back is
+  // where the person was this time, and not on an earlier visit. Giving it back moves focus
+  // out of the toast, which forgets it too.
   const onRegionFocus = (event) => {
     const from = event.relatedTarget
     if (from && !event.currentTarget.contains(from)) cameFrom.current = from

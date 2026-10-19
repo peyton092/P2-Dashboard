@@ -144,9 +144,17 @@ describe('callableMessage for a runtime exception or a failed fetch', () => {
     for (const err of thrown) expect(callableMessage(err, FALLBACK)).toBe(FALLBACK)
   })
 
-  it('shows only the fallback for a subclass of one of them, and for one that only says its name', () => {
-    class BadInput extends TypeError {}
-    expect(callableMessage(new BadInput('Bad input.'), FALLBACK)).toBe(FALLBACK)
+  it.each([TypeError, ReferenceError, RangeError, SyntaxError, EvalError, URIError])('shows only the fallback for a subclass of %p, even when it has a name of its own', (Kind) => {
+    class Renamed extends Kind {
+      constructor(message) {
+        super(message)
+        this.name = 'Renamed'
+      }
+    }
+    expect(callableMessage(new Renamed('Developer text about it.'), FALLBACK)).toBe(FALLBACK)
+  })
+
+  it('shows only the fallback for an error that only says its name, as one from another window does', () => {
     expect(callableMessage(Object.assign(new Error('Cannot read properties of null'), { name: 'TypeError' }), FALLBACK)).toBe(FALLBACK)
   })
 
