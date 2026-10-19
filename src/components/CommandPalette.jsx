@@ -42,7 +42,9 @@ const modalDialogOpen = () => !!document.querySelector('[role="dialog"][aria-mod
 // points at the active option of the results, a listbox. The arrow keys move the active
 // option and scroll it into view, Enter opens it, and Escape closes the palette and gives
 // focus back to whatever had it before. The pointer makes an option active too, but does
-// not scroll the list, which would move the option out from under it.
+// not scroll the list, which would move the option out from under it. Tab is held in the
+// box, and a press of the pointer anywhere in the panel but the box does not move focus, so
+// focus never goes to the page behind while the palette is open.
 export default function CommandPalette() {
   const { jobs = [], subs = [], extras = [], materials = [] } = useData()
   const [open, setOpen] = useState(false)
@@ -62,8 +64,10 @@ export default function CommandPalette() {
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        if (modalDialogOpen()) return
+        // The browser's own shortcut would take focus to its search bar, out of the page and
+        // out of an open dialog, so it is kept from the browser even when the palette stays shut.
         e.preventDefault()
+        if (modalDialogOpen()) return
         setOpen(o => {
           if (o) { setQuery(''); setActive(0) }
           return !o
@@ -170,6 +174,9 @@ export default function CommandPalette() {
       <div
         className="w-full max-w-xl rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
+        // A press on an option, a heading, the tip or the space between would take focus out
+        // of the search box. Only the box itself takes the press, to place its caret.
+        onMouseDown={e => { if (e.target !== inputRef.current) e.preventDefault() }}
         role="dialog"
         aria-modal="true"
         aria-label="Search"
@@ -194,7 +201,7 @@ export default function CommandPalette() {
           <kbd className="hidden sm:inline text-[10px] font-semibold text-zinc-400 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>
         </div>
 
-        {listed ? (
+        {listed && (
           <div id={listId} role="listbox" aria-label="Results" className="max-h-[60vh] overflow-y-auto py-2">
             {results.map((group, groupIdx) => (
               <div key={group.heading} role="group" aria-labelledby={`${baseId}-group-${groupIdx}`} className="mb-1">
@@ -206,7 +213,8 @@ export default function CommandPalette() {
                   const idx = runningIndex
                   const isActive = idx === current
                   // An option is not a stop of its own for Tab: the search box points at it,
-                  // and keeps focus when an option is pressed with the pointer.
+                  // and keeps focus when an option is pressed with the pointer, as the panel
+                  // keeps the press from moving focus.
                   return (
                     <div
                       key={item.key}
@@ -214,7 +222,6 @@ export default function CommandPalette() {
                       role="option"
                       aria-selected={isActive}
                       onMouseMove={() => { if (!isActive) setActive(idx) }}
-                      onMouseDown={e => e.preventDefault()}
                       onClick={() => select(item)}
                       className="w-full text-left flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors"
                       style={{ backgroundColor: isActive ? withAlpha(BRAND, 0.12) : 'transparent' }}
@@ -230,11 +237,12 @@ export default function CommandPalette() {
               </div>
             ))}
           </div>
-        ) : (
-          <p role="status" className="px-4 py-8 text-center text-sm text-zinc-400">
-            {query ? 'No matches.' : 'Type to search across the workspace.'}
-          </p>
         )}
+        {/* In the document while results are listed, empty, so that the words which arrive
+            in it when nothing matches are announced. */}
+        <p role="status" className={listed ? 'sr-only' : 'px-4 py-8 text-center text-sm text-zinc-400'}>
+          {listed ? '' : query ? 'No matches.' : 'Type to search across the workspace.'}
+        </p>
 
         <div className="hidden sm:flex items-center gap-3 px-4 py-2 border-t border-white/10 text-[10px] text-zinc-400">
           <span className="flex items-center gap-1"><DollarSignIcon size={11} /> Tip:</span>

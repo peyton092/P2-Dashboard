@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testing-library/react'
 import { axe } from '@/test/axe'
 import { openSettled } from '@/test/dialog'
 import { Dialog, DialogBody } from '@/components/ui/dialog'
@@ -126,7 +126,8 @@ describe('the command palette and the keyboard', () => {
 
   // A modal dialog holds focus in itself and hides the page from a screen reader, so a palette
   // opened over it would sit where nobody can reach it. The shortcut does nothing until the
-  // dialog is closed.
+  // dialog is closed, and it is kept from the browser too, whose own Ctrl and K would take
+  // focus out of the dialog to its search bar.
   it.each([['ctrlKey'], ['metaKey']])('ignores %s and K while a modal dialog is open', async (modifier) => {
     render(
       <>
@@ -138,7 +139,7 @@ describe('the command palette and the keyboard', () => {
     )
     const dialog = await openSettled('Edit job')
 
-    pressShortcut({ [modifier]: true })
+    expect(pressShortcut({ [modifier]: true }), 'the browser is not given the shortcut').toBe(false)
     // The palette puts focus in its box a moment after it opens, so the test waits as long.
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
 
@@ -153,6 +154,24 @@ describe('the command palette and the keyboard', () => {
 
     expect(fireEvent.keyDown(box, { key: 'Tab' })).toBe(false)
     expect(fireEvent.keyDown(box, { key: 'Tab', shiftKey: true })).toBe(false)
+    expect(document.activeElement).toBe(box)
+  })
+
+  // A press of the pointer on a part of the palette that takes no focus, such as a group
+  // heading, the tip or the space around the results, would move focus to the page, and the
+  // next Tab would go behind the palette. The palette keeps the press from moving focus, so
+  // it stays in the search box, which still takes a press of its own to place the caret.
+  it('keeps focus in the search box when the pointer presses a part that takes no focus', async () => {
+    const { dialog, box } = await openPalette()
+    const parts = {
+      heading: within(dialog).getByText('Pages'),
+      tip: within(dialog).getByText(/to navigate/),
+      list: screen.getByRole('listbox'),
+      panel: dialog,
+    }
+
+    for (const [part, el] of Object.entries(parts)) expect(fireEvent.mouseDown(el), part).toBe(false)
+    expect(fireEvent.mouseDown(box), 'the search box').toBe(true)
     expect(document.activeElement).toBe(box)
   })
 
@@ -188,12 +207,17 @@ describe('the command palette and the keyboard', () => {
     }
   })
 
-  it('says so when nothing matches, and leaves the list closed', async () => {
+  // The status is in the document while results are listed, empty, so the words that arrive
+  // in it when nothing matches are announced.
+  it('says so when nothing matches, in a status that was there before, and leaves the list closed', async () => {
     const { box } = await openPalette()
+    const status = screen.getByRole('status')
+    expect(status.textContent).toBe('')
 
     fireEvent.change(box, { target: { value: 'nothing like this' } })
 
-    expect(screen.getByRole('status').textContent).toBe('No matches.')
+    expect(screen.getByRole('status')).toBe(status)
+    expect(status.textContent).toBe('No matches.')
     expect(box.getAttribute('aria-expanded')).toBe('false')
     expect(box.hasAttribute('aria-activedescendant')).toBe(false)
     expect(await axe(document.body)).toHaveNoViolations()
