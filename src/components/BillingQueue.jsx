@@ -3,6 +3,7 @@ import { useData } from '../use-data'
 import { useNow } from '../hooks/useNow'
 import { updateJob } from '../hooks/useFirestore'
 import { useMutation } from '../hooks/useMutation'
+import { useSavedField } from '../hooks/useSavedField'
 import { useConfirm } from '../hooks/useConfirm'
 import { exportToCsv } from '../lib/exportCsv'
 import { daysSince, monthKey, toDate } from '../lib/dates'
@@ -603,34 +604,33 @@ export function BillingActions({ job }) {
   return <>{actions}{dialog}</>
 }
 
-// Keyed on what is stored, so the box is made again whenever the stored number changes
-// (another person saved one, or this save came back) and leaving it never writes an old
-// copy over a newer one.
+// The box shows the stored number while nothing is typed in it, so one that another person
+// saved shows up and leaving the box without typing never writes an old copy over a newer
+// one. What is typed stays in the box until it is saved, through the apply of the write to
+// Firestore's cache and the rollback of one the rules refuse, so it can be tried again (see
+// useSavedField). A box belongs to one job.
 export function InvoiceNumberInput({ job }) {
-  return <InvoiceNumberField key={`${job._docId}:${job.invoiceNum ?? ''}`} job={job} />
+  return <InvoiceNumberField key={job._docId} job={job} />
 }
 
 function InvoiceNumberField({ job }) {
-  const [val, setVal] = useState(job.invoiceNum || '')
-  const { run, busy: saving } = useMutation()
-  function handleBlur() {
-    if (!job._docId) return
-    if (val === (job.invoiceNum || '')) return
-    run(() => updateJob(job._docId, { invoiceNum: val }), {
-      success: 'Invoice number saved.',
-      error: 'Could not save the invoice number. Try again.',
-    })
-  }
+  const field = useSavedField({
+    stored: job.invoiceNum || '',
+    enabled: !!job._docId,
+    write: value => updateJob(job._docId, { invoiceNum: value }),
+    success: 'Invoice number saved.',
+    error: 'Could not save the invoice number. Try again.',
+  })
   return (
     <div className="flex items-center gap-1.5">
       <input
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onBlur={handleBlur}
+        value={field.value}
+        onChange={field.onChange}
+        onBlur={field.onBlur}
         placeholder="Inv #"
         className="bg-white/[0.04] border border-white/10 rounded-md text-xs text-zinc-100 px-2 py-1 w-20 placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
       />
-      {saving && <span className="text-[10px] text-zinc-400">saving…</span>}
+      {field.saving && <span className="text-[10px] text-zinc-400">saving…</span>}
     </div>
   )
 }

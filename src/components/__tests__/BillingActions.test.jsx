@@ -5,8 +5,11 @@ import { ToastContext } from '@/components/ui/use-toast'
 // The billing queue marks a job invoiced, puts it on hold and takes it off, and keeps an
 // invoice number. Submitting an invoice is asked about first, because it tells the client
 // the job is invoiced, and the question stays open under the Working button while the write
-// is out. The number is saved when the person leaves the box, and the box follows what is
-// stored, so leaving it never writes an old copy back over a newer one.
+// is out. The number is saved when the person leaves the box. The box follows what is stored
+// while nothing is typed in it, so leaving it never writes an old copy back over a newer one,
+// and what is typed stays in it until it is saved, through the apply of the write to
+// Firestore's cache, which changes the stored number at once, and through the rollback of a
+// write the rules refuse, which changes it back, so it can be tried again.
 const mocks = vi.hoisted(() => ({
   updateJob: vi.fn(),
   toast: vi.fn(),
@@ -23,9 +26,9 @@ import { BillingActions, InvoiceNumberInput } from '../BillingQueue'
 const refused = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
 
 function deferred() {
-  let resolve
-  const promise = new Promise((res) => { resolve = res })
-  return { promise, resolve }
+  let resolve, reject
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
 }
 
 const JOB = { id: 'QBS-003', _docId: 'job3', billingStatus: 'not-invoiced' }
@@ -217,6 +220,7 @@ describe('the billing hold', () => {
 
 describe('the invoice number', () => {
   const field = () => screen.getByPlaceholderText('Inv #')
+  const view = (job) => withToast(<InvoiceNumberInput job={job} />)
 
   it('shows the stored number, and writes nothing while the person types', () => {
     render(withToast(<InvoiceNumberInput job={{ ...JOB, invoiceNum: 'INV-100' }} />))
@@ -234,16 +238,23 @@ describe('the invoice number', () => {
     expect(toastCalls()).toEqual([{ tone: 'success', title: 'Invoice number saved.' }])
   })
 
-  it('says saving while the write is out', async () => {
+  it('says saving from the moment the box is left until the server has answered, across the apply of the write', async () => {
     const write = deferred()
     mocks.updateJob.mockReturnValue(write.promise)
-    render(withToast(<InvoiceNumberInput job={JOB} />))
+    const { rerender } = render(view(JOB))
     fireEvent.change(field(), { target: { value: 'INV-1001' } })
     await act(async () => { fireEvent.blur(field()) })
-
     expect(screen.getByText('saving…')).toBeTruthy()
+
+    // Firestore applies the write to its cache at once, so the stored number is the new one.
+    rerender(view({ ...JOB, invoiceNum: 'INV-1001' }))
+    expect(screen.getByText('saving…')).toBeTruthy()
+    expect(field().value).toBe('INV-1001')
+
     await act(async () => { write.resolve() })
     expect(screen.queryByText('saving…')).toBeNull()
+    expect(field().value).toBe('INV-1001')
+    expect(toastCalls()).toEqual([{ tone: 'success', title: 'Invoice number saved.' }])
   })
 
   it('writes nothing when the person leaves the box without a change', () => {
@@ -253,17 +264,81 @@ describe('the invoice number', () => {
     expect(mocks.updateJob).not.toHaveBeenCalled()
   })
 
-  it('keeps what was typed, and says why, when the write is refused', async () => {
-    mocks.updateJob.mockRejectedValue(refused())
-    render(withToast(<InvoiceNumberInput job={JOB} />))
+  const REFUSED_TOAST = {
+    tone: 'error',
+    title: 'Could not save the invoice number. Try again.',
+    description: 'You do not have permission to do that.',
+  }
+
+  it('keeps what was typed, and says why, through the apply and the rollback of a refused write', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = render(view({ ...JOB, invoiceNum: 'INV-100' }))
     fireEvent.change(field(), { target: { value: 'INV-1001' } })
     await act(async () => { fireEvent.blur(field()) })
 
-    expect(toastCalls()).toEqual([{
-      tone: 'error',
-      title: 'Could not save the invoice number. Try again.',
-      description: 'You do not have permission to do that.',
-    }])
+    rerender(view({ ...JOB, invoiceNum: 'INV-1001' }))
+    expect(field().value).toBe('INV-1001')
+    expect(screen.getByText('saving…')).toBeTruthy()
+
+    // The rules refuse it: the cache goes back, and then the write rejects.
+    rerender(view({ ...JOB, invoiceNum: 'INV-100' }))
+    await act(async () => { write.reject(refused()) })
+
+    expect(toastCalls()).toEqual([REFUSED_TOAST])
+    expect(field().value).toBe('INV-1001')
+    expect(screen.queryByText('saving…')).toBeNull()
+  })
+
+  it('keeps what was typed when the refusal arrives before the rollback', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = render(view({ ...JOB, invoiceNum: 'INV-100' }))
+    fireEvent.change(field(), { target: { value: 'INV-1001' } })
+    await act(async () => { fireEvent.blur(field()) })
+    rerender(view({ ...JOB, invoiceNum: 'INV-1001' }))
+
+    await act(async () => { write.reject(refused()) })
+    rerender(view({ ...JOB, invoiceNum: 'INV-100' }))
+
+    expect(toastCalls()).toEqual([REFUSED_TOAST])
+    expect(field().value).toBe('INV-1001')
+    expect(screen.queryByText('saving…')).toBeNull()
+  })
+
+  it('writes what was kept again when the box is left again, and then shows what is stored', async () => {
+    mocks.updateJob.mockRejectedValueOnce(refused()).mockResolvedValueOnce()
+    const { rerender } = render(view({ ...JOB, invoiceNum: 'INV-100' }))
+    fireEvent.change(field(), { target: { value: 'INV-1001' } })
+    await act(async () => { fireEvent.blur(field()) })
+    rerender(view({ ...JOB, invoiceNum: 'INV-1001' }))
+    rerender(view({ ...JOB, invoiceNum: 'INV-100' }))
+    expect(field().value).toBe('INV-1001')
+
+    fireEvent.focus(field())
+    await act(async () => { fireEvent.blur(field()) })
+
+    expect(mocks.updateJob).toHaveBeenCalledTimes(2)
+    expect(mocks.updateJob).toHaveBeenLastCalledWith('job3', { invoiceNum: 'INV-1001' })
+    expect(toastCalls().map((call) => call.tone)).toEqual(['error', 'success'])
+    rerender(view({ ...JOB, invoiceNum: 'INV-1001' }))
+    expect(field().value).toBe('INV-1001')
+  })
+
+  it('writes nothing more when the box is left again while the write is out, and still keeps the text if it is refused', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = render(view({ ...JOB, invoiceNum: 'INV-100' }))
+    fireEvent.change(field(), { target: { value: 'INV-1001' } })
+    await act(async () => { fireEvent.blur(field()) })
+    rerender(view({ ...JOB, invoiceNum: 'INV-1001' }))
+
+    fireEvent.focus(field())
+    await act(async () => { fireEvent.blur(field()) })
+    expect(mocks.updateJob).toHaveBeenCalledTimes(1)
+
+    rerender(view({ ...JOB, invoiceNum: 'INV-100' }))
+    await act(async () => { write.reject(refused()) })
     expect(field().value).toBe('INV-1001')
   })
 
@@ -278,6 +353,18 @@ describe('the invoice number', () => {
     fireEvent.focus(field())
     fireEvent.blur(field())
     expect(mocks.updateJob).not.toHaveBeenCalled()
+  })
+
+  it('does not take away what is being typed when the stored number changes elsewhere', async () => {
+    const { rerender } = render(view({ ...JOB, invoiceNum: 'INV-100' }))
+    fireEvent.focus(field())
+    fireEvent.change(field(), { target: { value: 'INV-1001' } })
+
+    rerender(view({ ...JOB, invoiceNum: 'INV-200' }))
+    expect(field().value).toBe('INV-1001')
+
+    await act(async () => { fireEvent.blur(field()) })
+    expect(mocks.updateJob).toHaveBeenCalledWith('job3', { invoiceNum: 'INV-1001' })
   })
 
   it('writes nothing for a job with no document', () => {

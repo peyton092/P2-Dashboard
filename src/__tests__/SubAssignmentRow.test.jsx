@@ -5,7 +5,11 @@ import { ToastContext } from '@/components/ui/use-toast'
 // A sub assignment row holds the status of one trade's sub on a job, and the loose ends
 // that sub still owes. The status is saved when it is picked. The loose ends are saved
 // when the person leaves the box, and not on every key, so a write is one sentence that
-// was finished and not a stream of half words. Importing App.jsx pulls in the whole app,
+// was finished and not a stream of half words, and also when the box goes away or the page
+// is hidden with something typed in it that was not saved. What is typed stays in the box
+// until it is saved, through the apply of the write to Firestore's cache, which changes the
+// stored loose ends at once, and through the rollback of a write the rules refuse, which
+// changes them back, so it can be tried again. Importing App.jsx pulls in the whole app,
 // so everything that would reach Firebase is replaced.
 const mocks = vi.hoisted(() => ({
   updateJob: vi.fn(),
@@ -40,10 +44,18 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
-const open = (job = JOB) => render(
-  <ToastContext.Provider value={mocks.toast}><ul><SubAssignmentRow job={job} /></ul></ToastContext.Provider>,
+const view = (job) => (
+  <ToastContext.Provider value={mocks.toast}><ul><SubAssignmentRow job={job} /></ul></ToastContext.Provider>
 )
+const open = (job = JOB) => render(view(job))
 const box = () => screen.getByPlaceholderText(/^Loose ends/)
+const withEnds = (text) => ({ ...JOB, subsLooseEnds: { electrical: text } })
+
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
 
 describe('the status of the sub', () => {
   async function choose(option) {
@@ -105,19 +117,173 @@ describe('the loose ends', () => {
     expect(mocks.updateJob).not.toHaveBeenCalled()
   })
 
-  it('keeps what was typed, and says why, when the write is refused', async () => {
-    mocks.updateJob.mockRejectedValue(refused())
-    open()
-    fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
-    fireEvent.blur(box())
+  const REFUSED_TOAST = {
+    tone: 'error',
+    title: 'Could not save the loose ends. Try again.',
+    description: 'You do not have permission to do that.',
+  }
 
-    await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
-    expect(mocks.toast).toHaveBeenCalledWith({
-      tone: 'error',
-      title: 'Could not save the loose ends. Try again.',
-      description: 'You do not have permission to do that.',
-    })
+  it('keeps what was typed, and says why, through the apply and the rollback of a refused write', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = open()
+    fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+    await act(async () => { fireEvent.blur(box()) })
+
+    // Firestore applies the write to its cache at once, so the stored loose ends are the new ones.
+    rerender(view(withEnds('Cover plates, labels')))
     expect(box().value).toBe('Cover plates, labels')
+
+    // The rules refuse it: the cache goes back, and then the write rejects.
+    rerender(view(JOB))
+    await act(async () => { write.reject(refused()) })
+
+    expect(mocks.toast.mock.calls.map(([opts]) => opts)).toEqual([REFUSED_TOAST])
+    expect(box().value).toBe('Cover plates, labels')
+  })
+
+  it('keeps what was typed when the refusal arrives before the rollback', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = open()
+    fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+    await act(async () => { fireEvent.blur(box()) })
+    rerender(view(withEnds('Cover plates, labels')))
+
+    await act(async () => { write.reject(refused()) })
+    rerender(view(JOB))
+
+    expect(mocks.toast.mock.calls.map(([opts]) => opts)).toEqual([REFUSED_TOAST])
+    expect(box().value).toBe('Cover plates, labels')
+  })
+
+  it('writes what was kept again when the box is left again, and then shows what is stored', async () => {
+    mocks.updateJob.mockRejectedValueOnce(refused()).mockResolvedValueOnce()
+    const { rerender } = open()
+    fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+    await act(async () => { fireEvent.blur(box()) })
+    rerender(view(withEnds('Cover plates, labels')))
+    rerender(view(JOB))
+    expect(box().value).toBe('Cover plates, labels')
+
+    fireEvent.focus(box())
+    await act(async () => { fireEvent.blur(box()) })
+
+    expect(mocks.updateJob).toHaveBeenCalledTimes(2)
+    expect(mocks.updateJob).toHaveBeenLastCalledWith('job3', { 'subsLooseEnds.electrical': 'Cover plates, labels' })
+    expect(mocks.toast.mock.calls.map(([opts]) => opts.tone)).toEqual(['error', 'success'])
+    rerender(view(withEnds('Cover plates, labels')))
+    expect(box().value).toBe('Cover plates, labels')
+  })
+
+  it('writes nothing more when the box is left again while the write is out, and still keeps the text if it is refused', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = open()
+    fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+    await act(async () => { fireEvent.blur(box()) })
+    rerender(view(withEnds('Cover plates, labels')))
+
+    fireEvent.focus(box())
+    await act(async () => { fireEvent.blur(box()) })
+    expect(mocks.updateJob).toHaveBeenCalledTimes(1)
+
+    rerender(view(JOB))
+    await act(async () => { write.reject(refused()) })
+    expect(box().value).toBe('Cover plates, labels')
+  })
+
+  it('does not take away what is being typed when the stored loose ends change elsewhere', async () => {
+    const { rerender } = open()
+    fireEvent.focus(box())
+    fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+
+    rerender(view(withEnds('Cover plates, labels and a final walk')))
+    expect(box().value).toBe('Cover plates, labels')
+
+    await act(async () => { fireEvent.blur(box()) })
+    expect(mocks.updateJob).toHaveBeenCalledWith('job3', { 'subsLooseEnds.electrical': 'Cover plates, labels' })
+  })
+
+  // A person can go away from the box without leaving it, and no blur is sent: by Alt and the
+  // left arrow, by the row going when a change is made elsewhere, by the screen closing. The
+  // box used to write on every key, so nothing typed was lost. It writes what is typed, through
+  // the same path and with the same words, when it goes away or the page is hidden.
+  describe('when the box goes away with something typed in it', () => {
+    it('saves what was typed, and says so, though the box was never left', async () => {
+      const { unmount } = open()
+      fireEvent.focus(box())
+      fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+      expect(mocks.updateJob).not.toHaveBeenCalled()
+
+      await act(async () => { unmount() })
+
+      expect(mocks.updateJob).toHaveBeenCalledTimes(1)
+      expect(mocks.updateJob).toHaveBeenCalledWith('job3', { 'subsLooseEnds.electrical': 'Cover plates, labels' })
+      expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Loose ends saved.' })
+    })
+
+    it('says why, when that write is refused after the box has gone', async () => {
+      mocks.updateJob.mockRejectedValue(refused())
+      const { unmount } = open()
+      fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+
+      await act(async () => { unmount() })
+
+      expect(mocks.toast).toHaveBeenCalledWith(REFUSED_TOAST)
+    })
+
+    it('saves what was typed when the page is hidden, and the box goes on showing it', async () => {
+      const { rerender } = open()
+      fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+
+      await act(async () => { window.dispatchEvent(new Event('pagehide')) })
+
+      expect(mocks.updateJob).toHaveBeenCalledTimes(1)
+      expect(mocks.updateJob).toHaveBeenCalledWith('job3', { 'subsLooseEnds.electrical': 'Cover plates, labels' })
+      rerender(view(withEnds('Cover plates, labels')))
+      expect(box().value).toBe('Cover plates, labels')
+    })
+
+    it('writes nothing when nothing was typed, or the row has no document, or what was typed is what is saved', async () => {
+      const untouched = open()
+      await act(async () => { untouched.unmount() })
+
+      const nowhere = open({ ...JOB, _docId: undefined })
+      fireEvent.change(box(), { target: { value: 'Something else' } })
+      await act(async () => { nowhere.unmount() })
+
+      const same = open()
+      fireEvent.change(box(), { target: { value: 'Cover plates' } })
+      await act(async () => { same.unmount() })
+
+      expect(mocks.updateJob).not.toHaveBeenCalled()
+    })
+
+    it('writes once, not twice, when the box was left and then goes away with the write already stored', async () => {
+      const write = deferred()
+      mocks.updateJob.mockReturnValue(write.promise)
+      const { rerender, unmount } = open()
+      fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+      await act(async () => { fireEvent.blur(box()) })
+      rerender(view(withEnds('Cover plates, labels')))
+
+      await act(async () => { unmount() })
+
+      expect(mocks.updateJob).toHaveBeenCalledTimes(1)
+      await act(async () => { write.resolve() })
+    })
+
+    it('stops listening for the page being hidden once the box has gone', async () => {
+      const { unmount } = open()
+      fireEvent.change(box(), { target: { value: 'Cover plates, labels' } })
+      await act(async () => { unmount() })
+      mocks.updateJob.mockClear()
+
+      await act(async () => { window.dispatchEvent(new Event('pagehide')) })
+
+      expect(mocks.updateJob).not.toHaveBeenCalled()
+    })
   })
 
   it('shows the loose ends that are saved when they change elsewhere, and does not write them back', () => {

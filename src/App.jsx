@@ -11,6 +11,7 @@ import { useData } from './use-data'
 import { useNow } from './hooks/useNow'
 import { useConnectionState } from './hooks/useConnectionState'
 import { useMutation } from './hooks/useMutation'
+import { useSavedField } from './hooks/useSavedField'
 import { useConfirm } from './hooks/useConfirm'
 import { daysSince, fmtLongDate, toLocalDateStr } from './lib/dates'
 import {
@@ -2586,35 +2587,37 @@ export function SubAssignmentRow({ job: j }) {
           {!isComplete && <StatusBadge status={j.status} size="xs" />}
         </div>
       </div>
-      <LooseEndsInput key={`${j._docId}:${j.trade}:${looseEnds}`} job={j} stored={looseEnds} />
+      <LooseEndsInput key={`${j._docId}:${j.trade}`} job={j} stored={looseEnds} />
     </li>
   )
 }
 
 // The loose ends of one sub on one job. What the person types stays in the box and is saved
 // once, when they leave it, so a write is a finished sentence and not a stream of half
-// words. The box is keyed on what is stored, so a change made elsewhere shows up here and
-// leaving the box never writes an older copy back.
+// words. It is also saved when the box goes away or the page is hidden with something typed
+// in it, because nothing is sent for a box that was never left, and the old write on every
+// key lost nothing. The box shows what is stored while nothing is typed in it, so a change
+// made elsewhere shows up here and leaving the box never writes an older copy back. What is
+// typed stays until it is saved, through the apply of the write to Firestore's cache and
+// the rollback of one the rules refuse, so it can be tried again (see useSavedField).
 function LooseEndsInput({ job: j, stored }) {
-  const { run } = useMutation()
-  const [draft, setDraft] = useState(stored)
-
-  const save = () => {
-    if (!j._docId || draft === stored) return
-    run(() => updateJob(j._docId, { [`subsLooseEnds.${j.trade}`]: draft }), {
-      success: 'Loose ends saved.',
-      error: 'Could not save the loose ends. Try again.',
-    })
-  }
+  const field = useSavedField({
+    stored,
+    enabled: !!j._docId,
+    write: value => updateJob(j._docId, { [`subsLooseEnds.${j.trade}`]: value }),
+    success: 'Loose ends saved.',
+    error: 'Could not save the loose ends. Try again.',
+    saveOnLeave: true,
+  })
 
   return (
     <Textarea
       className="bg-white/[0.04] border-white/10 text-[12px] resize-none min-h-14 placeholder:text-zinc-500"
       placeholder="Loose ends: incomplete work, punch list items, notes…"
-      value={draft}
+      value={field.value}
       onClick={e => e.stopPropagation()}
-      onChange={e => setDraft(e.target.value)}
-      onBlur={save}
+      onChange={field.onChange}
+      onBlur={field.onBlur}
     />
   )
 }

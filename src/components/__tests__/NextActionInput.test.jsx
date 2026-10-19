@@ -3,8 +3,11 @@ import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
 
 // The next action of a job is saved when the person leaves the box. The box follows what is
-// stored, so a next action that someone else saved while this box was showing the old one
-// is shown, and leaving the box without typing never writes the old one back over it.
+// stored while nothing is typed in it, so a next action that someone else saved while this
+// box was showing the old one is shown, and leaving the box without typing never writes the
+// old one back over it. What is typed stays in the box until it is saved, through the apply of
+// the write to Firestore's cache, which changes the stored value at once, and through the
+// rollback of a write the rules refuse, which changes it back, so it can be tried again.
 const mocks = vi.hoisted(() => ({
   updateJob: vi.fn(),
   toast: vi.fn(),
@@ -21,9 +24,9 @@ import { NextActionInput } from '../PMDashboard'
 const refused = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
 
 function deferred() {
-  let resolve
-  const promise = new Promise((res) => { resolve = res })
-  return { promise, resolve }
+  let resolve, reject
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
 }
 
 const JOB = { id: 'QBS-003', _docId: 'job3', nextAction: 'Call the inspector' }
@@ -36,6 +39,7 @@ beforeEach(() => {
 afterEach(cleanup)
 
 const withToast = (ui) => <ToastContext.Provider value={mocks.toast}>{ui}</ToastContext.Provider>
+const view = (job) => withToast(<NextActionInput job={job} />)
 const toastCalls = () => mocks.toast.mock.calls.map(([opts]) => opts)
 const field = () => screen.getByPlaceholderText('Next action…')
 
@@ -57,16 +61,23 @@ describe('NextActionInput', () => {
     expect(toastCalls()).toEqual([{ tone: 'success', title: 'Next action saved.' }])
   })
 
-  it('says saving while the write is out', async () => {
+  it('says saving from the moment the box is left until the server has answered, across the apply of the write', async () => {
     const write = deferred()
     mocks.updateJob.mockReturnValue(write.promise)
-    render(withToast(<NextActionInput job={JOB} />))
+    const { rerender } = render(view(JOB))
     fireEvent.change(field(), { target: { value: 'Schedule the final' } })
     await act(async () => { fireEvent.blur(field()) })
-
     expect(screen.getByText('saving…')).toBeTruthy()
+
+    // Firestore applies the write to its cache at once, so the stored next action is the new one.
+    rerender(view({ ...JOB, nextAction: 'Schedule the final' }))
+    expect(screen.getByText('saving…')).toBeTruthy()
+    expect(field().value).toBe('Schedule the final')
+
     await act(async () => { write.resolve() })
     expect(screen.queryByText('saving…')).toBeNull()
+    expect(field().value).toBe('Schedule the final')
+    expect(toastCalls()).toEqual([{ tone: 'success', title: 'Next action saved.' }])
   })
 
   it('writes nothing when the person leaves the box without a change, or with only spaces added', () => {
@@ -85,18 +96,98 @@ describe('NextActionInput', () => {
     expect(mocks.updateJob).not.toHaveBeenCalled()
   })
 
-  it('keeps what was typed, and says why, when the write is refused', async () => {
-    mocks.updateJob.mockRejectedValue(refused())
-    render(withToast(<NextActionInput job={JOB} />))
+  const REFUSED_TOAST = {
+    tone: 'error',
+    title: 'Could not save the next action. Try again.',
+    description: 'You do not have permission to do that.',
+  }
+
+  it('keeps what was typed, and says why, through the apply and the rollback of a refused write', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = render(view(JOB))
     fireEvent.change(field(), { target: { value: 'Schedule the final' } })
     await act(async () => { fireEvent.blur(field()) })
 
-    expect(toastCalls()).toEqual([{
-      tone: 'error',
-      title: 'Could not save the next action. Try again.',
-      description: 'You do not have permission to do that.',
-    }])
+    rerender(view({ ...JOB, nextAction: 'Schedule the final' }))
     expect(field().value).toBe('Schedule the final')
+    expect(screen.getByText('saving…')).toBeTruthy()
+
+    // The rules refuse it: the cache goes back, and then the write rejects.
+    rerender(view(JOB))
+    await act(async () => { write.reject(refused()) })
+
+    expect(toastCalls()).toEqual([REFUSED_TOAST])
+    expect(field().value).toBe('Schedule the final')
+    expect(screen.queryByText('saving…')).toBeNull()
+  })
+
+  it('keeps what was typed when the refusal arrives before the rollback', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = render(view(JOB))
+    fireEvent.change(field(), { target: { value: 'Schedule the final' } })
+    await act(async () => { fireEvent.blur(field()) })
+    rerender(view({ ...JOB, nextAction: 'Schedule the final' }))
+
+    await act(async () => { write.reject(refused()) })
+    rerender(view(JOB))
+
+    expect(toastCalls()).toEqual([REFUSED_TOAST])
+    expect(field().value).toBe('Schedule the final')
+    expect(screen.queryByText('saving…')).toBeNull()
+  })
+
+  it('writes what was kept again when the box is left again, and then shows what is stored', async () => {
+    mocks.updateJob.mockRejectedValueOnce(refused()).mockResolvedValueOnce()
+    const { rerender } = render(view(JOB))
+    fireEvent.change(field(), { target: { value: 'Schedule the final' } })
+    await act(async () => { fireEvent.blur(field()) })
+    rerender(view({ ...JOB, nextAction: 'Schedule the final' }))
+    rerender(view(JOB))
+    expect(field().value).toBe('Schedule the final')
+
+    fireEvent.focus(field())
+    await act(async () => { fireEvent.blur(field()) })
+
+    expect(mocks.updateJob).toHaveBeenCalledTimes(2)
+    expect(mocks.updateJob).toHaveBeenLastCalledWith('job3', { nextAction: 'Schedule the final' })
+    expect(toastCalls().map((call) => call.tone)).toEqual(['error', 'success'])
+    rerender(view({ ...JOB, nextAction: 'Schedule the final' }))
+    expect(field().value).toBe('Schedule the final')
+  })
+
+  it('writes nothing more when the box is left again while the write is out, and still keeps the text if it is refused', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValue(write.promise)
+    const { rerender } = render(view(JOB))
+    fireEvent.change(field(), { target: { value: 'Schedule the final' } })
+    await act(async () => { fireEvent.blur(field()) })
+    rerender(view({ ...JOB, nextAction: 'Schedule the final' }))
+
+    fireEvent.focus(field())
+    await act(async () => { fireEvent.blur(field()) })
+    expect(mocks.updateJob).toHaveBeenCalledTimes(1)
+
+    rerender(view(JOB))
+    await act(async () => { write.reject(refused()) })
+    expect(field().value).toBe('Schedule the final')
+  })
+
+  it('does not lose what is typed after the box was left, while the first write is out', async () => {
+    const write = deferred()
+    mocks.updateJob.mockReturnValueOnce(write.promise).mockResolvedValue()
+    const { rerender } = render(view(JOB))
+    fireEvent.change(field(), { target: { value: 'Schedule' } })
+    await act(async () => { fireEvent.blur(field()) })
+    rerender(view({ ...JOB, nextAction: 'Schedule' }))
+
+    fireEvent.change(field(), { target: { value: 'Schedule the final' } })
+    await act(async () => { write.resolve() })
+    expect(field().value).toBe('Schedule the final')
+
+    await act(async () => { fireEvent.blur(field()) })
+    expect(mocks.updateJob).toHaveBeenLastCalledWith('job3', { nextAction: 'Schedule the final' })
   })
 
   it('follows the stored next action when it changes elsewhere, and does not write the old one back', () => {
@@ -107,6 +198,18 @@ describe('NextActionInput', () => {
     fireEvent.focus(field())
     fireEvent.blur(field())
     expect(mocks.updateJob).not.toHaveBeenCalled()
+  })
+
+  it('does not take away what is being typed when the stored next action changes elsewhere', async () => {
+    const { rerender } = render(view(JOB))
+    fireEvent.focus(field())
+    fireEvent.change(field(), { target: { value: 'Schedule the final' } })
+
+    rerender(view({ ...JOB, nextAction: 'Inspector called, passed' }))
+    expect(field().value).toBe('Schedule the final')
+
+    await act(async () => { fireEvent.blur(field()) })
+    expect(mocks.updateJob).toHaveBeenCalledWith('job3', { nextAction: 'Schedule the final' })
   })
 
   it('shows the placeholder it is given, and writes nothing for a job with no document', () => {

@@ -8,7 +8,7 @@ import {
 } from '../agent/scoring'
 import { ZONES, PM_TO_ZONE } from '../agent/zones'
 import { updateJob } from '../hooks/useFirestore'
-import { useMutation } from '../hooks/useMutation'
+import { useSavedField } from '../hooks/useSavedField'
 import {
   PageHeader,
   StatBand,
@@ -691,38 +691,36 @@ function PMJobRow({ job, risk, score, pendingCOs, now }) {
 
 // ── Inline next-action input, saved when the person leaves the box ───────────
 
-// Keyed on what is stored, so the box is made again whenever the stored next action
-// changes (another person saved one, or this save came back) and leaving it never writes an
-// old copy over a newer one.
+// The box shows the stored next action while nothing is typed in it, so one that another
+// person saved shows up and leaving the box without typing never writes an old copy over a
+// newer one. What is typed stays in the box until it is saved, through the apply of the write
+// to Firestore's cache and the rollback of one the rules refuse, so it can be tried again
+// (see useSavedField). A box belongs to one job.
 export function NextActionInput({ job, placeholder }) {
-  return <NextActionField key={`${job._docId}:${job.nextAction ?? ''}`} job={job} placeholder={placeholder} />
+  return <NextActionField key={job._docId} job={job} placeholder={placeholder} />
 }
 
 function NextActionField({ job, placeholder }) {
-  const [val, setVal] = useState(job.nextAction || '')
-  const { run, busy: saving } = useMutation()
-
-  function handleBlur() {
-    if (!job._docId) return
-    const trimmed = val.trim()
-    if (trimmed === (job.nextAction || '').trim()) return
-    run(() => updateJob(job._docId, { nextAction: trimmed }), {
-      success: 'Next action saved.',
-      error: 'Could not save the next action. Try again.',
-    })
-  }
+  const field = useSavedField({
+    stored: job.nextAction || '',
+    enabled: !!job._docId,
+    normalize: text => text.trim(),
+    write: value => updateJob(job._docId, { nextAction: value }),
+    success: 'Next action saved.',
+    error: 'Could not save the next action. Try again.',
+  })
 
   return (
     <div className="flex-1 min-w-0 flex items-center gap-2">
       <input
         type="text"
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onBlur={handleBlur}
+        value={field.value}
+        onChange={field.onChange}
+        onBlur={field.onBlur}
         placeholder={placeholder || 'Next action…'}
         className="flex-1 min-w-0 bg-white/[0.04] border border-white/10 rounded-md text-[12px] font-semibold text-zinc-100 px-2.5 py-1.5 placeholder:text-zinc-500 placeholder:font-medium focus:outline-none focus:border-white/30 transition-colors"
       />
-      {saving && <span className="text-[10px] text-zinc-400 shrink-0">saving…</span>}
+      {field.saving && <span className="text-[10px] text-zinc-400 shrink-0">saving…</span>}
     </div>
   )
 }
