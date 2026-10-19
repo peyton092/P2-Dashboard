@@ -461,6 +461,10 @@ export default function ChangeOrders() {
     setSaving(true)
     try {
       let docId = editingCO?._docId
+      // This run is not given queue: true. It adds the draft and then keeps the id the add
+      // gives back, which the send and a second try depend on, so it waits for the add however
+      // long it takes, and offline that is until the connection is back. A run that stopped
+      // waiting would carry on without the id (see ChangeOrdersOffline.test.jsx).
       const draft = await run(async () => {
         const { subtotal, markup, total } = calcTotals(form.lineItems, form.markupPct)
 

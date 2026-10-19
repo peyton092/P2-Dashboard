@@ -10,6 +10,7 @@ import { logError } from '@/lib/errorLogger'
 //     success: 'Material saved.',
 //     error: 'Could not save the material. Try again.',
 //     undo: () => updateMaterial(id, previous),
+//     queue: true,
 //   })
 //   if (ok) closeTheForm()
 //
@@ -32,12 +33,22 @@ import { logError } from '@/lib/errorLogger'
 //
 // A Firestore write resolves when the server has acknowledged it, and while the device is
 // offline it does not, though the entry is already in the local cache and will be sent when
-// the connection is back. So a write that is still out after OFFLINE_WAIT_MS while the
-// device is offline resolves { ok: true, queued: true } and says it was saved on this
-// device, with no success words and no Undo. The write itself is still watched: if it is
-// refused later the person is told, and if it goes through later nothing more is shown. A
-// write made while the device is online waits for the acknowledgement, however long it takes,
-// and the check is made again each OFFLINE_WAIT_MS in case the device went offline meanwhile.
+// the connection is back. A run that is given queue: true says that fn is exactly that: one
+// Firestore write (updateDoc, setDoc, addDoc, deleteDoc, a batch, or a Promise.all of those),
+// applied on this device at once, with nothing after it that depends on the server's answer,
+// and a caller that does not use value. Such a run that is still out after OFFLINE_WAIT_MS
+// while the device is offline resolves { ok: true, queued: true } and says it was saved on
+// this device, with no success words and no Undo. The write itself is still watched: if it is
+// refused later the person is told, and if it goes through later nothing more is shown. While
+// the device is online the run waits for the acknowledgement, however long it takes, and the
+// check is made again each OFFLINE_WAIT_MS in case the device went offline meanwhile.
+//
+// queue is false unless it is given, and then run waits for fn however long it takes and
+// starts no timer. That is right for everything that is not one Firestore write. Nothing
+// queues a call to a Cloud Function or to Auth, so "saved on this device" would be false of
+// it. A function that awaits one thing and then does more has not done the rest while the
+// first await is still out, and gives no value back, so whatever the caller does next would
+// work on half of it. An undo takes the queue of the run it undoes.
 //
 // busy is true while any run of this hook is out, counted, so that two overlapping runs do
 // not flicker it off in between, and false once a run has resolved queued. run is the same
@@ -85,7 +96,7 @@ export function useMutation() {
     return () => { mounted.current = false }
   }, [])
 
-  const run = useCallback(async function run(fn, { success, error: errorWords = ERROR_WORDS, undo } = {}) {
+  const run = useCallback(async function run(fn, { success, error: errorWords = ERROR_WORDS, undo, queue = false } = {}) {
     // Only a run that was counted in is counted out, whatever happens to the screen between.
     const counted = mounted.current
     if (counted) {
@@ -108,7 +119,7 @@ export function useMutation() {
       // fn is called here and now, so that a throw before it returns a promise is a failure
       // like any other.
       const work = (async () => fn())()
-      const outcome = await settleOrQueue(work)
+      const outcome = queue ? await settleOrQueue(work) : { value: await work }
       if (outcome.queued) {
         // The write is still out. Say where the entry is, and keep watching it.
         work.then(undefined, (err) => {
@@ -122,7 +133,7 @@ export function useMutation() {
       const title = success || (undo ? 'Done.' : '')
       if (title) {
         toastRef.current(undo
-          ? { tone: 'success', title, action: { label: 'Undo', onClick: () => run(undo, { success: 'Undone.', error: UNDO_ERROR_WORDS }) } }
+          ? { tone: 'success', title, action: { label: 'Undo', onClick: () => run(undo, { success: 'Undone.', error: UNDO_ERROR_WORDS, queue }) } }
           : { tone: 'success', title })
       }
       return { ok: true, value }

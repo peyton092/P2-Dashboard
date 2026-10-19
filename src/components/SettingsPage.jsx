@@ -306,6 +306,7 @@ export default function SettingsPage({ onLogout, role }) {
     {
       success: `${label} turned ${value ? 'on' : 'off'}.`,
       error: `Could not change ${label}. Try again.`,
+      queue: true,
     },
   )
 

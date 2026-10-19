@@ -31,7 +31,10 @@ import { useMutation } from './useMutation'
 // does not let go of the text either, because a refusal is going to need it.
 //
 // normalize is what is compared with what is stored and what is written: a box that trims
-// gives it (text) => text.trim(). enabled is false where there is nowhere to write.
+// gives it (text) => text.trim(). enabled is false where there is nowhere to write. write is
+// one Firestore write and nothing else, because the box asks for the offline outcome of
+// useMutation (queue: true): offline, a write that has not answered after a moment is
+// reported as saved on this device.
 //
 // saveOnLeave is for a box whose text is worth more than its blur: a note that used to be
 // written on every key. It also writes what was typed, through the same path and with the
@@ -54,7 +57,7 @@ export function useSavedField({ stored, enabled = true, normalize = (text) => te
       return
     }
     const typed = now.draft
-    run(() => now.write(next), { success: now.success, error: now.error }).then(({ ok }) => {
+    run(() => now.write(next), { success: now.success, error: now.error, queue: true }).then(({ ok }) => {
       if (ok) settle(typed)
     })
   }, [run, settle])

@@ -29,6 +29,7 @@ export function InlineStatusSelect({ job }) {
     run(() => updateJob(job._docId, { status: v }), {
       success: `Status set to ${statusLabel(JOB_STATUS, v).toLowerCase()}.`,
       error: 'Could not change the status. Try again.',
+      queue: true,
     })
   }
   return (
@@ -68,6 +69,7 @@ export function InlinePhaseSelect({ job }) {
     run(() => updateJob(job._docId, { phase: v }), {
       success: `Phase set to ${v.toLowerCase()}.`,
       error: 'Could not change the phase. Try again.',
+      queue: true,
     })
   }
   // The stored value is the words and not the key. The HVAC alert reads a stored
@@ -99,6 +101,7 @@ export function BillingStatusSelect({ job }) {
     run(() => updateJob(job._docId, { billingStatus: v }), {
       success: `Billing status set to ${statusLabel(BILLING_STATUS, v).toLowerCase()}.`,
       error: 'Could not change the billing status. Try again.',
+      queue: true,
     })
   }
   return (

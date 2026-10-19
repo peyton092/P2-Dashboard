@@ -451,8 +451,10 @@ describe('the error log', () => {
 })
 
 // A Firestore write resolves when the server says so, and offline it does not, though the
-// entry is in the local cache and will be sent. After OFFLINE_WAIT_MS, offline, run says the
-// entry is saved on this device and resolves queued, and goes on watching the write.
+// entry is in the local cache and will be sent. A run that is given queue: true, which says
+// its work is exactly one such write, says after OFFLINE_WAIT_MS, offline, that the entry is
+// saved on this device and resolves queued, and goes on watching the write. A run that is not
+// given it waits for its work, however long that takes (see the last describe in this one).
 describe('while a write is out and the device is offline', () => {
   const QUEUED = 'Saved on this device. It will sync when you are back online.'
   let onLine
@@ -463,12 +465,15 @@ describe('while a write is out and the device is offline', () => {
   })
   afterEach(() => { onLine.mockRestore() })
 
-  // Starts a run of work the test settles later, and keeps what it resolved to.
+  // Starts a run of work the test settles later, and keeps what it resolved to. The options
+  // are passed as they are.
   function begin(rig, work, options = {}) {
     const box = { outcome: undefined }
     act(() => { rig.result.current.run(() => work.promise, options).then((outcome) => { box.outcome = outcome }) })
     return box
   }
+  // The same for a write that the screen says is one Firestore write.
+  const beginWrite = (rig, work, options = {}) => begin(rig, work, { queue: true, ...options })
   const wait = (ms) => act(async () => { vi.advanceTimersByTime(ms) })
 
   it('exports the wait as 2500 milliseconds', () => {
@@ -477,7 +482,7 @@ describe('while a write is out and the device is offline', () => {
 
   it('stays out, with busy on and nothing said, until the wait has gone by', async () => {
     const rig = setup()
-    const run = begin(rig, deferred(), { success: 'Saved.' })
+    const run = beginWrite(rig, deferred(), { success: 'Saved.' })
 
     await wait(OFFLINE_WAIT_MS - 1)
 
@@ -488,7 +493,7 @@ describe('while a write is out and the device is offline', () => {
 
   it('resolves ok and queued after the wait, says it is saved on this device, and is not busy', async () => {
     const rig = setup()
-    const run = begin(rig, deferred(), { success: 'Saved.' })
+    const run = beginWrite(rig, deferred(), { success: 'Saved.' })
 
     await wait(OFFLINE_WAIT_MS)
 
@@ -501,7 +506,7 @@ describe('while a write is out and the device is offline', () => {
 
   it('says no success words and offers no Undo, even for a write that was given both', async () => {
     const rig = setup()
-    begin(rig, deferred(), { success: 'Notification dismissed.', undo: vi.fn() })
+    beginWrite(rig, deferred(), { success: 'Notification dismissed.', undo: vi.fn() })
 
     await wait(OFFLINE_WAIT_MS)
 
@@ -511,7 +516,7 @@ describe('while a write is out and the device is offline', () => {
   it('tells the person, with the reason and in the error log, when the write is refused later', async () => {
     const rig = setup()
     const work = deferred()
-    begin(rig, work, { error: 'Could not save the material. Try again.' })
+    beginWrite(rig, work, { error: 'Could not save the material. Try again.' })
     await wait(OFFLINE_WAIT_MS)
     const refused = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
 
@@ -532,7 +537,7 @@ describe('while a write is out and the device is offline', () => {
   it('shows nothing more when the write goes through later', async () => {
     const rig = setup()
     const work = deferred()
-    begin(rig, work, { success: 'Saved.', undo: vi.fn() })
+    beginWrite(rig, work, { success: 'Saved.', undo: vi.fn() })
     await wait(OFFLINE_WAIT_MS)
 
     await act(async () => { work.resolve('late') })
@@ -545,7 +550,7 @@ describe('while a write is out and the device is offline', () => {
   it('still tells the person of a late refusal when the screen is gone, without setting state', async () => {
     const rig = setup()
     const work = deferred()
-    begin(rig, work, { error: 'Could not save. Try again.' })
+    beginWrite(rig, work, { error: 'Could not save. Try again.' })
     await wait(OFFLINE_WAIT_MS)
     rig.unmount()
 
@@ -558,8 +563,8 @@ describe('while a write is out and the device is offline', () => {
     const rig = setup()
     const worked = deferred()
     const failed = deferred()
-    const first = begin(rig, worked, { success: 'Saved.' })
-    const second = begin(rig, failed, { error: 'Could not save. Try again.' })
+    const first = beginWrite(rig, worked, { success: 'Saved.' })
+    const second = beginWrite(rig, failed, { error: 'Could not save. Try again.' })
     await wait(100)
 
     await act(async () => { worked.resolve(7); failed.reject(new Error('No.')) })
@@ -571,10 +576,10 @@ describe('while a write is out and the device is offline', () => {
     expect(rig.toast).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps today\'s path for a call that fails fast offline', async () => {
+  it('keeps today\'s path for a write that fails fast offline', async () => {
     const rig = setup()
     const work = deferred()
-    const run = begin(rig, work, { error: 'Could not disconnect QuickBooks. Try again.' })
+    const run = beginWrite(rig, work, { error: 'Could not disconnect QuickBooks. Try again.' })
     await wait(200)
 
     await act(async () => { work.reject(sdkError('unavailable', 'unavailable')) })
@@ -587,14 +592,121 @@ describe('while a write is out and the device is offline', () => {
   it('has no timer left once the write has settled, and none once it is queued', async () => {
     const rig = setup()
     const work = deferred()
-    begin(rig, work)
+    beginWrite(rig, work)
     expect(vi.getTimerCount()).toBe(1)
     await act(async () => { work.resolve() })
     expect(vi.getTimerCount()).toBe(0)
 
-    begin(rig, deferred())
+    beginWrite(rig, deferred())
     await wait(OFFLINE_WAIT_MS)
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  // Queueing is opt in. A single Firestore write is in the local cache at once, so "saved on
+  // this device" is true of it. It is false of a call to a Cloud Function or to Auth, which
+  // nothing queues, and a function that goes on to do more after its first await has not done
+  // it, and has no value to give back, when the first await is still out.
+  describe('and the run is not given queue: true', () => {
+    it.each([
+      ['leaves it out', {}],
+      ['says queue: false', { queue: false }],
+    ])('never queues when it %s, however long the work is out, and starts no timer', async (_how, options) => {
+      const rig = setup()
+      const work = deferred()
+      const run = begin(rig, work, { success: 'Saved.', ...options })
+      expect(vi.getTimerCount()).toBe(0)
+
+      await wait(10 * 60 * 1000)
+
+      expect(run.outcome).toBeUndefined()
+      expect(rig.result.current.busy).toBe(true)
+      expect(rig.toast).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+
+      await act(async () => { work.resolve('late') })
+
+      expect(run.outcome).toEqual({ ok: true, value: 'late' })
+      expect(rig.toast.mock.calls).toEqual([[{ tone: 'success', title: 'Saved.' }]])
+      expect(rig.result.current.busy).toBe(false)
+    })
+
+    it('gives a function that does more after its first await the whole of its work, and its value', async () => {
+      const rig = setup()
+      const added = deferred()
+      const steps = []
+      const box = { outcome: undefined }
+      act(() => {
+        rig.result.current.run(async () => {
+          const created = await added.promise
+          steps.push('kept the id')
+          return created.id
+        }).then((outcome) => { box.outcome = outcome })
+      })
+
+      await wait(OFFLINE_WAIT_MS * 3)
+      expect(box.outcome).toBeUndefined()
+      expect(steps).toEqual([])
+
+      await act(async () => { added.resolve({ id: 'new1' }) })
+
+      expect(steps).toEqual(['kept the id'])
+      expect(box.outcome).toEqual({ ok: true, value: 'new1' })
+    })
+
+    it('fails as it does online when a call to the server is refused, however late', async () => {
+      const rig = setup()
+      const work = deferred()
+      const run = begin(rig, work, { error: 'Could not disconnect QuickBooks. Try again.' })
+      await wait(OFFLINE_WAIT_MS * 2)
+      expect(run.outcome).toBeUndefined()
+
+      await act(async () => { work.reject(sdkError('unavailable', 'unavailable')) })
+
+      expect(run.outcome).toEqual({ ok: false, error: 'Could not disconnect QuickBooks. Try again.' })
+      expect(rig.toast.mock.calls).toEqual([[{ tone: 'error', title: 'Could not disconnect QuickBooks. Try again.' }]])
+      expect(logError).toHaveBeenCalledTimes(1)
+      expect(rig.result.current.busy).toBe(false)
+    })
+
+    it('does not queue the undo of a run that was not queued, and waits for it', async () => {
+      const rig = setup()
+      const undoing = deferred()
+      await act(async () => { await rig.result.current.run(() => Promise.resolve(), { success: 'Dismissed.', undo: () => undoing.promise }) })
+      const { action } = rig.toast.mock.calls[0][0]
+      const box = { outcome: undefined }
+      act(() => { action.onClick().then((outcome) => { box.outcome = outcome }) })
+
+      await wait(10 * 60 * 1000)
+
+      expect(box.outcome).toBeUndefined()
+      expect(rig.toast).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+
+      await act(async () => { undoing.resolve() })
+
+      expect(box.outcome).toEqual({ ok: true, value: undefined })
+      expect(rig.toast).toHaveBeenLastCalledWith({ tone: 'success', title: 'Undone.' })
+    })
+  })
+
+  describe('and the run it undoes was given queue: true', () => {
+    it('queues the undo too, and says it is saved on this device', async () => {
+      const rig = setup()
+      const undoing = deferred()
+      await act(async () => { await rig.result.current.run(() => Promise.resolve(), { queue: true, success: 'Dismissed.', undo: () => undoing.promise }) })
+      const { action } = rig.toast.mock.calls[0][0]
+      const box = { outcome: undefined }
+      act(() => { action.onClick().then((outcome) => { box.outcome = outcome }) })
+      expect(box.outcome).toBeUndefined()
+
+      await wait(OFFLINE_WAIT_MS)
+
+      expect(box.outcome).toEqual({ ok: true, value: undefined, queued: true })
+      expect(rig.toast.mock.calls.map(([opts]) => opts)).toEqual([
+        expect.objectContaining({ tone: 'success', title: 'Dismissed.' }),
+        { tone: 'info', title: QUEUED },
+      ])
+    })
   })
 
   describe('and when the device is online', () => {
@@ -603,7 +715,7 @@ describe('while a write is out and the device is offline', () => {
     it('waits for the acknowledgement however long it takes, with nothing said', async () => {
       const rig = setup()
       const work = deferred()
-      const run = begin(rig, work, { success: 'Saved.' })
+      const run = beginWrite(rig, work, { success: 'Saved.' })
 
       await wait(60000)
 
@@ -620,7 +732,7 @@ describe('while a write is out and the device is offline', () => {
 
     it('notices at the next check that the device went offline while the write was out', async () => {
       const rig = setup()
-      const run = begin(rig, deferred(), { success: 'Saved.' })
+      const run = beginWrite(rig, deferred(), { success: 'Saved.' })
       await wait(OFFLINE_WAIT_MS)
       expect(run.outcome).toBeUndefined()
 

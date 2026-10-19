@@ -19,7 +19,8 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 // what run of useMutation gives, { ok }. When ok is false the dialog stays open, and the
 // error toast that run showed is on top of it, so the person can try again or cancel. A
 // result that is not { ok: false }, such as nothing at all, or the { ok: true, queued: true }
-// of a write that was saved on the device while it was offline, counts as done.
+// that a run given queue: true gives for a write that was saved on the device while it was
+// offline, counts as done.
 //
 // Work that is a local change or one Firestore applies at once (dismissing an alert,
 // taking a line off a form) passes instant: the dialog closes first and the work follows,

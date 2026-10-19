@@ -23,6 +23,7 @@ function PermitSelect({ job, trade, status, color }) {
     run(() => updatePermit(job._docId, trade, next), {
       success: `${trade.charAt(0).toUpperCase()}${trade.slice(1)} permit set to ${statusLabel(PERMIT_STATUS, next).toLowerCase()}.`,
       error: 'Could not change the permit status. Try again.',
+      queue: true,
     })
   }
   return (

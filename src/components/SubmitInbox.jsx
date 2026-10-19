@@ -45,6 +45,7 @@ export default function SubmitInbox() {
     }), {
       success: 'Submit created.',
       error: 'Could not create the submit. Try again.',
+      queue: true,
     })
     // A refused submit leaves the form with what was typed, so it can be sent again.
     if (ok) {
@@ -64,12 +65,14 @@ export default function SubmitInbox() {
     }), {
       success: 'Reply sent.',
       error: 'Could not send the reply. Try again.',
+      queue: true,
     })
     if (!ok) return
     setReplyText('')
     if (selectedSubmit.status === 'Open') {
       await runReply(() => updateSubmit(selectedSubmit._docId, { status: 'In Progress' }), {
         error: 'The reply was sent, but the submit did not move to In Progress.',
+        queue: true,
       })
     }
   }
@@ -97,6 +100,7 @@ export default function SubmitInbox() {
             onValueChange={v => selectedSubmit._docId && runStatus(() => updateSubmit(selectedSubmit._docId, { status: v }), {
               success: `Status set to ${v.toLowerCase()}.`,
               error: 'Could not change the status. Try again.',
+              queue: true,
             })}>
             <SelectTrigger
               className="h-auto py-1 px-3 text-xs font-bold border rounded-full w-auto gap-1 shrink-0"

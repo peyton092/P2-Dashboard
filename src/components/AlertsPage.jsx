@@ -240,6 +240,7 @@ export default function AlertsPage() {
       onConfirm: () => run(() => applyAction(alert, 'resolved', { resolvedAt: new Date().toISOString() }), {
         success: 'Alert resolved.',
         error: 'Could not resolve the alert. Try again.',
+        queue: true,
       }),
     })
   }
@@ -247,6 +248,7 @@ export default function AlertsPage() {
     run(() => applyAction(alert, 'snoozed', { snoozeUntil: new Date(Date.now() + 86400000).toISOString() }), {
       success: 'Alert snoozed for 24 hours.',
       error: 'Could not snooze the alert. Try again.',
+      queue: true,
     })
   }
   function handleDismiss(alert) {
@@ -259,6 +261,7 @@ export default function AlertsPage() {
       onConfirm: () => run(() => applyAction(alert, 'dismissed'), {
         success: 'Alert dismissed.',
         error: 'Could not dismiss the alert. Try again.',
+        queue: true,
       }),
     })
   }
@@ -268,6 +271,7 @@ export default function AlertsPage() {
     return runScan(() => Promise.all(fresh.map(a => addAgentAlert({ ...a, status: a.status || 'open' }))), {
       success: `Scan finished. ${fresh.length} alert${fresh.length === 1 ? '' : 's'} refreshed.`,
       error: 'Could not scan the jobs. Try again.',
+      queue: true,
     })
   }
 

@@ -168,6 +168,7 @@ function InvoiceForm({ jobs, allInvoices, materials, onClose }) {
     }, {
       success: 'Invoice saved.',
       error: 'Could not save the invoice. Try again.',
+      queue: true,
     })
     // A refused invoice leaves the form with what was typed, so it can be saved again.
     if (ok) onClose()
@@ -453,6 +454,7 @@ function InvoiceRow({ inv, jobs, allInvoices, materials }) {
                 onValueChange={v => inv._docId && run(() => updateSupplierInvoice(inv._docId, { status: v }), {
                   success: `Status set to ${(STATUS_META[v]?.label || v).toLowerCase()}.`,
                   error: 'Could not change the status. Try again.',
+                  queue: true,
                 })}
               >
                 <SelectTrigger className="h-7 text-xs px-2 bg-white/5 border-white/20 w-36">

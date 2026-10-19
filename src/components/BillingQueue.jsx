@@ -537,6 +537,7 @@ export function BillingActions({ job }) {
       onConfirm: () => runInvoice(() => updateJob(job._docId, { billingStatus: 'invoiced' }), {
         success: `${job.id} marked invoiced.`,
         error: 'Could not submit the invoice. Try again.',
+        queue: true,
       }),
     })
   }
@@ -545,6 +546,7 @@ export function BillingActions({ job }) {
     runHold(() => updateJob(job._docId, { billingStatus: 'hold' }), {
       success: `${job.id} put on billing hold.`,
       error: 'Could not place the hold. Try again.',
+      queue: true,
     })
   }
   function handleRelease() {
@@ -552,6 +554,7 @@ export function BillingActions({ job }) {
     runHold(() => updateJob(job._docId, { billingStatus: 'not-invoiced' }), {
       success: `Hold released on ${job.id}.`,
       error: 'Could not release the hold. Try again.',
+      queue: true,
     })
   }
 

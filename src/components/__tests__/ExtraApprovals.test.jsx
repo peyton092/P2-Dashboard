@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
 import { TONE_HEX, hexToRgb } from '@/lib/tokens'
+import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
 
 // Both portals let the builder or the client approve a change order or ask for a
 // revision. The decision, the notification and the history entry are written by
@@ -350,6 +351,62 @@ describe.each(PORTALS)('$name change orders', (portal) => {
       fireEvent.click(send())
       await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))
       expect(mocks.toast).toHaveBeenCalledWith({ tone: 'success', title: 'Revision requested. P2 has been notified about CO-004.' })
+    })
+  })
+
+  // A decision is a call to a Cloud Function, and nothing queues one, so "saved on this
+  // device" would be false of it. The row waits for the function however long it takes, and
+  // says nothing until it has answered. The clock moves only when the test moves it.
+  describe('a decision whose call is still out while the device is offline', () => {
+    let onLine
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    })
+    afterEach(() => {
+      onLine.mockRestore()
+      vi.useRealTimers()
+    })
+    const wait = (ms) => act(async () => { vi.advanceTimersByTime(ms) })
+    const pending = (mock) => {
+      const box = {}
+      mock.mockReturnValue(new Promise((resolve) => { box.answer = resolve }))
+      return box
+    }
+
+    it('does not say an approval is saved on this device, and keeps the row busy until the function answers', async () => {
+      const call = pending(mocks.approveExtra)
+      mocks.data.extras = [extra()]
+      await portal.open()
+      fireEvent.click(screen.getByRole('button', { name: portal.approveButton }))
+
+      await wait(OFFLINE_WAIT_MS * 4)
+
+      expect(mocks.toast).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: /^Approving/ }).disabled).toBe(true)
+
+      await act(async () => { call.answer({ ok: true }) })
+
+      expect(mocks.toast.mock.calls).toEqual([[{ tone: 'success', title: 'CO-004 approved for $4,100.' }]])
+    })
+
+    it('does not say a revision request is saved on this device, and keeps the form until the function answers', async () => {
+      const call = pending(mocks.rejectExtra)
+      mocks.data.extras = [extra()]
+      await portal.open()
+      fireEvent.click(requestRevision())
+      fireEvent.change(screen.getByPlaceholderText('What should be revised? (required)'), { target: { value: 'Use the 200A panel' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Send revision request' }))
+
+      await wait(OFFLINE_WAIT_MS * 4)
+
+      expect(mocks.toast).not.toHaveBeenCalled()
+      expect(screen.getByPlaceholderText('What should be revised? (required)').value).toBe('Use the 200A panel')
+
+      await act(async () => { call.answer({ ok: true }) })
+
+      expect(mocks.toast.mock.calls).toEqual([[{ tone: 'success', title: 'Revision requested. P2 has been notified about CO-004.' }]])
+      expect(screen.queryByPlaceholderText('What should be revised? (required)')).toBeNull()
     })
   })
 })

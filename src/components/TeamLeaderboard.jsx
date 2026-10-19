@@ -432,6 +432,7 @@ export default function TeamLeaderboard() {
     const { ok } = await runScore(() => patchScore(name, { referrals: (man.referrals || 0) + 1 }), {
       success: `Referral logged for ${name}.`,
       error: `Could not log the referral for ${name}. Try again.`,
+      queue: true,
     })
     if (ok) setAdding(null)
   }
@@ -448,6 +449,7 @@ export default function TeamLeaderboard() {
         ? `${points} bonus point${points === 1 ? '' : 's'} awarded to ${name}.`
         : `${-points} bonus point${points === -1 ? '' : 's'} taken from ${name}.`,
       error: `Could not award the bonus to ${name}. Try again.`,
+      queue: true,
     })
     if (ok) setAdding(null)
   }
@@ -456,6 +458,7 @@ export default function TeamLeaderboard() {
     const { ok } = await runUrl(() => saveUrl(urlDraft.trim()), {
       success: 'Review link saved.',
       error: 'Could not save the review link. Try again.',
+      queue: true,
     })
     if (ok) {
       setUrlEdit(null)

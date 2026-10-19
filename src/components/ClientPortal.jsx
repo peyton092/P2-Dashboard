@@ -566,6 +566,7 @@ function ClientMessages({ jobs, clientName }) {
     }), {
       success: 'Message sent to P2.',
       error: 'Could not send your message. Try again.',
+      queue: true,
     })
     // A refused message leaves the form ready to send again.
     if (ok) {
@@ -585,12 +586,14 @@ function ClientMessages({ jobs, clientName }) {
     }), {
       success: 'Reply sent.',
       error: 'Could not send your reply. Try again.',
+      queue: true,
     })
     if (!ok) return
     setReplyText('')
     if (selected.status === 'Open') {
       await runReply(() => updateSubmit(selected._docId, { status: 'In Progress' }), {
         error: 'The reply was sent, but the message did not move to In Progress.',
+        queue: true,
       })
     }
   }

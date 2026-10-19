@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, cleanup } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
+import { OFFLINE_WAIT_MS } from '../useMutation'
 import { useSavedField } from '../useSavedField'
 
 // A text box over a value that is stored somewhere else, such as the next action of a job in
@@ -239,6 +240,59 @@ describe('a write that is out', () => {
     expect(write).toHaveBeenCalledTimes(2)
     expect(write).toHaveBeenLastCalledWith('two and more')
     await act(async () => { work.resolve() })
+  })
+})
+
+// The write of a box is one Firestore write, which is in the local cache at once, so the box
+// asks for the offline outcome (queue: true in useMutation). Offline, the write does not
+// answer, and after the wait the box says the text is saved on this device and lets go of it.
+describe('a write that is out while the device is offline', () => {
+  let onLine
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+  })
+  afterEach(() => {
+    onLine.mockRestore()
+    vi.useRealTimers()
+  })
+  const wait = (ms) => act(async () => { vi.advanceTimersByTime(ms) })
+
+  it('is saved on this device after the wait, and the box shows what is stored again', async () => {
+    const work = deferred()
+    const { result, write, type, leave, stored } = setup()
+    write.mockReturnValue(work.promise)
+    type('two')
+    await leave()
+    stored('two')
+    expect(result.current.saving).toBe(true)
+
+    await wait(OFFLINE_WAIT_MS)
+
+    expect(toast.mock.calls).toEqual([[{ tone: 'info', title: 'Saved on this device. It will sync when you are back online.' }]])
+    expect(result.current.saving).toBe(false)
+    stored('three')
+    expect(result.current.value).toBe('three')
+  })
+
+  it('tells the person, with the reason, when the write is refused after that', async () => {
+    const work = deferred()
+    const { write, type, leave, stored } = setup()
+    write.mockReturnValue(work.promise)
+    type('two')
+    await leave()
+    stored('two')
+    await wait(OFFLINE_WAIT_MS)
+
+    stored('one')
+    await act(async () => { work.reject(refused()) })
+
+    expect(toast).toHaveBeenCalledTimes(2)
+    expect(toast).toHaveBeenLastCalledWith({
+      tone: 'error',
+      title: 'Could not save. Try again.',
+      description: 'You do not have permission to do that.',
+    })
   })
 })
 

@@ -1691,6 +1691,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
                   edit.run(() => updateJob(docId, { [field]: next }), {
                     success: `${label} set to ${statusLabel(INSPECTION_STATUS, next).toLowerCase()}.`,
                     error: 'Could not change the inspection status. Try again.',
+                    queue: true,
                   })
                 }
               }}
@@ -2570,6 +2571,7 @@ export function SubAssignmentRow({ job: j }) {
             onValueChange={v => j._docId && run(() => updateJob(j._docId, { [`subsStatus.${j.trade}`]: v }), {
               success: `Sub status set to ${statusLabel(SUB_STATUS, v).toLowerCase()}.`,
               error: 'Could not change the sub status. Try again.',
+              queue: true,
             })}
           >
             <SelectTrigger
@@ -2713,6 +2715,7 @@ export function Materials() {
     const { ok } = await runStatus(() => updateMaterial(docId, { status: newStatus }), {
       success: `${matName(m)} set to ${statusLabel(MATERIAL_STATUS, newStatus).toLowerCase()}.`,
       error: 'Could not update the material. Try again.',
+      queue: true,
     })
     if (!ok) return
     // The status is saved. Its history entry is a second write, and says so on its own if
@@ -2724,7 +2727,7 @@ export function Materials() {
       fromStatus:    oldStatus,
       toStatus:      newStatus,
       type:          'status_change',
-    }), { error: 'The status changed, but its history entry was not saved.' })
+    }), { error: 'The status changed, but its history entry was not saved.', queue: true })
   }
 
   const handleSave = async () => {
@@ -2749,6 +2752,7 @@ export function Materials() {
     const { ok } = await runSave(() => (editing ? updateMaterial(editing, data) : addMaterial(data)), {
       success: editing ? 'Material updated.' : 'Material requested.',
       error: 'Could not save the material. Try again.',
+      queue: true,
     })
     // A refused save leaves the form open with what was typed, so it can be sent again.
     if (!ok) return
@@ -2760,6 +2764,7 @@ export function Materials() {
     if (editing) {
       await runStatus(() => addHistory({ materialDocId: editing, materialName: data.name, jobId: data.jobId, type: 'edited' }), {
         error: 'The material was saved, but its history entry was not.',
+        queue: true,
       })
     }
   }
@@ -3327,6 +3332,7 @@ export function Notifications() {
     if (n.read || !n._docId) return
     run(() => updateNotification(n._docId, { read: true }), {
       error: 'Could not mark the notification read. Try again.',
+      queue: true,
     })
   }
   const dismiss = (n) => {
@@ -3334,6 +3340,7 @@ export function Notifications() {
     run(() => updateNotification(n._docId, { dismissed: true, read: true }), {
       success: 'Notification dismissed.',
       error: 'Could not dismiss the notification. Try again.',
+      queue: true,
       undo: () => updateNotification(n._docId, { dismissed: false, read: !!n.read }),
     })
   }
@@ -3343,6 +3350,7 @@ export function Notifications() {
     run(() => Promise.all(unread.map(n => updateNotification(n._docId, { read: true }))), {
       success: `Marked ${unread.length} notification${unread.length === 1 ? '' : 's'} read.`,
       error: 'Could not mark the notifications read. Try again.',
+      queue: true,
       undo: () => Promise.all(unread.map(n => updateNotification(n._docId, { read: false }))),
     })
   }
