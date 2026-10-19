@@ -278,7 +278,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
 
         {/* The action buttons stop the click, so they do not open the breakdown too. */}
         <div className="flex items-center gap-0.5 shrink-0 max-sm:order-last max-sm:basis-full max-sm:justify-end" onClick={e => e.stopPropagation()}>
-          <IconButton label={`Google review link for ${name}`} aria-expanded={showReviewLink}
+          <IconButton label={`Open the Google review link for ${name}`} aria-expanded={showReviewLink}
             className="text-zinc-400"
             onClick={() => { setShowReviewLink(v => !v); onSetAdding(null) }}>
             <StarIcon size={12} />
@@ -295,7 +295,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
           </IconButton>
         </div>
 
-        <IconButton label={`Score breakdown for ${name}`} aria-expanded={expanded} aria-controls={breakdownId}
+        <IconButton label={`Show the score breakdown for ${name}`} aria-expanded={expanded} aria-controls={breakdownId}
           className="text-zinc-400"
           onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}>
           {expanded ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} />}
@@ -315,7 +315,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
           <span className="text-sm text-white flex-1">Log +1 Referral for {name} <span className="text-zinc-400">(+{PTS.referral} pts)</span></span>
           <Button variant="brand" size="sm" className="h-7 text-xs"
             onClick={() => onLogReferral(name)}>Confirm</Button>
-          <IconButton label="Cancel the referral" onClick={() => onSetAdding(null)} className="text-zinc-400">
+          <IconButton label="Cancel adding a referral" onClick={() => onSetAdding(null)} className="text-zinc-400">
             <XIcon size={13} />
           </IconButton>
         </div>
@@ -338,7 +338,7 @@ function CrewCard({ entry, idx, reviewUrl, isAdding, onSetAdding, onLogReferral,
             onClick={() => onLogBonus(name, isAdding.value, isAdding.note)}>
             Award Bonus
           </Button>
-          <IconButton label="Cancel the bonus" onClick={() => onSetAdding(null)} className="text-zinc-400">
+          <IconButton label="Cancel adding a bonus" onClick={() => onSetAdding(null)} className="text-zinc-400">
             <XIcon size={13} />
           </IconButton>
         </div>

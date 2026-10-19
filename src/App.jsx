@@ -1609,7 +1609,7 @@ function Extras() {
 // (Phase 18). The words and colors of an inspection status are in
 // src/lib/status.js.
 
-export function PhaseRow({ label, status, note, docId, field }) {
+export function PhaseRow({ label, status, note, docId, field, jobId }) {
   // Two mutations, because the buttons and the list are switched off only while a result
   // is being recorded. A plain edit of the status is a Firestore write that is applied on
   // the screen at once, and it must not hold them off while it waits for the server.
@@ -1619,6 +1619,9 @@ export function PhaseRow({ label, status, note, docId, field }) {
   const busy = result.busy
   const canEdit = !!docId
   const [, trade, phase] = field ? field.split('.') : []
+  // Every job's card has a row for each phase of each trade, so the controls of a row name
+  // the job, the trade and the phase: QBS-003 Electrical Rough in.
+  const subject = [jobId, TRADE_META[trade]?.label, label].filter(Boolean).join(' ')
   // A phase with no recorded result is pending.
   const current = status || 'pending'
   const color = statusColor(INSPECTION_STATUS, current)
@@ -1638,7 +1641,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
   // it comes from the red button or from the list. The dialog stays open while the call is
   // out, and a refusal leaves it open under the error toast.
   const markFailed = () => ask({
-    title: `Mark ${label} failed?`,
+    title: `Mark ${subject} failed?`,
     body: 'The failed result is recorded on the job and the team is alerted.',
     confirmLabel: 'Mark failed',
     tone: 'critical',
@@ -1678,7 +1681,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
                 backgroundColor: withAlpha(color, 0.13),
                 border: `1px solid ${withAlpha(color, 0.27)}`,
               }}
-              aria-label={`Update ${label} status`}
+              aria-label={`Update ${subject} status`}
             >
               {INSP_STATUSES.map(s => (
                 <option key={s} value={s} style={{ backgroundColor: '#111', color: '#fff' }}>
@@ -1691,7 +1694,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
               onClick={markPassed}
               disabled={busy}
               title="Mark passed"
-              aria-label={`Mark ${label} passed`}
+              aria-label={`Mark ${subject} passed`}
               className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
               style={{ backgroundColor: withAlpha(SEMANTIC.success, 0.13), color: SEMANTIC.success, border: `1px solid ${withAlpha(SEMANTIC.success, 0.27)}` }}
             >
@@ -1702,7 +1705,7 @@ export function PhaseRow({ label, status, note, docId, field }) {
               onClick={markFailed}
               disabled={busy}
               title="Mark failed"
-              aria-label={`Mark ${label} failed`}
+              aria-label={`Mark ${subject} failed`}
               className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50"
               style={{ backgroundColor: withAlpha(SEMANTIC.critical, 0.13), color: SEMANTIC.critical, border: `1px solid ${withAlpha(SEMANTIC.critical, 0.27)}` }}
             >
@@ -2045,6 +2048,7 @@ function InspectionJobCard({ job: j, gate, tradeFilter }) {
                     note={trade === 'electrical' && phase === 'trim' ? j.insp?.[trade]?.note : undefined}
                     docId={j._docId}
                     field={`insp.${trade}.${phase}`}
+                    jobId={j.id}
                   />
                 ))}
                 {trade === 'hvac' && j.insp?.hvac?.roughIn === 'failed' && (
@@ -3051,8 +3055,8 @@ function MaterialCard({
             type="button"
             onClick={onEdit}
             className="h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
-            title="Edit material"
-            aria-label="Edit material"
+            title={`Edit ${matName(m)}`}
+            aria-label={`Edit ${matName(m)}`}
           >
             <PencilIcon size={13} />
           </button>
@@ -3061,8 +3065,8 @@ function MaterialCard({
               type="button"
               onClick={onToggleHistory}
               className="h-9 w-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
-              title={showHistory ? 'Hide history' : 'View history'}
-              aria-label={showHistory ? 'Hide history' : 'View history'}
+              title={`${showHistory ? 'Hide' : 'View'} the history of ${matName(m)}`}
+              aria-label={`${showHistory ? 'Hide' : 'View'} the history of ${matName(m)}`}
               aria-expanded={showHistory}
             >
               <ActivityIcon size={13} />

@@ -325,10 +325,10 @@ describe('New job form', () => {
 
 describe('inspection result buttons', () => {
   const row = (props = {}) => render(withToast(
-    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" {...props} />,
+    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" {...props} />,
   ))
-  const pass = () => screen.getByRole('button', { name: 'Mark Rough-In passed' })
-  const fail = () => screen.getByRole('button', { name: 'Mark Rough-In failed' })
+  const pass = () => screen.getByRole('button', { name: 'Mark QBS-003 Electrical Rough-In passed' })
+  const fail = () => screen.getByRole('button', { name: 'Mark QBS-003 Electrical Rough-In failed' })
 
   it('pass calls passInspection with the job document id, the trade and the phase', async () => {
     row()
@@ -339,9 +339,24 @@ describe('inspection result buttons', () => {
     expect(mocks.updateJob).not.toHaveBeenCalled()
   })
 
+  // Every job's card has a row for each phase of each trade, so a row's controls name the
+  // job, the trade and the phase, and no two rows of a list share a name.
+  it('names the job, the trade and the phase in each of its controls', () => {
+    render(withToast(<>
+      <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" />
+      <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.plumbing.roughIn" jobId="QBS-003" />
+      <PhaseRow label="Rough-In" status="pending" docId="job2" field="insp.electrical.roughIn" jobId="QBS-004" />
+    </>))
+    for (const subject of ['QBS-003 Electrical Rough-In', 'QBS-003 Plumbing Rough-In', 'QBS-004 Electrical Rough-In']) {
+      expect(screen.getByRole('button', { name: `Mark ${subject} passed` }), subject).toBeTruthy()
+      expect(screen.getByRole('button', { name: `Mark ${subject} failed` }), subject).toBeTruthy()
+      expect(screen.getByRole('combobox', { name: `Update ${subject} status` }), subject).toBeTruthy()
+    }
+  })
+
   it('names the trim phase of electrical', async () => {
     row({ label: 'Trim', field: 'insp.electrical.trim' })
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Trim passed' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mark QBS-003 Electrical Trim passed' }))
     await waitFor(() => expect(mocks.passInspection).toHaveBeenCalledWith('job1', 'electrical', 'trim'))
   })
 
@@ -382,7 +397,7 @@ describe('inspection result buttons', () => {
     fireEvent.click(pass())
     expect(pass().disabled).toBe(true)
     expect(fail().disabled).toBe(true)
-    expect(screen.getByRole('combobox', { name: /Update Rough-In status/ }).disabled).toBe(true)
+    expect(screen.getByRole('combobox', { name: /Update QBS-003 Electrical Rough-In status/ }).disabled).toBe(true)
     fireEvent.click(pass())
     fireEvent.click(fail())
     expect(mocks.passInspection).toHaveBeenCalledTimes(1)
@@ -415,7 +430,7 @@ describe('inspection result buttons', () => {
 
   it('the buttons are not offered for a row with no job document', () => {
     row({ docId: undefined })
-    expect(screen.queryByRole('button', { name: /Mark Rough-In/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Mark QBS-003 Electrical Rough-In/ })).toBeNull()
   })
 })
 
@@ -423,15 +438,15 @@ describe('inspection result buttons', () => {
 // asked about first. The question is the same from the red button and from the list.
 describe('marking an inspection failed', () => {
   const row = (props = {}) => render(withToast(
-    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" {...props} />,
+    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" {...props} />,
   ))
-  const fail = () => screen.getByRole('button', { name: 'Mark Rough-In failed' })
-  const list = () => screen.getByRole('combobox', { name: /Update Rough-In status/ })
+  const fail = () => screen.getByRole('button', { name: 'Mark QBS-003 Electrical Rough-In failed' })
+  const list = () => screen.getByRole('combobox', { name: /Update QBS-003 Electrical Rough-In status/ })
   // Base UI puts focus inside a dialog on the next animation frame after it mounts. A test
   // that presses a button in it waits for that first, or the frame lands later on a slow
   // machine, on top of what the test did.
   const ask = async () => {
-    const dialog = await screen.findByRole('dialog', { name: 'Mark Rough-In failed?' })
+    const dialog = await screen.findByRole('dialog', { name: 'Mark QBS-003 Electrical Rough-In failed?' })
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
     return dialog
   }
@@ -474,15 +489,15 @@ describe('marking an inspection failed', () => {
     expect(await axe(container)).toHaveNoViolations()
 
     fireEvent.click(fail())
-    await openSettled('Mark Rough-In failed?')
+    await openSettled('Mark QBS-003 Electrical Rough-In failed?')
     await initialFocusLanded()
     expect(await axe(document.body)).toHaveNoViolations()
   })
 
   it('names the final phase of HVAC', async () => {
     row({ label: 'Final', field: 'insp.hvac.final' })
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Final failed' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Mark Final failed?' })
+    fireEvent.click(screen.getByRole('button', { name: 'Mark QBS-003 HVAC Final failed' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Mark QBS-003 HVAC Final failed?' })
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
     confirm(dialog)
     await waitFor(() => expect(mocks.failInspection).toHaveBeenCalledWith('job1', 'hvac', 'final'))
@@ -550,9 +565,9 @@ describe('marking an inspection failed', () => {
 })
 
 describe('inspection status list', () => {
-  const list = () => screen.getByRole('combobox', { name: /Update Rough-In status/ })
+  const list = () => screen.getByRole('combobox', { name: /Update QBS-003 Electrical Rough-In status/ })
   const row = () => render(withToast(
-    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" />,
+    <PhaseRow label="Rough-In" status="pending" docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" />,
   ))
 
   // The list is a pill with 11 pixel words, so they are in the text color of the tone: a
@@ -562,7 +577,7 @@ describe('inspection status list', () => {
     ['failed', 'critical'],
     ['blocked', 'info'],
   ])('sets the words of a %s result in the text color of %s', (status, tone) => {
-    render(withToast(<PhaseRow label="Rough-In" status={status} docId="job1" field="insp.electrical.roughIn" />))
+    render(withToast(<PhaseRow label="Rough-In" status={status} docId="job1" field="insp.electrical.roughIn" jobId="QBS-003" />))
     expect(list().style.color).toBe(`rgb(${hexToRgb(toneText(tone)).join(', ')})`)
   })
 
@@ -594,7 +609,7 @@ describe('inspection status list', () => {
     fireEvent.change(list(), { target: { value: 'scheduled' } })
 
     expect(list().disabled).toBe(false)
-    expect(screen.getByRole('button', { name: 'Mark Rough-In passed' }).disabled).toBe(false)
+    expect(screen.getByRole('button', { name: 'Mark QBS-003 Electrical Rough-In passed' }).disabled).toBe(false)
 
     await act(async () => { pending.resolve() })
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1))

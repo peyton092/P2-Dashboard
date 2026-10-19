@@ -818,6 +818,9 @@ function CORow({ co, job, now, onEdit, onPdf }) {
   const locked    = isApproved(co)
   const canEdit   = isNew && !locked
   const coNum     = co.coNumber || co.id || '—'
+  // What the actions of the row are named after: a record with neither a number nor an id
+  // is named in words, not by the placeholder the row shows.
+  const coName    = co.coNumber || co.id || 'this change order'
   const desc      = co.desc || co.lineItems?.[0]?.desc || '—'
   const total     = co.total ?? co.amount ?? 0
   const next      = nextActionFor(co, now)
@@ -880,7 +883,7 @@ function CORow({ co, job, now, onEdit, onPdf }) {
           <div className="flex items-center gap-1 justify-end">
             {isNew && (
               <IconButton
-                label={`Download PDF of ${coNum}`}
+                label={`Download PDF of ${coName}`}
                 onClick={onPdf}
                 className="text-zinc-300 hover:text-white"
               >
@@ -890,7 +893,7 @@ function CORow({ co, job, now, onEdit, onPdf }) {
             {/* The tooltip says why an approved change order cannot be edited, so the button
                 still takes the pointer when it is switched off. */}
             <IconButton
-              label={`Edit ${coNum}`}
+              label={`Edit ${coName}`}
               onClick={() => onEdit(co)}
               className="text-zinc-300 hover:text-white disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-40"
               title={locked ? APPROVED_HINT : isNew ? 'Edit or resend' : 'Edit'}

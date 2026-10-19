@@ -210,6 +210,13 @@ describe('the list of change orders', () => {
     expect(screen.getAllByRole('button', { name: 'Edit CO-2026-001' }).length).toBeGreaterThan(0)
     expect(screen.getByRole('combobox', { name: 'Filter by job' })).toBeTruthy()
   })
+
+  it('names the actions of a change order with neither a number nor an id in words', () => {
+    mocks.data.extras = [saved({ coNumber: undefined, id: undefined })]
+    open()
+    expect(screen.getAllByRole('button', { name: 'Download PDF of this change order' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Edit this change order' }).length).toBeGreaterThan(0)
+  })
 })
 
 describe('an approved change order is read only', () => {

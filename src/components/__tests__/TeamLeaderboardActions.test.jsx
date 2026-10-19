@@ -294,7 +294,7 @@ describe('saving the Google review link', () => {
       expect(save().textContent).toBe('Saving…')
       expect(link().value).toBe('  https://g.page/r/new/review  ')
       expect(toastCalls()).toEqual([])
-      fireEvent.click(screen.getByRole('button', { name: 'Google review link for Austin' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Open the Google review link for Austin' }))
       expect(screen.getByText('https://g.page/r/old/review')).toBeTruthy()
 
       await act(async () => { finish() })
@@ -331,16 +331,16 @@ describe('read by a screen reader', () => {
     await open()
     const referral = screen.getByRole('button', { name: 'Log a referral for Austin', expanded: false })
     const bonus = screen.getByRole('button', { name: 'Award bonus points to Austin', expanded: false })
-    const link = screen.getByRole('button', { name: 'Google review link for Austin', expanded: false })
+    const link = screen.getByRole('button', { name: 'Open the Google review link for Austin', expanded: false })
 
     fireEvent.click(referral)
     expect(referral.getAttribute('aria-expanded')).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel the referral' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel adding a referral' }))
     expect(referral.getAttribute('aria-expanded')).toBe('false')
 
     fireEvent.click(bonus)
     expect(bonus.getAttribute('aria-expanded')).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel the bonus' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel adding a bonus' }))
     expect(bonus.getAttribute('aria-expanded')).toBe('false')
 
     fireEvent.click(link)
@@ -351,7 +351,7 @@ describe('read by a screen reader', () => {
 
   it('opens the score breakdown of a card from a button that says whether it is open', async () => {
     await open()
-    const toggle = screen.getByRole('button', { name: 'Score breakdown for Austin', expanded: false })
+    const toggle = screen.getByRole('button', { name: 'Show the score breakdown for Austin', expanded: false })
     const controls = toggle.getAttribute('aria-controls')
 
     fireEvent.click(toggle)
@@ -383,7 +383,7 @@ describe('read by a screen reader', () => {
   it('has no accessibility violations, with a card open and its bonus panel out', async () => {
     const { container } = render(<ToastContext.Provider value={mocks.toast}><TeamLeaderboard /></ToastContext.Provider>)
     await act(async () => {})
-    fireEvent.click(screen.getByRole('button', { name: 'Score breakdown for Austin' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show the score breakdown for Austin' }))
     fireEvent.click(screen.getByRole('button', { name: 'Award bonus points to Austin' }))
     fireEvent.click(screen.getByRole('button', { name: 'Set the Google review link' }))
 

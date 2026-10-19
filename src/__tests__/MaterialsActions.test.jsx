@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   addMaterial: vi.fn(),
   updateMaterial: vi.fn(),
   addHistory: vi.fn(),
+  history: [],
   toast: vi.fn(),
 }))
 
@@ -28,7 +29,7 @@ vi.mock('../hooks/useFirestore', async (importOriginal) => ({
   addMaterial: mocks.addMaterial,
   updateMaterial: mocks.updateMaterial,
   addHistory: mocks.addHistory,
-  useHistory: () => ({ history: [] }),
+  useHistory: () => ({ history: mocks.history }),
 }))
 // The chip in every page header asks this hook for the connection. What it says is
 // not what this file is about, and the real one would start Firestore.
@@ -53,6 +54,7 @@ const PANEL = {
 
 beforeEach(() => {
   for (const mock of [mocks.addMaterial, mocks.updateMaterial, mocks.addHistory, mocks.toast]) mock.mockReset()
+  mocks.history = []
   mocks.data = { jobs: [{ id: 'QBS-003', _docId: 'job3', client: 'Dana Lee' }], materials: [PANEL], scope: { role: 'owner' } }
 })
 
@@ -151,9 +153,27 @@ describe('requesting a material', () => {
   })
 })
 
+// Every card in the list has the same two buttons, so each names the material it acts on.
+describe('the buttons of a material card', () => {
+  it('name the material they edit and whose history they show', () => {
+    mocks.data.materials = [PANEL, { ...PANEL, _docId: 'm2', name: 'Conduit', item: 'Conduit' }]
+    mocks.history = [{
+      _docId: 'h1', materialDocId: 'm1', type: 'status_change', fromStatus: 'Ordered', toStatus: 'Delivered',
+      createdAt: { toDate: () => new Date(2026, 9, 12) },
+    }]
+    open()
+
+    expect(screen.getByRole('button', { name: 'Edit Main panel' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Edit Conduit' })).toBeTruthy()
+    const history = screen.getByRole('button', { name: 'View the history of Main panel', expanded: false })
+    fireEvent.click(history)
+    expect(screen.getByRole('button', { name: 'Hide the history of Main panel', expanded: true })).toBe(history)
+  })
+})
+
 describe('editing a material', () => {
   const edit = () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Edit material' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Main panel' }))
     fireEvent.change(nameField(), { target: { value: 'Main panel, 225A' } })
   }
 
