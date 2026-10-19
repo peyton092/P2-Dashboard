@@ -463,10 +463,12 @@ export default function TeamLeaderboard() {
   }
 
   async function handleSaveUrl() {
+    // This run is not given queue: true. saveUrl sets the link on the cards once its write has
+    // been answered, and nothing else updates what they show, so a run that stopped waiting
+    // would close the panel while every card went on showing and copying the old link.
     const { ok } = await runUrl(() => saveUrl(urlDraft.trim()), {
       success: 'Review link saved.',
       error: 'Could not save the review link. Try again.',
-      queue: true,
     })
     if (ok) {
       setUrlEdit(null)

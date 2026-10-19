@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import { ToastContext } from '@/components/ui/use-toast'
 import { logError } from '@/lib/errorLogger'
+import { OFFLINE_WAIT_MS } from '@/hooks/useMutation'
 
 // The leaderboard logs a referral, awards a bonus and saves the Google review link. Each
 // of those tells the person how it ended, and its panel closes only when its write went
@@ -272,6 +273,37 @@ describe('saving the Google review link', () => {
     expect(save().disabled).toBe(true)
     expect(mocks.setDoc).toHaveBeenCalledTimes(1)
     await act(async () => { finish() })
+  })
+
+  // The link on the crew cards is set by saveUrl once its write has been answered, and nothing
+  // else updates it, so this save is not given queue: true. Offline, the panel would close on
+  // "saved on this device" while every card went on showing and copying the old link.
+  it('stays on Saving past the wait while the device is offline, keeps the panel open, and sets the link when the write is answered', async () => {
+    let finish
+    mocks.setDoc.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    await start()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await press(save())
+      await act(async () => { vi.advanceTimersByTime(OFFLINE_WAIT_MS * 4) })
+
+      expect(save().textContent).toBe('Saving…')
+      expect(link().value).toBe('  https://g.page/r/new/review  ')
+      expect(toastCalls()).toEqual([])
+      fireEvent.click(screen.getAllByTitle('Google Review link')[0])
+      expect(screen.getByText('https://g.page/r/old/review')).toBeTruthy()
+
+      await act(async () => { finish() })
+
+      expect(toastCalls()).toEqual([{ tone: 'success', title: 'Review link saved.' }])
+      expect(screen.queryByPlaceholderText('https://g.page/r/YOUR_PLACE_ID/review')).toBeNull()
+      expect(screen.getByText('https://g.page/r/new/review')).toBeTruthy()
+      expect(screen.queryByText('https://g.page/r/old/review')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      onLine.mockRestore()
+    }
   })
 
   it('keeps the panel and what was typed, and says why, when the write is refused', async () => {
