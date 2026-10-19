@@ -8,7 +8,7 @@ import { getStorage } from './shims/storage'
 import { getFunctions } from './shims/functions'
 import { getMessaging, isSupported as messagingIsSupported } from './shims/messaging'
 import { buildSeed, DEMO_SEED_VERSION } from './seed'
-import { deviceStorage } from './device'
+import { announceSaveFailed, deviceStorage } from './device'
 
 // src/firebase.js for the demo build. vite.config.js sends every import of
 // src/firebase.js here in demo mode, so the app gets the same five exports, built from
@@ -25,7 +25,12 @@ export const DEMO_STATE_VERSION = `${DEMO_SEED_VERSION} built ${BUILT}`
 
 const app = initializeApp({
   demo: {
-    store: { seed: (now) => buildSeed(now), storage: deviceStorage(), version: DEMO_STATE_VERSION },
+    store: {
+      seed: (now) => buildSeed(now),
+      storage: deviceStorage(),
+      version: DEMO_STATE_VERSION,
+      onSaveFailed: announceSaveFailed,
+    },
   },
 })
 

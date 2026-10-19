@@ -5,6 +5,7 @@ import { useConfirm } from '@/hooks/useConfirm'
 import { useMutation } from '@/hooks/useMutation'
 import { cn } from '@/lib/utils'
 import { currentDemoRole, onDemoRoleChange, switchDemoRole } from './demoSession'
+import { DEMO_SAVE_FAILED_EVENT } from './device'
 import { resetDemoState } from './firebase'
 import './demo.css'
 
@@ -25,6 +26,7 @@ const ROLES = [
 ]
 
 const SIGNED_OUT = 'There is no signing out of the demo, so it shows the owner again.'
+const OUT_OF_ROOM = 'This device is out of room. Changes will not be kept after you close the demo. Use Reset to start clean.'
 
 const subscribe = (onChange) => onDemoRoleChange(() => onChange())
 
@@ -62,6 +64,19 @@ export default function DemoBanner() {
   useEffect(() => onDemoRoleChange(({ reason }) => {
     if (reason === 'sign-out') toast({ tone: 'info', title: SIGNED_OUT })
   }), [toast])
+
+  // When what the demo saves no longer fits on the device, it is said once, and the
+  // toast stays until it is dismissed, since nothing else will say it again.
+  const warnedOutOfRoom = useRef(false)
+  useEffect(() => {
+    const onSaveFailed = () => {
+      if (warnedOutOfRoom.current) return
+      warnedOutOfRoom.current = true
+      toast({ tone: 'error', title: OUT_OF_ROOM, duration: 0 })
+    }
+    window.addEventListener(DEMO_SAVE_FAILED_EVENT, onSaveFailed)
+    return () => window.removeEventListener(DEMO_SAVE_FAILED_EVENT, onSaveFailed)
+  }, [toast])
 
   const askToReset = () => ask({
     title: 'Reset the sample data?',

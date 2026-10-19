@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createDemoStore, DEMO_STATE_KEY } from '../store'
+import { createDemoStore, DEMO_STATE_KEY, FILE_NOT_SAVED, SAVED_DATA_URL_LIMIT } from '../store'
 import {
   firestoreOver, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   CACHE_SIZE_UNLIMITED, collection, doc, query, where, orderBy, limit,
@@ -405,6 +405,42 @@ describe('keeping the store on the device', () => {
     storage.setItem(DEMO_STATE_KEY, '{ not json')
     const garbled = firestoreOver(createDemoStore({ seed, storage, version: 'test-1' }))
     expect((await getDoc(doc(garbled, 'jobs', 'j1'))).exists()).toBe(true)
+  })
+
+  it('leaves a large data URL out of what it saves, and keeps it while the page is open', async () => {
+    const photo = `data:image/jpeg;base64,${'A'.repeat(SAVED_DATA_URL_LIMIT)}`
+    const icon = 'data:image/png;base64,AAAA'
+    await setDoc(doc(db, 'jobs/j1/files', 'f2'), { name: 'Site.jpg', url: photo, thumb: icon })
+    await vi.advanceTimersByTimeAsync(250)
+    const saved = JSON.parse(storage.map.get(DEMO_STATE_KEY)).collections['jobs/j1/files'].f2
+    expect(saved).toEqual({ name: 'Site.jpg', url: FILE_NOT_SAVED, thumb: icon })
+    expect((await getDoc(doc(db, 'jobs/j1/files', 'f2'))).data().url).toBe(photo)
+
+    const later = firestoreOver(createDemoStore({ seed, storage, version: 'test-1' }))
+    expect((await getDoc(doc(later, 'jobs/j1/files', 'f2'))).data()).toEqual({ name: 'Site.jpg', url: FILE_NOT_SAVED, thumb: icon })
+  })
+
+  it('says each time a save does not fit, forgets the older save, and keeps working', async () => {
+    const onSaveFailed = vi.fn()
+    const roomy = memoryStorage()
+    const shrinking = firestoreOver(createDemoStore({ seed, storage: roomy, version: 'test-1', onSaveFailed }))
+    await updateDoc(doc(shrinking, 'jobs', 'j1'), { progress: 41 })
+    await vi.advanceTimersByTimeAsync(250)
+    expect(roomy.map.has(DEMO_STATE_KEY)).toBe(true)
+    expect(onSaveFailed).not.toHaveBeenCalled()
+
+    roomy.setItem = () => { throw new DOMException('The quota has been exceeded.', 'QuotaExceededError') }
+    await updateDoc(doc(shrinking, 'jobs', 'j1'), { progress: 42 })
+    await vi.advanceTimersByTimeAsync(250)
+    expect(onSaveFailed).toHaveBeenCalledTimes(1)
+    expect(roomy.map.has(DEMO_STATE_KEY)).toBe(false)
+    expect((await getDoc(doc(shrinking, 'jobs', 'j1'))).data().progress).toBe(42)
+
+    // The device storage answers false instead of throwing (device.js).
+    roomy.setItem = () => false
+    await updateDoc(doc(shrinking, 'jobs', 'j1'), { progress: 43 })
+    await vi.advanceTimersByTimeAsync(250)
+    expect(onSaveFailed).toHaveBeenCalledTimes(2)
   })
 
   it('works when the storage refuses every call', async () => {

@@ -26,11 +26,23 @@ import { Timestamp, isServerTimestamp, serverClock } from './timestamp'
 // After every write the whole store is saved to storage under DEMO_STATE_KEY, 250 ms
 // after the last write of a burst. A store that nobody wrote to saves nothing, so an
 // untouched demo starts from a fresh seed, dated from today, each time it opens. Every
-// call to storage is guarded, because storage can be blocked or full, and the demo
-// then simply forgets on reload.
+// call to storage is guarded, because storage can be blocked or full. A save that does
+// not fit removes the older one, so a reload starts from the seed rather than from an
+// earlier moment, and calls onSaveFailed, so the page can say so.
+//
+// The whole store is one value in storage, and an uploaded image is held as a data URL
+// (shims/storage.js) in the document that names it, so a data URL longer than
+// SAVED_DATA_URL_LIMIT is left out of what is saved: FILE_NOT_SAVED stands in its place,
+// and the store keeps the real one for as long as the page is open.
 
 export const DEMO_STATE_KEY = 'p2-demo-state'
 export const SAVE_DELAY_MS = 250
+export const SAVED_DATA_URL_LIMIT = 16 * 1024
+export const FILE_NOT_SAVED = 'demo:file-not-saved'
+
+// For JSON.stringify: every value as it is, but a long data URL as FILE_NOT_SAVED.
+const savable = (_key, value) =>
+  (typeof value === 'string' && value.length > SAVED_DATA_URL_LIMIT && value.startsWith('data:') ? FILE_NOT_SAVED : value)
 
 // An error with the code Firestore would give, for the screens that map codes to words.
 export class DemoStoreError extends Error {
@@ -253,7 +265,7 @@ const guarded = (fn) => {
 // round, so one callback that fails does not keep the others from being called.
 const reportLater = (error) => setTimeout(() => { throw error }, 0)
 
-export function createDemoStore({ seed = () => ({}), storage = null, version = 'demo', clock = () => new Date() } = {}) {
+export function createDemoStore({ seed = () => ({}), storage = null, version = 'demo', clock = () => new Date(), onSaveFailed = null } = {}) {
   let collections = null
   let seedDay = null
   const nextStamp = serverClock()
@@ -331,7 +343,17 @@ export function createDemoStore({ seed = () => ({}), storage = null, version = '
       out[path] = {}
       for (const [id, entry] of docs) out[path][id] = encode(entry.data)
     }
-    guarded(() => storage.setItem(DEMO_STATE_KEY, JSON.stringify({ version, day: seedDay, collections: out })))
+    let kept = false
+    try {
+      kept = storage.setItem(DEMO_STATE_KEY, JSON.stringify({ version, day: seedDay, collections: out }, savable)) !== false
+    } catch {
+      kept = false
+    }
+    if (kept) return
+    guarded(() => storage.removeItem(DEMO_STATE_KEY))
+    if (onSaveFailed) {
+      try { onSaveFailed() } catch (thrown) { reportLater(thrown) }
+    }
   }
 
   function scheduleSave() {

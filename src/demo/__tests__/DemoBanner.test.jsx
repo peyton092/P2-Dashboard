@@ -35,6 +35,7 @@ vi.mock('../firebase', () => ({ resetDemoState: vi.fn() }))
 import DemoBanner from '../DemoBanner'
 import { switchDemoRole } from '../demoSession'
 import { resetDemoState } from '../firebase'
+import { DEMO_SAVE_FAILED_EVENT } from '../device'
 
 const renderBanner = () => render(<ToastProvider><DemoBanner /></ToastProvider>)
 
@@ -96,6 +97,19 @@ describe('the demo banner', () => {
     expect((await screen.findAllByText('The sample data is back to how it started.')).length).toBeGreaterThan(0)
     expect(resetDemoState).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('says once that the device is out of room, however often a save does not fit', async () => {
+    const OUT_OF_ROOM = 'This device is out of room. Changes will not be kept after you close the demo. Use Reset to start clean.'
+    const shown = () => screen.queryAllByText(OUT_OF_ROOM).filter((element) => !element.closest('.sr-only'))
+    renderBanner()
+    act(() => {
+      window.dispatchEvent(new Event(DEMO_SAVE_FAILED_EVENT))
+      window.dispatchEvent(new Event(DEMO_SAVE_FAILED_EVENT))
+    })
+    await waitFor(() => expect(shown()).toHaveLength(1))
+    act(() => window.dispatchEvent(new Event(DEMO_SAVE_FAILED_EVENT)))
+    expect(shown()).toHaveLength(1)
   })
 
   it('marks the page while it is shown, so the shell gives up its height, and unmarks it when it goes', () => {

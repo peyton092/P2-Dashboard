@@ -38,9 +38,10 @@ What a person does goes through the same rules as the real app. A builder or a c
 ## What does not work in the demo
 
 1. QuickBooks, CompanyCam, push notifications and the access scope backfill are turned off. A screen that shows the function's own words says "This is a demo. Connections to other systems are turned off."
-2. Uploaded photos and documents stay in the browser for as long as the page is open (small images also with the record that names them). The app only links to secure web addresses, so an uploaded file shows as preview or link unavailable.
-3. Creating a user account records the account, but no email is sent and nobody can sign in with it. The demo signs in only as its own accounts.
-4. The background jobs of the real system do not run. A message a client sends reaches P2 but is not passed on to the builder portal, as the real system would do a moment later.
+2. Uploaded photos and documents stay in the browser for as long as the page is open. An image of up to 16 KB is also saved with the record that names it; a larger one is not, so after a reload its record names no file. The app only links to secure web addresses, so an uploaded file shows as preview or link unavailable.
+3. When what the demo saves no longer fits in the browser's storage, a message says once that the device is out of room and changes will not be kept after the demo is closed, and the older saved state is dropped. Reset starts clean.
+4. Creating a user account records the account, but no email is sent and nobody can sign in with it. The demo signs in only as its own accounts.
+5. The background jobs of the real system do not run. A message a client sends reaches P2 but is not passed on to the builder portal, as the real system would do a moment later.
 
 ## How the build works
 

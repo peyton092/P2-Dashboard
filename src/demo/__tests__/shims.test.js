@@ -3,6 +3,7 @@ import { initializeApp } from '../shims/app'
 import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL } from '../shims/storage'
 import { getMessaging, getToken, isSupported, onMessage } from '../shims/messaging'
 import { getFunctions } from '../shims/functions'
+import { deviceStorage, announceSaveFailed, DEMO_SAVE_FAILED_EVENT } from '../device'
 
 // The smaller shims. Storage keeps uploads in memory on the device and gives back a
 // link the browser can open without a network: a data URL for an image of up to
@@ -100,6 +101,26 @@ describe('storage', () => {
     expect(progress[progress.length - 1]).toBe(100)
     const task = uploadBytesResumable(r, fileOf(16, 'application/pdf', 'notes.pdf'))
     await expect(task).resolves.toMatchObject({ ref: r, state: 'success', totalBytes: 16 })
+  })
+})
+
+describe('the storage of the device', () => {
+  it('answers true when a write is kept, and false when the browser refuses it', () => {
+    expect(deviceStorage().setItem('p2-demo-probe', 'kept')).toBe(true)
+    expect(window.localStorage.getItem('p2-demo-probe')).toBe('kept')
+    window.localStorage.removeItem('p2-demo-probe')
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+    })
+    expect(deviceStorage().setItem('p2-demo-probe', 'too much')).toBe(false)
+  })
+
+  it('tells the page when a save did not fit, with an event the banner listens for', () => {
+    const heard = vi.fn()
+    window.addEventListener(DEMO_SAVE_FAILED_EVENT, heard)
+    announceSaveFailed()
+    window.removeEventListener(DEMO_SAVE_FAILED_EVENT, heard)
+    expect(heard).toHaveBeenCalledTimes(1)
   })
 })
 
