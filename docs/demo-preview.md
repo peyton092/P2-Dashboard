@@ -50,7 +50,7 @@ What a person does goes through the same rules as the real app. A builder or a c
 1. points the six Firebase packages the app imports (`firebase/app`, `auth`, `firestore`, `functions`, `storage` and `messaging`) at small stand ins under `src/demo/shims`, which keep every collection in memory and answer the Cloud Functions the app calls (`src/demo/callables.js`) with the same transitions and refusals;
 2. sends every import of `src/firebase.js` to `src/demo/firebase.js`, which builds the same exports from those stand ins with no configuration;
 3. defines `import.meta.env.VITE_DEMO` as `'1'`, so `src/main.jsx` starts the demo from `src/demo/start.jsx`, which shows the demo bar above the app and registers no service worker;
-4. leaves out `sw.js` and `firebase-messaging-sw.js`, and adds `_redirects` (every path opens the app), `_headers` (no indexing, no referrer, long caching of the hashed assets), `robots.txt` and a `noindex` tag in `index.html`;
+4. copies `public/` at every depth except `sw.js` and `firebase-messaging-sw.js`, and adds `_redirects` (every path opens the app), `_headers` (no indexing, no referrer, long caching of the hashed assets, and `Content-Security-Policy: connect-src 'self'`, so the browser itself refuses any request the page might make to another host), `robots.txt` and a `noindex` tag in `index.html`;
 5. fails the build if any file it writes holds a Firebase or Google host, a key or the project identifier;
 6. reads no env file (`envDir: false`), so the web push key a developer keeps in `.env.local` stays out of the demo, and fails the build when a `VITE_` value is set in the shell, or when the value of a `VITE_` key in one of the project's env files turns up in a file it writes.
 

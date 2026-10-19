@@ -31,11 +31,15 @@ const LEFT_OUT = ['sw.js', 'firebase-messaging-sw.js']
 const DEMO_FILES = {
   // Every path is the app, as on any host of a single page app.
   '_redirects': '/*  /index.html  200\n',
+  // connect-src 'self' has the browser itself refuse any request the page makes to
+  // another host, Firebase and Google included, should one ever be bundled. It leaves
+  // the page's images, fonts and scripts as they are.
   '_headers': [
     '/*',
     '  X-Robots-Tag: noindex, nofollow',
     '  X-Content-Type-Options: nosniff',
     '  Referrer-Policy: no-referrer',
+    "  Content-Security-Policy: connect-src 'self'",
     '',
     '/assets/*',
     '  Cache-Control: public, max-age=31536000, immutable',
@@ -130,9 +134,12 @@ function demoBuild() {
           if (envValues.some((value) => text.includes(value))) this.error(`The demo build would hold the VITE_ value of an env file in ${fileName}.`)
         }
         for (const [fileName, output] of Object.entries(bundle)) check(fileName, output.type === 'chunk' ? output.code : output.source)
-        const publicFiles = readdirSync(publicDir, { withFileTypes: true })
-          .filter((entry) => entry.isFile() && !LEFT_OUT.includes(entry.name))
-          .map((entry) => [entry.name, readFileSync(join(publicDir, entry.name))])
+        // public/ at every depth, so a folder added there is copied too.
+        const publicFiles = readdirSync(publicDir, { recursive: true, withFileTypes: true })
+          .filter((entry) => entry.isFile())
+          .map((entry) => normalizePath(relative(publicDir, join(entry.parentPath ?? entry.path, entry.name))))
+          .filter((fileName) => !LEFT_OUT.includes(fileName))
+          .map((fileName) => [fileName, readFileSync(join(publicDir, fileName))])
         for (const [fileName, source] of [...publicFiles, ...Object.entries(DEMO_FILES)]) {
           check(fileName, source)
           this.emitFile({ type: 'asset', fileName, source })
