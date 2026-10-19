@@ -128,6 +128,16 @@ describe('keyboard focus', () => {
     expect(declarationsIn(rings[0].body).outline).toBe('2px solid var(--brand)')
   })
 
+  // The one rule that turns the outline off is for a focus that came from a pointer.
+  it('turns the outline off in the stylesheet only for a focus from a pointer', () => {
+    const off = rules.filter(({ body }) => {
+      const declarations = declarationsIn(body)
+      return ['outline', 'outline-style', 'outline-width', 'outline-color'].some((property) =>
+        /^(?:none|hidden|0|0px|transparent)(?![\w-])/.test(declarations[property] ?? ''))
+    })
+    expect(off.map(({ selector }) => selector)).toEqual([':focus:not(:focus-visible)'])
+  })
+
   // A rule outside every layer beats every Tailwind utility, whatever its specificity, so a
   // control could not move the ring inside itself without the important modifier, and an
   // outline-none in a shadcn control did nothing while its own ring-3 drew a second ring. In
@@ -147,16 +157,126 @@ describe('keyboard focus', () => {
   })
 })
 
-// The utilities a control could use against that one ring, read from the source. In the
-// base layer the ring gives way to a utility, so a control that says outline-none hides it,
-// and one that draws a ring of its own draws a second one.
+// The class names on a line of source, each split into its variants and its utility. Tailwind
+// takes the important modifier at the end of the utility or at its start, so it is taken off
+// either end and noted, and a leading one on the variants, which Tailwind would not build, is
+// noted as well. A colon inside the brackets of an arbitrary variant or value does not split
+// a name, and the punctuation of the code around a name is not part of it.
+function classNames(line) {
+  return line.split(/[\s'"`;]+/).flatMap((word) => {
+    const token = word.replace(/^[({$]+/, '').replace(/[,)}]+$/, '')
+    if (!token) return []
+    const parts = []
+    let depth = 0
+    let from = 0
+    for (let i = 0; i < token.length; i++) {
+      if (token[i] === '[') depth++
+      else if (token[i] === ']') depth--
+      else if (token[i] === ':' && depth === 0) {
+        parts.push(token.slice(from, i))
+        from = i + 1
+      }
+    }
+    const variants = parts.map((variant) => variant.replace(/^!/, ''))
+    const written = token.slice(from)
+    const utility = written.replace(/^!|!$/g, '')
+    return [{
+      token,
+      variants,
+      utility,
+      important: utility !== written || parts.some((variant) => variant.startsWith('!')),
+      // Focus in any of its forms: focus, focus-visible and focus-within, and each of them
+      // through a group, a peer, has, in, or an arbitrary variant.
+      onFocus: variants.some((variant) => variant.includes('focus')),
+    }]
+  })
+}
+
+// What a control could write against that one ring. In the base layer the ring gives way to
+// a utility, so a control that turns the outline off hides it, one that draws a ring or a
+// shadow of its own on focus draws a second one, and one that needs the important modifier
+// to place the ring is fighting a rule it should not have to.
+const GUARDS = {
+  important: (line) => classNames(line).filter((c) => c.onFocus && c.important).map((c) => c.token),
+  ownRing: (line) =>
+    classNames(line)
+      .filter((c) => c.onFocus && /^-?(?:ring|inset-ring|border-ring|shadow|inset-shadow)(?:-|$)/.test(c.utility))
+      .map((c) => c.token),
+  outlineOff: (line) =>
+    classNames(line)
+      .filter((c) =>
+        /^outline-(?:none|hidden|0|transparent)$/.test(c.utility) ||
+        /^outline-\[(?:0|0px|none|transparent)\]$/.test(c.utility) ||
+        /^\[outline(?:-style|-width|-color)?:(?:none|hidden|0|0px|transparent)\]$/.test(c.utility))
+      .map((c) => c.token),
+  // A style written in the code: an inline style object, or a property set on an element.
+  inlineOutlineOff: (line) =>
+    [...line.matchAll(/(?:\boutline(?:Style|Width|Color)?\s*:|\.style\.outline(?:Style|Width|Color)?\s*=)\s*['"`]?\s*(?:none|0(?:px)?|transparent|hidden)(?![\w-])/g)]
+      .map((match) => match[0]),
+}
+
+describe('the guards of the one ring', () => {
+  it.each([
+    ['important', 'focus-visible:-outline-offset-2!'],
+    ['important', 'focus-visible:!-outline-offset-2'],
+    ['important', 'focus-visible:!outline-offset-4'],
+    ['important', '!focus:outline-offset-4'],
+    ['important', 'group-focus-visible:outline-offset-4!'],
+    ['ownRing', 'focus:ring-2'],
+    ['ownRing', 'focus-visible:ring-3 focus-visible:ring-ring/50'],
+    ['ownRing', 'focus-visible:border-ring'],
+    ['ownRing', 'focus-visible:shadow-[0_0_0_2px_white]'],
+    ['ownRing', 'focus:shadow-md'],
+    ['ownRing', 'focus-visible:inset-ring-2'],
+    ['ownRing', 'group-focus:ring-2'],
+    ['ownRing', 'group-focus-visible/row:ring-2'],
+    ['ownRing', 'peer-focus-visible:ring-2'],
+    ['ownRing', 'has-focus-visible:ring-2'],
+    ['ownRing', 'has-[:focus-visible]:ring-2'],
+    ['ownRing', 'focus-within:ring-2'],
+    ['ownRing', 'group-focus-within:shadow-lg'],
+    ['ownRing', '[&:focus-visible]:ring-2'],
+    ['ownRing', 'md:focus-visible:ring-2!'],
+    ['outlineOff', 'outline-none'],
+    ['outlineOff', 'focus-visible:outline-hidden'],
+    ['outlineOff', 'outline-0'],
+    ['outlineOff', 'outline-transparent'],
+    ['outlineOff', 'outline-[0px]'],
+    ['outlineOff', '[outline:none]'],
+    ['outlineOff', 'focus:[outline-style:none]'],
+    ['outlineOff', 'outline-none!'],
+    ['outlineOff', '!outline-0'],
+    ['inlineOutlineOff', "style={{ outline: 'none' }}"],
+    ['inlineOutlineOff', 'style={{ outline: 0 }}'],
+    ['inlineOutlineOff', 'style={{ outlineStyle: "none" }}'],
+    ['inlineOutlineOff', "style={{ outlineColor: 'transparent' }}"],
+    ['inlineOutlineOff', "el.style.outline = 'none'"],
+  ])('%s catches %s', (guard, line) => {
+    expect(GUARDS[guard](`className={cn("p-2", ${JSON.stringify(line)})} ${line}`).length).toBeGreaterThan(0)
+  })
+
+  it.each([
+    'focus-visible:-outline-offset-2',
+    'focus:bg-accent focus:text-accent-foreground',
+    'aria-invalid:ring-3 aria-invalid:ring-destructive/20',
+    'data-[selected]:ring-2 hover:shadow-md shadow-lg ring-1',
+    'outline-ring/50 outline-offset-0 outline-2',
+    'if (a !== b && !focused) return { focus: true }',
+    "style={{ outline: '2px solid var(--brand)' }}",
+  ])('no guard catches %s', (line) => {
+    for (const [guard, catches] of Object.entries(GUARDS)) expect(catches(line), guard).toEqual([])
+  })
+})
+
+// The guards, read over the source. A comment that names a utility is read too, so a comment
+// about the ring names it in words.
 describe('the controls and the one ring', () => {
   const sources = files
     .filter((file) => /\.(jsx?|css)$/.test(file) && !name(file).split('/').includes('__tests__'))
     .map((file) => ({ file: name(file), text: readFileSync(file, 'utf8') }))
-  const hits = (pattern) =>
-    sources.flatMap(({ file, text }) =>
-      text.split('\n').flatMap((line, i) => [...line.matchAll(pattern)].map((match) => `${file}:${i + 1} ${match[0]}`)),
+  const hits = (guard, only = () => true) =>
+    sources.filter(({ file }) => only(file)).flatMap(({ file, text }) =>
+      text.split('\n').flatMap((line, i) => GUARDS[guard](line).map((found) => `${file}:${i + 1} ${found}`)),
     )
 
   it('finds the controls it is meant to read', () => {
@@ -166,11 +286,11 @@ describe('the controls and the one ring', () => {
   })
 
   it('never needs the important modifier to place the ring', () => {
-    expect(hits(/(?<![\w-])focus(?:-visible)?:[\w/[\]().-]*!(?![=\w])/g)).toEqual([])
+    expect(hits('important')).toEqual([])
   })
 
-  it('never draws a focus ring of its own beside the outline', () => {
-    expect(hits(/(?<![\w-])focus(?:-visible)?:(?:ring|border-ring)(?:-[\w/[\]().]+)?/g)).toEqual([])
+  it('never draws a focus ring or a focus shadow of its own beside the outline', () => {
+    expect(hits('ownRing')).toEqual([])
   })
 
   // An element that is not itself a control may turn the outline off: the dialog panel, which
@@ -185,12 +305,18 @@ describe('the controls and the one ring', () => {
 
   it('turns the outline off only on the elements that are not controls', () => {
     const found = {}
-    for (const hit of hits(/(?<![\w-])(?:[\w-]+:)*outline-(?:none|hidden)(?![\w-])/g)) {
+    for (const hit of hits('outlineOff')) {
       const [where, utility] = hit.split(' ')
       const file = where.slice(0, where.lastIndexOf(':'))
       ;(found[file] ??= []).push(utility)
     }
     expect(found).toEqual(MAY_HIDE_THE_OUTLINE)
+  })
+
+  // The stylesheet turns it off for a focus from a pointer only, which the keyboard focus
+  // tests above read.
+  it('never turns the outline off with a style written in the code', () => {
+    expect(hits('inlineOutlineOff', (file) => /\.jsx?$/.test(file))).toEqual([])
   })
 })
 
