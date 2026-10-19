@@ -27,6 +27,9 @@ import { extraActivity, inspectionActivity, jobActivity, scopeForJob } from './c
 // identifier. The seed is the same for the same day, so a reset gives back what the
 // demo opened with.
 
+// Saved state is kept only for the seed version it was made from. Change this whenever
+// the seed changes, so a browser that saved state from an older seed starts again from
+// the new one instead of mixing the two.
 export const DEMO_SEED_VERSION = 'demo-seed-1'
 
 const CLIENT = DEMO_USERS.client

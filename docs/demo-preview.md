@@ -69,4 +69,6 @@ npm ci
 npm run build:demo
 ```
 
-The controller publishes `dist-demo` to Netlify as a prebuilt static site, with deployment protection off so the link opens without a password. Netlify reads `_redirects` and `_headers` from the folder. Another host needs the same two things: every path that is not a file answered with `index.html`, and the headers from `_headers`. The link goes at the top of this page. The demo is built and published again at the end of every later phase, so it shows the current app.
+To look at it on this machine first, `npx vite preview --mode demo` serves `dist-demo` with the same fallback to `index.html`.
+
+The controller publishes `dist-demo` to Netlify as a prebuilt static site, with deployment protection off so the link opens without a password. Netlify reads `_redirects` and `_headers` from the folder. Another host needs the same two things: every path that is not a file answered with `index.html`, and the headers from `_headers`. The link goes at the top of this page. The demo is built and published again at the end of every later phase, so it shows the current app. When a change alters the sample data, change `DEMO_SEED_VERSION` in `src/demo/seed.js` too, so phones that kept the old data start again from the new.
