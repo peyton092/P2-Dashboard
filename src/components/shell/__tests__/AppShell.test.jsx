@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, act } from '@testing-library/react'
+import { pressTab } from '@/test/keyboard'
 import { axe } from '@/test/axe'
 import AppShell from '../AppShell'
 
@@ -62,6 +63,55 @@ describe('the AppShell landmarks', () => {
 
   it('has no accessibility violations', async () => {
     const { container } = renderShell()
+    expect(await axe(container)).toHaveNoViolations()
+  })
+})
+
+// A person on a keyboard reaches the page past the whole sidebar with one link, the first
+// thing Tab finds. It is hidden until it has focus, and then it shows. It goes to the main
+// landmark, which can take focus from it but is not a stop of its own in the tab order.
+describe('the skip link', () => {
+  const renderShell = () =>
+    render(
+      <AppShell sidebar={<nav aria-label="Sidebar"><button type="button">Command Center</button></nav>} mobileNav={null}>
+        <h1>Page</h1>
+        <button type="button">Export</button>
+      </AppShell>,
+    )
+  const skip = () => screen.getByRole('link', { name: 'Skip to content' })
+
+  it('is the first thing Tab reaches, ahead of the sidebar', () => {
+    renderShell()
+    act(() => { document.body.focus() })
+    pressTab()
+    expect(document.activeElement).toBe(skip())
+  })
+
+  it('goes to the main landmark, which takes focus but is not a tab stop', () => {
+    renderShell()
+    const main = screen.getByRole('main')
+    expect(skip().getAttribute('href')).toBe(`#${main.id}`)
+    expect(main.id).toBe('main')
+    expect(main.getAttribute('tabindex')).toBe('-1')
+  })
+
+  it('is hidden until it has focus, and then shows', () => {
+    renderShell()
+    const classes = [...skip().classList]
+    expect(classes).toContain('sr-only')
+    expect(classes).toContain('focus:not-sr-only')
+  })
+
+  // The main landmark takes focus only from the skip link, as a place to start from, and is
+  // not a control, so it draws no ring around the whole page.
+  it('does not draw the focus ring around the whole page when the link takes focus there', () => {
+    renderShell()
+    expect([...screen.getByRole('main').classList]).toContain('outline-none')
+  })
+
+  it('has no accessibility violations with the link focused', async () => {
+    const { container } = renderShell()
+    act(() => { skip().focus() })
     expect(await axe(container)).toHaveNoViolations()
   })
 })

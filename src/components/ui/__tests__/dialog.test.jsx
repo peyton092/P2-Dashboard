@@ -370,6 +370,52 @@ describe('a Select inside a dialog', () => {
   })
 })
 
+// The More pages drawer on a phone has no heading of its own to show, so its title is there
+// for a screen reader only, and still names the dialog. It opens from the bottom edge, where
+// a thumb is, and keeps the rest of what a dialog does.
+describe('a dialog with a hidden title, at the bottom of the screen', () => {
+  it('keeps the title as the name of the dialog, read but not shown', async () => {
+    render(<Page hideTitle />)
+    const dialog = await openIt()
+
+    const title = screen.getByRole('heading', { name: 'Edit job details' })
+    expect(title.classList.contains('sr-only')).toBe(true)
+    expect(dialog.getAttribute('aria-labelledby')).toBe(title.id)
+    expect(screen.getByRole('dialog', { name: 'Edit job details' })).toBe(dialog)
+  })
+
+  it('shows the title unless it is told to hide it', async () => {
+    render(<Page />)
+    await openIt()
+    expect(screen.getByRole('heading', { name: 'Edit job details' }).classList.contains('sr-only')).toBe(false)
+  })
+
+  it('sits at the bottom edge, full width, with no gap under it, when its placement is bottom', async () => {
+    const { baseElement } = render(<Page placement="bottom" />)
+    const dialog = await openIt()
+
+    const viewport = baseElement.querySelector('[data-slot="dialog-viewport"]')
+    expect(viewport.classList.contains('p-4')).toBe(false)
+    for (const name of ['mt-auto', 'rounded-b-none']) expect(dialog.classList.contains(name), name).toBe(true)
+    expect(dialog.classList.contains('m-auto')).toBe(false)
+  })
+
+  it('still traps focus, closes on Escape and gives focus back, at the bottom with a hidden title', async () => {
+    render(<Page placement="bottom" hideTitle />)
+    const dialog = await openSettled()
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await gone()
+    await waitFor(() => expect(document.activeElement).toBe(opener()))
+  })
+
+  it('has no accessibility violations at the bottom with a hidden title', async () => {
+    render(<Page placement="bottom" hideTitle />)
+    await openSettled()
+    expect(await axe(document.body)).toHaveNoViolations()
+  })
+})
+
 describe('the parts of a dialog', () => {
   it('DialogBody and DialogFooter pass a class name and their children through', async () => {
     render(

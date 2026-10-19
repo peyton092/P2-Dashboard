@@ -39,18 +39,15 @@ const openDrawer = async () => {
   return openSettled('More pages')
 }
 
-// A test marked it.fails is one this screen does not pass yet. The change that makes it pass
-// takes the mark off, in the same commit.
-
 describe('the mobile navigation bar', () => {
-  it.fails('marks the page that is open, and no other, as the current page', () => {
+  it('marks the page that is open, and no other, as the current page', () => {
     render(<Nav start="jobs" />)
 
     const current = within(bar()).getAllByRole('button').filter((button) => button.getAttribute('aria-current') === 'page')
     expect(current.map((button) => button.textContent)).toEqual(['Jobs'])
   })
 
-  it.fails('gives every button on the bar a target at least 44 pixels tall', () => {
+  it('gives every button on the bar a target at least 44 pixels tall', () => {
     render(<Nav />)
 
     for (const button of within(bar()).getAllByRole('button')) {
@@ -60,7 +57,7 @@ describe('the mobile navigation bar', () => {
 })
 
 describe('the More pages drawer', () => {
-  it.fails('opens as a modal dialog named More pages, with focus inside it', async () => {
+  it('opens as a modal dialog named More pages, with focus inside it', async () => {
     render(<Nav />)
 
     const drawer = await openDrawer()
@@ -69,7 +66,7 @@ describe('the More pages drawer', () => {
     expect(drawer.contains(document.activeElement)).toBe(true)
   })
 
-  it.fails('marks the page that is open as the current page in the drawer too', async () => {
+  it('marks the page that is open as the current page in the drawer too', async () => {
     render(<Nav start="alerts" />)
 
     const drawer = await openDrawer()
@@ -79,7 +76,7 @@ describe('the More pages drawer', () => {
     expect(current[0].textContent).toContain('Alerts')
   })
 
-  it.fails('gives every page in the drawer a target at least 44 pixels tall', async () => {
+  it('gives every page in the drawer a target at least 44 pixels tall', async () => {
     render(<Nav />)
 
     const drawer = await openDrawer()
@@ -89,7 +86,7 @@ describe('the More pages drawer', () => {
     }
   })
 
-  it.fails('closes on Escape and gives focus back to the More button', async () => {
+  it('closes on Escape and gives focus back to the More button', async () => {
     render(<Nav />)
     const drawer = await openDrawer()
 
@@ -99,7 +96,7 @@ describe('the More pages drawer', () => {
     await waitFor(() => expect(document.activeElement).toBe(more()))
   })
 
-  it.fails('goes to the page that is picked, and closes', async () => {
+  it('goes to the page that is picked, and closes', async () => {
     render(<Nav />)
     const drawer = await openDrawer()
 
@@ -111,7 +108,7 @@ describe('the More pages drawer', () => {
     expect(current.map((button) => button.textContent)).toEqual(['Settings'])
   })
 
-  it.fails('has no accessibility violations while it is open', async () => {
+  it('has no accessibility violations while it is open', async () => {
     render(<Nav start="alerts" />)
     await openDrawer()
 

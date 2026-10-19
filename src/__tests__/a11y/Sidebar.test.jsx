@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, within } from '@testing-library/react'
 import { GaugeIcon, HardHatIcon, BellIcon } from 'lucide-react'
 import { axe } from '@/test/axe'
@@ -13,17 +13,7 @@ vi.mock('@/components/brand/Brand', () => ({
 
 // The desktop sidebar, read the way a screen reader and a keyboard read it.
 
-// axe tells an icon font from words by drawing a button's text on a canvas, when the button
-// has a name of its own as well as words. jsdom has no canvas and says so on stderr; the check
-// is skipped either way, so the canvas answers nothing, quietly.
-beforeEach(() => {
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
-})
-
-afterEach(() => {
-  cleanup()
-  vi.restoreAllMocks()
-})
+afterEach(cleanup)
 
 const SECTIONS = [
   { heading: 'Command', items: [{ id: 'command-center', label: 'Command Center', Icon: GaugeIcon }] },
@@ -60,11 +50,8 @@ const renderSidebar = (props = {}) =>
 
 const pages = () => within(screen.getByRole('navigation', { name: 'Workspace navigation' })).getAllByRole('button')
 
-// A test marked it.fails is one this screen does not pass yet. The change that makes it pass
-// takes the mark off, in the same commit.
-
 describe('the sidebar', () => {
-  it.fails('marks the page that is open, and no other, as the current page', () => {
+  it('marks the page that is open, and no other, as the current page', () => {
     renderSidebar()
 
     const current = pages().filter((button) => button.getAttribute('aria-current') === 'page')
@@ -72,7 +59,7 @@ describe('the sidebar', () => {
     expect(current[0].textContent).toContain('Job Status')
   })
 
-  it.fails('marks the current page while it is collapsed too, and keeps each name as a title', () => {
+  it('marks the current page while it is collapsed too, and keeps each name as a title', () => {
     renderSidebar({ collapsed: true })
 
     const current = pages().filter((button) => button.getAttribute('aria-current') === 'page')
@@ -80,13 +67,24 @@ describe('the sidebar', () => {
     expect(pages().map((button) => button.getAttribute('title'))).toEqual(['Command Center', 'Job Status', 'Notifications'])
   })
 
-  it.fails('names the workspace list by its label', () => {
+  it('names the Search button by its words while they show, and by a label when collapsed', () => {
+    renderSidebar()
+    const search = screen.getByRole('button', { name: /^Search/ })
+    expect(search.hasAttribute('aria-label')).toBe(false)
+    expect(search.getAttribute('aria-keyshortcuts')).toBe('Control+K Meta+K')
+    cleanup()
+
+    renderSidebar({ collapsed: true })
+    expect(screen.getByRole('button', { name: 'Search' }).getAttribute('aria-label')).toBe('Search')
+  })
+
+  it('names the workspace list by its label', () => {
     renderSidebar()
 
     expect(screen.getByRole('combobox', { name: 'Workspace' })).toBeTruthy()
   })
 
-  it.fails('has no accessibility violations, open and collapsed', async () => {
+  it('has no accessibility violations, open and collapsed', async () => {
     const { container, unmount } = renderSidebar()
     expect(await axe(container)).toHaveNoViolations()
     unmount()

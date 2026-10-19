@@ -18,10 +18,27 @@ import { IconButton } from "./icon-button"
 // panel, and for the close button. The page decides whether the dialog closes, by
 // setting open. Focus goes to the first thing a person can use, or to the element
 // initialFocusRef names, such as the field a form begins with.
+//
+// hideTitle keeps the title for a screen reader, which still names the dialog by it,
+// and leaves it off the screen, for a dialog whose contents say what it is without a
+// heading, such as the More pages drawer of the phone navigation. placement="bottom"
+// sets the panel on the bottom edge of the screen, full width up to its size, where a
+// thumb reaches it, and slides it in from there.
 const SIZE = {
   sm: "max-w-sm",
   md: "max-w-lg",
   lg: "max-w-2xl",
+}
+
+const PLACEMENT = {
+  center: {
+    viewport: "p-4",
+    popup: "m-auto rounded-[10px] border data-open:zoom-in-95 data-closed:zoom-out-95",
+  },
+  bottom: {
+    viewport: "px-0 pt-4 pb-0",
+    popup: "mx-auto mt-auto rounded-[10px] rounded-b-none border border-b-0 data-open:slide-in-from-bottom-4 data-closed:slide-out-to-bottom-4",
+  },
 }
 
 function DialogTitle({ className, ...props }) {
@@ -57,7 +74,8 @@ function DialogFooter({ className, ...props }) {
   );
 }
 
-function Dialog({ open, onClose, title, description, children, size = "sm", initialFocusRef }) {
+function Dialog({ open, onClose, title, description, children, size = "sm", initialFocusRef, hideTitle = false, placement = "center" }) {
+  const place = PLACEMENT[placement] ?? PLACEMENT.center
   return (
     <DialogPrimitive.Root
       open={open}
@@ -72,17 +90,18 @@ function Dialog({ open, onClose, title, description, children, size = "sm", init
             the end, and m-auto on the panel centers it when it is not. */}
         <DialogPrimitive.Viewport
           data-slot="dialog-viewport"
-          className="fixed inset-0 z-(--z-dialog) flex overflow-y-auto overscroll-contain p-4">
+          className={cn("fixed inset-0 z-(--z-dialog) flex overflow-y-auto overscroll-contain", place.viewport)}>
           <DialogPrimitive.Popup
             data-slot="dialog-popup"
             aria-modal="true"
             initialFocus={initialFocusRef}
             className={cn(
-              "relative m-auto w-full rounded-[10px] border border-white/10 bg-surface-2 text-foreground shadow-xl outline-none duration-150 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none",
+              "relative w-full border-white/10 bg-surface-2 text-foreground shadow-xl outline-none duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none",
+              place.popup,
               SIZE[size] ?? SIZE.sm
             )}>
-            <div className="px-5 pt-5 pr-14 pb-4">
-              <DialogTitle>{title}</DialogTitle>
+            <div className={hideTitle ? "pt-5" : "px-5 pt-5 pr-14 pb-4"}>
+              <DialogTitle className={hideTitle ? "sr-only" : undefined}>{title}</DialogTitle>
               {description && (
                 <DialogPrimitive.Description
                   data-slot="dialog-description"
